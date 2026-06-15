@@ -144,3 +144,11 @@ vite.config.ts.timestamp-*
 .DS_Store
 .kiro/
 .site_examples/
+
+# Zephus build artifacts
+release/
+licenses.json
+
+# Compiled renderer output (TypeScript compiled in-place)
+src/renderer/**/*.js
+src/renderer/**/*.js.map

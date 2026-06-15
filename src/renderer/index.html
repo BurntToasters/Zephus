@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-src http://localhost:* http://127.0.0.1:*;"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Zephus</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <!-- Project selection view -->
+    <section id="view-start" class="view">
+      <div class="start-card">
+        <div class="start-header">
+          <h1 class="brand">Zephus</h1>
+          <button id="btn-settings" class="btn ghost gear-btn" title="Settings">
+            ⚙
+          </button>
+        </div>
+        <p class="muted">
+          Create a new site from a theme, or reopen a site Zephus made.
+        </p>
+        <button id="btn-create" class="btn primary">Create New Site…</button>
+        <button id="btn-open" class="btn">Open Existing Zephus Site…</button>
+        <h2 class="recent-title">Recent Projects</h2>
+        <ul id="recent-list" class="recent-list"></ul>
+      </div>
+    </section>
+
+    <!-- Editor view -->
+    <section id="view-editor" class="view hidden">
+      <header class="topbar">
+        <div class="topbar-left">
+          <span class="brand-sm">Zephus</span>
+          <span id="project-name" class="project-name"></span>
+          <span id="git-branch" class="git-branch"></span>
+        </div>
+        <div class="topbar-center">
+          <div class="mode-toggle">
+            <button id="mode-visual" class="mode-btn active">Visual</button>
+            <button id="mode-code" class="mode-btn">Code</button>
+          </div>
+          <div class="vp-toggle">
+            <button id="vp-desktop" class="vp-btn active" title="Desktop">
+              🖥
+            </button>
+            <button id="vp-tablet" class="vp-btn" title="Tablet">▭</button>
+            <button id="vp-mobile" class="vp-btn" title="Mobile">▯</button>
+          </div>
+        </div>
+        <div class="topbar-right">
+          <button id="btn-undo" class="btn" title="Undo (Ctrl/Cmd+Z)">
+            Undo
+          </button>
+          <button id="btn-redo" class="btn" title="Redo (Ctrl/Cmd+Shift+Z)">
+            Redo
+          </button>
+          <button id="btn-preview" class="btn">Start Preview</button>
+          <button id="btn-publish" class="btn">Publish</button>
+          <button id="btn-save" class="btn">Save</button>
+          <button id="btn-close" class="btn ghost">Close</button>
+        </div>
+      </header>
+
+      <div class="editor-body">
+        <aside class="panel left">
+          <div class="panel-section">
+            <h3>
+              Pages
+              <button id="btn-new-page" class="mini-btn" title="New page">
+                +
+              </button>
+            </h3>
+            <ul id="page-list" class="list"></ul>
+          </div>
+          <div class="panel-section">
+            <h3>Blocks</h3>
+            <ul id="block-palette" class="palette"></ul>
+          </div>
+          <div class="panel-section">
+            <h3>Navigation</h3>
+            <ul id="nav-list" class="list"></ul>
+            <button
+              id="btn-regen-nav"
+              class="mini-btn"
+              title="Regenerate nav from pages"
+            >
+              ↻ Regen
+            </button>
+          </div>
+          <div class="panel-section">
+            <h3>Sections</h3>
+            <ul id="template-palette" class="palette"></ul>
+          </div>
+        </aside>
+
+        <main class="canvas-wrap">
+          <div id="canvas" class="canvas"></div>
+          <div id="code-editor" class="code-editor hidden"></div>
+          <iframe
+            id="preview-frame"
+            class="preview-frame hidden"
+            sandbox="allow-scripts allow-same-origin"
+          ></iframe>
+        </main>
+
+        <aside class="panel right">
+          <div class="panel-section">
+            <h3>Properties</h3>
+            <div id="properties" class="properties">
+              <p class="muted">Select a block to edit its properties.</p>
+            </div>
+          </div>
+          <div class="panel-section">
+            <h3>Git Changes</h3>
+            <div id="git-panel" class="git-panel">
+              <p class="muted">No changes.</p>
+            </div>
+          </div>
+          <div class="panel-section">
+            <h3>Dev Server Log</h3>
+            <pre id="dev-log" class="dev-log"></pre>
+          </div>
+        </aside>
+      </div>
+      <div id="status-bar" class="status-bar"></div>
+    </section>
+
+    <!-- Modal -->
+    <div id="modal-overlay" class="modal-overlay hidden">
+      <div class="modal">
+        <h2 id="modal-title"></h2>
+        <p id="modal-body"></p>
+        <div id="modal-actions" class="modal-actions"></div>
+      </div>
+    </div>
+
+    <script src="zephusEngine.js"></script>
+  </body>
+</html>

@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Zephus
+GenericName=Website Editor
+Comment=Local WYSIWYG website editor for Astro sites
+Exec=zephus %U
+Icon=run.rosie.zephus
+Terminal=false
+Categories=Development;WebDevelopment;
+StartupNotify=true
+StartupWMClass=Zephus
+Keywords=astro;website;editor;wysiwyg;static-site;

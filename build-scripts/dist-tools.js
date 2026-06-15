@@ -2,9 +2,8 @@ const fs = require('fs');
 const path = require('path');
 
 const FLATPAK_BUILD_DIR_PREFIX = 'build-dir';
-const RENDERER_MODULES_DIR = path.join('src', 'renderer', 'modules');
 const RENDERER_DIR = path.join('src', 'renderer');
-const RENDERER_ROOT_TS = ['zephusEngine.ts'];
+const RENDERER_BUILD_ARTIFACTS = ['zephusEngine.js', 'zephusEngine.js.map'];
 
 function listFlatpakBuildDirs() {
   try {
@@ -32,8 +31,15 @@ function cleanBuildArtifacts() {
     }
   }
 
-  cleanRendererModuleArtifacts();
-  cleanRendererRootArtifacts();
+  // Remove bundled renderer output.
+  for (const file of RENDERER_BUILD_ARTIFACTS) {
+    const artifactPath = path.join(RENDERER_DIR, file);
+    try {
+      fs.rmSync(artifactPath, { force: true, maxRetries: 8, retryDelay: 100 });
+    } catch (error) {
+      if (error && error.code === 'ENOENT') continue;
+    }
+  }
 }
 
 function cleanReleaseArtifacts() {
@@ -45,50 +51,6 @@ function cleanReleaseArtifacts() {
       if (error && error.code === 'ENOENT') continue;
     }
   }
-}
-
-function cleanRendererModuleArtifacts() {
-  let entries = [];
-  try {
-    entries = fs.readdirSync(RENDERER_MODULES_DIR, { withFileTypes: true });
-  } catch (error) {
-    if (error && error.code === 'ENOENT') return;
-    throw error;
-  }
-
-  for (const entry of entries) {
-    if (!entry.isFile() || !entry.name.endsWith('.ts')) continue;
-    const stem = entry.name.slice(0, -3);
-    const targets = [`${stem}.js`, `${stem}.js.map`];
-
-    for (const target of targets) {
-      const artifactPath = path.join(RENDERER_MODULES_DIR, target);
-      try {
-        fs.rmSync(artifactPath, { force: true, maxRetries: 8, retryDelay: 100 });
-      } catch (error) {
-        if (error && error.code === 'ENOENT') continue;
-      }
-    }
-  }
-}
-
-function cleanRendererRootArtifacts() {
-  for (const tsName of RENDERER_ROOT_TS) {
-    const stem = tsName.slice(0, -3);
-    for (const target of [`${stem}.js`, `${stem}.js.map`]) {
-      const artifactPath = path.join(RENDERER_DIR, target);
-      try {
-        fs.rmSync(artifactPath, { force: true, maxRetries: 8, retryDelay: 100 });
-      } catch (error) {
-        if (error && error.code === 'ENOENT') continue;
-      }
-    }
-  }
-}
-
-function copyFileEnsuringDir(src, dest) {
-  fs.mkdirSync(path.dirname(dest), { recursive: true });
-  fs.copyFileSync(src, dest);
 }
 
 function copyRuntimeAssets() {

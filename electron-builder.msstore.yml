@@ -1,0 +1,19 @@
+extends: ./electron-builder.base.yml
+
+appId: BurntToasters.Zephus
+productName: Zephus
+win:
+  target: appx
+  icon: build/app-icon.png
+appx:
+  # TODO: replace identityName/publisher with the values from your Microsoft Partner Center
+  # app registration before publishing to the Microsoft Store.
+  identityName: BurntToasters.Zephus
+  publisher: CN=REPLACE-WITH-YOUR-PUBLISHER-ID
+  publisherDisplayName: BurntToasters
+  displayName: Zephus
+  backgroundColor: '#ffffff'
+  minVersion: 10.0.10240.0
+  maxVersionTested: 10.0.22621.0
+  customManifestPath: build/appx/appxmanifest.xml
+  artifactName: Zephus-${version}-${arch}.${ext}

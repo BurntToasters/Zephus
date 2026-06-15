@@ -44,7 +44,7 @@ clean.on('close', (code) => {
 
   const rendererWatcher = spawn(
     process.execPath,
-    [tscBin, '--project', 'tsconfig.renderer.json', '--watch', '--preserveWatchOutput'],
+    [path.join(__dirname, 'bundle-renderer.js'), '--watch'],
     { cwd: ROOT, stdio: 'inherit' }
   );
 

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>run.rosie.zephus</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+  <name>Zephus</name>
+  <summary>Local WYSIWYG website editor for Astro sites</summary>
+  <description>
+    <p>
+      Zephus is a cross-platform desktop application for editing Astro-based
+      websites. It provides a Weebly-style drag-and-drop visual editor alongside
+      a manual code view, working directly against your local Git repository.
+    </p>
+  </description>
+  <launchable type="desktop-id">run.rosie.zephus.desktop</launchable>
+  <url type="homepage">https://github.com/BurntToasters/zephus</url>
+  <url type="bugtracker">https://github.com/BurntToasters/zephus/issues</url>
+  <developer_name>BurntToasters</developer_name>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0-beta.1" date="2026-06-14"/>
+  </releases>
+</component>

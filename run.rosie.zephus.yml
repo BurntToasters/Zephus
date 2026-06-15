@@ -1,0 +1,34 @@
+# Flatpak manifest for Zephus.
+# This packages the electron-builder linux-unpacked output produced by
+# `npm run build:linux`. Run the electron-builder build first, then
+# `npm run flatpak:build` / `npm run flatpak:bundle`.
+app-id: run.rosie.zephus
+runtime: org.freedesktop.Platform
+runtime-version: '24.08'
+sdk: org.freedesktop.Sdk
+base: org.electronjs.Electron2.BaseApp
+base-version: '24.08'
+command: zephus
+separate-locales: false
+finish-args:
+  - --share=ipc
+  - --socket=x11
+  - --socket=wayland
+  - --socket=pulseaudio
+  - --share=network
+  - --device=dri
+  # Editing local site repositories requires access to the user's files.
+  - --filesystem=home
+  - --talk-name=org.freedesktop.Notifications
+modules:
+  - name: zephus
+    buildsystem: simple
+    build-commands:
+      - cp -a release/linux-unpacked /app/zephus
+      - install -Dm755 zephus.sh /app/bin/zephus
+      - install -Dm644 run.rosie.zephus.desktop /app/share/applications/run.rosie.zephus.desktop
+      - install -Dm644 run.rosie.zephus.metainfo.xml /app/share/metainfo/run.rosie.zephus.metainfo.xml
+      - install -Dm644 build/app-icon.png /app/share/icons/hicolor/512x512/apps/run.rosie.zephus.png
+    sources:
+      - type: dir
+        path: .
