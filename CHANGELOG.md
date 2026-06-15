@@ -1,5 +1,5 @@
 > [!NOTE]
-> ⛔️ This is a Developer Beta build.
+> ⛔️ This is a Developer Beta build. These builds are extremely unstable and are meant for testing only.
 
 # ⬇️ Downloads
 
