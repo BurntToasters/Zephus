@@ -1,0 +1,151 @@
+{
+  "name": "zephus",
+  "version": "0.1.0-beta.1",
+  "private": true,
+  "description": "Local WYSIWYG website editor for Astro sites",
+  "desktopName": "run.rosie.zephus.desktop",
+  "keywords": [
+    "electron",
+    "astro",
+    "website-editor",
+    "wysiwyg",
+    "static-site",
+    "cross-platform"
+  ],
+  "main": "dist/main/main.js",
+  "packageManager": "npm@11.10.1",
+  "engines": {
+    "node": ">=24.x",
+    "npm": ">=10.x"
+  },
+  "scripts": {
+    "gitprune": "node build-scripts/git-prune-local-branches.js",
+    "gitprune:dry": "node build-scripts/git-prune-local-branches.js --dry-run",
+    "gitprune:force": "node build-scripts/git-prune-local-branches.js --force",
+    "prepare": "node build-scripts/install-hooks.js",
+    "hooks:install": "node build-scripts/install-hooks.js",
+    "clean": "node build-scripts/dist-tools.js clean && node build-scripts/dist-tools.js clean-release",
+    "licenses": "npx npm-license-crawler --production --json licenses.json",
+    "compile:main": "tsc --project tsconfig.main.json",
+    "compile:renderer": "tsc --project tsconfig.renderer.json",
+    "compile": "node build-scripts/dist-tools.js clean && npm run compile:main && npm run compile:renderer && node build-scripts/dist-tools.js copy",
+    "prerelease:prepare": "node build-scripts/release-warning.js",
+    "prebuild:base": "npm run compile && npm run licenses",
+    "prebuild": "npm run prebuild:base",
+    "prebuild:win": "npm run prebuild:base",
+    "prebuild:mac:universal": "npm run prebuild:base",
+    "prebuild:linux": "npm run prebuild:base",
+    "typecheck:main": "tsc --noEmit --project tsconfig.main.json",
+    "typecheck:renderer": "tsc --noEmit --project tsconfig.renderer.json",
+    "typecheck": "npm run typecheck:main && npm run typecheck:renderer",
+    "smoke:runtime": "node build-scripts/smoke-runtime.js",
+    "smoke:runtime:fast": "node build-scripts/smoke-runtime.js --skip-compile",
+    "watch": "node build-scripts/watch.js",
+    "test": "vitest run",
+    "vi": "node build-scripts/vi.js",
+    "b": "git fetch origin && git reset --hard && git clean -fd && git switch -C beta origin/beta && git reset --hard origin/beta && git clean -fd && npm run vi",
+    "r": "git fetch origin && git reset --hard && git clean -fd && git switch -C main origin/main && git reset --hard origin/main && git clean -fd && npm run vi && npm run gitprune:force",
+    "u": "npm update && npm run release:prepare && npm run format && npm run test:all",
+    "test:watch": "vitest",
+    "test:all": "node build-scripts/test-all.js",
+    "test:cov": "vitest run --coverage && node build-scripts/check-coverage-thresholds.js",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "format": "prettier --write src/",
+    "format:check": "prettier --check src/",
+    "start": "npm run clean && npm run compile && electron .",
+    "dev": "npm run compile && cross-env NODE_ENV=development electron . --dev",
+    "build": "npm run prebuild && electron-builder -c electron-builder.base.yml",
+    "build:win": "npm run prebuild:win && electron-builder -c electron-builder.base.yml --win --arm64 --x64",
+    "build:win:x64": "npm run prebuild:win && electron-builder -c electron-builder.base.yml --win --x64",
+    "build:win:arm64": "npm run prebuild:win && electron-builder -c electron-builder.base.yml --win --arm64",
+    "build:win:all": "npm run build:win && npm run build:win:x64 && npm run build:win:arm64",
+    "build:mac:universal": "npm run prebuild:mac:universal && dotenv -e .env -- electron-builder -c electron-builder.base.yml --mac --universal",
+    "mac:ssh:keychain": "bash build-scripts/mac-keychain-ssh.sh",
+    "build:linux": "npm run prebuild:linux && electron-builder -c electron-builder.base.yml --linux AppImage deb rpm --x64 --arm64",
+    "build:linux:x64": "npm run prebuild:linux && electron-builder -c electron-builder.base.yml --linux AppImage deb rpm --x64",
+    "build:linux:arm64": "npm run prebuild:linux && electron-builder -c electron-builder.base.yml --linux AppImage deb rpm --arm64",
+    "build:linux:all": "npm run build:linux:x64 && npm run build:linux:arm64",
+    "build:github": "npm run prebuild:win && dotenv -e .env -- cross-env CHANNEL=github electron-builder -c electron-builder.github.yml --win --arm64 --x64",
+    "build:github:win": "npm run prebuild:win && dotenv -e .env -- cross-env CHANNEL=github electron-builder -c electron-builder.github.yml --win --arm64 --x64",
+    "build:github:mac": "npm run prebuild:mac:universal && dotenv -e .env -- cross-env CHANNEL=github electron-builder -c electron-builder.github.yml --mac --universal",
+    "build:msstore:x64": "npm run prebuild:win && cross-env CHANNEL=msstore electron-builder --win --x64 -c electron-builder.msstore.yml",
+    "build:msstore:arm64": "npm run prebuild:win && cross-env CHANNEL=msstore electron-builder --win --arm64 -c electron-builder.msstore.yml",
+    "build:msstore": "npm run build:msstore:x64 && npm run build:msstore:arm64",
+    "sign:gpg": "dotenv -e .env -- node build-scripts/gpg-sign.js",
+    "sign:gpg:x64": "dotenv -e .env -- node build-scripts/gpg-sign.js --arch x64",
+    "sign:gpg:arm64": "dotenv -e .env -- node build-scripts/gpg-sign.js --arch arm64",
+    "release:prepare": "node build-scripts/dist-tools.js clean-release && node build-scripts/update-metainfo.js",
+    "release:finalize": "node build-scripts/post-release-assets.js",
+    "release:win": "npm run release:prepare && npm run prebuild:win && dotenv -e .env -- cross-env CHANNEL=github electron-builder -c electron-builder.github.yml --win --arm64 --x64 --publish always && npm run sign:gpg && npm run release:finalize",
+    "release:win:x64": "npm run release:prepare && npm run prebuild:win && dotenv -e .env -- cross-env CHANNEL=github electron-builder -c electron-builder.github.yml --win --x64 --publish always && npm run sign:gpg && npm run release:finalize",
+    "release:win:arm64": "npm run release:prepare && npm run prebuild:win && dotenv -e .env -- cross-env CHANNEL=github electron-builder -c electron-builder.github.yml --win --arm64 --publish always && npm run sign:gpg && npm run release:finalize",
+    "release:mac": "npm run release:prepare && npm run prebuild:mac:universal && dotenv -e .env -- cross-env CHANNEL=github electron-builder -c electron-builder.github.yml --mac --universal --publish always && npm run sign:gpg && npm run release:finalize",
+    "release:mac:ssh": "npm run mac:ssh:keychain && npm run release:mac",
+    "release:linux": "npm run release:prepare && npm run prebuild:linux && dotenv -e .env -- cross-env CHANNEL=github electron-builder -c electron-builder.github.yml --linux AppImage deb rpm --x64 --arm64 --publish always && npm run sign:gpg && npm run release:finalize",
+    "release:linux:x64": "npm run release:prepare && npm run prebuild:linux && dotenv -e .env -- cross-env CHANNEL=github electron-builder -c electron-builder.github.yml --linux AppImage deb rpm --x64 --publish always && npm run sign:gpg:x64 && npm run release:finalize",
+    "release:linux:arm64": "npm run release:prepare && npm run prebuild:linux && dotenv -e .env -- cross-env CHANNEL=github electron-builder -c electron-builder.github.yml --linux AppImage deb rpm --arm64 --publish always && npm run sign:gpg:arm64 && npm run release:finalize",
+    "release:all": "npm run release:mac && npm run release:win && npm run release:linux",
+    "flatpak:setup": "sudo env \"PATH=$PATH\" node build-scripts/setup-flatpak.js",
+    "flatpak:build": "node build-scripts/flatpak.js build",
+    "flatpak:build:x64": "node build-scripts/flatpak.js build --x64",
+    "flatpak:build:arm64": "node build-scripts/flatpak.js build --arm64",
+    "flatpak:run": "flatpak run run.rosie.zephus",
+    "flatpak:bundle": "node build-scripts/flatpak.js bundle",
+    "flatpak:bundle:x64": "node build-scripts/flatpak.js bundle --x64",
+    "flatpak:bundle:arm64": "node build-scripts/flatpak.js bundle --arm64",
+    "flatpak:clean": "node build-scripts/flatpak.js clean",
+    "setup:deb": "sudo apt update && sudo apt install -y build-essential libgtk-3-dev libnotify-dev libnss3-dev libxss-dev libxtst-dev libatspi2.0-dev uuid-dev libsecret-1-dev libx11-dev rpm flatpak flatpak-builder && sudo flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo"
+  },
+  "overrides": {
+    "tar": "^7.5.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BurntToasters/zephus.git"
+  },
+  "author": "BurntToasters <code@rosie.run>",
+  "license": "GPL-3.0",
+  "bugs": {
+    "url": "https://github.com/BurntToasters/zephus/issues"
+  },
+  "homepage": "https://github.com/BurntToasters/zephus#readme",
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^25.3.0",
+    "@vitest/coverage-v8": "^4.0.18",
+    "cross-env": "^10.1.0",
+    "dotenv-cli": "^11.0.0",
+    "electron": "^42.0.0",
+    "electron-builder": "^26.7.0",
+    "eslint": "^10.3.0",
+    "husky": "^9.1.7",
+    "js-yaml": "^4.1.0",
+    "jsdom": "^29.1.1",
+    "lint-staged": "^17.0.2",
+    "prettier": "^3.8.1",
+    "typescript": "^6.0.2",
+    "typescript-eslint": "^8.59.2",
+    "vitest": "^4.0.16"
+  },
+  "dependencies": {
+    "electron-log": "^5.3.4",
+    "electron-updater": "^6.3.9",
+    "sanitize-filename": "^1.6.3"
+  },
+  "lint-staged": {
+    "src/**/*.ts": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "build-scripts/**/*.js": [
+      "prettier --write"
+    ],
+    ".github/workflows/*.{yml,yaml}": [
+      "prettier --write"
+    ],
+    "*.{json,md,yml,yaml}": [
+      "prettier --write"
+    ]
+  }
+}
