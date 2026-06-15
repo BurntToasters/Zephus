@@ -351,71 +351,75 @@ async function getOrCreateRelease() {
       console.log('   Could not fetch release by tag: ' + error.message);
       console.log('   Searching draft releases...');
     }
+  }
 
-    try {
-      const releases = await githubRequestWithRetry(
-        'GET',
-        '/repos/' + REPO_OWNER + '/' + REPO_NAME + '/releases?per_page=100'
-      );
+  // Helper: list all releases and return the best matching draft for TAG_NAME.
+  // When multiple drafts with the same tag exist (parallel builds created
+  // duplicates), prefer the one with the most assets so uploads converge onto
+  // the same release.
+  async function findExistingDraft() {
+    const releases = await githubRequestWithRetry(
+      'GET',
+      '/repos/' + REPO_OWNER + '/' + REPO_NAME + '/releases?per_page=100'
+    );
 
-      if (!Array.isArray(releases)) {
-        console.log('   Release list payload was not an array; creating a new draft release.');
-      } else {
-        const matchingReleases = releases.filter(function (r) {
-          return r.tag_name === TAG_NAME;
-        });
+    if (!Array.isArray(releases)) return null;
 
-        if (matchingReleases.length > 0) {
-          matchingReleases.sort(function (a, b) {
-            return b.assets.length - a.assets.length;
-          });
-          const release = matchingReleases[0];
-          console.log(
-            '   Found draft release: ' + release.name + ' (' + release.assets.length + ' assets)'
-          );
-          return release;
-        }
+    const matching = releases.filter((r) => r.tag_name === TAG_NAME);
+    if (matching.length === 0) return null;
+
+    matching.sort((a, b) => b.assets.length - a.assets.length);
+    const release = matching[0];
+    console.log(
+      '   Found draft release: ' +
+        release.name +
+        ' (id=' + release.id + ', ' + release.assets.length + ' assets)'
+    );
+    return release;
+  }
+
+  // Check for an existing draft before trying to create.
+  try {
+    const existing = await findExistingDraft();
+    if (existing) return existing;
+  } catch (listError) {
+    console.log('   Could not list releases: ' + listError.message);
+  }
+
+  // No existing draft found — try to create one. A 422 here means another
+  // concurrent build beat us to it; wait and re-fetch rather than creating
+  // a second duplicate.
+  console.log('   Creating draft release for ' + TAG_NAME + '...');
+  try {
+    const release = await githubRequestWithRetry(
+      'POST',
+      '/repos/' + REPO_OWNER + '/' + REPO_NAME + '/releases',
+      {
+        tag_name: TAG_NAME,
+        name: 'Zephus ' + VERSION,
+        draft: true,
+        prerelease: isGithubPrereleaseVersion(VERSION),
       }
-    } catch (listError) {
-      console.log('   Could not list releases: ' + listError.message);
+    );
+    console.log('   ✓ Created draft release: ' + release.name + ' (id=' + release.id + ')');
+    return release;
+  } catch (createError) {
+    if (createError.statusCode === 422) {
+      // Another process created the release between our list check and our
+      // POST.  Back off and resolve to whichever draft won.
+      console.log('   Draft already exists (race). Waiting before re-fetching...');
+      await sleep(3000);
+
+      try {
+        const existing = await findExistingDraft();
+        if (existing) return existing;
+      } catch (retryListError) {
+        console.log('   Re-fetch failed: ' + retryListError.message);
+      }
     }
 
-    console.log('   Creating draft release for ' + TAG_NAME + '...');
-    try {
-      const release = await githubRequestWithRetry(
-        'POST',
-        '/repos/' + REPO_OWNER + '/' + REPO_NAME + '/releases',
-        {
-          tag_name: TAG_NAME,
-          name: 'Zephus ' + VERSION,
-          draft: true,
-          prerelease: isGithubPrereleaseVersion(VERSION),
-        }
-      );
-      console.log('   ✓ Created draft release: ' + release.name);
-      return release;
-    } catch (createError) {
-      if (createError.statusCode === 422) {
-        console.log('   Draft may already exist. Retrying release list...');
-        await sleep(2000);
-
-        const releases = await githubRequestWithRetry(
-          'GET',
-          '/repos/' + REPO_OWNER + '/' + REPO_NAME + '/releases?per_page=100'
-        );
-
-        if (Array.isArray(releases)) {
-          const release = releases.find((r) => r.tag_name === TAG_NAME);
-          if (release) {
-            console.log('   Found release after retry: ' + (release.name || TAG_NAME));
-            return release;
-          }
-        }
-      }
-
-      console.error('   ✗ FAILED: Could not create release:', createError.message);
-      throw createError;
-    }
+    console.error('   ✗ FAILED: Could not create release:', createError.message);
+    throw createError;
   }
 }
 

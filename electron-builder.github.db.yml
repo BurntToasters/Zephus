@@ -1,0 +1,8 @@
+extends: ./electron-builder.github.yml
+
+publish:
+  provider: github
+  owner: BurntToasters
+  repo: zephus
+  releaseType: draft
+  channel: db
