@@ -50,7 +50,7 @@ export interface GlobalSettings {
   theme: "light" | "dark" | "system";
   lastOpenedProject: string | null;
   autoCheckUpdates: boolean;
-  updateChannel: "stable" | "beta" | "auto";
+  updateChannel: "stable" | "beta" | "developer" | "auto";
   restoreLastProject: boolean;
   confirmBlockDelete: boolean;
   autosave: boolean;
