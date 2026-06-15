@@ -25,7 +25,7 @@
     "prepare": "node build-scripts/install-hooks.js",
     "hooks:install": "node build-scripts/install-hooks.js",
     "clean": "node build-scripts/dist-tools.js clean && node build-scripts/dist-tools.js clean-release",
-    "licenses": "npx npm-license-crawler --production --dependencies --exclude .site_examples --exclude template-previews --json licenses.json",
+    "licenses": "node build-scripts/crawl-licenses.js",
     "compile:main": "tsc --project tsconfig.main.json && node build-scripts/bundle-preload.js",
     "generate:theme-previews": "node build-scripts/generate-theme-previews.js",
     "compile:renderer": "node build-scripts/bundle-renderer.js",
