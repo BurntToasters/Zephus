@@ -6,6 +6,7 @@ export interface ThemeMeta {
   id: string;
   name: string;
   description: string;
+  previewPath: string;
 }
 
 export interface Theme extends ThemeMeta {
@@ -15,7 +16,7 @@ export interface Theme extends ThemeMeta {
   baseLayout: string;
 }
 
-const ASTRO_VERSION = "^5.0.0";
+export const ASTRO_VERSION = "^5.0.0";
 
 function packageJson(siteName: string): string {
   const pkg = {
@@ -40,6 +41,18 @@ const ASTRO_CONFIG = `import { defineConfig } from 'astro/config';
 // https://astro.build/config
 export default defineConfig({});
 `;
+
+function previewAstroConfig(themeId: string): string {
+  const base = themePreviewPath(themeId).replace(/\/$/, "");
+  return `import { defineConfig } from 'astro/config';
+
+// Static preview build for Zephus bundled template previews.
+export default defineConfig({
+  output: 'static',
+  base: '${base}',
+});
+`;
+}
 
 /* ---------- Shared layout + page fragments ---------- */
 
@@ -77,6 +90,20 @@ ${inner}
 `;
 }
 
+export function themePreviewPath(themeId: string): string {
+  return `/theme/${themeId}/`;
+}
+
+export function rewritePreviewAbsoluteUrls(
+  content: string,
+  themeId: string,
+): string {
+  return content.replace(
+    /((?:href|src)=["'])\/(?!\/)/g,
+    `$1${themePreviewPath(themeId)}`,
+  );
+}
+
 /* ---------- Themes ---------- */
 
 function minimalTheme(): Record<string, string> {
@@ -90,7 +117,7 @@ function minimalTheme(): Record<string, string> {
       "Home",
       `  <h1>Welcome</h1>\n  <p>Your new Zephus site. Start editing.</p>`,
     ),
-    "src/styles/global.css": `:root { color-scheme: light dark; }
+    "public/styles/global.css": `:root { color-scheme: light dark; }
 body { font-family: system-ui, sans-serif; margin: 0; line-height: 1.6; }
 main { max-width: 720px; margin: 0 auto; padding: 2rem; }
 `,
@@ -135,7 +162,7 @@ function projectTheme(): Record<string, string> {
       "Contact",
       `  <h1>Contact</h1>\n  <p>How to reach you.</p>`,
     ),
-    "src/styles/global.css": `:root { --accent: #3b82f6; --fg: #1f2937; --bg: #ffffff; }
+    "public/styles/global.css": `:root { --accent: #3b82f6; --fg: #1f2937; --bg: #ffffff; }
 * { box-sizing: border-box; }
 body { font-family: system-ui, sans-serif; margin: 0; color: var(--fg); background: var(--bg); }
 .site-header { display: flex; align-items: center; justify-content: space-between; padding: 1rem 2rem; border-bottom: 1px solid #e5e7eb; }
@@ -177,7 +204,7 @@ function docsTheme(): Record<string, string> {
       "Getting Started",
       `  <h1>Getting Started</h1>\n  <p>Step-by-step instructions go here.</p>`,
     ),
-    "src/styles/global.css": `body { font-family: system-ui, sans-serif; margin: 0; color: #1f2937; }
+    "public/styles/global.css": `body { font-family: system-ui, sans-serif; margin: 0; color: #1f2937; }
 .docs { display: flex; min-height: 100vh; }
 .sidebar { width: 240px; background: #f9fafb; border-right: 1px solid #e5e7eb; padding: 1.5rem; }
 .sidebar nav { display: flex; flex-direction: column; gap: 0.5rem; }
@@ -212,7 +239,7 @@ function blogTheme(): Record<string, string> {
     <p>Your first blog post.</p>
   </article>`,
     ),
-    "src/styles/global.css": `body { font-family: Georgia, serif; margin: 0; color: #1f2937; }
+    "public/styles/global.css": `body { font-family: Georgia, serif; margin: 0; color: #1f2937; }
 .blog-header { padding: 1.5rem 2rem; border-bottom: 1px solid #e5e7eb; }
 .blog-header a { font-size: 1.5rem; font-weight: 700; text-decoration: none; color: inherit; }
 .blog-main { max-width: 720px; margin: 0 auto; padding: 2.5rem 2rem; }
@@ -249,7 +276,7 @@ function portfolioTheme(): Record<string, string> {
       "About",
       `  <h1>About</h1>\n  <p>A short bio about you and your work.</p>`,
     ),
-    "src/styles/global.css": `body { font-family: system-ui, sans-serif; margin: 0; color: #111827; }
+    "public/styles/global.css": `body { font-family: system-ui, sans-serif; margin: 0; color: #111827; }
 .pf-header { display: flex; justify-content: space-between; align-items: center; padding: 1.5rem 2rem; }
 .pf-header nav a { margin-left: 1rem; text-decoration: none; color: #374151; }
 .pf-name { font-weight: 700; text-decoration: none; color: #111827; }
@@ -273,18 +300,31 @@ export const THEME_META: ThemeMeta[] = [
     id: "documentation",
     name: "Documentation",
     description: "Sidebar navigation and content pages.",
+    previewPath: themePreviewPath("documentation"),
   },
   {
     id: "project",
     name: "Project",
     description: "General marketing / landing site.",
+    previewPath: themePreviewPath("project"),
   },
-  { id: "blog", name: "Blog", description: "Post list and article pages." },
-  { id: "portfolio", name: "Portfolio", description: "Project showcase grid." },
+  {
+    id: "blog",
+    name: "Blog",
+    description: "Post list and article pages.",
+    previewPath: themePreviewPath("blog"),
+  },
+  {
+    id: "portfolio",
+    name: "Portfolio",
+    description: "Project showcase grid.",
+    previewPath: themePreviewPath("portfolio"),
+  },
   {
     id: "minimal",
     name: "Minimal",
     description: "Blank Astro starter with a single page.",
+    previewPath: themePreviewPath("minimal"),
   },
 ];
 
@@ -303,4 +343,22 @@ export function buildTheme(themeId: string, siteName: string): Theme | null {
     ...builder(),
   };
   return { ...meta, files, baseLayout: "src/layouts/BaseLayout.astro" };
+}
+
+export function buildPreviewTheme(
+  themeId: string,
+  siteName: string,
+): Theme | null {
+  const theme = buildTheme(themeId, siteName);
+  if (!theme) return null;
+  const files = Object.fromEntries(
+    Object.entries(theme.files).map(([rel, content]) => [
+      rel,
+      rel.endsWith(".astro")
+        ? rewritePreviewAbsoluteUrls(content, themeId)
+        : content,
+    ]),
+  );
+  files["astro.config.mjs"] = previewAstroConfig(themeId);
+  return { ...theme, files };
 }

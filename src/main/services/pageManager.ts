@@ -1,0 +1,246 @@
+import * as fs from "fs";
+import * as path from "path";
+import { OperationResult, PageListResult, PageMeta } from "../types";
+import {
+  createSchemaPage,
+  deletePageSchema,
+  duplicatePageSchema,
+  ensureVisualSchema,
+  listPageDocuments,
+  normalizePageSlug,
+  pagePathFromSlug,
+  readPageDocument,
+  renamePageSchema,
+  routeFromPage,
+  writePageDocument,
+} from "./schema";
+
+function safeResolve(projectPath: string, relativePath: string): string {
+  const resolved = path.resolve(projectPath, relativePath);
+  const root = path.resolve(projectPath);
+  if (resolved !== root && !resolved.startsWith(root + path.sep)) {
+    throw new Error("Path escapes the project directory.");
+  }
+  return resolved;
+}
+
+export { normalizePageSlug, routeFromPage };
+
+export function readPageMetadata(
+  projectPath: string,
+  page: string,
+  pagesDir: string,
+): PageMeta {
+  const result = readPageDocument(projectPath, page, pagesDir);
+  if (result.ok && result.pageDocument) {
+    const doc = result.pageDocument;
+    return {
+      page: doc.page,
+      route: doc.route,
+      slug: doc.slug,
+      title: doc.title,
+      navLabel: doc.navLabel,
+      metaDescription: doc.metaDescription,
+      navVisible: doc.navVisible,
+      isHome: doc.isHome,
+    };
+  }
+  const slug = normalizePageSlug(page.replace(/^.*?src[\\/]+pages[\\/]+/, "")) ?? "index";
+  const route = slug === "index" ? "/" : `/${slug}`;
+  const title = slug === "index"
+    ? "Home"
+    : slug
+        .split("/")
+        .pop()
+        ?.replace(/[-_]/g, " ")
+        .replace(/\b\w/g, (char) => char.toUpperCase()) ?? "Page";
+  return {
+    page,
+    route,
+    slug,
+    title,
+    navLabel: title,
+    metaDescription: "",
+    navVisible: true,
+    isHome: route === "/",
+  };
+}
+
+export function listPageMetadata(
+  projectPath: string,
+  pagesDir: string,
+): PageListResult {
+  const ensured = ensureVisualSchema(projectPath, pagesDir);
+  if (!ensured.ok) {
+    return { ok: false, entries: [], error: ensured.error };
+  }
+  const listed = listPageDocuments(projectPath, pagesDir);
+  if (!listed.ok) {
+    return { ok: false, entries: [], error: listed.error };
+  }
+  return {
+    ok: true,
+    entries: listed.entries.map((doc) => ({
+      page: doc.page,
+      route: doc.route,
+      slug: doc.slug,
+      title: doc.title,
+      navLabel: doc.navLabel,
+      metaDescription: doc.metaDescription,
+      navVisible: doc.navVisible,
+      isHome: doc.isHome,
+    })),
+  };
+}
+
+export function writePageMetadata(
+  projectPath: string,
+  page: string,
+  pagesDir: string,
+  partial: Partial<PageMeta>,
+): OperationResult {
+  const current = readPageDocument(projectPath, page, pagesDir);
+  if (!current.ok || !current.pageDocument) {
+    return { ok: false, error: current.error ?? "Page schema not found." };
+  }
+  const next = {
+    ...current.pageDocument,
+    title: partial.title ?? current.pageDocument.title,
+    navLabel: partial.navLabel ?? current.pageDocument.navLabel,
+    metaDescription:
+      partial.metaDescription ?? current.pageDocument.metaDescription,
+    navVisible: partial.navVisible ?? current.pageDocument.navVisible,
+  };
+  const saved = writePageDocument(projectPath, pagesDir, next);
+  return saved.ok ? { ok: true } : { ok: false, error: saved.error };
+}
+
+export function createManagedPage(
+  projectPath: string,
+  slugInput: string,
+  pagesDir: string,
+): OperationResult {
+  const slug = normalizePageSlug(slugInput);
+  if (!slug) return { ok: false, error: "Invalid page slug." };
+  const rel = pagePathFromSlug(pagesDir, slug);
+  const full = path.join(projectPath, rel);
+  if (fs.existsSync(full)) {
+    return { ok: false, error: `A page at ${slug} already exists.` };
+  }
+  const created = createSchemaPage(projectPath, pagesDir, slug);
+  return created.ok ? { ok: true } : { ok: false, error: created.error };
+}
+
+function uniqueSlug(
+  projectPath: string,
+  pagesDir: string,
+  slug: string,
+  ext: string,
+): string {
+  let candidate = slug;
+  let index = 1;
+  while (
+    fs.existsSync(path.join(projectPath, pagePathFromSlug(pagesDir, candidate, ext)))
+  ) {
+    candidate = `${slug}-copy-${index}`;
+    index += 1;
+  }
+  return candidate;
+}
+
+export function renamePage(
+  projectPath: string,
+  page: string,
+  pagesDir: string,
+  nextSlugInput: string,
+): OperationResult {
+  const nextSlug = normalizePageSlug(nextSlugInput);
+  if (!nextSlug) return { ok: false, error: "Invalid page slug." };
+  const ext = path.extname(page) || ".astro";
+  const from = safeResolve(projectPath, page);
+  const nextRel = pagePathFromSlug(pagesDir, nextSlug, ext);
+  const to = safeResolve(projectPath, nextRel);
+  if (from === to) return { ok: true };
+  if (fs.existsSync(to)) {
+    return { ok: false, error: `A page at ${nextSlug} already exists.` };
+  }
+  try {
+    const current = readPageDocument(projectPath, page, pagesDir);
+    fs.mkdirSync(path.dirname(to), { recursive: true });
+    fs.renameSync(from, to);
+    const moved = renamePageSchema(projectPath, pagesDir, page, nextSlug);
+    if (!moved.ok) return moved;
+    if (current.ok && current.pageDocument) {
+      const saved = writePageDocument(projectPath, pagesDir, {
+        ...current.pageDocument,
+        page: nextRel,
+        slug: nextSlug,
+        route: nextSlug === "index" ? "/" : `/${nextSlug}`,
+        isHome: nextSlug === "index",
+      });
+      if (!saved.ok) return { ok: false, error: saved.error };
+    }
+    return { ok: true };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+export function duplicatePage(
+  projectPath: string,
+  page: string,
+  pagesDir: string,
+  slugInput?: string,
+): OperationResult {
+  try {
+    const from = safeResolve(projectPath, page);
+    const ext = path.extname(page) || ".astro";
+    const baseSlug = normalizePageSlug(
+      slugInput ?? `${path.basename(page, ext)}-copy`,
+    );
+    if (!baseSlug) return { ok: false, error: "Invalid duplicate slug." };
+    const nextSlug = uniqueSlug(projectPath, pagesDir, baseSlug, ext);
+    const nextRel = pagePathFromSlug(pagesDir, nextSlug, ext);
+    const to = safeResolve(projectPath, nextRel);
+    fs.mkdirSync(path.dirname(to), { recursive: true });
+    fs.copyFileSync(from, to);
+    const copied = duplicatePageSchema(projectPath, pagesDir, page, nextSlug);
+    if (!copied.ok) return copied;
+    const next = readPageDocument(projectPath, nextRel, pagesDir);
+    if (next.ok && next.pageDocument) {
+      const saved = writePageDocument(projectPath, pagesDir, next.pageDocument);
+      if (!saved.ok) return { ok: false, error: saved.error };
+    }
+    return { ok: true };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+export function deletePage(
+  projectPath: string,
+  page: string,
+  pagesDir = path.join("src", "pages"),
+): OperationResult {
+  try {
+    const full = safeResolve(projectPath, page);
+    if (!fs.existsSync(full)) {
+      return { ok: false, error: "Page does not exist." };
+    }
+    fs.rmSync(full, { force: true });
+    const deleted = deletePageSchema(projectPath, page, pagesDir);
+    if (!deleted.ok) return deleted;
+    return { ok: true };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}

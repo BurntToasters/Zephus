@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-src http://localhost:* http://127.0.0.1:*;"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-src 'self' http://localhost:* http://127.0.0.1:*;"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Zephus</title>
@@ -17,16 +17,42 @@
         <div class="start-header">
           <h1 class="brand">Zephus</h1>
           <button id="btn-settings" class="btn ghost gear-btn" title="Settings">
-            ⚙
+            <i data-lucide="settings"></i>
           </button>
         </div>
-        <p class="muted">
-          Create a new site from a theme, or reopen a site Zephus made.
-        </p>
-        <button id="btn-create" class="btn primary">Create New Site…</button>
-        <button id="btn-open" class="btn">Open Existing Zephus Site…</button>
-        <h2 class="recent-title">Recent Projects</h2>
-        <ul id="recent-list" class="recent-list"></ul>
+
+        <div class="hub-tabs">
+          <button id="tab-recent" class="hub-tab active">
+            <i data-lucide="clock"></i> Recent
+          </button>
+          <button id="tab-create" class="hub-tab">
+            <i data-lucide="compass"></i> Get Started
+          </button>
+        </div>
+
+        <!-- Recent projects panel -->
+        <div id="pane-recent" class="hub-pane">
+          <h2 class="recent-title">Recent Projects</h2>
+          <ul id="recent-list" class="recent-list"></ul>
+          <div class="pane-actions">
+            <button id="btn-open" class="btn primary">
+              <i data-lucide="folder-open"></i> Open Existing Zephus Site…
+            </button>
+          </div>
+        </div>
+
+        <!-- Create new project panel -->
+        <div id="pane-create" class="hub-pane hidden">
+          <h2 class="recent-title">Select Template Theme</h2>
+          <div id="theme-list-container" class="theme-grid">
+            <!-- Populated dynamically by zephusEngine.ts -->
+          </div>
+          <div class="pane-actions">
+            <button id="btn-create" class="btn primary disabled" disabled>
+              <i data-lucide="plus"></i> Choose Folder & Create Site
+            </button>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -40,28 +66,48 @@
         </div>
         <div class="topbar-center">
           <div class="mode-toggle">
-            <button id="mode-visual" class="mode-btn active">Visual</button>
-            <button id="mode-code" class="mode-btn">Code</button>
+            <button id="mode-visual" class="mode-btn active">
+              <i data-lucide="eye"></i> Visual
+            </button>
+            <button id="mode-code" class="mode-btn">
+              <i data-lucide="code-xml"></i> Code
+            </button>
           </div>
           <div class="vp-toggle">
             <button id="vp-desktop" class="vp-btn active" title="Desktop">
-              🖥
+              <i data-lucide="monitor"></i>
             </button>
-            <button id="vp-tablet" class="vp-btn" title="Tablet">▭</button>
-            <button id="vp-mobile" class="vp-btn" title="Mobile">▯</button>
+            <button id="vp-tablet" class="vp-btn" title="Tablet">
+              <i data-lucide="tablet"></i>
+            </button>
+            <button id="vp-mobile" class="vp-btn" title="Mobile">
+              <i data-lucide="smartphone"></i>
+            </button>
           </div>
         </div>
         <div class="topbar-right">
-          <button id="btn-undo" class="btn" title="Undo (Ctrl/Cmd+Z)">
-            Undo
+          <button id="btn-undo" class="btn ghost" title="Undo (Ctrl/Cmd+Z)">
+            <i data-lucide="undo-2"></i> Undo
           </button>
-          <button id="btn-redo" class="btn" title="Redo (Ctrl/Cmd+Shift+Z)">
-            Redo
+          <button
+            id="btn-redo"
+            class="btn ghost"
+            title="Redo (Ctrl/Cmd+Shift+Z)"
+          >
+            <i data-lucide="redo-2"></i> Redo
           </button>
-          <button id="btn-preview" class="btn">Start Preview</button>
-          <button id="btn-publish" class="btn">Publish</button>
-          <button id="btn-save" class="btn">Save</button>
-          <button id="btn-close" class="btn ghost">Close</button>
+          <button id="btn-preview" class="btn">
+            <i data-lucide="play"></i> Start Preview
+          </button>
+          <button id="btn-publish" class="btn">
+            <i data-lucide="globe"></i> Publish
+          </button>
+          <button id="btn-save" class="btn primary">
+            <i data-lucide="save"></i> Save
+          </button>
+          <button id="btn-close" class="btn ghost" title="Close Project">
+            <i data-lucide="log-out"></i> Close
+          </button>
         </div>
       </header>
 
@@ -71,7 +117,7 @@
             <h3>
               Pages
               <button id="btn-new-page" class="mini-btn" title="New page">
-                +
+                <i data-lucide="plus"></i>
               </button>
             </h3>
             <ul id="page-list" class="list"></ul>
@@ -83,13 +129,15 @@
           <div class="panel-section">
             <h3>Navigation</h3>
             <ul id="nav-list" class="list"></ul>
-            <button
-              id="btn-regen-nav"
-              class="mini-btn"
-              title="Regenerate nav from pages"
-            >
-              ↻ Regen
-            </button>
+            <div style="margin-top: 8px">
+              <button
+                id="btn-regen-nav"
+                class="mini-btn"
+                title="Regenerate nav from pages"
+              >
+                <i data-lucide="refresh-cw"></i> Regen
+              </button>
+            </div>
           </div>
           <div class="panel-section">
             <h3>Sections</h3>
@@ -131,9 +179,9 @@
 
     <!-- Modal -->
     <div id="modal-overlay" class="modal-overlay hidden">
-      <div class="modal">
+      <div id="modal-shell" class="modal">
         <h2 id="modal-title"></h2>
-        <p id="modal-body"></p>
+        <div id="modal-body" class="modal-body"></div>
         <div id="modal-actions" class="modal-actions"></div>
       </div>
     </div>

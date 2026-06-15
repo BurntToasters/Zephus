@@ -1,12 +1,24 @@
 import { contextBridge, ipcRenderer } from "electron";
 import { IPC } from "./ipcChannels";
 import type {
+  AssetListResult,
+  DraftResult,
   GitStatus,
   GlobalSettings,
   OperationResult,
+  PageDocument,
+  PageDocumentResult,
+  PageListResult,
+  PageMeta,
   ProjectOpenResult,
+  ProductionLicensesResult,
+  ReusableSectionsResult,
   RepoSettings,
+  SchemaEnsureResult,
+  SiteDocument,
+  SiteDocumentResult,
   DevServerStartResult,
+  ThemePreviewServerResult,
 } from "./types";
 import type { ThemeMeta } from "./themes";
 
@@ -32,6 +44,115 @@ const api = {
     pagesDir: string,
   ): Promise<OperationResult> =>
     ipcRenderer.invoke(IPC.createPage, projectPath, pageName, pagesDir),
+
+  renamePage: (
+    projectPath: string,
+    page: string,
+    pagesDir: string,
+    nextSlug: string,
+  ): Promise<OperationResult> =>
+    ipcRenderer.invoke(
+      IPC.renamePage,
+      projectPath,
+      page,
+      pagesDir,
+      nextSlug,
+    ),
+
+  duplicatePage: (
+    projectPath: string,
+    page: string,
+    pagesDir: string,
+    slugInput?: string,
+  ): Promise<OperationResult> =>
+    ipcRenderer.invoke(
+      IPC.duplicatePage,
+      projectPath,
+      page,
+      pagesDir,
+      slugInput,
+    ),
+
+  deletePage: (projectPath: string, page: string): Promise<OperationResult> =>
+    ipcRenderer.invoke(IPC.deletePage, projectPath, page),
+
+  listPageMeta: (
+    projectPath: string,
+    pagesDir: string,
+  ): Promise<PageListResult> =>
+    ipcRenderer.invoke(IPC.listPageMeta, projectPath, pagesDir),
+
+  readPageMeta: (
+    projectPath: string,
+    page: string,
+    pagesDir: string,
+  ): Promise<PageMeta> =>
+    ipcRenderer.invoke(IPC.readPageMeta, projectPath, page, pagesDir),
+
+  writePageMeta: (
+    projectPath: string,
+    page: string,
+    pagesDir: string,
+    partial: Partial<PageMeta>,
+  ): Promise<OperationResult> =>
+    ipcRenderer.invoke(
+      IPC.writePageMeta,
+      projectPath,
+      page,
+      pagesDir,
+      partial,
+    ),
+
+  ensureVisualSchema: (
+    projectPath: string,
+    pagesDir: string,
+  ): Promise<SchemaEnsureResult> =>
+    ipcRenderer.invoke(IPC.schemaEnsure, projectPath, pagesDir),
+
+  readSiteDocument: (projectPath: string): Promise<SiteDocumentResult> =>
+    ipcRenderer.invoke(IPC.siteDocumentRead, projectPath),
+
+  writeSiteDocument: (
+    projectPath: string,
+    site: SiteDocument,
+    pagesDir: string,
+  ): Promise<OperationResult> =>
+    ipcRenderer.invoke(IPC.siteDocumentWrite, projectPath, site, pagesDir),
+
+  readPageDocument: (
+    projectPath: string,
+    page: string,
+    pagesDir: string,
+  ): Promise<PageDocumentResult> =>
+    ipcRenderer.invoke(IPC.pageDocumentRead, projectPath, page, pagesDir),
+
+  writePageDocument: (
+    projectPath: string,
+    pagesDir: string,
+    doc: PageDocument,
+  ): Promise<PageDocumentResult> =>
+    ipcRenderer.invoke(IPC.pageDocumentWrite, projectPath, pagesDir, doc),
+
+  detachPageDocument: (
+    projectPath: string,
+    page: string,
+    pagesDir: string,
+    source: string,
+  ): Promise<PageDocumentResult> =>
+    ipcRenderer.invoke(
+      IPC.pageDocumentDetach,
+      projectPath,
+      page,
+      pagesDir,
+      source,
+    ),
+
+  reattachPageDocument: (
+    projectPath: string,
+    page: string,
+    pagesDir: string,
+  ): Promise<PageDocumentResult> =>
+    ipcRenderer.invoke(IPC.pageDocumentReattach, projectPath, page, pagesDir),
 
   getGitStatus: (projectPath: string): Promise<GitStatus> =>
     ipcRenderer.invoke(IPC.gitStatus, projectPath),
@@ -59,6 +180,12 @@ const api = {
     theme: GlobalSettings["theme"];
   }> => ipcRenderer.invoke(IPC.settingsMerged, projectPath),
 
+  readProductionLicenses: (): Promise<ProductionLicensesResult> =>
+    ipcRenderer.invoke(IPC.licensesRead),
+
+  openProductionLicensesFile: (): Promise<OperationResult> =>
+    ipcRenderer.invoke(IPC.licensesOpenFile),
+
   readFile: (
     projectPath: string,
     rel: string,
@@ -82,6 +209,37 @@ const api = {
     error?: string;
   }> => ipcRenderer.invoke(IPC.importImage, projectPath, publicDir),
 
+  listAssets: (
+    projectPath: string,
+    publicDir: string,
+  ): Promise<AssetListResult> =>
+    ipcRenderer.invoke(IPC.listAssets, projectPath, publicDir),
+
+  listReusableSections: (): Promise<ReusableSectionsResult> =>
+    ipcRenderer.invoke(IPC.listReusableSections),
+
+  saveReusableSection: (
+    label: string,
+    html: string,
+  ): Promise<ReusableSectionsResult> =>
+    ipcRenderer.invoke(IPC.saveReusableSection, label, html),
+
+  deleteReusableSection: (id: string): Promise<OperationResult> =>
+    ipcRenderer.invoke(IPC.deleteReusableSection, id),
+
+  readDraft: (projectPath: string, page: string): Promise<DraftResult> =>
+    ipcRenderer.invoke(IPC.draftRead, projectPath, page),
+
+  writeDraft: (
+    projectPath: string,
+    page: string,
+    content: string,
+  ): Promise<OperationResult> =>
+    ipcRenderer.invoke(IPC.draftWrite, projectPath, page, content),
+
+  clearDraft: (projectPath: string, page: string): Promise<OperationResult> =>
+    ipcRenderer.invoke(IPC.draftClear, projectPath, page),
+
   watchFile: (projectPath: string, rel: string): Promise<OperationResult> =>
     ipcRenderer.invoke(IPC.watchStart, projectPath, rel),
 
@@ -101,6 +259,9 @@ const api = {
 
   stopPreview: (): Promise<OperationResult> =>
     ipcRenderer.invoke(IPC.previewStop),
+
+  ensureThemePreviewServer: (): Promise<ThemePreviewServerResult> =>
+    ipcRenderer.invoke(IPC.themePreviewEnsure),
 
   publish: (
     projectPath: string,

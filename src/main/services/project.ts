@@ -2,6 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 import log from "electron-log";
 import { AstroInfo, PackageValidation, ProjectOpenResult } from "../types";
+import { getVisualSchemaStatus } from "./schema";
 import { isZephusProject } from "./settings";
 
 const ASTRO_CONFIG_FILES = [
@@ -154,6 +155,14 @@ export function openProject(projectPath: string): ProjectOpenResult {
     const astro = detectAstro(projectPath);
     const pkg = validatePackage(projectPath);
     const pages = astro.isAstro ? listPages(projectPath, astro.pagesDir) : [];
+    const schema = astro.isAstro
+      ? getVisualSchemaStatus(projectPath, astro.pagesDir)
+      : {
+          exists: false,
+          integrity: "legacy" as const,
+          detachedPages: [],
+          pageDocumentCount: 0,
+        };
     return {
       ok: true,
       path: projectPath,
@@ -162,6 +171,7 @@ export function openProject(projectPath: string): ProjectOpenResult {
       isZephusProject: isZephusProject(projectPath),
       pkg,
       astro,
+      schema,
       pages,
     };
   } catch (error) {
@@ -197,6 +207,12 @@ function makeFailure(projectPath: string, message: string): ProjectOpenResult {
       outDir: "dist",
       configFile: null,
       configReadError: false,
+    },
+    schema: {
+      exists: false,
+      integrity: "legacy",
+      detachedPages: [],
+      pageDocumentCount: 0,
     },
     pages: [],
     error: message,

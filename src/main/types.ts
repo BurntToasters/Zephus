@@ -29,6 +29,7 @@ export interface ProjectOpenResult {
   isZephusProject: boolean;
   pkg: PackageValidation;
   astro: AstroInfo;
+  schema: VisualSchemaStatus;
   /** Editable page paths relative to the project root. */
   pages: string[];
   error?: string;
@@ -65,6 +66,294 @@ export interface DevServerStartResult {
   ok: boolean;
   url: string | null;
   alreadyRunning: boolean;
+  error?: string;
+}
+
+export interface ThemePreviewServerResult {
+  ok: boolean;
+  baseUrl: string | null;
+  error?: string;
+}
+
+export interface ProductionLicenseEntry {
+  packageId: string;
+  name: string;
+  version: string | null;
+  licenses: string;
+  repository: string | null;
+  licenseUrl: string | null;
+  parents: string[];
+}
+
+export interface ProductionLicensesResult {
+  ok: boolean;
+  entries: ProductionLicenseEntry[];
+  filePath: string | null;
+  error?: string;
+}
+
+export type ViewportKey = "desktop" | "tablet" | "mobile";
+
+export interface BlockStyle {
+  align?: "left" | "center" | "right";
+  maxWidth?: string;
+  background?: string;
+  color?: string;
+  padding?: string;
+  margin?: string;
+  radius?: string;
+  shadow?: "none" | "sm" | "md" | "lg";
+  columns?: string;
+  gap?: string;
+  stackOnMobile?: boolean;
+  hideOn?: ViewportKey[];
+  responsive?: Partial<
+    Record<
+      ViewportKey,
+      {
+        align?: "left" | "center" | "right";
+        maxWidth?: string;
+        padding?: string;
+        margin?: string;
+        columns?: string;
+        gap?: string;
+      }
+    >
+  >;
+}
+
+export type EditorBlockType =
+  | "heading"
+  | "text"
+  | "image"
+  | "button"
+  | "section"
+  | "html"
+  | "divider"
+  | "spacer"
+  | "columns"
+  | "card"
+  | "gallery"
+  | "quote"
+  | "list"
+  | "embed";
+
+export interface EditorBlock {
+  id: string;
+  type: EditorBlockType;
+  props: Record<string, string>;
+  style?: BlockStyle;
+  locked?: boolean;
+  raw?: string;
+}
+
+export type ManagedFileStatus =
+  | "managed"
+  | "detached"
+  | "out-of-sync"
+  | "missing";
+
+export interface AssetRef {
+  id: string;
+  src: string;
+  alt: string;
+}
+
+export interface LinkRef {
+  kind: "page" | "custom" | "mailto" | "anchor";
+  href: string;
+  page?: string;
+}
+
+export interface FormFieldDefinition {
+  id: string;
+  label: string;
+  type: "text" | "email" | "textarea" | "tel";
+  placeholder: string;
+  required: boolean;
+}
+
+export interface FormDefinition {
+  id: string;
+  name: string;
+  submitLabel: string;
+  successMessage: string;
+  action: string;
+  method: "POST" | "GET";
+  fields: FormFieldDefinition[];
+}
+
+export interface BlockNode extends EditorBlock {
+  children?: BlockNode[];
+  hidden?: boolean;
+  asset?: AssetRef;
+  link?: LinkRef;
+  form?: FormDefinition;
+}
+
+export interface ContainerNode {
+  id: string;
+  type: "container";
+  label: string;
+  style?: BlockStyle;
+  locked?: boolean;
+  hidden?: boolean;
+  children: BlockNode[];
+}
+
+export interface SectionNode {
+  id: string;
+  type: "section";
+  label: string;
+  props: Record<string, string>;
+  style?: BlockStyle;
+  locked?: boolean;
+  hidden?: boolean;
+  children: BlockNode[];
+}
+
+export interface DesignTokenSet {
+  accent: string;
+  background: string;
+  foreground: string;
+  surface: string;
+  fontFamily: string;
+  headingFontFamily: string;
+  radius: string;
+  shadow: "none" | "sm" | "md" | "lg";
+  containerWidth: string;
+}
+
+export interface NavItem {
+  id: string;
+  label: string;
+  href: string;
+  page?: string;
+  visible: boolean;
+  children: NavItem[];
+}
+
+export interface ShellConfig {
+  layoutMode: "legacy" | "managed";
+  layoutPath: string;
+  siteTitle: string;
+  logoText: string;
+  announcementText: string;
+  announcementVisible: boolean;
+  navItems: NavItem[];
+  navCtaLabel: string;
+  navCtaHref: string;
+  footerHtml: string;
+  customHeadHtml: string;
+  customScriptsPath: string;
+  customCssPath: string;
+}
+
+export interface TemplateDefinition {
+  id: string;
+  name: string;
+  description: string;
+  sections: SectionNode[];
+}
+
+export interface PageMeta {
+  page: string;
+  route: string;
+  slug: string;
+  title: string;
+  navLabel: string;
+  metaDescription: string;
+  navVisible: boolean;
+  isHome: boolean;
+}
+
+export interface PageDocument extends PageMeta {
+  schemaVersion: number;
+  templateId: string | null;
+  sections: SectionNode[];
+  detached: boolean;
+  detachedAt: string | null;
+  generatedHash: string | null;
+  managedFileStatus: ManagedFileStatus;
+}
+
+export interface SiteDocument {
+  schemaVersion: number;
+  themeId: string;
+  siteName: string;
+  generatedAt: string;
+  design: DesignTokenSet;
+  shell: ShellConfig;
+  templates: TemplateDefinition[];
+}
+
+export interface VisualSchemaStatus {
+  exists: boolean;
+  integrity: "ready" | "legacy" | "invalid";
+  detachedPages: string[];
+  pageDocumentCount: number;
+}
+
+export interface PageListResult {
+  ok: boolean;
+  entries: PageMeta[];
+  error?: string;
+}
+
+export interface AssetEntry {
+  webPath: string;
+  fileName: string;
+  size: number;
+}
+
+export interface AssetListResult {
+  ok: boolean;
+  assets: AssetEntry[];
+  error?: string;
+}
+
+export interface ReusableSection {
+  id: string;
+  label: string;
+  html: string;
+  updatedAt: string;
+}
+
+export interface ReusableSectionsResult {
+  ok: boolean;
+  sections: ReusableSection[];
+  error?: string;
+}
+
+export interface DraftData {
+  page: string;
+  content: string;
+  savedAt: string;
+}
+
+export interface DraftResult {
+  ok: boolean;
+  draft: DraftData | null;
+  error?: string;
+}
+
+export interface SiteDocumentResult {
+  ok: boolean;
+  site: SiteDocument | null;
+  error?: string;
+}
+
+export interface PageDocumentResult {
+  ok: boolean;
+  site: SiteDocument | null;
+  pageDocument: PageDocument | null;
+  source: string | null;
+  error?: string;
+}
+
+export interface SchemaEnsureResult {
+  ok: boolean;
+  status: VisualSchemaStatus | null;
   error?: string;
 }
 

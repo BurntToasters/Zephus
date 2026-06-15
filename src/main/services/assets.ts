@@ -2,6 +2,7 @@ import { BrowserWindow, dialog } from "electron";
 import * as fs from "fs";
 import * as path from "path";
 import log from "electron-log";
+import { AssetEntry, AssetListResult } from "../types";
 
 export interface ImportImageResult {
   ok: boolean;
@@ -54,6 +55,54 @@ export async function importImage(
     log.error("Image import failed", error);
     return {
       ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+export function listProjectImages(
+  projectPath: string,
+  publicDir: string,
+): AssetListResult {
+  const imagesDir = path.join(projectPath, publicDir, "images");
+  const assets: AssetEntry[] = [];
+
+  function walk(dir: string, prefix = ""): void {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const rel = prefix ? path.join(prefix, entry.name) : entry.name;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full, rel);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      const ext = path.extname(entry.name).slice(1).toLowerCase();
+      if (!IMAGE_EXTENSIONS.includes(ext)) continue;
+      const stat = fs.statSync(full);
+      assets.push({
+        fileName: rel.split(path.sep).join("/"),
+        size: stat.size,
+        webPath: `/images/${rel.split(path.sep).join("/")}`,
+      });
+    }
+  }
+
+  try {
+    if (!fs.existsSync(imagesDir)) return { ok: true, assets: [] };
+    walk(imagesDir);
+    assets.sort((a, b) => a.fileName.localeCompare(b.fileName));
+    return { ok: true, assets };
+  } catch (error) {
+    log.error("Failed to list project images", error);
+    return {
+      ok: false,
+      assets: [],
       error: error instanceof Error ? error.message : String(error),
     };
   }

@@ -3,6 +3,7 @@ import * as path from "path";
 import log from "electron-log";
 import { registerIpcHandlers } from "./ipc";
 import { stopDevServer } from "./services/devServer";
+import { stopThemePreviewServer } from "./services/themePreviewServer";
 import { readGlobalSettings } from "./services/settings";
 import { setupAutoUpdater, checkForUpdates } from "./updater";
 
@@ -11,8 +12,15 @@ const isDev =
 const isSmoke =
   process.argv.includes("--smoke") || process.env.ZEPHUS_SMOKE === "1";
 
-log.initialize();
-log.transports.file.level = "info";
+try {
+  const init = (log as unknown as { initialize?: () => void }).initialize;
+  if (typeof init === "function") init.call(log);
+} catch {
+  // electron-log initialization should never block app startup.
+}
+if (log.transports?.file) {
+  log.transports.file.level = "info";
+}
 
 let mainWindow: BrowserWindow | null = null;
 let splashWindow: BrowserWindow | null = null;
@@ -101,9 +109,11 @@ app.whenReady().then(() => {
 
 app.on("window-all-closed", () => {
   stopDevServer();
+  stopThemePreviewServer();
   if (process.platform !== "darwin") app.quit();
 });
 
 app.on("before-quit", () => {
   stopDevServer();
+  stopThemePreviewServer();
 });

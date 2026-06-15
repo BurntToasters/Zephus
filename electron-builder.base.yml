@@ -2,13 +2,14 @@ appId: run.rosie.zephus
 productName: Zephus
 asar: true
 files:
-  - 'dist/**/*'
-  - 'src/renderer/**/*'
-  - 'licenses.json'
-  - '!**/node_modules/*/{test,__tests__,tests}/**'
-  - '!**/*.md'
-  - '!src/renderer/**/*.ts'
-  - '!src/renderer/**/*.map'
+  - "dist/**/*"
+  - "template-previews/dist/**/*"
+  - "src/renderer/**/*"
+  - "licenses.json"
+  - "!**/node_modules/*/{test,__tests__,tests}/**"
+  - "!**/*.md"
+  - "!src/renderer/**/*.ts"
+  - "!src/renderer/**/*.map"
 directories:
   output: release
 publish:
@@ -67,10 +68,10 @@ dmg:
   iconSize: 100
   contents:
     - x: 120
-      'y': 300
+      "y": 300
       type: file
     - x: 546
-      'y': 300
+      "y": 300
       type: link
       path: /Applications
   window:

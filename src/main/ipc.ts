@@ -1,5 +1,11 @@
 import { BrowserWindow, dialog, ipcMain, app, shell } from "electron";
-import { GlobalSettings, OperationResult } from "./types";
+import {
+  GlobalSettings,
+  OperationResult,
+  PageDocument,
+  PageMeta,
+  SiteDocument,
+} from "./types";
 import { openProject, listPages } from "./services/project";
 import {
   readGlobalSettings,
@@ -13,9 +19,41 @@ import { getGitStatus, initGitRepo } from "./services/git";
 import { createPage, createSite } from "./services/wizard";
 import { listThemes } from "./themes";
 import { readProjectFile, writeProjectFile } from "./services/files";
+import { licensesFilePath, readProductionLicenses } from "./services/licenses";
 import { startDevServer, stopDevServer } from "./services/devServer";
+import {
+  ensureThemePreviewServer,
+  stopThemePreviewServer,
+} from "./services/themePreviewServer";
 import { buildAndReveal } from "./services/publish";
-import { importImage } from "./services/assets";
+import { importImage, listProjectImages } from "./services/assets";
+import {
+  deletePage,
+  duplicatePage,
+  listPageMetadata,
+  readPageMetadata,
+  renamePage,
+  writePageMetadata,
+} from "./services/pageManager";
+import {
+  deleteReusableSection,
+  listReusableSections,
+  saveReusableSection,
+} from "./services/reusableSections";
+import {
+  clearDraft,
+  readDraft,
+  writeDraft,
+} from "./services/drafts";
+import {
+  detachPageDocument,
+  ensureVisualSchema,
+  readPageDocument,
+  readSiteDocument,
+  reattachPageDocument,
+  writePageDocument,
+  writeSiteDocument,
+} from "./services/schema";
 import {
   checkForUpdates,
   downloadUpdate,
@@ -83,6 +121,86 @@ export function registerIpcHandlers(
       createPage(projectPath, pageName, pagesDir),
   );
 
+  ipcMain.handle(
+    IPC.renamePage,
+    (_e, projectPath: string, page: string, pagesDir: string, nextSlug: string) =>
+      renamePage(projectPath, page, pagesDir, nextSlug),
+  );
+
+  ipcMain.handle(
+    IPC.duplicatePage,
+    (
+      _e,
+      projectPath: string,
+      page: string,
+      pagesDir: string,
+      slugInput?: string,
+    ) => duplicatePage(projectPath, page, pagesDir, slugInput),
+  );
+
+  ipcMain.handle(IPC.deletePage, (_e, projectPath: string, page: string) =>
+    deletePage(projectPath, page),
+  );
+
+  ipcMain.handle(IPC.listPageMeta, (_e, projectPath: string, pagesDir: string) =>
+    listPageMetadata(projectPath, pagesDir),
+  );
+
+  ipcMain.handle(
+    IPC.readPageMeta,
+    (_e, projectPath: string, page: string, pagesDir: string): PageMeta =>
+      readPageMetadata(projectPath, page, pagesDir),
+  );
+
+  ipcMain.handle(
+    IPC.writePageMeta,
+    (
+      _e,
+      projectPath: string,
+      page: string,
+      pagesDir: string,
+      partial: Partial<PageMeta>,
+    ) => writePageMetadata(projectPath, page, pagesDir, partial),
+  );
+
+  ipcMain.handle(IPC.schemaEnsure, (_e, projectPath: string, pagesDir: string) =>
+    ensureVisualSchema(projectPath, pagesDir),
+  );
+
+  ipcMain.handle(IPC.siteDocumentRead, (_e, projectPath: string) =>
+    readSiteDocument(projectPath),
+  );
+
+  ipcMain.handle(
+    IPC.siteDocumentWrite,
+    (_e, projectPath: string, site: SiteDocument, pagesDir: string) =>
+      writeSiteDocument(projectPath, site, pagesDir),
+  );
+
+  ipcMain.handle(
+    IPC.pageDocumentRead,
+    (_e, projectPath: string, page: string, pagesDir: string) =>
+      readPageDocument(projectPath, page, pagesDir),
+  );
+
+  ipcMain.handle(
+    IPC.pageDocumentWrite,
+    (_e, projectPath: string, pagesDir: string, doc: PageDocument) =>
+      writePageDocument(projectPath, pagesDir, doc),
+  );
+
+  ipcMain.handle(
+    IPC.pageDocumentDetach,
+    (_e, projectPath: string, page: string, pagesDir: string, source: string) =>
+      detachPageDocument(projectPath, page, pagesDir, source),
+  );
+
+  ipcMain.handle(
+    IPC.pageDocumentReattach,
+    (_e, projectPath: string, page: string, pagesDir: string) =>
+      reattachPageDocument(projectPath, page, pagesDir),
+  );
+
   ipcMain.handle(IPC.gitStatus, (_e, projectPath: string) =>
     getGitStatus(projectPath),
   );
@@ -131,6 +249,14 @@ export function registerIpcHandlers(
     getMergedSettings(projectPath),
   );
 
+  ipcMain.handle(IPC.licensesRead, () => readProductionLicenses());
+
+  ipcMain.handle(IPC.licensesOpenFile, async (): Promise<OperationResult> => {
+    const file = licensesFilePath();
+    const result = await shell.openPath(file);
+    return result ? { ok: false, error: result } : { ok: true };
+  });
+
   ipcMain.handle(IPC.fileRead, (_e, projectPath: string, rel: string) =>
     readProjectFile(projectPath, rel),
   );
@@ -145,6 +271,35 @@ export function registerIpcHandlers(
     IPC.importImage,
     (_e, projectPath: string, publicDir: string) =>
       importImage(getWindow(), projectPath, publicDir),
+  );
+
+  ipcMain.handle(IPC.listAssets, (_e, projectPath: string, publicDir: string) =>
+    listProjectImages(projectPath, publicDir),
+  );
+
+  ipcMain.handle(IPC.listReusableSections, () => listReusableSections());
+
+  ipcMain.handle(
+    IPC.saveReusableSection,
+    (_e, label: string, html: string) => saveReusableSection(label, html),
+  );
+
+  ipcMain.handle(IPC.deleteReusableSection, (_e, id: string) =>
+    deleteReusableSection(id),
+  );
+
+  ipcMain.handle(IPC.draftRead, (_e, projectPath: string, page: string) =>
+    readDraft(projectPath, page),
+  );
+
+  ipcMain.handle(
+    IPC.draftWrite,
+    (_e, projectPath: string, page: string, content: string) =>
+      writeDraft(projectPath, page, content),
+  );
+
+  ipcMain.handle(IPC.draftClear, (_e, projectPath: string, page: string) =>
+    clearDraft(projectPath, page),
   );
 
   ipcMain.handle(
@@ -178,6 +333,8 @@ export function registerIpcHandlers(
     return { ok: true };
   });
 
+  ipcMain.handle(IPC.themePreviewEnsure, () => ensureThemePreviewServer());
+
   ipcMain.handle(IPC.publish, (_e, projectPath: string, outDir: string) =>
     buildAndReveal(projectPath, outDir),
   );
@@ -198,5 +355,9 @@ export function registerIpcHandlers(
       /* best-effort */
     });
     return { ok: true };
+  });
+
+  app.on("before-quit", () => {
+    stopThemePreviewServer();
   });
 }

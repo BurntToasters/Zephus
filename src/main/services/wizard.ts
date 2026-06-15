@@ -4,6 +4,8 @@ import log from "electron-log";
 import { OperationResult } from "../types";
 import { buildTheme } from "../themes";
 import { DEFAULT_REPO_SETTINGS } from "../types";
+import { createManagedPage } from "./pageManager";
+import { ensureVisualSchema } from "./schema";
 
 function sanitizeSiteName(folderPath: string): string {
   return (
@@ -51,6 +53,11 @@ export function createSite(
       "utf8",
     );
 
+    const ensured = ensureVisualSchema(targetPath, path.join("src", "pages"), themeId);
+    if (!ensured.ok) {
+      throw new Error(ensured.error ?? "Could not initialize Zephus schema.");
+    }
+
     return { ok: true };
   } catch (error) {
     log.error("Site creation failed; rolling back written files.", error);
@@ -74,48 +81,5 @@ export function createPage(
   pageName: string,
   pagesDir: string,
 ): OperationResult {
-  const safeName = pageName.replace(/[^a-zA-Z0-9-_]/g, "").toLowerCase();
-  if (!safeName) return { ok: false, error: "Invalid page name." };
-
-  const rel = path.join(pagesDir, `${safeName}.astro`);
-  const full = path.join(projectPath, rel);
-
-  if (fs.existsSync(full)) {
-    return { ok: false, error: `A page named ${safeName} already exists.` };
-  }
-
-  // Compute relative import from the new page to src/layouts/BaseLayout.astro.
-  const layoutAbs = path.join(
-    projectPath,
-    "src",
-    "layouts",
-    "BaseLayout.astro",
-  );
-  let importPath = path
-    .relative(path.dirname(full), layoutAbs)
-    .split(path.sep)
-    .join("/");
-  if (!importPath.startsWith(".")) importPath = "./" + importPath;
-
-  const title = safeName.charAt(0).toUpperCase() + safeName.slice(1);
-  const content = `---
-import BaseLayout from '${importPath}';
----
-
-<BaseLayout title="${title}">
-  <h1>${title}</h1>
-  <p>New page. Start editing.</p>
-</BaseLayout>
-`;
-
-  try {
-    fs.mkdirSync(path.dirname(full), { recursive: true });
-    fs.writeFileSync(full, content, "utf8");
-    return { ok: true };
-  } catch (error) {
-    return {
-      ok: false,
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
+  return createManagedPage(projectPath, pageName, pagesDir);
 }
