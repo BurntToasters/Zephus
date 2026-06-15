@@ -6,10 +6,10 @@ win:
   target: appx
   icon: build/app-icon.png
 appx:
-  # TODO: replace identityName/publisher with the values from your Microsoft Partner Center
-  # app registration before publishing to the Microsoft Store.
-  identityName: BurntToasters.Zephus
-  publisher: CN=REPLACE-WITH-YOUR-PUBLISHER-ID
+  # Supply the real Partner Center values via environment variables so MS Store
+  # builds cannot accidentally ship with a placeholder identity.
+  identityName: '${env.ZEPHUS_MSSTORE_IDENTITY_NAME}'
+  publisher: '${env.ZEPHUS_MSSTORE_PUBLISHER}'
   publisherDisplayName: BurntToasters
   displayName: Zephus
   backgroundColor: '#ffffff'

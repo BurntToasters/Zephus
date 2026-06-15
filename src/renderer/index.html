@@ -13,45 +13,113 @@
   <body>
     <!-- Project selection view -->
     <section id="view-start" class="view">
-      <div class="start-card">
-        <div class="start-header">
-          <h1 class="brand">Zephus</h1>
-          <button id="btn-settings" class="btn ghost gear-btn" title="Settings">
-            <i data-lucide="settings"></i>
-          </button>
-        </div>
+      <div class="start-atmosphere"></div>
+      <div class="start-shell">
+        <header class="start-hero">
+          <div class="start-hero-copy">
+            <p class="start-kicker">Visual Astro Builder</p>
+            <h1 class="brand">Zephus</h1>
+            <p class="start-lead">
+              Resume work fast, recover unsaved drafts, and launch new sites
+              from bundled themes without leaving your local workflow.
+            </p>
+          </div>
+          <div class="start-hero-tools">
+            <div class="start-hero-note">
+              <span class="home-note-label">Builder Command Center</span>
+              <span class="home-note-copy"
+                >Zephus projects only. Local-first. Schema-backed visual
+                editing.</span
+              >
+            </div>
+            <button
+              id="btn-settings"
+              class="btn ghost gear-btn"
+              title="Settings"
+            >
+              <i data-lucide="settings"></i>
+            </button>
+          </div>
+        </header>
 
-        <div class="hub-tabs">
+        <div class="hub-tabs home-section-tabs">
           <button id="tab-recent" class="hub-tab active">
-            <i data-lucide="clock"></i> Recent
+            <i data-lucide="clock"></i> Resume Work
           </button>
           <button id="tab-create" class="hub-tab">
             <i data-lucide="compass"></i> Get Started
           </button>
         </div>
 
-        <!-- Recent projects panel -->
-        <div id="pane-recent" class="hub-pane">
-          <h2 class="recent-title">Recent Projects</h2>
-          <ul id="recent-list" class="recent-list"></ul>
-          <div class="pane-actions">
-            <button id="btn-open" class="btn primary">
-              <i data-lucide="folder-open"></i> Open Existing Zephus Site…
-            </button>
-          </div>
+        <div class="home-quick-actions">
+          <button id="btn-open" class="btn primary">
+            <i data-lucide="folder-open"></i> Open Existing Site
+          </button>
+          <button id="btn-resume-last" class="btn">
+            <i data-lucide="clock"></i> Resume Last Project
+          </button>
+          <button id="btn-home-create" class="btn">
+            <i data-lucide="plus"></i> Create New Site
+          </button>
+          <button id="btn-home-licenses" class="btn ghost">
+            <i data-lucide="file-code"></i> View Licenses
+          </button>
+          <button id="btn-home-settings" class="btn ghost">
+            <i data-lucide="settings"></i> Settings
+          </button>
         </div>
 
-        <!-- Create new project panel -->
-        <div id="pane-create" class="hub-pane hidden">
-          <h2 class="recent-title">Select Template Theme</h2>
-          <div id="theme-list-container" class="theme-grid">
-            <!-- Populated dynamically by zephusEngine.ts -->
-          </div>
-          <div class="pane-actions">
-            <button id="btn-create" class="btn primary disabled" disabled>
-              <i data-lucide="plus"></i> Choose Folder & Create Site
-            </button>
-          </div>
+        <div class="home-grid">
+          <section
+            id="pane-recent"
+            class="home-panel hub-pane home-panel-recent"
+          >
+            <div class="home-panel-header">
+              <div>
+                <p class="panel-kicker">Resume work</p>
+                <h2 class="panel-title">Recent Zephus Sites</h2>
+              </div>
+              <span class="panel-meta"
+                >Open directly from where you left off.</span
+              >
+            </div>
+            <ul id="recent-list" class="recent-list"></ul>
+          </section>
+
+          <aside class="home-panel hub-pane home-panel-status">
+            <div class="home-panel-header">
+              <div>
+                <p class="panel-kicker">Recovery + Status</p>
+                <h2 class="panel-title">Builder Signals</h2>
+              </div>
+            </div>
+            <div id="home-project-status" class="home-status-stack"></div>
+            <div id="home-recovery-list" class="home-status-stack"></div>
+            <div id="home-update-status" class="home-status-stack"></div>
+          </aside>
+
+          <section
+            id="pane-create"
+            class="home-panel hub-pane home-panel-themes"
+          >
+            <div class="home-panel-header">
+              <div>
+                <p class="panel-kicker">Start new</p>
+                <h2 class="panel-title">Theme Discovery</h2>
+              </div>
+              <span class="panel-meta"
+                >Preview every bundled starter before creating a site.</span
+              >
+            </div>
+            <div id="theme-list-container" class="theme-grid">
+              <!-- Populated dynamically by zephusEngine.ts -->
+            </div>
+            <div class="pane-actions home-theme-actions">
+              <button id="btn-create" class="btn primary disabled" disabled>
+                <i data-lucide="plus"></i> Choose Folder & Create Site
+              </button>
+            </div>
+          </section>
         </div>
       </div>
     </section>
@@ -127,6 +195,13 @@
             <ul id="block-palette" class="palette"></ul>
           </div>
           <div class="panel-section">
+            <h3>Site</h3>
+            <div class="site-controls">
+              <button id="btn-site-shell" class="btn">Site Shell</button>
+              <button id="btn-design-system" class="btn">Design System</button>
+            </div>
+          </div>
+          <div class="panel-section">
             <h3>Navigation</h3>
             <ul id="nav-list" class="list"></ul>
             <div style="margin-top: 8px">
@@ -143,9 +218,17 @@
             <h3>Sections</h3>
             <ul id="template-palette" class="palette"></ul>
           </div>
+          <div class="panel-section">
+            <h3>Layers</h3>
+            <ul id="layers-list" class="list layers-list"></ul>
+          </div>
         </aside>
 
         <main class="canvas-wrap">
+          <div
+            id="editor-state-banner"
+            class="editor-state-banner hidden"
+          ></div>
           <div id="canvas" class="canvas"></div>
           <div id="code-editor" class="code-editor hidden"></div>
           <iframe
@@ -156,6 +239,22 @@
         </main>
 
         <aside class="panel right">
+          <div class="panel-section">
+            <h3>Project Overview</h3>
+            <div id="project-overview" class="properties">
+              <p class="muted">
+                Open a Zephus site to see page and project status.
+              </p>
+            </div>
+          </div>
+          <div class="panel-section">
+            <h3>Next Actions</h3>
+            <div id="next-actions" class="properties">
+              <p class="muted">
+                Guided actions will appear here while you edit.
+              </p>
+            </div>
+          </div>
           <div class="panel-section">
             <h3>Properties</h3>
             <div id="properties" class="properties">

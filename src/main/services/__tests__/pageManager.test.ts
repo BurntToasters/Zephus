@@ -21,6 +21,14 @@ beforeEach(() => {
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "zephus-pages-"));
   fs.mkdirSync(path.join(tmpDir, "src", "layouts"), { recursive: true });
   fs.writeFileSync(
+    path.join(tmpDir, "package.json"),
+    JSON.stringify({
+      scripts: { dev: "astro dev", build: "astro build" },
+      dependencies: { astro: "^5.0.0" },
+    }),
+  );
+  fs.writeFileSync(path.join(tmpDir, "astro.config.mjs"), "export default {};");
+  fs.writeFileSync(
     path.join(tmpDir, "src", "layouts", "BaseLayout.astro"),
     "<slot />",
   );
@@ -83,7 +91,7 @@ describe("pageManager", () => {
       "/company/about",
     );
 
-    const deleted = deletePage(tmpDir, renamedPage);
+    const deleted = deletePage(tmpDir, renamedPage, pagesDir);
     expect(deleted.ok).toBe(true);
     expect(fs.existsSync(path.join(tmpDir, renamedPage))).toBe(false);
 
@@ -93,5 +101,59 @@ describe("pageManager", () => {
       pagesDir,
     );
     expect(meta.title).toContain("Copy");
+  });
+
+  it("keeps schema and files aligned for custom Astro pages directories", () => {
+    const customPagesDir = path.join("source", "pages");
+    fs.writeFileSync(
+      path.join(tmpDir, "astro.config.mjs"),
+      "export default { srcDir: './source' };",
+    );
+    fs.mkdirSync(path.join(tmpDir, "source", "layouts"), { recursive: true });
+    fs.writeFileSync(
+      path.join(tmpDir, "source", "layouts", "BaseLayout.astro"),
+      "<slot />",
+    );
+
+    const created = createManagedPage(tmpDir, "docs/intro", customPagesDir);
+    expect(created.ok).toBe(true);
+
+    const page = path.join("source", "pages", "docs", "intro.astro");
+    const renamed = renamePage(
+      tmpDir,
+      page,
+      customPagesDir,
+      "docs/getting-started",
+    );
+    expect(renamed.ok).toBe(true);
+
+    const renamedPage = path.join(
+      "source",
+      "pages",
+      "docs",
+      "getting-started.astro",
+    );
+    const duplicated = duplicatePage(tmpDir, renamedPage, customPagesDir);
+    expect(duplicated.ok).toBe(true);
+    expect(
+      fs.existsSync(
+        path.join(
+          tmpDir,
+          ".zephus",
+          "pages",
+          "docs",
+          "getting-started-copy.json",
+        ),
+      ),
+    ).toBe(true);
+
+    const deleted = deletePage(tmpDir, renamedPage, customPagesDir);
+    expect(deleted.ok).toBe(true);
+    expect(fs.existsSync(path.join(tmpDir, renamedPage))).toBe(false);
+    expect(
+      fs.existsSync(
+        path.join(tmpDir, ".zephus", "pages", "docs", "getting-started.json"),
+      ),
+    ).toBe(false);
   });
 });

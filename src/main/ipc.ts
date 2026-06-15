@@ -42,6 +42,7 @@ import {
 } from "./services/reusableSections";
 import {
   clearDraft,
+  listDraftSummaries,
   readDraft,
   writeDraft,
 } from "./services/drafts";
@@ -65,9 +66,21 @@ import { IPC } from "./ipcChannels";
 
 export { IPC };
 
+interface IpcRegistrationOptions {
+  assertUpdaterSender?: (senderId?: number) => boolean;
+  markUpdateInstalling?: () => void;
+  clearUpdateInstalling?: () => void;
+}
+
 export function registerIpcHandlers(
   getWindow: () => BrowserWindow | null,
+  options?: IpcRegistrationOptions,
 ): void {
+  const assertUpdaterSender = (senderId?: number): boolean => {
+    if (!options?.assertUpdaterSender) return true;
+    return options.assertUpdaterSender(senderId);
+  };
+
   ipcMain.handle(IPC.openFolder, async () => {
     const win = getWindow();
     const result = await dialog.showOpenDialog(win ?? undefined!, {
@@ -123,8 +136,13 @@ export function registerIpcHandlers(
 
   ipcMain.handle(
     IPC.renamePage,
-    (_e, projectPath: string, page: string, pagesDir: string, nextSlug: string) =>
-      renamePage(projectPath, page, pagesDir, nextSlug),
+    (
+      _e,
+      projectPath: string,
+      page: string,
+      pagesDir: string,
+      nextSlug: string,
+    ) => renamePage(projectPath, page, pagesDir, nextSlug),
   );
 
   ipcMain.handle(
@@ -138,12 +156,16 @@ export function registerIpcHandlers(
     ) => duplicatePage(projectPath, page, pagesDir, slugInput),
   );
 
-  ipcMain.handle(IPC.deletePage, (_e, projectPath: string, page: string) =>
-    deletePage(projectPath, page),
+  ipcMain.handle(
+    IPC.deletePage,
+    (_e, projectPath: string, page: string, pagesDir: string) =>
+      deletePage(projectPath, page, pagesDir),
   );
 
-  ipcMain.handle(IPC.listPageMeta, (_e, projectPath: string, pagesDir: string) =>
-    listPageMetadata(projectPath, pagesDir),
+  ipcMain.handle(
+    IPC.listPageMeta,
+    (_e, projectPath: string, pagesDir: string) =>
+      listPageMetadata(projectPath, pagesDir),
   );
 
   ipcMain.handle(
@@ -163,8 +185,10 @@ export function registerIpcHandlers(
     ) => writePageMetadata(projectPath, page, pagesDir, partial),
   );
 
-  ipcMain.handle(IPC.schemaEnsure, (_e, projectPath: string, pagesDir: string) =>
-    ensureVisualSchema(projectPath, pagesDir),
+  ipcMain.handle(
+    IPC.schemaEnsure,
+    (_e, projectPath: string, pagesDir: string) =>
+      ensureVisualSchema(projectPath, pagesDir),
   );
 
   ipcMain.handle(IPC.siteDocumentRead, (_e, projectPath: string) =>
@@ -279,27 +303,37 @@ export function registerIpcHandlers(
 
   ipcMain.handle(IPC.listReusableSections, () => listReusableSections());
 
-  ipcMain.handle(
-    IPC.saveReusableSection,
-    (_e, label: string, html: string) => saveReusableSection(label, html),
+  ipcMain.handle(IPC.saveReusableSection, (_e, label: string, html: string) =>
+    saveReusableSection(label, html),
   );
 
   ipcMain.handle(IPC.deleteReusableSection, (_e, id: string) =>
     deleteReusableSection(id),
   );
 
-  ipcMain.handle(IPC.draftRead, (_e, projectPath: string, page: string) =>
-    readDraft(projectPath, page),
+  ipcMain.handle(
+    IPC.draftRead,
+    (_e, projectPath: string, scope: "page" | "site", target: string) =>
+      readDraft(projectPath, scope, target),
   );
+
+  ipcMain.handle(IPC.draftList, () => listDraftSummaries());
 
   ipcMain.handle(
     IPC.draftWrite,
-    (_e, projectPath: string, page: string, content: string) =>
-      writeDraft(projectPath, page, content),
+    (
+      _e,
+      projectPath: string,
+      scope: "page" | "site",
+      target: string,
+      content: string,
+    ) => writeDraft(projectPath, scope, target, content),
   );
 
-  ipcMain.handle(IPC.draftClear, (_e, projectPath: string, page: string) =>
-    clearDraft(projectPath, page),
+  ipcMain.handle(
+    IPC.draftClear,
+    (_e, projectPath: string, scope: "page" | "site", target: string) =>
+      clearDraft(projectPath, scope, target),
   );
 
   ipcMain.handle(
@@ -339,15 +373,40 @@ export function registerIpcHandlers(
     buildAndReveal(projectPath, outDir),
   );
 
-  ipcMain.handle(IPC.updaterCheck, () => checkForUpdates(readGlobalSettings));
-  ipcMain.handle(IPC.updaterDownload, () => downloadUpdate());
-  ipcMain.handle(IPC.updaterCancel, () => {
+  ipcMain.handle(IPC.updaterCheck, (event) => {
+    if (!assertUpdaterSender(event.sender.id)) {
+      return { status: "error", error: "Unauthorized sender." };
+    }
+    return checkForUpdates(readGlobalSettings);
+  });
+  ipcMain.handle(IPC.updaterDownload, (event) => {
+    if (!assertUpdaterSender(event.sender.id)) {
+      return { status: "error", error: "Unauthorized sender." };
+    }
+    return downloadUpdate();
+  });
+  ipcMain.handle(IPC.updaterCancel, (event) => {
+    if (!assertUpdaterSender(event.sender.id)) {
+      return { ok: false, error: "Unauthorized sender." };
+    }
     cancelDownload(getWindow);
     return { ok: true };
   });
-  ipcMain.handle(IPC.updaterInstall, () => {
-    installUpdate();
-    return { ok: true };
+  ipcMain.handle(IPC.updaterInstall, (event) => {
+    if (!assertUpdaterSender(event.sender.id)) {
+      return { ok: false, error: "Unauthorized sender." };
+    }
+    options?.markUpdateInstalling?.();
+    try {
+      installUpdate();
+      return { ok: true };
+    } catch (error) {
+      options?.clearUpdateInstalling?.();
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
   });
   ipcMain.handle(IPC.getAppVersion, () => app.getVersion());
   ipcMain.handle(IPC.openConfigFolder, () => {

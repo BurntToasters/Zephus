@@ -310,15 +310,32 @@ interface ReusableSectionsResult {
   error?: string;
 }
 
+type DraftScope = "page" | "site";
+
 interface DraftData {
-  page: string;
+  projectPath: string;
+  scope: DraftScope;
+  target: string;
   content: string;
+  savedAt: string;
+}
+
+interface DraftSummary {
+  projectPath: string;
+  scope: DraftScope;
+  target: string;
   savedAt: string;
 }
 
 interface DraftResult {
   ok: boolean;
   draft: DraftData | null;
+  error?: string;
+}
+
+interface DraftSummaryResult {
+  ok: boolean;
+  entries: DraftSummary[];
   error?: string;
 }
 
@@ -333,6 +350,7 @@ interface PageDocumentResult {
   site: SiteDocument | null;
   pageDocument: PageDocument | null;
   source: string | null;
+  generatedSource: string | null;
   error?: string;
 }
 
@@ -382,7 +400,11 @@ interface ZephusApi {
     pagesDir: string,
     slugInput?: string,
   ): Promise<OperationResult>;
-  deletePage(projectPath: string, page: string): Promise<OperationResult>;
+  deletePage(
+    projectPath: string,
+    page: string,
+    pagesDir: string,
+  ): Promise<OperationResult>;
   listPageMeta(projectPath: string, pagesDir: string): Promise<PageListResult>;
   readPageMeta(
     projectPath: string,
@@ -464,13 +486,23 @@ interface ZephusApi {
     html: string,
   ): Promise<ReusableSectionsResult>;
   deleteReusableSection(id: string): Promise<OperationResult>;
-  readDraft(projectPath: string, page: string): Promise<DraftResult>;
+  readDraft(
+    projectPath: string,
+    scope: DraftScope,
+    target: string,
+  ): Promise<DraftResult>;
+  listDrafts(): Promise<DraftSummaryResult>;
   writeDraft(
     projectPath: string,
-    page: string,
+    scope: DraftScope,
+    target: string,
     content: string,
   ): Promise<OperationResult>;
-  clearDraft(projectPath: string, page: string): Promise<OperationResult>;
+  clearDraft(
+    projectPath: string,
+    scope: DraftScope,
+    target: string,
+  ): Promise<OperationResult>;
   watchFile(projectPath: string, rel: string): Promise<OperationResult>;
   stopWatch(): Promise<OperationResult>;
   onExternalChange(callback: (rel: string) => void): () => void;

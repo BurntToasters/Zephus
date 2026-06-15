@@ -10,6 +10,7 @@ import {
   readPageDocument,
   readSiteDocument,
   reattachPageDocument,
+  writeSiteDocument,
   writePageDocument,
 } from "../schema";
 
@@ -77,7 +78,11 @@ describe("schema service", () => {
     expect(site.ok).toBe(true);
     expect(site.site?.shell.navItems[0]?.href).toBe("/");
 
-    const page = readPageDocument(tmpDir, path.join("src", "pages", "index.astro"), pagesDir);
+    const page = readPageDocument(
+      tmpDir,
+      path.join("src", "pages", "index.astro"),
+      pagesDir,
+    );
     expect(page.ok).toBe(true);
     expect(page.pageDocument?.sections[0]?.children.length).toBeGreaterThan(0);
     expect(page.pageDocument?.managedFileStatus).toBe("managed");
@@ -100,6 +105,14 @@ describe("schema service", () => {
       sections: [
         {
           ...current.pageDocument!.sections[0],
+          props: { wrapper: "box", cls: "team-shell" },
+          style: {
+            background: "#eef2ff",
+            padding: "3rem",
+            margin: "2rem 0",
+            radius: "20px",
+            maxWidth: "840px",
+          },
           children: [
             {
               id: "hero",
@@ -116,6 +129,9 @@ describe("schema service", () => {
       ],
     });
     expect(updated.ok).toBe(true);
+    expect(fs.readFileSync(path.join(tmpDir, aboutPath), "utf8")).toContain(
+      '<section class="team-shell" style="max-width:840px;background:#eef2ff;padding:3rem;margin:2rem 0;border-radius:20px">',
+    );
 
     const detached = detachPageDocument(
       tmpDir,
@@ -136,5 +152,108 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
     expect(reattached.ok).toBe(true);
     expect(reattached.pageDocument?.detached).toBe(false);
     expect(reattached.pageDocument?.managedFileStatus).toBe("managed");
+  });
+
+  it("writes managed shell and design artifacts when site settings change", () => {
+    ensureVisualSchema(tmpDir, pagesDir);
+    fs.mkdirSync(path.join(tmpDir, "public", "scripts"), { recursive: true });
+    fs.writeFileSync(
+      path.join(tmpDir, "public", "styles", "zephus-custom.css"),
+      ".brand { color: hotpink; }",
+    );
+    fs.writeFileSync(
+      path.join(tmpDir, "public", "scripts", "zephus-custom.js"),
+      "console.log('zephus custom');",
+    );
+    const site = readSiteDocument(tmpDir);
+    expect(site.ok).toBe(true);
+    expect(site.site).toBeTruthy();
+
+    const saved = writeSiteDocument(
+      tmpDir,
+      {
+        ...site.site!,
+        design: {
+          ...site.site!.design,
+          accent: "#ff3366",
+          containerWidth: "1040px",
+        },
+        shell: {
+          ...site.site!.shell,
+          layoutMode: "managed",
+          logoText: "Zephus Studio",
+          announcementVisible: true,
+          announcementText: "Fresh beta build",
+          navCtaLabel: "Start Now",
+          navCtaHref: "/contact",
+        },
+      },
+      pagesDir,
+    );
+    expect(saved.ok).toBe(true);
+
+    const layout = fs.readFileSync(
+      path.join(tmpDir, "src", "layouts", "BaseLayout.astro"),
+      "utf8",
+    );
+    expect(layout).toContain("zephus-shell-header");
+    expect(layout).toContain("Zephus Studio");
+    expect(layout).toContain("Fresh beta build");
+    expect(layout).toContain(
+      '<link rel="stylesheet" href="/styles/zephus-custom.css" />',
+    );
+    expect(layout).toContain(
+      '<script type="module" src="/scripts/zephus-custom.js"></script>',
+    );
+    expect(
+      fs.existsSync(
+        path.join(
+          tmpDir,
+          "src",
+          "layouts",
+          "BaseLayout.zephus-legacy-backup.astro",
+        ),
+      ),
+    ).toBe(true);
+
+    const managedCss = fs.readFileSync(
+      path.join(tmpDir, "public", "styles", "zephus-managed.css"),
+      "utf8",
+    );
+    expect(managedCss).toContain("--zephus-accent: #ff3366");
+    expect(managedCss).toContain("--zephus-container-width: 1040px");
+
+    const backupBefore = fs.readFileSync(
+      path.join(
+        tmpDir,
+        "src",
+        "layouts",
+        "BaseLayout.zephus-legacy-backup.astro",
+      ),
+      "utf8",
+    );
+    const savedAgain = writeSiteDocument(
+      tmpDir,
+      {
+        ...site.site!,
+        shell: {
+          ...site.site!.shell,
+          layoutMode: "managed",
+          logoText: "Second Pass",
+        },
+      },
+      pagesDir,
+    );
+    expect(savedAgain.ok).toBe(true);
+    const backupAfter = fs.readFileSync(
+      path.join(
+        tmpDir,
+        "src",
+        "layouts",
+        "BaseLayout.zephus-legacy-backup.astro",
+      ),
+      "utf8",
+    );
+    expect(backupAfter).toBe(backupBefore);
   });
 });

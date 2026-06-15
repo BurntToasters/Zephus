@@ -1,7 +1,11 @@
 import { app } from "electron";
 import * as fs from "fs";
 import * as path from "path";
-import { OperationResult, ReusableSection, ReusableSectionsResult } from "../types";
+import {
+  OperationResult,
+  ReusableSection,
+  ReusableSectionsResult,
+} from "../types";
 
 function sectionsPath(): string {
   return path.join(app.getPath("userData"), "reusable-sections.json");
@@ -11,7 +15,9 @@ function readStoredSections(): ReusableSection[] {
   const file = sectionsPath();
   if (!fs.existsSync(file)) return [];
   try {
-    const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as ReusableSection[];
+    const parsed = JSON.parse(
+      fs.readFileSync(file, "utf8"),
+    ) as ReusableSection[];
     return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
@@ -27,7 +33,9 @@ function writeStoredSections(sections: ReusableSection[]): void {
 export function listReusableSections(): ReusableSectionsResult {
   return {
     ok: true,
-    sections: readStoredSections().sort((a, b) => a.label.localeCompare(b.label)),
+    sections: readStoredSections().sort((a, b) =>
+      a.label.localeCompare(b.label),
+    ),
   };
 }
 

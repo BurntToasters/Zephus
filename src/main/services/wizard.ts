@@ -53,7 +53,11 @@ export function createSite(
       "utf8",
     );
 
-    const ensured = ensureVisualSchema(targetPath, path.join("src", "pages"), themeId);
+    const ensured = ensureVisualSchema(
+      targetPath,
+      path.join("src", "pages"),
+      themeId,
+    );
     if (!ensured.ok) {
       throw new Error(ensured.error ?? "Could not initialize Zephus schema.");
     }

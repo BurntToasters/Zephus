@@ -96,9 +96,7 @@ export function normalizePageSlug(input: string): string | null {
 export function routeFromPage(page: string, pagesDir: string): string {
   const rel = page
     .replace(
-      new RegExp(
-        `^${pagesDir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[/\\\\]?`,
-      ),
+      new RegExp(`^${pagesDir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[/\\\\]?`),
       "",
     )
     .replace(/\.(astro|md|mdx|html)$/i, "")
@@ -122,7 +120,11 @@ export function pagePathFromSlug(
 }
 
 function pageSchemaRelativePath(slug: string): string {
-  return path.join(".zephus", "pages", slug === "index" ? "index.json" : `${slug}.json`);
+  return path.join(
+    ".zephus",
+    "pages",
+    slug === "index" ? "index.json" : `${slug}.json`,
+  );
 }
 
 function pageSchemaFile(projectPath: string, slug: string): string {
@@ -158,7 +160,9 @@ function parseScalar(value: string): string | boolean {
   return trimmed;
 }
 
-function parseFrontmatter(frontmatter: string): Record<string, string | boolean> {
+function parseFrontmatter(
+  frontmatter: string,
+): Record<string, string | boolean> {
   const out: Record<string, string | boolean> = {};
   if (!frontmatter) return out;
   const lines = frontmatter
@@ -219,9 +223,293 @@ function defaultShell(siteName: string, layoutPath: string): ShellConfig {
     navCtaHref: "#",
     footerHtml: `<p>&copy; ${siteName}. Built with Zephus.</p>`,
     customHeadHtml: "",
-    customScriptsPath: "src/scripts/zephus-custom.ts",
-    customCssPath: "public/styles/global.css",
+    customScriptsPath: "public/scripts/zephus-custom.js",
+    customCssPath: "public/styles/zephus-custom.css",
   };
+}
+
+const MANAGED_STYLE_PATH = path.join("public", "styles", "zephus-managed.css");
+
+function managedAssetWebPath(relativePath: string): string {
+  const normalized = relativePath.split(path.sep).join("/").replace(/^\/+/, "");
+  const publicPrefix = "public/";
+  return `/${normalized.startsWith(publicPrefix) ? normalized.slice(publicPrefix.length) : normalized}`;
+}
+
+function resolveManagedInclude(
+  projectPath: string,
+  relativePath: string,
+): string | null {
+  if (!relativePath.trim()) return null;
+  const target = safeResolve(projectPath, relativePath);
+  if (!fs.existsSync(target)) return null;
+  return managedAssetWebPath(relativePath);
+}
+
+function legacyLayoutBackupPath(layoutFile: string): string {
+  const ext = path.extname(layoutFile) || ".astro";
+  return layoutFile.slice(0, -ext.length) + `.zephus-legacy-backup${ext}`;
+}
+
+function ensureLegacyLayoutBackup(layoutFile: string): void {
+  const backupFile = legacyLayoutBackupPath(layoutFile);
+  if (fs.existsSync(backupFile) || !fs.existsSync(layoutFile)) return;
+  fs.copyFileSync(layoutFile, backupFile);
+}
+
+function managedShadowValue(shadow: DesignTokenSet["shadow"]): string {
+  switch (shadow) {
+    case "sm":
+      return "0 8px 20px rgba(15, 23, 42, 0.08)";
+    case "md":
+      return "0 18px 42px rgba(15, 23, 42, 0.12)";
+    case "lg":
+      return "0 26px 60px rgba(15, 23, 42, 0.18)";
+    case "none":
+    default:
+      return "none";
+  }
+}
+
+function renderManagedStyles(site: SiteDocument): string {
+  return `:root {
+  --zephus-accent: ${site.design.accent};
+  --zephus-background: ${site.design.background};
+  --zephus-foreground: ${site.design.foreground};
+  --zephus-surface: ${site.design.surface};
+  --zephus-radius: ${site.design.radius};
+  --zephus-shadow: ${managedShadowValue(site.design.shadow)};
+  --zephus-container-width: ${site.design.containerWidth};
+  --zephus-font-family: ${site.design.fontFamily};
+  --zephus-heading-font: ${site.design.headingFontFamily};
+}
+
+html, body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--zephus-background);
+  color: var(--zephus-foreground);
+}
+
+body {
+  font-family: var(--zephus-font-family);
+  line-height: 1.6;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--zephus-heading-font);
+  color: var(--zephus-foreground);
+}
+
+a {
+  color: var(--zephus-accent);
+}
+
+.zephus-announcement {
+  background: var(--zephus-accent);
+  color: #ffffff;
+  text-align: center;
+  padding: 0.7rem 1rem;
+  font-size: 0.95rem;
+}
+
+.zephus-shell-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.5rem;
+  background: color-mix(in srgb, var(--zephus-surface) 92%, white 8%);
+  border-bottom: 1px solid color-mix(in srgb, var(--zephus-foreground) 12%, transparent);
+  backdrop-filter: blur(10px);
+}
+
+.zephus-shell-logo {
+  color: var(--zephus-foreground);
+  text-decoration: none;
+  font-family: var(--zephus-heading-font);
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+
+.zephus-shell-nav {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.zephus-shell-nav a {
+  color: var(--zephus-foreground);
+  text-decoration: none;
+}
+
+.zephus-shell-nav a:hover {
+  color: var(--zephus-accent);
+}
+
+.zephus-shell-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.7rem 1rem;
+  border-radius: var(--zephus-radius);
+  background: var(--zephus-accent);
+  color: #ffffff !important;
+  text-decoration: none;
+  box-shadow: var(--zephus-shadow);
+}
+
+.zephus-shell-main {
+  width: min(100%, var(--zephus-container-width));
+  margin: 0 auto;
+  padding: 3rem 1.5rem 4rem;
+}
+
+.zephus-shell-footer {
+  margin-top: 4rem;
+  padding: 2rem 1.5rem 3rem;
+  background: var(--zephus-surface);
+  border-top: 1px solid color-mix(in srgb, var(--zephus-foreground) 12%, transparent);
+}
+
+.zephus-shell-footer > * {
+  width: min(100%, var(--zephus-container-width));
+  margin: 0 auto;
+}
+
+@media (max-width: 820px) {
+  .zephus-shell-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .zephus-shell-main {
+    padding-inline: 1rem;
+  }
+}
+`;
+}
+
+function mergePageNavItems(
+  navItems: NavItem[],
+  pageDocs: PageDocument[],
+): NavItem[] {
+  const existingByPage = new Map<string, NavItem>();
+  const existingByHref = new Map<string, NavItem>();
+  const customItems: NavItem[] = [];
+  for (const item of navItems) {
+    if (item.page) {
+      existingByPage.set(item.page, item);
+    } else {
+      customItems.push(item);
+    }
+    existingByHref.set(item.href, item);
+  }
+
+  const pageItems = pageDocs.map((doc) => {
+    const existing =
+      existingByPage.get(doc.page) ?? existingByHref.get(doc.route);
+    return {
+      id: existing?.id ?? `nav-${doc.slug}`,
+      label: doc.navLabel,
+      href: doc.route,
+      page: doc.page,
+      visible: doc.navVisible,
+      children: existing?.children ?? [],
+    };
+  });
+
+  return [
+    ...pageItems,
+    ...customItems.filter(
+      (item) => !pageItems.some((pageItem) => pageItem.href === item.href),
+    ),
+  ];
+}
+
+function listExistingPageDocuments(
+  projectPath: string,
+  pagesDir: string,
+): PageDocument[] {
+  return listPages(projectPath, pagesDir)
+    .map((page) =>
+      readPageDocumentFile(projectPath, slugFromPage(page, pagesDir)),
+    )
+    .filter((entry): entry is PageDocument => Boolean(entry));
+}
+
+function renderManagedLayout(
+  site: SiteDocument,
+  navItems: NavItem[],
+  customCssHref: string | null,
+  customScriptHref: string | null,
+): string {
+  const navLinks = navItems
+    .filter((item) => item.visible)
+    .map(
+      (item) =>
+        `      <a href="${escapeAttr(item.href)}">${escapeHtml(item.label)}</a>`,
+    )
+    .join("\n");
+  const cta =
+    site.shell.navCtaLabel.trim() && site.shell.navCtaHref.trim()
+      ? `\n      <a class="zephus-shell-cta" href="${escapeAttr(
+          site.shell.navCtaHref,
+        )}">${escapeHtml(site.shell.navCtaLabel)}</a>`
+      : "";
+  const announcement =
+    site.shell.announcementVisible && site.shell.announcementText.trim()
+      ? `  <div class="zephus-announcement">${escapeHtml(
+          site.shell.announcementText,
+        )}</div>\n`
+      : "";
+  const customCssLink = customCssHref
+    ? `\n    <link rel="stylesheet" href="${escapeAttr(customCssHref)}" />`
+    : "";
+  const customScriptTag = customScriptHref
+    ? `\n    <script type="module" src="${escapeAttr(customScriptHref)}"></script>`
+    : "";
+
+  return `---
+interface Props {
+  title?: string;
+}
+const { title = ${JSON.stringify(site.shell.siteTitle || site.siteName)} } = Astro.props;
+const customHeadHtml = ${JSON.stringify(site.shell.customHeadHtml)};
+const footerHtml = ${JSON.stringify(site.shell.footerHtml)};
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <link rel="stylesheet" href="/styles/global.css" />
+${customCssLink}
+    <link rel="stylesheet" href="/styles/zephus-managed.css" />
+    {customHeadHtml ? <Fragment set:html={customHeadHtml} /> : null}
+  </head>
+  <body>
+${announcement}    <header class="zephus-shell-header">
+      <a class="zephus-shell-logo" href="/">${escapeHtml(site.shell.logoText || site.siteName)}</a>
+      <nav class="zephus-shell-nav">
+${navLinks}${cta}
+      </nav>
+    </header>
+    <main class="zephus-shell-main">
+      <slot />
+    </main>
+    <footer class="zephus-shell-footer">
+      {footerHtml ? <Fragment set:html={footerHtml} /> : null}
+    </footer>${customScriptTag}
+  </body>
+</html>
+`;
 }
 
 function readJsonFile<T>(file: string): T | null {
@@ -282,9 +570,7 @@ function textFromHtml(html: string): string {
 }
 
 function attrValue(html: string, attr: string): string {
-  const match = html.match(
-    new RegExp(`${attr}\\s*=\\s*["']([^"']*)["']`, "i"),
-  );
+  const match = html.match(new RegExp(`${attr}\\s*=\\s*["']([^"']*)["']`, "i"));
   return match?.[1] ?? "";
 }
 
@@ -324,9 +610,10 @@ function parseStoredBlock(segment: string): BlockNode | null {
   if (!encodedType || !encodedProps) return null;
   try {
     const type = decodeURIComponent(encodedType) as EditorBlockType;
-    const props = JSON.parse(
-      decodeURIComponent(encodedProps),
-    ) as Record<string, string>;
+    const props = JSON.parse(decodeURIComponent(encodedProps)) as Record<
+      string,
+      string
+    >;
     const encodedStyle = attrValue(segment, "data-zephus-style");
     const style = encodedStyle
       ? (JSON.parse(decodeURIComponent(encodedStyle)) as BlockStyle)
@@ -375,7 +662,9 @@ function splitTopLevelNodes(inner: string): string[] {
     const tagText = first[0];
     const tagName = (first[1] ?? "").toLowerCase();
     const selfClosing =
-      tagText.endsWith("/>") || VOID_TAGS.has(tagName) || tagText.startsWith("</");
+      tagText.endsWith("/>") ||
+      VOID_TAGS.has(tagName) ||
+      tagText.startsWith("</");
     if (selfClosing) {
       out.push(tagText);
       index = tokenRe.lastIndex;
@@ -386,7 +675,6 @@ function splitTopLevelNodes(inner: string): string[] {
     while (depth > 0) {
       const next = tokenRe.exec(inner);
       if (!next) {
-        depth = 0;
         index = inner.length;
         break;
       }
@@ -431,7 +719,12 @@ function parseBlockSegment(segment: string): BlockNode {
     };
   }
   if (tag === "p") {
-    return { id, type: "text", props: { text: textFromHtml(segment), cls }, style };
+    return {
+      id,
+      type: "text",
+      props: { text: textFromHtml(segment), cls },
+      style,
+    };
   }
   if (tag === "a") {
     return {
@@ -508,9 +801,7 @@ function extractManagedInner(raw: string): string {
   );
   if (layoutMatch?.[1]) return layoutMatch[1].trim();
 
-  const bodyMatch = body.match(
-    /<body\b[^>]*>([\s\S]*?)<\/body>/i,
-  );
+  const bodyMatch = body.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i);
   if (bodyMatch?.[1]) return bodyMatch[1].trim();
 
   return body.trim();
@@ -684,12 +975,20 @@ function renderBlockNode(block: BlockNode): string {
 function renderSections(sections: SectionNode[]): string {
   return sections
     .map((section) => {
-      const body = section.children.map((child) => renderBlockNode(child)).join("\n");
+      const body = section.children
+        .map((child) => renderBlockNode(child))
+        .join("\n");
       if (section.props["wrapper"] === "none") return body;
       const cls = section.props["cls"]
         ? ` class="${escapeAttr(section.props["cls"])}"`
         : "";
-      return `<section${cls}>\n${body}\n</section>`;
+      const style = styleAttr({
+        id: section.id,
+        type: "section",
+        props: section.props,
+        style: section.style,
+      } as BlockNode);
+      return `<section${cls}${style}>\n${body}\n</section>`;
     })
     .filter(Boolean)
     .join("\n");
@@ -749,7 +1048,10 @@ function defaultSiteDocument(
   };
 }
 
-function readPageDocumentFile(projectPath: string, slug: string): PageDocument | null {
+function readPageDocumentFile(
+  projectPath: string,
+  slug: string,
+): PageDocument | null {
   return readJsonFile<PageDocument>(pageSchemaFile(projectPath, slug));
 }
 
@@ -787,7 +1089,7 @@ ${body}
 `;
 }
 
-function syncLayoutNav(
+function syncLegacyLayoutNav(
   projectPath: string,
   site: SiteDocument,
   pagesDir: string,
@@ -795,7 +1097,9 @@ function syncLayoutNav(
   const layoutFile = safeResolve(projectPath, site.shell.layoutPath);
   if (!fs.existsSync(layoutFile)) return;
   const pageDocs = listPages(projectPath, pagesDir)
-    .map((page) => readPageDocumentFile(projectPath, slugFromPage(page, pagesDir)))
+    .map((page) =>
+      readPageDocumentFile(projectPath, slugFromPage(page, pagesDir)),
+    )
     .filter((entry): entry is PageDocument => Boolean(entry));
   const navItems =
     site.shell.navItems.filter((item) => item.visible).length > 0
@@ -817,17 +1121,48 @@ function syncLayoutNav(
   );
 }
 
-function pageMetaFromDoc(doc: PageDocument): PageMeta {
-  return {
-    page: doc.page,
-    route: doc.route,
-    slug: doc.slug,
-    title: doc.title,
-    navLabel: doc.navLabel,
-    metaDescription: doc.metaDescription,
-    navVisible: doc.navVisible,
-    isHome: doc.isHome,
-  };
+function syncSiteShellOutputs(
+  projectPath: string,
+  site: SiteDocument,
+  pagesDir: string,
+  pageDocs?: PageDocument[],
+  previousSite?: SiteDocument | null,
+): SiteDocument {
+  const docs = pageDocs ?? listExistingPageDocuments(projectPath, pagesDir);
+  site.shell.navItems = mergePageNavItems(site.shell.navItems, docs);
+
+  if (site.shell.layoutMode === "managed") {
+    const layoutFile = safeResolve(projectPath, site.shell.layoutPath);
+    if (previousSite?.shell.layoutMode !== "managed") {
+      ensureLegacyLayoutBackup(layoutFile);
+    }
+    const customCssHref = resolveManagedInclude(
+      projectPath,
+      site.shell.customCssPath,
+    );
+    const customScriptHref = resolveManagedInclude(
+      projectPath,
+      site.shell.customScriptsPath,
+    );
+    fs.mkdirSync(path.dirname(layoutFile), { recursive: true });
+    fs.writeFileSync(
+      layoutFile,
+      renderManagedLayout(
+        site,
+        site.shell.navItems,
+        customCssHref,
+        customScriptHref,
+      ),
+      "utf8",
+    );
+    const styleFile = safeResolve(projectPath, MANAGED_STYLE_PATH);
+    fs.mkdirSync(path.dirname(styleFile), { recursive: true });
+    fs.writeFileSync(styleFile, renderManagedStyles(site), "utf8");
+    return site;
+  }
+
+  syncLegacyLayoutNav(projectPath, site, pagesDir);
+  return site;
 }
 
 function buildPageDocument(
@@ -929,7 +1264,10 @@ export function ensureVisualSchema(
       unknown
     >;
     const nextThemeId =
-      themeId ?? (typeof repoSettings["theme"] === "string" ? repoSettings["theme"] : "project");
+      themeId ??
+      (typeof repoSettings["theme"] === "string"
+        ? repoSettings["theme"]
+        : "project");
 
     fs.mkdirSync(pagesSchemaDir(projectPath), { recursive: true });
     fs.mkdirSync(templatesDir(projectPath), { recursive: true });
@@ -950,7 +1288,7 @@ export function ensureVisualSchema(
       return doc;
     });
 
-    site.shell.navItems = buildNavFromPages(pageDocs.map((doc) => pageMetaFromDoc(doc)));
+    syncSiteShellOutputs(projectPath, site, pagesDir, pageDocs, site);
     site.generatedAt = new Date().toISOString();
     writeJsonFile(siteDocumentFile(projectPath), site);
     for (const doc of pageDocs) {
@@ -965,9 +1303,12 @@ export function ensureVisualSchema(
       fs.mkdirSync(path.dirname(path.join(projectPath, doc.page)), {
         recursive: true,
       });
-      fs.writeFileSync(path.join(projectPath, doc.page), generatedSource, "utf8");
+      fs.writeFileSync(
+        path.join(projectPath, doc.page),
+        generatedSource,
+        "utf8",
+      );
     }
-    syncLayoutNav(projectPath, site, pagesDir);
     updateAssetsIndex(projectPath, astro.publicDir);
 
     return {
@@ -1006,11 +1347,21 @@ export function writeSiteDocument(
   pagesDir: string,
 ): OperationResult {
   try {
-    writeJsonFile(siteDocumentFile(projectPath), {
+    const currentSite = readJsonFile<SiteDocument>(
+      siteDocumentFile(projectPath),
+    );
+    const nextSite: SiteDocument = {
       ...site,
       generatedAt: new Date().toISOString(),
-    });
-    syncLayoutNav(projectPath, site, pagesDir);
+    };
+    syncSiteShellOutputs(
+      projectPath,
+      nextSite,
+      pagesDir,
+      undefined,
+      currentSite,
+    );
+    writeJsonFile(siteDocumentFile(projectPath), nextSite);
     return { ok: true };
   } catch (error) {
     return {
@@ -1031,7 +1382,9 @@ export function listPageDocuments(
     }
     const pages = listPages(projectPath, pagesDir);
     const entries = pages
-      .map((page) => readPageDocumentFile(projectPath, slugFromPage(page, pagesDir)))
+      .map((page) =>
+        readPageDocumentFile(projectPath, slugFromPage(page, pagesDir)),
+      )
       .filter((entry): entry is PageDocument => Boolean(entry));
     return { ok: true, entries };
   } catch (error) {
@@ -1066,6 +1419,7 @@ export function readPageDocument(
         site: null,
         pageDocument: null,
         source: null,
+        generatedSource: null,
         error: ensured.error,
       };
     }
@@ -1076,6 +1430,7 @@ export function readPageDocument(
         site: null,
         pageDocument: null,
         source: null,
+        generatedSource: null,
         error: "Site schema not found.",
       };
     }
@@ -1087,6 +1442,7 @@ export function readPageDocument(
         site,
         pageDocument: null,
         source: null,
+        generatedSource: null,
         error: `Page schema missing for ${page}.`,
       };
     }
@@ -1109,10 +1465,10 @@ export function readPageDocument(
       ok: true,
       site,
       pageDocument: nextDoc,
-      source:
-        managedFileStatus === "managed"
-          ? generatedSource
-          : actualSource ?? generatedSource,
+      source: doc.detached
+        ? (actualSource ?? generatedSource)
+        : generatedSource,
+      generatedSource,
     };
   } catch (error) {
     return {
@@ -1120,6 +1476,7 @@ export function readPageDocument(
       site: null,
       pageDocument: null,
       source: null,
+      generatedSource: null,
       error: error instanceof Error ? error.message : String(error),
     };
   }
@@ -1138,6 +1495,7 @@ export function writePageDocument(
         site: null,
         pageDocument: null,
         source: null,
+        generatedSource: null,
         error: ensured.error,
       };
     }
@@ -1148,6 +1506,7 @@ export function writePageDocument(
         site: null,
         pageDocument: null,
         source: null,
+        generatedSource: null,
         error: "Site schema not found.",
       };
     }
@@ -1158,19 +1517,33 @@ export function writePageDocument(
       detachedAt: null,
       managedFileStatus: "managed",
     };
-    const generatedSource = renderAstroPage(projectPath, nextDoc.page, site, nextDoc);
+    const generatedSource = renderAstroPage(
+      projectPath,
+      nextDoc.page,
+      site,
+      nextDoc,
+    );
     nextDoc.generatedHash = hashText(generatedSource);
     writePageDocumentFile(projectPath, nextDoc);
     fs.mkdirSync(path.dirname(path.join(projectPath, nextDoc.page)), {
       recursive: true,
     });
-    fs.writeFileSync(path.join(projectPath, nextDoc.page), generatedSource, "utf8");
-    syncLayoutNav(projectPath, site, pagesDir);
+    fs.writeFileSync(
+      path.join(projectPath, nextDoc.page),
+      generatedSource,
+      "utf8",
+    );
+    syncSiteShellOutputs(projectPath, site, pagesDir);
+    writeJsonFile(siteDocumentFile(projectPath), {
+      ...site,
+      generatedAt: new Date().toISOString(),
+    });
     return {
       ok: true,
       site,
       pageDocument: nextDoc,
       source: generatedSource,
+      generatedSource,
     };
   } catch (error) {
     log.error("Failed to write page document", error);
@@ -1179,6 +1552,7 @@ export function writePageDocument(
       site: null,
       pageDocument: null,
       source: null,
+      generatedSource: null,
       error: error instanceof Error ? error.message : String(error),
     };
   }
@@ -1208,6 +1582,7 @@ export function detachPageDocument(
       site: current.site,
       pageDocument: nextDoc,
       source,
+      generatedSource: current.generatedSource ?? current.source,
     };
   } catch (error) {
     return {
@@ -1215,6 +1590,7 @@ export function detachPageDocument(
       site: null,
       pageDocument: null,
       source: null,
+      generatedSource: null,
       error: error instanceof Error ? error.message : String(error),
     };
   }
@@ -1241,6 +1617,7 @@ export function reattachPageDocument(
       site: null,
       pageDocument: null,
       source: null,
+      generatedSource: null,
       error: error instanceof Error ? error.message : String(error),
     };
   }
@@ -1302,7 +1679,11 @@ export function renamePageSchema(
     const prevSlug = slugFromPage(previousPage, pagesDir);
     const doc = readPageDocumentFile(projectPath, prevSlug);
     if (!doc) return { ok: true };
-    const nextPage = pagePathFromSlug(pagesDir, nextSlug, path.extname(previousPage) || ".astro");
+    const nextPage = pagePathFromSlug(
+      pagesDir,
+      nextSlug,
+      path.extname(previousPage) || ".astro",
+    );
     const nextDoc: PageDocument = {
       ...doc,
       page: nextPage,
@@ -1336,7 +1717,11 @@ export function duplicatePageSchema(
     if (!doc) return { ok: true };
     const nextDoc: PageDocument = {
       ...doc,
-      page: pagePathFromSlug(pagesDir, nextSlug, path.extname(page) || ".astro"),
+      page: pagePathFromSlug(
+        pagesDir,
+        nextSlug,
+        path.extname(page) || ".astro",
+      ),
       slug: nextSlug,
       route: nextSlug === "index" ? "/" : `/${nextSlug}`,
       title: `${doc.title} Copy`,

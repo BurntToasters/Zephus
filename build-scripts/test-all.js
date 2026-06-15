@@ -157,6 +157,15 @@ function runConfigChecks() {
       pkg.desktopName === 'run.rosie.zephus.desktop',
       'package.json: desktopName must be run.rosie.zephus.desktop'
     );
+    assertConfig(
+      typeof pkg.scripts?.['compile:main'] === 'string' &&
+        pkg.scripts['compile:main'].includes('bundle-preload.js'),
+      'package.json: scripts.compile:main must bundle preload.js after tsc'
+    );
+    assertConfig(
+      typeof pkg.scripts?.watch === 'string' && pkg.scripts.watch === 'node build-scripts/watch.js',
+      'package.json: scripts.watch must run build-scripts/watch.js'
+    );
 
     const baseConfigPath = path.join(process.cwd(), 'electron-builder.base.yml');
     const githubConfigPath = path.join(process.cwd(), 'electron-builder.github.yml');
@@ -187,12 +196,29 @@ function runConfigChecks() {
       msstoreConfig.win?.target === 'appx',
       'electron-builder.msstore.yml: win.target must be appx'
     );
+    assertConfig(
+      typeof msstoreConfig.appx?.identityName === 'string' &&
+        msstoreConfig.appx.identityName.includes('${env.ZEPHUS_MSSTORE_IDENTITY_NAME}'),
+      'electron-builder.msstore.yml: appx.identityName must come from ZEPHUS_MSSTORE_IDENTITY_NAME'
+    );
+    assertConfig(
+      typeof msstoreConfig.appx?.publisher === 'string' &&
+        msstoreConfig.appx.publisher.includes('${env.ZEPHUS_MSSTORE_PUBLISHER}'),
+      'electron-builder.msstore.yml: appx.publisher must come from ZEPHUS_MSSTORE_PUBLISHER'
+    );
+
+    const watchScript = fs.readFileSync(path.join(process.cwd(), 'build-scripts', 'watch.js'), 'utf8');
+    assertConfig(
+      watchScript.includes('bundle-preload.js'),
+      'build-scripts/watch.js must watch the preload bundler to match compile output'
+    );
 
     const requiredFiles = [
       'src/main/main.ts',
       'src/main/preload.ts',
       'src/renderer/index.html',
       'src/renderer/zephusEngine.ts',
+      'build-scripts/bundle-preload.js',
       'build/app-icon.ico',
       'build/app-icon.icns',
       'build/app-icon.png',

@@ -3,6 +3,8 @@ import { IPC } from "./ipcChannels";
 import type {
   AssetListResult,
   DraftResult,
+  DraftScope,
+  DraftSummaryResult,
   GitStatus,
   GlobalSettings,
   OperationResult,
@@ -51,13 +53,7 @@ const api = {
     pagesDir: string,
     nextSlug: string,
   ): Promise<OperationResult> =>
-    ipcRenderer.invoke(
-      IPC.renamePage,
-      projectPath,
-      page,
-      pagesDir,
-      nextSlug,
-    ),
+    ipcRenderer.invoke(IPC.renamePage, projectPath, page, pagesDir, nextSlug),
 
   duplicatePage: (
     projectPath: string,
@@ -73,8 +69,12 @@ const api = {
       slugInput,
     ),
 
-  deletePage: (projectPath: string, page: string): Promise<OperationResult> =>
-    ipcRenderer.invoke(IPC.deletePage, projectPath, page),
+  deletePage: (
+    projectPath: string,
+    page: string,
+    pagesDir: string,
+  ): Promise<OperationResult> =>
+    ipcRenderer.invoke(IPC.deletePage, projectPath, page, pagesDir),
 
   listPageMeta: (
     projectPath: string,
@@ -95,13 +95,7 @@ const api = {
     pagesDir: string,
     partial: Partial<PageMeta>,
   ): Promise<OperationResult> =>
-    ipcRenderer.invoke(
-      IPC.writePageMeta,
-      projectPath,
-      page,
-      pagesDir,
-      partial,
-    ),
+    ipcRenderer.invoke(IPC.writePageMeta, projectPath, page, pagesDir, partial),
 
   ensureVisualSchema: (
     projectPath: string,
@@ -227,18 +221,30 @@ const api = {
   deleteReusableSection: (id: string): Promise<OperationResult> =>
     ipcRenderer.invoke(IPC.deleteReusableSection, id),
 
-  readDraft: (projectPath: string, page: string): Promise<DraftResult> =>
-    ipcRenderer.invoke(IPC.draftRead, projectPath, page),
+  readDraft: (
+    projectPath: string,
+    scope: DraftScope,
+    target: string,
+  ): Promise<DraftResult> =>
+    ipcRenderer.invoke(IPC.draftRead, projectPath, scope, target),
+
+  listDrafts: (): Promise<DraftSummaryResult> =>
+    ipcRenderer.invoke(IPC.draftList),
 
   writeDraft: (
     projectPath: string,
-    page: string,
+    scope: DraftScope,
+    target: string,
     content: string,
   ): Promise<OperationResult> =>
-    ipcRenderer.invoke(IPC.draftWrite, projectPath, page, content),
+    ipcRenderer.invoke(IPC.draftWrite, projectPath, scope, target, content),
 
-  clearDraft: (projectPath: string, page: string): Promise<OperationResult> =>
-    ipcRenderer.invoke(IPC.draftClear, projectPath, page),
+  clearDraft: (
+    projectPath: string,
+    scope: DraftScope,
+    target: string,
+  ): Promise<OperationResult> =>
+    ipcRenderer.invoke(IPC.draftClear, projectPath, scope, target),
 
   watchFile: (projectPath: string, rel: string): Promise<OperationResult> =>
     ipcRenderer.invoke(IPC.watchStart, projectPath, rel),

@@ -38,6 +38,7 @@ export const IPC = {
   saveReusableSection: "sections:save",
   deleteReusableSection: "sections:delete",
   draftRead: "draft:read",
+  draftList: "draft:list",
   draftWrite: "draft:write",
   draftClear: "draft:clear",
   watchStart: "watch:start",

@@ -355,22 +355,22 @@ async function getOrCreateRelease() {
       );
 
       if (!Array.isArray(releases)) {
-        throw new Error('Unexpected releases payload type');
-      }
-
-      const matchingReleases = releases.filter(function (r) {
-        return r.tag_name === TAG_NAME;
-      });
-
-      if (matchingReleases.length > 0) {
-        matchingReleases.sort(function (a, b) {
-          return b.assets.length - a.assets.length;
+        console.log('   Release list payload was not an array; creating a new draft release.');
+      } else {
+        const matchingReleases = releases.filter(function (r) {
+          return r.tag_name === TAG_NAME;
         });
-        const release = matchingReleases[0];
-        console.log(
-          '   Found draft release: ' + release.name + ' (' + release.assets.length + ' assets)'
-        );
-        return release;
+
+        if (matchingReleases.length > 0) {
+          matchingReleases.sort(function (a, b) {
+            return b.assets.length - a.assets.length;
+          });
+          const release = matchingReleases[0];
+          console.log(
+            '   Found draft release: ' + release.name + ' (' + release.assets.length + ' assets)'
+          );
+          return release;
+        }
       }
     } catch (listError) {
       console.log('   Could not list releases: ' + listError.message);

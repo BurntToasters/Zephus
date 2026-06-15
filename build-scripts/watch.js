@@ -57,7 +57,22 @@ clean.on('close', (code) => {
     shutdown(exitCode ?? 0);
   });
 
-  children.push(mainWatcher, rendererWatcher);
+  const preloadWatcher = spawn(
+    process.execPath,
+    [path.join(__dirname, 'bundle-preload.js'), '--watch'],
+    { cwd: ROOT, stdio: 'inherit' }
+  );
+
+  preloadWatcher.on('exit', (exitCode, signal) => {
+    if (shuttingDown) return;
+    if (signal) {
+      shutdown(0);
+      return;
+    }
+    shutdown(exitCode ?? 0);
+  });
+
+  children.push(mainWatcher, rendererWatcher, preloadWatcher);
 });
 
 process.on('SIGINT', () => shutdown(0));

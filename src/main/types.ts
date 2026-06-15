@@ -325,15 +325,32 @@ export interface ReusableSectionsResult {
   error?: string;
 }
 
+export type DraftScope = "page" | "site";
+
 export interface DraftData {
-  page: string;
+  projectPath: string;
+  scope: DraftScope;
+  target: string;
   content: string;
+  savedAt: string;
+}
+
+export interface DraftSummary {
+  projectPath: string;
+  scope: DraftScope;
+  target: string;
   savedAt: string;
 }
 
 export interface DraftResult {
   ok: boolean;
   draft: DraftData | null;
+  error?: string;
+}
+
+export interface DraftSummaryResult {
+  ok: boolean;
+  entries: DraftSummary[];
   error?: string;
 }
 
@@ -348,6 +365,7 @@ export interface PageDocumentResult {
   site: SiteDocument | null;
   pageDocument: PageDocument | null;
   source: string | null;
+  generatedSource: string | null;
   error?: string;
 }
 

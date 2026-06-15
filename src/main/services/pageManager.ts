@@ -12,6 +12,7 @@ import {
   readPageDocument,
   renamePageSchema,
   routeFromPage,
+  writeSiteDocument,
   writePageDocument,
 } from "./schema";
 
@@ -45,15 +46,17 @@ export function readPageMetadata(
       isHome: doc.isHome,
     };
   }
-  const slug = normalizePageSlug(page.replace(/^.*?src[\\/]+pages[\\/]+/, "")) ?? "index";
+  const slug =
+    normalizePageSlug(page.replace(/^.*?src[\\/]+pages[\\/]+/, "")) ?? "index";
   const route = slug === "index" ? "/" : `/${slug}`;
-  const title = slug === "index"
-    ? "Home"
-    : slug
-        .split("/")
-        .pop()
-        ?.replace(/[-_]/g, " ")
-        .replace(/\b\w/g, (char) => char.toUpperCase()) ?? "Page";
+  const title =
+    slug === "index"
+      ? "Home"
+      : (slug
+          .split("/")
+          .pop()
+          ?.replace(/[-_]/g, " ")
+          .replace(/\b\w/g, (char) => char.toUpperCase()) ?? "Page");
   return {
     page,
     route,
@@ -140,7 +143,9 @@ function uniqueSlug(
   let candidate = slug;
   let index = 1;
   while (
-    fs.existsSync(path.join(projectPath, pagePathFromSlug(pagesDir, candidate, ext)))
+    fs.existsSync(
+      path.join(projectPath, pagePathFromSlug(pagesDir, candidate, ext)),
+    )
   ) {
     candidate = `${slug}-copy-${index}`;
     index += 1;
@@ -166,10 +171,14 @@ export function renamePage(
   }
   try {
     const current = readPageDocument(projectPath, page, pagesDir);
+    const originalSource = fs.readFileSync(from, "utf8");
     fs.mkdirSync(path.dirname(to), { recursive: true });
     fs.renameSync(from, to);
     const moved = renamePageSchema(projectPath, pagesDir, page, nextSlug);
-    if (!moved.ok) return moved;
+    if (!moved.ok) {
+      fs.renameSync(to, from);
+      return moved;
+    }
     if (current.ok && current.pageDocument) {
       const saved = writePageDocument(projectPath, pagesDir, {
         ...current.pageDocument,
@@ -178,7 +187,20 @@ export function renamePage(
         route: nextSlug === "index" ? "/" : `/${nextSlug}`,
         isHome: nextSlug === "index",
       });
-      if (!saved.ok) return { ok: false, error: saved.error };
+      if (!saved.ok) {
+        fs.writeFileSync(from, originalSource, "utf8");
+        if (fs.existsSync(to)) {
+          fs.rmSync(to, { force: true });
+        }
+        renamePageSchema(
+          projectPath,
+          pagesDir,
+          nextRel,
+          current.pageDocument.slug,
+        );
+        writePageDocument(projectPath, pagesDir, current.pageDocument);
+        return { ok: false, error: saved.error };
+      }
     }
     return { ok: true };
   } catch (error) {
@@ -198,9 +220,10 @@ export function duplicatePage(
   try {
     const from = safeResolve(projectPath, page);
     const ext = path.extname(page) || ".astro";
-    const baseSlug = normalizePageSlug(
-      slugInput ?? `${path.basename(page, ext)}-copy`,
-    );
+    const currentSlug =
+      normalizePageSlug(routeFromPage(page, pagesDir).replace(/^\//, "")) ??
+      path.basename(page, ext);
+    const baseSlug = normalizePageSlug(slugInput ?? `${currentSlug}-copy`);
     if (!baseSlug) return { ok: false, error: "Invalid duplicate slug." };
     const nextSlug = uniqueSlug(projectPath, pagesDir, baseSlug, ext);
     const nextRel = pagePathFromSlug(pagesDir, nextSlug, ext);
@@ -208,11 +231,18 @@ export function duplicatePage(
     fs.mkdirSync(path.dirname(to), { recursive: true });
     fs.copyFileSync(from, to);
     const copied = duplicatePageSchema(projectPath, pagesDir, page, nextSlug);
-    if (!copied.ok) return copied;
+    if (!copied.ok) {
+      fs.rmSync(to, { force: true });
+      return copied;
+    }
     const next = readPageDocument(projectPath, nextRel, pagesDir);
     if (next.ok && next.pageDocument) {
       const saved = writePageDocument(projectPath, pagesDir, next.pageDocument);
-      if (!saved.ok) return { ok: false, error: saved.error };
+      if (!saved.ok) {
+        fs.rmSync(to, { force: true });
+        deletePageSchema(projectPath, nextRel, pagesDir);
+        return { ok: false, error: saved.error };
+      }
     }
     return { ok: true };
   } catch (error) {
@@ -226,16 +256,31 @@ export function duplicatePage(
 export function deletePage(
   projectPath: string,
   page: string,
-  pagesDir = path.join("src", "pages"),
+  pagesDir: string,
 ): OperationResult {
   try {
     const full = safeResolve(projectPath, page);
     if (!fs.existsSync(full)) {
       return { ok: false, error: "Page does not exist." };
     }
+    const originalSource = fs.readFileSync(full, "utf8");
+    const current = readPageDocument(projectPath, page, pagesDir);
     fs.rmSync(full, { force: true });
     const deleted = deletePageSchema(projectPath, page, pagesDir);
-    if (!deleted.ok) return deleted;
+    if (!deleted.ok) {
+      fs.mkdirSync(path.dirname(full), { recursive: true });
+      fs.writeFileSync(full, originalSource, "utf8");
+      return deleted;
+    }
+    if (current.ok && current.site) {
+      const synced = writeSiteDocument(projectPath, current.site, pagesDir);
+      if (!synced.ok) {
+        fs.mkdirSync(path.dirname(full), { recursive: true });
+        fs.writeFileSync(full, originalSource, "utf8");
+        writePageDocument(projectPath, pagesDir, current.pageDocument!);
+        return synced;
+      }
+    }
     return { ok: true };
   } catch (error) {
     return {
