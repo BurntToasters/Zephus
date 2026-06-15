@@ -2,9 +2,19 @@ import { app, BrowserWindow } from "electron";
 import { autoUpdater, CancellationToken } from "electron-updater";
 import log from "electron-log";
 import type { GlobalSettings } from "./types";
+import {
+  resolveUpdateFeedChannel,
+  isChannelUpgrade,
+  shouldAllowFeedDowngrade,
+} from "./services/updateChannel";
 
 let downloadToken: CancellationToken | null = null;
 let isDownloading = false;
+// The version most recently confirmed as a valid upgrade by isChannelUpgrade.
+// Acts as a guard so a download can never install a build the channel rules
+// rejected (electron-updater may surface semver-older builds when
+// allowDowngrade is enabled for channel graduation).
+let approvedVersion: string | null = null;
 
 export interface UpdaterStatus {
   status:
@@ -20,26 +30,21 @@ export interface UpdaterStatus {
   error?: string;
 }
 
-function isBetaVersion(version: string): boolean {
-  return /-(beta|alpha|rc)/i.test(version);
-}
-
-function resolveUseBeta(channel: GlobalSettings["updateChannel"]): boolean {
-  if (channel === "beta") return true;
-  if (channel === "stable") return false;
-  // "auto" → match current install: beta installs get beta updates.
-  return isBetaVersion(app.getVersion());
-}
-
 function applyChannel(settings: GlobalSettings): void {
-  const useBeta = resolveUseBeta(settings.updateChannel);
-  if (useBeta) {
-    autoUpdater.channel = "beta";
-    autoUpdater.allowPrerelease = true;
-  } else {
+  const installed = app.getVersion();
+  const channel = resolveUpdateFeedChannel(settings.updateChannel, installed);
+  if (channel === "latest") {
     autoUpdater.channel = "latest";
     autoUpdater.allowPrerelease = false;
+  } else {
+    autoUpdater.channel = channel;
+    autoUpdater.allowPrerelease = true;
   }
+  // Enable downgrade only when graduating to a more stable channel at the same
+  // base version (e.g. db -> beta), where the target is a lower semver.
+  // isChannelUpgrade is still the final gate, so real base downgrades are
+  // never offered or downloaded.
+  autoUpdater.allowDowngrade = shouldAllowFeedDowngrade(channel, installed);
 }
 
 /**
@@ -66,14 +71,25 @@ export function setupAutoUpdater(
   autoUpdater.on("checking-for-update", () => send({ status: "checking" }));
 
   autoUpdater.on("update-available", (info) => {
-    send({ status: "available", version: info.version });
+    // electron-updater compares with raw semver and may report a build that
+    // our channel rules reject (e.g. a less-stable build at the same base, or
+    // a base downgrade surfaced because allowDowngrade was enabled). Re-gate.
+    if (isChannelUpgrade(app.getVersion(), info.version)) {
+      approvedVersion = info.version;
+      send({ status: "available", version: info.version });
+    } else {
+      approvedVersion = null;
+      send({ status: "not-available", version: app.getVersion() });
+    }
   });
 
   autoUpdater.on("update-not-available", () => {
+    approvedVersion = null;
     send({ status: "not-available", version: app.getVersion() });
   });
 
   autoUpdater.on("error", (err) => {
+    approvedVersion = null;
     log.error("Auto-updater error:", err);
     send({ status: "error", error: err.message });
   });
@@ -97,11 +113,18 @@ export async function checkForUpdates(
   try {
     applyChannel(getSettings());
     const result = await autoUpdater.checkForUpdates();
-    if (result?.updateInfo) {
-      return { status: "available", version: result.updateInfo.version };
+    const latest = result?.updateInfo?.version;
+    // result.updateInfo is always populated with the feed's newest entry, even
+    // when no update applies, so compare explicitly with channel rules rather
+    // than treating its presence as "available".
+    if (latest && isChannelUpgrade(app.getVersion(), latest)) {
+      approvedVersion = latest;
+      return { status: "available", version: latest };
     }
+    approvedVersion = null;
     return { status: "not-available", version: app.getVersion() };
   } catch (error) {
+    approvedVersion = null;
     return {
       status: "error",
       error: error instanceof Error ? error.message : String(error),
@@ -112,6 +135,12 @@ export async function checkForUpdates(
 export async function downloadUpdate(): Promise<UpdaterStatus> {
   if (isDownloading) {
     return { status: "downloading" };
+  }
+  if (!approvedVersion) {
+    return {
+      status: "error",
+      error: "No applicable update available to download.",
+    };
   }
   try {
     isDownloading = true;

@@ -1125,6 +1125,7 @@ async function openSettingsModal(): Promise<void> {
       { value: "auto", label: "Auto (match install)" },
       { value: "stable", label: "Stable" },
       { value: "beta", label: "Beta" },
+      { value: "developer", label: "Developer (db)" },
     ],
     settings.updateChannel,
   );

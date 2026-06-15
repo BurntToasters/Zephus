@@ -23,6 +23,10 @@ const packageJson = require('../package.json');
 const VERSION = packageJson.version;
 const TAG_NAME = 'v' + VERSION;
 
+function isGithubPrereleaseVersion(version) {
+  return /-(beta|alpha|rc|db)(?:[.-]|$)/i.test(version);
+}
+
 const args = process.argv.slice(2);
 const archArgIndex = args.findIndex((arg) => arg === '--arch');
 const TARGET_ARCH = archArgIndex !== -1 && args[archArgIndex + 1] ? args[archArgIndex + 1] : null;
@@ -385,7 +389,7 @@ async function getOrCreateRelease() {
           tag_name: TAG_NAME,
           name: 'Zephus ' + VERSION,
           draft: true,
-          prerelease: VERSION.includes('beta') || VERSION.includes('alpha'),
+          prerelease: isGithubPrereleaseVersion(VERSION),
         }
       );
       console.log('   ✓ Created draft release: ' + release.name);

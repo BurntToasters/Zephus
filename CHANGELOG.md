@@ -1,14 +1,14 @@
 > [!NOTE]
-> 🅱️ This is a Beta build.
+> ⛔️ This is a Developer Beta build.
 
 # ⬇️ Downloads
 
 | <img height="20" src="https://raw.githubusercontent.com/BurntToasters/bcls/main/media/windows.png" /> Windows | <img height="20" src="https://raw.githubusercontent.com/BurntToasters/bcls/main/media/mac.png" /> macOS | <img height="20" src="https://raw.githubusercontent.com/BurntToasters/bcls/main/media/linux.png" /> Linux |
 | :--- | :--- | :--- |
-| **EXE:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.1/Zephus-Windows-x64.exe) / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.1/Zephus-Windows-arm64.exe) | **[Universal DMG](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.1/Zephus-MacOS-universal.dmg)** | **AppImage:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.1/Zephus-Linux-x86_64.AppImage) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.1/Zephus-Linux-arm64.AppImage) --> |
-| | **[Universal ZIP](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.1/Zephus-MacOS-universal.zip)** | **DEB:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.1/Zephus-Linux-amd64.deb) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.1/Zephus-Linux-arm64.deb) --> |
-| | | **RPM:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.1/Zephus-Linux-x86_64.rpm) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.1/Zephus-Linux-aarch64.rpm) --> |
-| | | **Flatpak:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.1/Zephus-Linux-x86_64.flatpak) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.1/Zephus-Linux-aarch64.flatpak) --> |
+| **EXE:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.1/Zephus-Windows-x64.exe) / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.1/Zephus-Windows-arm64.exe) | **[Universal DMG](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.1/Zephus-MacOS-universal.dmg)** | **AppImage:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.1/Zephus-Linux-x86_64.AppImage) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.1/Zephus-Linux-arm64.AppImage) --> |
+| | **[Universal ZIP](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.1/Zephus-MacOS-universal.zip)** | **DEB:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.1/Zephus-Linux-amd64.deb) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.1/Zephus-Linux-arm64.deb) --> |
+| | | **RPM:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.1/Zephus-Linux-x86_64.rpm) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.1/Zephus-Linux-aarch64.rpm) --> |
+| | | **Flatpak:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.1/Zephus-Linux-x86_64.flatpak) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.1/Zephus-Linux-aarch64.flatpak) --> |
 
 > [!IMPORTANT]
 > The `.sig` files in this repo are NOT normal GPG signatures — they are for Zephus's built-in updater to verify the integrity of updates before downloading and installing.
@@ -21,7 +21,7 @@
 
 ---
 
-## Changes in `v0.1.0-beta.1:`
+## Changes in `v0.1.0-db.1:`
 
 Beta 1 releases of Zephus don't include any changes besides the initial build, and are meant to sync beta users to the first working version.
 
