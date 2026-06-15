@@ -291,6 +291,11 @@ const api = {
   openConfigFolder: (): Promise<unknown> =>
     ipcRenderer.invoke(IPC.openConfigFolder),
 
+  getNodeStatus: (): Promise<unknown> => ipcRenderer.invoke(IPC.nodeStatus),
+  pickNodePath: (): Promise<unknown> => ipcRenderer.invoke(IPC.nodePickPath),
+  setNodePath: (customPath: string | null): Promise<unknown> =>
+    ipcRenderer.invoke(IPC.nodeSetPath, customPath),
+
   onUpdaterStatus: (
     callback: (data: {
       status: string;

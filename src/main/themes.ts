@@ -16,7 +16,7 @@ export interface Theme extends ThemeMeta {
   baseLayout: string;
 }
 
-export const ASTRO_VERSION = "^5.0.0";
+export const ASTRO_VERSION = "^6.0.0";
 
 function packageJson(siteName: string): string {
   const pkg = {

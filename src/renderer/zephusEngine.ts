@@ -1152,6 +1152,93 @@ async function openSettingsModal(): Promise<void> {
   updatesSec.appendChild(checkRow);
   form.appendChild(updatesSec);
 
+  // --- Environment Section (Node.js) ---
+  const envSec = document.createElement("div");
+  envSec.className = "settings-section";
+
+  const envHeader = document.createElement("h4");
+  envHeader.className = "settings-section-title";
+  envHeader.textContent = "Environment";
+  envSec.appendChild(envHeader);
+
+  const nodeRow = document.createElement("div");
+  nodeRow.className = "settings-row";
+
+  const nodeCopy = document.createElement("div");
+  nodeCopy.className = "settings-inline-copy";
+  const nodeStatusText = document.createElement("span");
+  nodeStatusText.textContent = "Checking Node.js…";
+  const nodeStrong = document.createElement("strong");
+  nodeStrong.textContent = "Node.js (for build & preview)";
+  nodeCopy.append(nodeStrong, nodeStatusText);
+
+  const nodeBtns = document.createElement("div");
+  nodeBtns.className = "settings-inline-actions";
+  const nodeBrowseBtn = document.createElement("button");
+  nodeBrowseBtn.className = "btn secondary mini-btn";
+  nodeBrowseBtn.textContent = "Set Custom Location…";
+  const nodeAutoBtn = document.createElement("button");
+  nodeAutoBtn.className = "btn ghost mini-btn";
+  nodeAutoBtn.textContent = "Use Auto-detect";
+  nodeBtns.append(nodeBrowseBtn, nodeAutoBtn);
+
+  nodeRow.append(nodeCopy, nodeBtns);
+  envSec.appendChild(nodeRow);
+
+  const applyNodeStatus = (res: NodeCheckResult): void => {
+    const label =
+      res.status === "ok"
+        ? `Node.js ${res.version} detected ✓`
+        : res.status === "outdated"
+          ? `Node.js ${res.version ?? "?"} — version 22.12+ required`
+          : res.status === "missing"
+            ? "Node.js not found — set a custom location below"
+            : "Node.js status could not be determined";
+    const source = settings.customNodePath
+      ? `Custom: ${settings.customNodePath}`
+      : "Auto-detect (system PATH)";
+    nodeStatusText.textContent = `${label} · ${source}`;
+    nodeAutoBtn.disabled = !settings.customNodePath;
+  };
+
+  nodeBrowseBtn.onclick = async () => {
+    nodeBrowseBtn.disabled = true;
+    try {
+      const res = await window.zephus.pickNodePath();
+      if (
+        (res.status === "ok" || res.status === "outdated") &&
+        res.usedCustomPath &&
+        res.binaryPath
+      ) {
+        settings.customNodePath = res.binaryPath;
+      }
+      applyNodeStatus(res);
+    } catch {
+      nodeStatusText.textContent = "Could not set Node.js location.";
+    }
+    nodeBrowseBtn.disabled = false;
+  };
+
+  nodeAutoBtn.onclick = async () => {
+    nodeAutoBtn.disabled = true;
+    try {
+      const res = await window.zephus.setNodePath(null);
+      settings.customNodePath = null;
+      applyNodeStatus(res);
+    } catch {
+      nodeStatusText.textContent = "Could not reset Node.js location.";
+    }
+  };
+
+  window.zephus
+    .getNodeStatus()
+    .then(applyNodeStatus)
+    .catch(() => {
+      nodeStatusText.textContent = "Could not check Node.js.";
+    });
+
+  form.appendChild(envSec);
+
   // --- Appearance Section ---
   const apSec = document.createElement("div");
   apSec.className = "settings-section";
@@ -1280,6 +1367,7 @@ async function openSettingsModal(): Promise<void> {
           confirmBlockDelete: true,
           autosave: false,
           codeFontSize: 13,
+          customNodePath: null,
         };
         await window.zephus.writeGlobalSettings(defaults);
         document.documentElement.setAttribute("data-theme", "system");

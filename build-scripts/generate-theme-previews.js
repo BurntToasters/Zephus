@@ -83,7 +83,7 @@ function main() {
   const { buildPreviewTheme, listThemes } = ensureThemesModule();
   const astroCli = path.join(
     path.dirname(require.resolve("astro/package.json")),
-    "astro.js",
+    require(require.resolve("astro/package.json")).bin.astro,
   );
   const themes = listThemes();
 

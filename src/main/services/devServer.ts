@@ -3,6 +3,8 @@ import * as fs from "fs";
 import * as path from "path";
 import log from "electron-log";
 import { DevServerStartResult } from "../types";
+import { readGlobalSettings } from "./settings";
+import { buildSpawnEnv } from "./nodeCheck";
 
 const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
 const URL_PATTERN =
@@ -74,12 +76,21 @@ export function startDevServer(
     });
   }
 
+  return startDevServerProcess(projectPath, onLog);
+}
+
+async function startDevServerProcess(
+  projectPath: string,
+  onLog: DevServerLogListener,
+): Promise<DevServerStartResult> {
+  const spawnEnv = await buildSpawnEnv(readGlobalSettings().customNodePath);
+
   return new Promise<DevServerStartResult>((resolve) => {
     let settled = false;
     const child = spawn(npmCmd, ["run", "dev"], {
       cwd: projectPath,
       windowsHide: true,
-      env: { ...process.env, FORCE_COLOR: "0" },
+      env: { ...spawnEnv, FORCE_COLOR: "0" },
     });
 
     current = { projectPath, child, url: null };

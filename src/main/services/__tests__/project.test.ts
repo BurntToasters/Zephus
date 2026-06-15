@@ -75,6 +75,18 @@ describe("detectAstro", () => {
     expect(result.srcDir).toBe("source");
     expect(result.pagesDir).toBe(path.join("source", "pages"));
   });
+
+  it("detects Astro v6 project", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "astro.config.mjs"),
+      "export default {};",
+    );
+    const pkg = { dependencies: { astro: "^6.0.0" } };
+    fs.writeFileSync(path.join(tmpDir, "package.json"), JSON.stringify(pkg));
+    const result = detectAstro(tmpDir);
+    expect(result.isAstro).toBe(true);
+    expect(result.version).toBe("^6.0.0");
+  });
 });
 
 describe("listPages", () => {

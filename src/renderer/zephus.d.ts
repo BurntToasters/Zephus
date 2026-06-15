@@ -54,6 +54,15 @@ interface GlobalSettings {
   confirmBlockDelete: boolean;
   autosave: boolean;
   codeFontSize: number;
+  customNodePath: string | null;
+}
+
+interface NodeCheckResult {
+  status: "ok" | "outdated" | "missing" | "unknown";
+  version: string | null;
+  binaryPath: string | null;
+  usedCustomPath: boolean;
+  message: string;
 }
 
 interface OperationResult {
@@ -521,6 +530,9 @@ interface ZephusApi {
   installUpdate(): Promise<unknown>;
   getAppVersion(): Promise<string>;
   openConfigFolder(): Promise<unknown>;
+  getNodeStatus(): Promise<NodeCheckResult>;
+  pickNodePath(): Promise<NodeCheckResult>;
+  setNodePath(customPath: string | null): Promise<NodeCheckResult>;
   onUpdaterStatus(
     callback: (data: {
       status: string;

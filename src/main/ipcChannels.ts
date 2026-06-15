@@ -57,4 +57,7 @@ export const IPC = {
   updaterStatus: "updater-status",
   getAppVersion: "app:version",
   openConfigFolder: "app:openConfigFolder",
+  nodeStatus: "node:status",
+  nodePickPath: "node:pickPath",
+  nodeSetPath: "node:setPath",
 } as const;

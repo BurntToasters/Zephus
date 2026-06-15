@@ -1959,6 +1959,13 @@ body {
   line-height: 1.35;
 }
 
+.settings-inline-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+  align-items: center;
+}
+
 .settings-footer {
   display: flex;
   justify-content: space-between;

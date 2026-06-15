@@ -62,6 +62,7 @@ import {
   installUpdate,
 } from "./updater";
 import { watchFile, stopWatching } from "./services/watch";
+import { checkNodeVersion } from "./services/nodeCheck";
 import { IPC } from "./ipcChannels";
 
 export { IPC };
@@ -267,6 +268,58 @@ export function registerIpcHandlers(
 
   ipcMain.handle(IPC.settingsReadRepo, (_e, projectPath: string) =>
     readRepoSettings(projectPath),
+  );
+
+  ipcMain.handle(IPC.nodeStatus, () =>
+    checkNodeVersion(readGlobalSettings().customNodePath),
+  );
+
+  ipcMain.handle(IPC.nodePickPath, async () => {
+    const win = getWindow();
+    const isWindows = process.platform === "win32";
+    const result = await dialog.showOpenDialog(win ?? undefined!, {
+      title: "Select the Node.js Executable",
+      properties: ["openFile"],
+      filters: isWindows
+        ? [{ name: "Executable", extensions: ["exe"] }]
+        : undefined,
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+      return checkNodeVersion(readGlobalSettings().customNodePath);
+    }
+
+    const selected = result.filePaths[0];
+    if (!selected) {
+      return checkNodeVersion(readGlobalSettings().customNodePath);
+    }
+    // Validate the selection before persisting it.
+    const status = await checkNodeVersion(selected);
+    if (status.status === "missing" || status.status === "unknown") {
+      // The chosen file isn't a working Node binary; report without saving.
+      return {
+        ...status,
+        message: `The selected file is not a working Node.js executable.\n\n${selected}`,
+      };
+    }
+
+    const settings = readGlobalSettings();
+    settings.customNodePath = selected;
+    writeGlobalSettings(settings);
+    return status;
+  });
+
+  ipcMain.handle(
+    IPC.nodeSetPath,
+    async (_e, customPath: string | null): Promise<unknown> => {
+      const normalized =
+        typeof customPath === "string" && customPath.trim().length > 0
+          ? customPath.trim()
+          : null;
+      const settings = readGlobalSettings();
+      settings.customNodePath = normalized;
+      writeGlobalSettings(settings);
+      return checkNodeVersion(normalized);
+    },
   );
 
   ipcMain.handle(IPC.settingsMerged, (_e, projectPath: string) =>

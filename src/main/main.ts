@@ -4,8 +4,9 @@ import log from "electron-log";
 import { registerIpcHandlers } from "./ipc";
 import { stopDevServer } from "./services/devServer";
 import { stopThemePreviewServer } from "./services/themePreviewServer";
-import { readGlobalSettings } from "./services/settings";
+import { readGlobalSettings, writeGlobalSettings } from "./services/settings";
 import { setupAutoUpdater, checkForUpdates } from "./updater";
+import { checkNodeVersion } from "./services/nodeCheck";
 
 const isDev =
   process.argv.includes("--dev") || process.env.NODE_ENV === "development";
@@ -288,6 +289,98 @@ function initAutoUpdater(): void {
   }
 }
 
+/**
+ * Verifies the system Node.js (used to spawn `astro build`/`astro dev`) meets
+ * the minimum version Astro requires. Shows a non-fatal warning dialog if not,
+ * with an option to locate a custom Node.js binary. Runs in the background so
+ * it never blocks startup.
+ */
+function initNodeVersionCheck(): void {
+  if (isSmoke) return;
+  void runNodeVersionCheck();
+}
+
+async function promptLocateNode(): Promise<void> {
+  const target =
+    mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
+  const isWindows = process.platform === "win32";
+  const picked = await dialog.showOpenDialog(target as BrowserWindow, {
+    title: "Select the Node.js Executable",
+    properties: ["openFile"],
+    filters: isWindows
+      ? [{ name: "Executable", extensions: ["exe"] }]
+      : undefined,
+  });
+  if (picked.canceled || picked.filePaths.length === 0) return;
+
+  const selected = picked.filePaths[0];
+  if (!selected) return;
+  const status = await checkNodeVersion(selected);
+  if (status.status === "missing" || status.status === "unknown") {
+    await dialog.showMessageBox(target as BrowserWindow, {
+      type: "error",
+      title: "Invalid Node.js Location",
+      message: "That file is not a working Node.js executable.",
+      detail: selected,
+      buttons: ["OK"],
+      noLink: true,
+    });
+    return;
+  }
+
+  const settings = readGlobalSettings();
+  settings.customNodePath = selected;
+  writeGlobalSettings(settings);
+
+  await dialog.showMessageBox(target as BrowserWindow, {
+    type: status.status === "ok" ? "info" : "warning",
+    title: "Node.js Location Saved",
+    message:
+      status.status === "ok"
+        ? `Using Node.js ${status.version}.`
+        : `Saved, but this Node.js is still below the required version.`,
+    detail: status.message,
+    buttons: ["OK"],
+    noLink: true,
+  });
+}
+
+async function runNodeVersionCheck(): Promise<void> {
+  try {
+    const result = await checkNodeVersion(readGlobalSettings().customNodePath);
+    if (result.status === "ok") {
+      log.info(`Node version check: ${result.message}`);
+      return;
+    }
+
+    log.warn(`Node version check (${result.status}): ${result.message}`);
+    const title =
+      result.status === "missing"
+        ? "Node.js Not Found"
+        : result.status === "outdated"
+          ? "Node.js Update Required"
+          : "Node.js Check";
+    const target =
+      mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
+    const response = await dialog.showMessageBox(target as BrowserWindow, {
+      type: "warning",
+      title,
+      message: title,
+      detail: result.message,
+      buttons: ["Set Custom Location…", "OK"],
+      defaultId: 1,
+      cancelId: 1,
+      noLink: true,
+    });
+
+    if (response.response === 0) {
+      await promptLocateNode();
+    }
+  } catch (error) {
+    log.warn("Node version check failed unexpectedly", error);
+  }
+}
+
 if (!isPrimaryInstance) {
   app.quit();
 } else {
@@ -313,6 +406,7 @@ if (!isPrimaryInstance) {
     createSplash();
     createMainWindow();
     initAutoUpdater();
+    initNodeVersionCheck();
 
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) {

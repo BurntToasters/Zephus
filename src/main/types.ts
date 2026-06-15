@@ -55,6 +55,8 @@ export interface GlobalSettings {
   confirmBlockDelete: boolean;
   autosave: boolean;
   codeFontSize: number;
+  /** Optional explicit path to a Node.js binary for builds/previews. */
+  customNodePath: string | null;
 }
 
 export interface RepoSettings {
@@ -390,6 +392,7 @@ export const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {
   confirmBlockDelete: true,
   autosave: false,
   codeFontSize: 13,
+  customNodePath: null,
 };
 
 export const DEFAULT_REPO_SETTINGS: RepoSettings = {
