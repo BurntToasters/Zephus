@@ -29,6 +29,28 @@ export function watchFile(
     log.warn("Refusing to watch path outside project", full);
     return;
   }
+  // Resolve symlinks: an in-project symlink must not let us watch a file
+  // outside the project root.
+  try {
+    const realRoot = fs.realpathSync.native(root);
+    let existing = full;
+    while (!fs.existsSync(existing)) {
+      const parent = path.dirname(existing);
+      if (parent === existing) break;
+      existing = parent;
+    }
+    const realTarget = fs.realpathSync.native(existing);
+    if (
+      realTarget !== realRoot &&
+      !realTarget.startsWith(realRoot + path.sep)
+    ) {
+      log.warn("Refusing to watch symlinked path outside project", full);
+      return;
+    }
+  } catch (error) {
+    log.warn("Could not verify watch path containment", full, error);
+    return;
+  }
   try {
     const watcher = fs.watch(full, (eventType) => {
       if (eventType !== "change" && eventType !== "rename") return;

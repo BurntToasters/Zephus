@@ -7,14 +7,19 @@ import {
   isChannelUpgrade,
   shouldAllowFeedDowngrade,
 } from "./services/updateChannel";
+import type { ReleaseFeedChannel } from "./services/updateChannel";
 
 let downloadToken: CancellationToken | null = null;
 let isDownloading = false;
+let downloadedVersion: string | null = null;
 // The version most recently confirmed as a valid upgrade by isChannelUpgrade.
 // Acts as a guard so a download can never install a build the channel rules
 // rejected (electron-updater may surface semver-older builds when
 // allowDowngrade is enabled for channel graduation).
 let approvedVersion: string | null = null;
+let activeFeedChannel: ReleaseFeedChannel | null = null;
+let approvedFeedChannel: ReleaseFeedChannel | null = null;
+let downloadedFeedChannel: ReleaseFeedChannel | null = null;
 
 export interface UpdaterStatus {
   status:
@@ -30,7 +35,7 @@ export interface UpdaterStatus {
   error?: string;
 }
 
-function applyChannel(settings: GlobalSettings): void {
+function applyChannel(settings: GlobalSettings): ReleaseFeedChannel {
   const installed = app.getVersion();
   const channel = resolveUpdateFeedChannel(settings.updateChannel, installed);
   if (channel === "latest") {
@@ -45,6 +50,15 @@ function applyChannel(settings: GlobalSettings): void {
   // isChannelUpgrade is still the final gate, so real base downgrades are
   // never offered or downloaded.
   autoUpdater.allowDowngrade = shouldAllowFeedDowngrade(channel, installed);
+  activeFeedChannel = channel;
+  return channel;
+}
+
+function clearApprovedUpdate(): void {
+  approvedVersion = null;
+  approvedFeedChannel = null;
+  downloadedVersion = null;
+  downloadedFeedChannel = null;
 }
 
 /**
@@ -56,7 +70,7 @@ export function setupAutoUpdater(
   getSettings: () => GlobalSettings,
 ): void {
   autoUpdater.autoDownload = false;
-  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.autoInstallOnAppQuit = false;
   autoUpdater.logger = log;
 
   applyChannel(getSettings());
@@ -76,20 +90,23 @@ export function setupAutoUpdater(
     // a base downgrade surfaced because allowDowngrade was enabled). Re-gate.
     if (isChannelUpgrade(app.getVersion(), info.version)) {
       approvedVersion = info.version;
+      approvedFeedChannel = activeFeedChannel;
+      downloadedVersion = null;
+      downloadedFeedChannel = null;
       send({ status: "available", version: info.version });
     } else {
-      approvedVersion = null;
+      clearApprovedUpdate();
       send({ status: "not-available", version: app.getVersion() });
     }
   });
 
   autoUpdater.on("update-not-available", () => {
-    approvedVersion = null;
+    clearApprovedUpdate();
     send({ status: "not-available", version: app.getVersion() });
   });
 
   autoUpdater.on("error", (err) => {
-    approvedVersion = null;
+    clearApprovedUpdate();
     log.error("Auto-updater error:", err);
     send({ status: "error", error: err.message });
   });
@@ -99,6 +116,20 @@ export function setupAutoUpdater(
   });
 
   autoUpdater.on("update-downloaded", (info) => {
+    if (
+      !approvedVersion ||
+      !approvedFeedChannel ||
+      info.version !== approvedVersion ||
+      !isChannelUpgrade(app.getVersion(), info.version)
+    ) {
+      clearApprovedUpdate();
+      const error = `Downloaded update ${info.version} was not approved for this channel.`;
+      log.warn(error);
+      send({ status: "error", error });
+      return;
+    }
+    downloadedVersion = info.version;
+    downloadedFeedChannel = approvedFeedChannel;
     send({ status: "downloaded", version: info.version });
   });
 }
@@ -111,7 +142,7 @@ export async function checkForUpdates(
     return { status: "error", error: "Updates not available in dev mode." };
   }
   try {
-    applyChannel(getSettings());
+    const feedChannel = applyChannel(getSettings());
     const result = await autoUpdater.checkForUpdates();
     const latest = result?.updateInfo?.version;
     // result.updateInfo is always populated with the feed's newest entry, even
@@ -119,12 +150,15 @@ export async function checkForUpdates(
     // than treating its presence as "available".
     if (latest && isChannelUpgrade(app.getVersion(), latest)) {
       approvedVersion = latest;
+      approvedFeedChannel = feedChannel;
+      downloadedVersion = null;
+      downloadedFeedChannel = null;
       return { status: "available", version: latest };
     }
-    approvedVersion = null;
+    clearApprovedUpdate();
     return { status: "not-available", version: app.getVersion() };
   } catch (error) {
-    approvedVersion = null;
+    clearApprovedUpdate();
     return {
       status: "error",
       error: error instanceof Error ? error.message : String(error),
@@ -132,7 +166,9 @@ export async function checkForUpdates(
   }
 }
 
-export async function downloadUpdate(): Promise<UpdaterStatus> {
+export async function downloadUpdate(
+  getSettings?: () => GlobalSettings,
+): Promise<UpdaterStatus> {
   if (isDownloading) {
     return { status: "downloading" };
   }
@@ -142,13 +178,38 @@ export async function downloadUpdate(): Promise<UpdaterStatus> {
       error: "No applicable update available to download.",
     };
   }
+  if (getSettings) {
+    const currentFeed = resolveUpdateFeedChannel(
+      getSettings().updateChannel,
+      app.getVersion(),
+    );
+    if (!approvedFeedChannel || currentFeed !== approvedFeedChannel) {
+      clearApprovedUpdate();
+      return {
+        status: "error",
+        error:
+          "Update channel changed. Check for updates again before downloading.",
+      };
+    }
+  }
   try {
     isDownloading = true;
     downloadToken = new CancellationToken();
     await autoUpdater.downloadUpdate(downloadToken);
     downloadToken = null;
     isDownloading = false;
-    return { status: "downloaded" };
+    if (!downloadedVersion || downloadedVersion !== approvedVersion) {
+      downloadedVersion = null;
+      downloadedFeedChannel = null;
+      return {
+        status: "error",
+        error: "Downloaded update was not confirmed for this channel.",
+      };
+    }
+    return {
+      status: "downloaded",
+      version: downloadedVersion,
+    };
   } catch (error) {
     downloadToken = null;
     isDownloading = false;
@@ -163,6 +224,8 @@ export function cancelDownload(getWindow: () => BrowserWindow | null): void {
     downloadToken.cancel();
     downloadToken = null;
     isDownloading = false;
+    downloadedVersion = null;
+    downloadedFeedChannel = null;
     const win = getWindow();
     if (win && !win.isDestroyed()) {
       win.webContents.send("updater-status", {
@@ -172,6 +235,19 @@ export function cancelDownload(getWindow: () => BrowserWindow | null): void {
   }
 }
 
-export function installUpdate(): void {
+export function installUpdate(getSettings?: () => GlobalSettings): void {
+  if (!downloadedVersion) {
+    throw new Error("No downloaded update is ready to install.");
+  }
+  if (getSettings) {
+    const currentFeed = resolveUpdateFeedChannel(
+      getSettings().updateChannel,
+      app.getVersion(),
+    );
+    if (!downloadedFeedChannel || currentFeed !== downloadedFeedChannel) {
+      clearApprovedUpdate();
+      throw new Error("Update channel changed. Check for updates again.");
+    }
+  }
   autoUpdater.quitAndInstall(false, true);
 }

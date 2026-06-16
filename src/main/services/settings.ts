@@ -75,6 +75,9 @@ export function removeRecentProject(projectPath: string): GlobalSettings {
   settings.recentProjects = settings.recentProjects.filter(
     (p) => p !== projectPath,
   );
+  if (settings.lastOpenedProject === projectPath) {
+    settings.lastOpenedProject = null;
+  }
   try {
     writeGlobalSettings(settings);
   } catch (error) {

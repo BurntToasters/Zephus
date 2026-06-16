@@ -2,6 +2,10 @@ import * as fs from "fs";
 import * as path from "path";
 import log from "electron-log";
 import { AstroInfo, PackageValidation, ProjectOpenResult } from "../types";
+import {
+  normalizeProjectRelativeDir,
+  resolveProjectRelativeDir,
+} from "./projectPaths";
 import { getVisualSchemaStatus } from "./schema";
 import { isZephusProject } from "./settings";
 
@@ -77,13 +81,15 @@ function extractConfigDir(
   configText: string,
   key: string,
   fallback: string,
-): string {
+): { value: string; invalid: boolean } {
   // Matches e.g. srcDir: './source' or outDir: "build"
   const re = new RegExp(`${key}\\s*:\\s*['"\`]([^'"\`]+)['"\`]`);
   const m = configText.match(re);
-  if (!m || !m[1]) return fallback;
-  // Normalize a leading ./ and trailing slashes.
-  return m[1].replace(/^\.\//, "").replace(/\/+$/, "") || fallback;
+  if (!m || !m[1]) return { value: fallback, invalid: false };
+  const invalidSentinel = "__zephus_invalid_dir__";
+  const value = normalizeProjectRelativeDir(m[1], invalidSentinel);
+  if (value === invalidSentinel) return { value: fallback, invalid: true };
+  return { value, invalid: false };
 }
 
 export function detectAstro(projectPath: string): AstroInfo {
@@ -98,9 +104,14 @@ export function detectAstro(projectPath: string): AstroInfo {
   if (configFile) {
     try {
       const text = fs.readFileSync(path.join(projectPath, configFile), "utf8");
-      srcDir = extractConfigDir(text, "srcDir", "src");
-      publicDir = extractConfigDir(text, "publicDir", "public");
-      outDir = extractConfigDir(text, "outDir", "dist");
+      const nextSrcDir = extractConfigDir(text, "srcDir", "src");
+      const nextPublicDir = extractConfigDir(text, "publicDir", "public");
+      const nextOutDir = extractConfigDir(text, "outDir", "dist");
+      srcDir = nextSrcDir.value;
+      publicDir = nextPublicDir.value;
+      outDir = nextOutDir.value;
+      configReadError =
+        nextSrcDir.invalid || nextPublicDir.invalid || nextOutDir.invalid;
     } catch {
       configReadError = true;
     }
@@ -121,7 +132,11 @@ export function detectAstro(projectPath: string): AstroInfo {
 
 /** Lists editable page files (relative to project root) in src/pages. */
 export function listPages(projectPath: string, pagesDir: string): string[] {
-  const root = path.join(projectPath, pagesDir);
+  const { absolute: root } = resolveProjectRelativeDir(
+    projectPath,
+    pagesDir,
+    path.join("src", "pages"),
+  );
   const out: string[] = [];
   const PAGE_EXT = /\.(astro|md|mdx|html)$/i;
 

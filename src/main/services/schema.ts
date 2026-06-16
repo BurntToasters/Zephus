@@ -121,6 +121,10 @@ export function pagePathFromSlug(
 }
 
 function pageSchemaRelativePath(slug: string): string {
+  const normalized = normalizePageSlug(slug);
+  if (normalized !== slug) {
+    throw new Error("Invalid page schema slug.");
+  }
   return path.join(
     ".zephus",
     "pages",
@@ -129,7 +133,17 @@ function pageSchemaRelativePath(slug: string): string {
 }
 
 function pageSchemaFile(projectPath: string, slug: string): string {
-  return path.join(projectPath, pageSchemaRelativePath(slug));
+  const normalized = normalizePageSlug(slug);
+  if (normalized !== slug) {
+    throw new Error("Invalid page schema slug.");
+  }
+  const root = path.resolve(projectPath, ".zephus", "pages");
+  const relative = slug === "index" ? "index.json" : `${slug}.json`;
+  const resolved = path.resolve(root, relative);
+  if (resolved !== root && !resolved.startsWith(root + path.sep)) {
+    throw new Error("Page schema path escapes .zephus/pages.");
+  }
+  return resolved;
 }
 
 function splitFrontmatter(content: string): {
@@ -449,7 +463,7 @@ function renderManagedLayout(
   const cta =
     site.shell.navCtaLabel.trim() && site.shell.navCtaHref.trim()
       ? `\n      <a class="zephus-shell-cta" href="${escapeAttr(
-          site.shell.navCtaHref,
+          safeUrl(site.shell.navCtaHref) || "#",
         )}">${escapeHtml(site.shell.navCtaLabel)}</a>`
       : "";
   const announcement =
@@ -597,6 +611,10 @@ function parseInlineStyle(styleText: string): BlockStyle | undefined {
     if (!value) continue;
     if (key === "text-align" && /^(left|center|right)$/.test(value)) {
       style.align = value as BlockStyle["align"];
+    } else if (key === "width") {
+      style.width = value;
+    } else if (key === "height") {
+      style.height = value;
     } else if (key === "max-width") {
       style.maxWidth = value;
     } else if (key === "background") {
@@ -832,6 +850,49 @@ function parseBlocksFromSource(raw: string): BlockNode[] {
   return parseBlocksFromInner(inner);
 }
 
+function parseSectionsFromSource(raw: string): SectionNode[] {
+  const inner = extractManagedInner(raw);
+  const segments = splitTopLevelNodes(inner).filter((segment) => {
+    const tag = openingTag(segment);
+    return !/^<style\b/i.test(tag);
+  });
+  const sections: SectionNode[] = [];
+  const looseBlocks: BlockNode[] = [];
+
+  for (const segment of segments) {
+    const tag = openingTag(segment);
+    const tagName = tag.match(/^<([A-Za-z][\w:-]*)/)?.[1]?.toLowerCase();
+    const stored = parseStoredBlock(segment);
+    if (tagName === "section" && stored?.type === "section") {
+      if (looseBlocks.length > 0) {
+        sections.push(defaultSectionNode(looseBlocks.splice(0)));
+      }
+      const childInner = segment
+        .replace(/^<section\b[^>]*>/i, "")
+        .replace(/<\/section>\s*$/i, "");
+      sections.push({
+        id: stored.id,
+        type: "section",
+        label: stored.props["label"] || "Section",
+        props: {
+          wrapper: stored.props["wrapper"] ?? "box",
+          cls: stored.props["cls"] ?? "",
+        },
+        style: stored.style,
+        children: parseBlocksFromInner(childInner),
+        locked: stored.locked,
+      });
+      continue;
+    }
+    looseBlocks.push(...parseBlocksFromInner(segment));
+  }
+
+  if (looseBlocks.length > 0 || sections.length === 0) {
+    sections.push(defaultSectionNode(looseBlocks));
+  }
+  return sections;
+}
+
 function parseBlocksFromInner(inner: string): BlockNode[] {
   const segments = splitTopLevelNodes(inner);
   if (segments.length === 0 && inner.trim()) {
@@ -873,6 +934,16 @@ function hashText(value: string): string {
   return crypto.createHash("sha1").update(value).digest("hex");
 }
 
+function defaultSectionNode(blocks: BlockNode[]): SectionNode {
+  return {
+    id: "section-main",
+    type: "section",
+    label: "Main Content",
+    props: { wrapper: "none" },
+    children: blocks,
+  };
+}
+
 /**
  * Encodes a value as a URI-encoded JSON payload for a data-* attribute.
  * encodeURIComponent leaves apostrophes literal, so we encode them too to
@@ -884,6 +955,7 @@ function encodeDataPayload(value: unknown): string {
 
 function blockMetadataAttrs(block: BlockNode): string {
   const attrs = [
+    `data-zephus-id="${escapeAttr(block.id)}"`,
     `data-zephus-block="${escapeAttr(block.type)}"`,
     `data-zephus-props="${escapeAttr(encodeDataPayload(block.props))}"`,
   ];
@@ -908,6 +980,17 @@ function escapeAttr(value: string): string {
 }
 
 /**
+ * Blocks dangerous URL schemes for href/src values (mirror of the renderer's
+ * safeUrl). Returns "" for javascript:/data:/vbscript:/file: so the built site
+ * never emits an executable URL. Keep in sync with zephusEngine.ts.
+ */
+function safeUrl(value: string): string {
+  const trimmed = (value ?? "").trim();
+  if (/^(javascript|vbscript|data|file):/i.test(trimmed)) return "";
+  return trimmed;
+}
+
+/**
  * Sanitizes a value destined for a CSS declaration. Strips characters that
  * could break out of the declaration/rule (`;{}<>` and newlines) to prevent
  * CSS injection from design-token values in site.json. Caps length.
@@ -919,6 +1002,18 @@ function cssValue(value: string): string {
     .replace(/[\r\n]+/g, " ")
     .trim()
     .slice(0, 200);
+}
+
+function blockCssValue(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed || /[;{}<>\r\n]/.test(trimmed)) return null;
+  return trimmed.slice(0, 240);
+}
+
+function addCssValue(css: string[], property: string, value: unknown): void {
+  const safe = blockCssValue(value);
+  if (safe) css.push(`${property}:${safe}`);
 }
 
 function plainTextToHtml(text: string): string {
@@ -937,14 +1032,18 @@ function renderListItems(items: string): string {
 function styleAttr(block: BlockNode): string {
   const style = block.style ?? {};
   const css: string[] = [];
-  if (style.align) css.push(`text-align:${style.align}`);
-  if (style.maxWidth) css.push(`max-width:${style.maxWidth}`);
-  if (style.background) css.push(`background:${style.background}`);
-  if (style.color) css.push(`color:${style.color}`);
-  if (style.padding) css.push(`padding:${style.padding}`);
-  if (style.margin) css.push(`margin:${style.margin}`);
-  if (style.radius) css.push(`border-radius:${style.radius}`);
-  if (style.gap) css.push(`gap:${style.gap}`);
+  if (["left", "center", "right"].includes(String(style.align))) {
+    css.push(`text-align:${style.align}`);
+  }
+  addCssValue(css, "width", style.width);
+  addCssValue(css, "height", style.height);
+  addCssValue(css, "max-width", style.maxWidth);
+  addCssValue(css, "background", style.background);
+  addCssValue(css, "color", style.color);
+  addCssValue(css, "padding", style.padding);
+  addCssValue(css, "margin", style.margin);
+  addCssValue(css, "border-radius", style.radius);
+  addCssValue(css, "gap", style.gap);
   if (style.columns && (block.type === "columns" || block.type === "gallery")) {
     css.push(
       `grid-template-columns:repeat(${Math.max(1, Number(style.columns) || 1)}, minmax(0, 1fr))`,
@@ -953,10 +1052,68 @@ function styleAttr(block: BlockNode): string {
   if (style.shadow === "sm") css.push(`box-shadow:var(--shadow-sm)`);
   if (style.shadow === "md") css.push(`box-shadow:var(--shadow-md)`);
   if (style.shadow === "lg") css.push(`box-shadow:var(--shadow-lg)`);
-  if (block.type === "spacer") {
-    css.push(`height:${block.props["height"] || "48px"}`);
+  if (block.type === "spacer" && !style.height) {
+    addCssValue(css, "height", block.props["height"] || "48px");
   }
   return css.length ? ` style="${escapeAttr(css.join(";"))}"` : "";
+}
+
+function responsiveCssDeclarations(
+  style: BlockStyle | undefined,
+): string | null {
+  if (!style) return null;
+  const css: string[] = [];
+  if (["left", "center", "right"].includes(String(style.align))) {
+    css.push(`text-align:${style.align}`);
+  }
+  addCssValue(css, "width", style.width);
+  addCssValue(css, "height", style.height);
+  addCssValue(css, "max-width", style.maxWidth);
+  addCssValue(css, "padding", style.padding);
+  addCssValue(css, "margin", style.margin);
+  addCssValue(css, "gap", style.gap);
+  if (style.columns) {
+    css.push(
+      `grid-template-columns:repeat(${Math.max(1, Number(style.columns) || 1)}, minmax(0, 1fr))`,
+    );
+  }
+  return css.length ? css.join(";") : null;
+}
+
+function collectResponsiveCss(sections: SectionNode[]): string {
+  const tabletRules: string[] = [];
+  const mobileRules: string[] = [];
+
+  const addRules = (
+    id: string,
+    style: BlockStyle | undefined,
+    includeStackRule = false,
+  ): void => {
+    const tablet = responsiveCssDeclarations(style?.responsive?.tablet);
+    const mobile = responsiveCssDeclarations(style?.responsive?.mobile);
+    const selector = `[data-zephus-id="${escapeAttr(id)}"]`;
+    if (tablet) tabletRules.push(`${selector}{${tablet}}`);
+    if (mobile) mobileRules.push(`${selector}{${mobile}}`);
+    if (includeStackRule && style?.stackOnMobile) {
+      mobileRules.push(`${selector}{grid-template-columns:1fr}`);
+    }
+  };
+
+  for (const section of sections) {
+    addRules(section.id, section.style);
+    for (const block of section.children) {
+      addRules(block.id, block.style, block.type === "columns");
+    }
+  }
+
+  const chunks: string[] = [];
+  if (tabletRules.length > 0) {
+    chunks.push(`@media (max-width: 1024px){${tabletRules.join("")}}`);
+  }
+  if (mobileRules.length > 0) {
+    chunks.push(`@media (max-width: 720px){${mobileRules.join("")}}`);
+  }
+  return chunks.join("\n");
 }
 
 function classAttr(block: BlockNode): string {
@@ -1000,7 +1157,7 @@ function renderBlockNode(block: BlockNode): string {
     case "image":
       return `<img${common} src="${escapeAttr(block.props["src"] ?? "")}" alt="${escapeAttr(block.props["alt"] ?? "")}" />`;
     case "button":
-      return `<a${common} href="${escapeAttr(block.props["href"] ?? "#")}">${plainTextToHtml(block.props["text"] ?? "")}</a>`;
+      return `<a${common} href="${escapeAttr(safeUrl(block.props["href"] ?? "#") || "#")}">${plainTextToHtml(block.props["text"] ?? "")}</a>`;
     case "section":
       return `<section${common}>${plainTextToHtml(block.props["text"] ?? "")}</section>`;
     case "divider":
@@ -1053,7 +1210,7 @@ function renderBlockNode(block: BlockNode): string {
       )}</${tag}>`;
     }
     case "embed":
-      return `<iframe${common} src="${escapeAttr(block.props["src"] ?? "")}" title="${escapeAttr(block.props["title"] ?? "Embed")}" loading="lazy"></iframe>`;
+      return `<iframe${common} src="${escapeAttr(safeUrl(block.props["src"] ?? ""))}" title="${escapeAttr(block.props["title"] ?? "Embed")}" loading="lazy"></iframe>`;
     case "html":
       return block.raw ?? "";
     case "feature":
@@ -1099,7 +1256,7 @@ function renderBlockNode(block: BlockNode): string {
         .map((f) => `<li>${plainTextToHtml(f)}</li>`)
         .join("");
       const cta = block.props["ctaText"]
-        ? `<a class="button" href="${escapeAttr(block.props["ctaHref"] ?? "#")}">${plainTextToHtml(
+        ? `<a class="button" href="${escapeAttr(safeUrl(block.props["ctaHref"] ?? "#") || "#")}">${plainTextToHtml(
             block.props["ctaText"],
           )}</a>`
         : "";
@@ -1115,7 +1272,7 @@ function renderBlockNode(block: BlockNode): string {
     }
     case "cta": {
       const cta = block.props["buttonText"]
-        ? `<a class="button" href="${escapeAttr(block.props["buttonHref"] ?? "#")}">${plainTextToHtml(
+        ? `<a class="button" href="${escapeAttr(safeUrl(block.props["buttonHref"] ?? "#") || "#")}">${plainTextToHtml(
             block.props["buttonText"],
           )}</a>`
         : "";
@@ -1142,12 +1299,19 @@ function renderBlockNode(block: BlockNode): string {
 }
 
 function renderSections(sections: SectionNode[]): string {
-  return sections
+  const responsiveCss = collectResponsiveCss(sections);
+  const body = sections
     .map((section) => {
       const body = section.children
         .map((child) => renderBlockNode(child))
         .join("\n");
-      if (section.props["wrapper"] === "none") return body;
+      const hasSectionSurface =
+        Boolean(section.style && Object.keys(section.style).length > 0) ||
+        Boolean(section.locked) ||
+        Boolean(section.props["cls"]);
+      if (section.props["wrapper"] === "none" && !hasSectionSurface) {
+        return body;
+      }
       const cls = section.props["cls"]
         ? ` class="${escapeAttr(section.props["cls"])}"`
         : "";
@@ -1157,10 +1321,18 @@ function renderSections(sections: SectionNode[]): string {
         props: section.props,
         style: section.style,
       } as BlockNode);
-      return `<section${cls}${style}>\n${body}\n</section>`;
+      const metadata = blockMetadataAttrs({
+        id: section.id,
+        type: "section",
+        props: { ...section.props, label: section.label },
+        style: section.style,
+        locked: section.locked,
+      } as BlockNode);
+      return `<section${metadata}${cls}${style}>\n${body}\n</section>`;
     })
     .filter(Boolean)
     .join("\n");
+  return responsiveCss ? `<style>${responsiveCss}</style>\n${body}` : body;
 }
 
 function pageImportPath(
@@ -1341,20 +1513,26 @@ function buildPageDocument(
   blocks: BlockNode[],
   frontmatter: Record<string, string | boolean>,
 ): PageDocument {
+  return buildPageDocumentWithSections(
+    page,
+    pagesDir,
+    [defaultSectionNode(blocks)],
+    frontmatter,
+  );
+}
+
+function buildPageDocumentWithSections(
+  page: string,
+  pagesDir: string,
+  sections: SectionNode[],
+  frontmatter: Record<string, string | boolean>,
+): PageDocument {
   const meta = pageMetaFromFrontmatter(page, pagesDir, frontmatter);
   return {
     ...meta,
     schemaVersion: ZEPHUS_SCHEMA_VERSION,
     templateId: null,
-    sections: [
-      {
-        id: "section-main",
-        type: "section",
-        label: "Main Content",
-        props: { wrapper: "none" },
-        children: blocks,
-      },
-    ],
+    sections,
     detached: false,
     detachedAt: null,
     generatedHash: null,
@@ -1370,8 +1548,12 @@ function migratePageToDocument(
   const raw = fs.readFileSync(safeResolve(projectPath, page), "utf8");
   const { frontmatter } = splitFrontmatter(raw);
   const parsedFrontmatter = parseFrontmatter(frontmatter);
-  const blocks = parseBlocksFromSource(raw);
-  return buildPageDocument(page, pagesDir, blocks, parsedFrontmatter);
+  return buildPageDocumentWithSections(
+    page,
+    pagesDir,
+    parseSectionsFromSource(raw),
+    parsedFrontmatter,
+  );
 }
 
 export function getVisualSchemaStatus(
@@ -1479,20 +1661,28 @@ export function ensureVisualSchema(
     for (const doc of pageDocs) {
       if (doc.detached) continue;
       const generatedSource = renderAstroPage(projectPath, doc.page, site, doc);
+      const pageFile = safeResolve(projectPath, doc.page);
+      const actualSource = fs.existsSync(pageFile)
+        ? fs.readFileSync(pageFile, "utf8")
+        : null;
+      const managedFileStatus = resolveManagedStatus(
+        doc,
+        actualSource,
+        generatedSource,
+      );
       const nextDoc = {
         ...doc,
         generatedHash: hashText(generatedSource),
-        managedFileStatus: "managed" as const,
+        managedFileStatus:
+          managedFileStatus === "missing"
+            ? ("managed" as const)
+            : managedFileStatus,
       };
       writePageDocumentFile(projectPath, nextDoc);
-      fs.mkdirSync(path.dirname(safeResolve(projectPath, doc.page)), {
-        recursive: true,
-      });
-      fs.writeFileSync(
-        safeResolve(projectPath, doc.page),
-        generatedSource,
-        "utf8",
-      );
+      if (managedFileStatus !== "out-of-sync") {
+        fs.mkdirSync(path.dirname(pageFile), { recursive: true });
+        fs.writeFileSync(pageFile, generatedSource, "utf8");
+      }
     }
     updateAssetsIndex(projectPath, astro.publicDir);
 
@@ -1588,7 +1778,11 @@ function resolveManagedStatus(
 ): ManagedFileStatus {
   if (doc.detached) return "detached";
   if (actualSource === null) return "missing";
-  return actualSource === generatedSource ? "managed" : "out-of-sync";
+  if (actualSource === generatedSource) return "managed";
+  if (!doc.generatedHash) return "managed";
+  return hashText(actualSource) === doc.generatedHash
+    ? "managed"
+    : "out-of-sync";
 }
 
 export function readPageDocument(
@@ -1663,9 +1857,10 @@ export function readPageDocument(
       ok: true,
       site,
       pageDocument: nextDoc,
-      source: doc.detached
-        ? (actualSource ?? generatedSource)
-        : generatedSource,
+      source:
+        doc.detached || managedFileStatus === "out-of-sync"
+          ? (actualSource ?? generatedSource)
+          : generatedSource,
       generatedSource,
     };
   } catch (error) {
@@ -1710,6 +1905,7 @@ export function writePageDocument(
     }
     const nextDoc: PageDocument = {
       ...doc,
+      slug: slugFromPage(doc.page, pagesDir),
       schemaVersion: ZEPHUS_SCHEMA_VERSION,
       detached: false,
       detachedAt: null,
@@ -1820,10 +2016,10 @@ export function reattachPageDocument(
 
     const source = fs.readFileSync(safeResolve(projectPath, page), "utf8");
     const { frontmatter } = splitFrontmatter(source);
-    const nextDoc = buildPageDocument(
+    const nextDoc = buildPageDocumentWithSections(
       page,
       pagesDir,
-      parseBlocksFromSource(source),
+      parseSectionsFromSource(source),
       parseFrontmatter(frontmatter),
     );
     return writePageDocument(projectPath, pagesDir, nextDoc);

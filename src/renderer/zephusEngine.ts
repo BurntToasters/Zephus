@@ -1,5 +1,8 @@
 // Zephus renderer logic. Talks to the main process exclusively through
 // window.zephus (the preload bridge). No Node APIs are used here.
+
+// TODO: Split UI rendering from state management.
+
 import { createCodeEditor, CodeEditor } from "./codeEditor";
 import {
   clearPageChanges,
@@ -50,6 +53,7 @@ import {
   BarChart,
   Tag,
   Megaphone,
+  X,
 } from "lucide";
 
 type Mode = "visual" | "code";
@@ -102,6 +106,29 @@ const PALETTE_ICONS: Record<BlockType, string> = {
   html: "code-xml",
 };
 
+/** Runtime set of all valid block types, used to validate untrusted code-mode input. */
+const KNOWN_BLOCK_TYPES: ReadonlySet<string> = new Set(
+  Object.keys(PALETTE_ICONS),
+);
+
+const DANGEROUS_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
+/** Coerces an arbitrary decoded object into a flat string-prop record, dropping
+ * prototype-pollution keys and non-primitive values. */
+function sanitizeStringRecord(
+  input: Record<string, unknown> | undefined,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!input || typeof input !== "object") return out;
+  for (const [key, value] of Object.entries(input)) {
+    if (DANGEROUS_KEYS.has(key)) continue;
+    if (typeof value === "string") out[key] = value;
+    else if (typeof value === "number" || typeof value === "boolean")
+      out[key] = String(value);
+  }
+  return out;
+}
+
 function refreshIcons(): void {
   createIcons({
     attrs: { "aria-hidden": "true", focusable: "false" },
@@ -139,6 +166,7 @@ function refreshIcons(): void {
       BarChart,
       Tag,
       Megaphone,
+      X,
     },
   });
 }
@@ -148,8 +176,16 @@ const TEXT_EDITABLE: BlockType[] = [
   "text",
   "button",
   "section",
+  "columns",
   "card",
   "quote",
+  "list",
+  "feature",
+  "testimonial",
+  "accordion",
+  "stats",
+  "pricing",
+  "cta",
 ];
 
 interface SectionTemplate {
@@ -392,6 +428,7 @@ let updaterSnapshot: {
   percent?: number;
   error?: string;
 } | null = null;
+let promptedDownloadedUpdateVersion: string | null = null;
 const modalController = createModalController(refreshIcons);
 const { closeModal, showModal, showModalNode } = modalController;
 
@@ -432,6 +469,16 @@ function friendlyError(raw: string | undefined): string {
   // Fallback: first non-empty line, trimmed to something readable.
   const firstLine = e.split("\n").find((l) => l.trim()) ?? e;
   return firstLine.length > 240 ? firstLine.slice(0, 240) + "…" : firstLine;
+}
+
+function nodeStatusMessage(res: NodeCheckResult): string {
+  if (res.status === "missing") {
+    return "Node.js was not found. Install Node.js 22.12 or newer, or set a custom Node.js location in Settings.";
+  }
+  if (res.status === "outdated") {
+    return `Node.js ${res.version ?? "?"} was found, but Zephus needs Node.js 22.12 or newer.`;
+  }
+  return res.message || "Node.js status could not be determined.";
 }
 
 function uid(): string {
@@ -496,9 +543,12 @@ function syncVisualModeState(): void {
   const visualBtn = $("mode-visual") as HTMLButtonElement;
   visualBtn.disabled = !state.visualEditable;
   visualBtn.classList.toggle("disabled", !state.visualEditable);
-  visualBtn.title = state.visualEditable
-    ? "Visual"
-    : "Detached pages are code-only until reattached.";
+  visualBtn.title =
+    state.managedStatus === "out-of-sync"
+      ? "This page was edited outside Zephus. Reattach it to resume visual editing."
+      : state.visualEditable
+        ? "Visual"
+        : "Detached pages are code-only until reattached.";
 }
 
 // CodeMirror code editor, mounted once on first editor entry.
@@ -682,6 +732,127 @@ function renderHomeStatusPanels(): void {
   renderSidebarUpdateStatus();
 }
 
+function updateVersionLabel(version?: string): string {
+  return version ? `v${version}` : "the latest update";
+}
+
+function updaterStatusMessage(): string {
+  if (updaterSnapshot?.status === "available") {
+    return `${updateVersionLabel(updaterSnapshot.version)} is available.`;
+  }
+  if (updaterSnapshot?.status === "downloaded") {
+    return `${updateVersionLabel(updaterSnapshot.version)} is downloaded and ready to install.`;
+  }
+  if (updaterSnapshot?.status === "downloading") {
+    return `Downloading update (${Math.round(updaterSnapshot.percent ?? 0)}%).`;
+  }
+  if (updaterSnapshot?.status === "error") {
+    return friendlyError(updaterSnapshot.error ?? "Update check failed.");
+  }
+  return "Check the selected update channel.";
+}
+
+async function restartToApplyUpdate(): Promise<void> {
+  setStatus("Restarting to apply update...");
+  const result = (await window.zephus.installUpdate()) as
+    | { ok?: boolean; error?: string }
+    | undefined;
+  if (result && result.ok === false) {
+    setStatus("Update install could not start.");
+    showModal(
+      "Could Not Restart",
+      friendlyError(result.error ?? "The downloaded update was not ready."),
+      [{ label: "OK", kind: "primary", onClick: closeModal }],
+    );
+  }
+}
+
+function renderUpdaterActions(container: HTMLElement): void {
+  container.innerHTML = "";
+
+  const checkNowBtn = document.createElement("button");
+  checkNowBtn.className = "btn secondary mini-btn";
+  checkNowBtn.textContent = "Check for Updates Now";
+  checkNowBtn.onclick = async () => {
+    checkNowBtn.textContent = "Checking...";
+    checkNowBtn.disabled = true;
+    try {
+      await window.zephus.checkForUpdates();
+    } catch {
+      // Ignored: status is surfaced via updater-status listener
+    }
+    checkNowBtn.textContent = "Check for Updates Now";
+    checkNowBtn.disabled = false;
+  };
+  container.appendChild(checkNowBtn);
+
+  if (updaterSnapshot?.status === "available") {
+    const downloadBtn = document.createElement("button");
+    downloadBtn.className = "btn primary mini-btn";
+    downloadBtn.textContent = "Download Update";
+    downloadBtn.onclick = async () => {
+      downloadBtn.textContent = "Downloading...";
+      downloadBtn.disabled = true;
+      const result = (await window.zephus.downloadUpdate()) as {
+        status?: string;
+        error?: string;
+      };
+      if (result?.status === "error") {
+        showModal("Update Download Failed", friendlyError(result.error), [
+          { label: "OK", kind: "primary", onClick: closeModal },
+        ]);
+      }
+    };
+    container.appendChild(downloadBtn);
+  } else if (updaterSnapshot?.status === "downloaded") {
+    const restartBtn = document.createElement("button");
+    restartBtn.className = "btn primary mini-btn";
+    restartBtn.textContent = "Restart Now";
+    restartBtn.onclick = () => void restartToApplyUpdate();
+    container.appendChild(restartBtn);
+  } else if (updaterSnapshot?.status === "downloading") {
+    const cancelBtn = document.createElement("button");
+    cancelBtn.className = "btn ghost mini-btn";
+    cancelBtn.textContent = "Cancel Download";
+    cancelBtn.onclick = () => void window.zephus.cancelUpdateDownload();
+    container.appendChild(cancelBtn);
+  }
+  refreshIcons();
+}
+
+function refreshUpdaterControls(): void {
+  document
+    .querySelectorAll<HTMLElement>("[data-updater-status-text]")
+    .forEach((el) => {
+      el.textContent = updaterStatusMessage();
+    });
+  document
+    .querySelectorAll<HTMLElement>("[data-updater-actions]")
+    .forEach((el) => renderUpdaterActions(el));
+}
+
+function promptDownloadedUpdate(force = false): void {
+  if (updaterSnapshot?.status !== "downloaded") return;
+  const version = updaterSnapshot.version ?? "downloaded";
+  if (!force) {
+    if (promptedDownloadedUpdateVersion === version) return;
+    if (modalController.isOpen()) return;
+  }
+  promptedDownloadedUpdateVersion = version;
+  showModal(
+    "Update Ready",
+    `Zephus ${updateVersionLabel(updaterSnapshot.version)} has been downloaded. Restart now to apply it; Zephus will relaunch after the update finishes.`,
+    [
+      { label: "Later", kind: "ghost", onClick: closeModal },
+      {
+        label: "Restart Now",
+        kind: "primary",
+        onClick: () => void restartToApplyUpdate(),
+      },
+    ],
+  );
+}
+
 function renderSidebarUpdateStatus(): void {
   const sidebarUpdate = $("sidebar-update-status");
   if (!sidebarUpdate) return;
@@ -712,8 +883,8 @@ function renderSidebarUpdateStatus(): void {
       <span>Downloading (${Math.round(updaterSnapshot.percent ?? 0)}%)</span>
     `;
   } else if (updaterSnapshot.status === "downloaded") {
-    sidebarUpdate.classList.remove("clickable");
-    sidebarUpdate.onclick = null;
+    sidebarUpdate.classList.add("clickable");
+    sidebarUpdate.onclick = () => promptDownloadedUpdate(true);
     sidebarUpdate.innerHTML = `
       <div class="update-status-dot active"></div>
       <span>Restart to install</span>
@@ -1305,10 +1476,13 @@ function selectField(
   const wrap = document.createElement("div");
   wrap.className = "settings-row";
 
+  const selectId = `zephus-select-${uid()}`;
   const label = document.createElement("label");
   label.textContent = labelText;
+  label.htmlFor = selectId;
 
   const select = document.createElement("select");
+  select.id = selectId;
   for (const opt of options) {
     const o = document.createElement("option");
     o.value = opt.value;
@@ -1365,21 +1539,14 @@ async function openSettingsModal(): Promise<void> {
   const checkRow = document.createElement("div");
   checkRow.className = "settings-row";
   const checkLeft = document.createElement("span");
-  const checkNowBtn = document.createElement("button");
-  checkNowBtn.className = "btn secondary mini-btn";
-  checkNowBtn.textContent = "Check for Updates Now";
-  checkNowBtn.onclick = async () => {
-    checkNowBtn.textContent = "Checking…";
-    checkNowBtn.disabled = true;
-    try {
-      await window.zephus.checkForUpdates();
-    } catch {
-      // Ignored: status is surfaced via updater-status listener
-    }
-    checkNowBtn.textContent = "Check for Updates Now";
-    checkNowBtn.disabled = false;
-  };
-  checkRow.append(checkLeft, checkNowBtn);
+  checkLeft.dataset.updaterStatusText = "true";
+  checkLeft.textContent = updaterStatusMessage();
+  const updateActions = document.createElement("div");
+  updateActions.className = "settings-inline-actions";
+  updateActions.dataset.updaterActions = "true";
+  renderUpdaterActions(updateActions);
+
+  checkRow.append(checkLeft, updateActions);
   updatesSec.appendChild(checkRow);
   form.appendChild(updatesSec);
 
@@ -3187,7 +3354,8 @@ async function loadPage(
   state.siteDocument = res.site;
   state.pageDocument = res.pageDocument;
   state.managedStatus = res.pageDocument.managedFileStatus;
-  state.visualEditable = state.managedStatus !== "detached";
+  state.visualEditable =
+    state.managedStatus !== "detached" && state.managedStatus !== "out-of-sync";
   const initialSource = res.source ?? "";
   capturePageFrame(initialSource);
   syncCurrentMeta();
@@ -3370,18 +3538,21 @@ function parseInner(inner: string): Block[] {
     const el = node as HTMLElement;
     const tag = el.tagName.toLowerCase();
     const cls = el.getAttribute("class") ?? "";
-    const storedType = el.dataset["zephusBlock"] as BlockType | undefined;
-    const storedProps = parseJsonAttr<Record<string, string>>(
+    const storedType = el.dataset["zephusBlock"];
+    const storedProps = parseJsonAttr<Record<string, unknown>>(
       el.dataset["zephusProps"] ?? null,
     );
     const storedStyle = parseJsonAttr<BlockStyle>(
       el.dataset["zephusStyle"] ?? null,
     );
-    if (storedType && storedProps) {
+    // Only trust the stored type if it is a known block type; otherwise fall
+    // through to structural tag parsing / verbatim preservation. Props are
+    // coerced to a flat string record (prototype-pollution keys dropped).
+    if (storedType && KNOWN_BLOCK_TYPES.has(storedType) && storedProps) {
       blocks.push({
         id: uid(),
-        type: storedType,
-        props: storedProps,
+        type: storedType as BlockType,
+        props: sanitizeStringRecord(storedProps),
         style: storedStyle,
         locked: el.dataset["zephusLocked"] === "true",
         raw: storedType === "html" ? el.outerHTML : undefined,
@@ -3482,7 +3653,16 @@ function parseInner(inner: string): Block[] {
 function parseJsonAttr<T>(value: string | null): T | undefined {
   if (!value) return undefined;
   try {
-    return JSON.parse(decodeURIComponent(value)) as T;
+    const parsed = JSON.parse(decodeURIComponent(value)) as unknown;
+    // Strip prototype-pollution keys from any decoded object before use.
+    if (parsed && typeof parsed === "object") {
+      for (const key of DANGEROUS_KEYS) {
+        if (Object.prototype.hasOwnProperty.call(parsed, key)) {
+          delete (parsed as Record<string, unknown>)[key];
+        }
+      }
+    }
+    return parsed as T;
   } catch {
     return undefined;
   }
@@ -3494,6 +3674,8 @@ function styleFromLegacyProps(el: HTMLElement): BlockStyle | undefined {
     background: el.style.background || undefined,
     padding: el.style.padding || undefined,
     margin: el.style.margin || undefined,
+    width: el.style.width || undefined,
+    height: el.style.height || undefined,
     maxWidth: el.style.maxWidth || undefined,
     radius: el.style.borderRadius || undefined,
     gap: el.style.gap || undefined,
@@ -3501,18 +3683,24 @@ function styleFromLegacyProps(el: HTMLElement): BlockStyle | undefined {
   return Object.values(style).some(Boolean) ? style : undefined;
 }
 
+/**
+ * Encodes a value as a URI-encoded JSON payload for a data-* attribute.
+ * Mirrors schema.ts encodeDataPayload exactly (apostrophes encoded too) so the
+ * editor serialization is byte-identical to the build renderer output.
+ */
+function encodeDataPayload(value: unknown): string {
+  return encodeURIComponent(JSON.stringify(value)).replace(/'/g, "%27");
+}
+
 function metadataAttrs(block: Block): string {
   const attrs = [
+    `data-zephus-id="${escapeAttr(block.id)}"`,
     `data-zephus-block="${escapeAttr(block.type)}"`,
-    `data-zephus-props="${escapeAttr(
-      encodeURIComponent(JSON.stringify(block.props)),
-    )}"`,
+    `data-zephus-props="${escapeAttr(encodeDataPayload(block.props))}"`,
   ];
   if (block.style) {
     attrs.push(
-      `data-zephus-style="${escapeAttr(
-        encodeURIComponent(JSON.stringify(block.style)),
-      )}"`,
+      `data-zephus-style="${escapeAttr(encodeDataPayload(block.style))}"`,
     );
   }
   if (block.locked) attrs.push(`data-zephus-locked="true"`);
@@ -3524,9 +3712,22 @@ function effectiveStyle(
   viewport = state.currentViewport,
 ): BlockStyle {
   const base = block.style ? JSON.parse(JSON.stringify(block.style)) : {};
-  const responsive = block.style?.responsive?.[viewport];
+  const responsive =
+    viewport === "desktop" ? undefined : block.style?.responsive?.[viewport];
   if (responsive) Object.assign(base, responsive);
   return base;
+}
+
+function blockCssValue(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed || /[;{}<>\r\n]/.test(trimmed)) return null;
+  return trimmed.slice(0, 240);
+}
+
+function addCssValue(css: string[], property: string, value: unknown): void {
+  const safe = blockCssValue(value);
+  if (safe) css.push(`${property}:${safe}`);
 }
 
 function styleAttr(
@@ -3536,14 +3737,18 @@ function styleAttr(
 ): string {
   const style = effectiveStyle(block, viewport);
   const css: string[] = [];
-  if (style.align) css.push(`text-align:${style.align}`);
-  if (style.maxWidth) css.push(`max-width:${style.maxWidth}`);
-  if (style.background) css.push(`background:${style.background}`);
-  if (style.color) css.push(`color:${style.color}`);
-  if (style.padding) css.push(`padding:${style.padding}`);
-  if (style.margin) css.push(`margin:${style.margin}`);
-  if (style.radius) css.push(`border-radius:${style.radius}`);
-  if (style.gap) css.push(`gap:${style.gap}`);
+  if (["left", "center", "right"].includes(String(style.align))) {
+    css.push(`text-align:${style.align}`);
+  }
+  addCssValue(css, "width", style.width);
+  addCssValue(css, "height", style.height);
+  addCssValue(css, "max-width", style.maxWidth);
+  addCssValue(css, "background", style.background);
+  addCssValue(css, "color", style.color);
+  addCssValue(css, "padding", style.padding);
+  addCssValue(css, "margin", style.margin);
+  addCssValue(css, "border-radius", style.radius);
+  addCssValue(css, "gap", style.gap);
   if (style.columns && (block.type === "columns" || block.type === "gallery")) {
     css.push(
       `grid-template-columns:repeat(${Math.max(1, Number(style.columns) || 1)}, minmax(0, 1fr))`,
@@ -3562,8 +3767,8 @@ function styleAttr(
   if (style.hideOn?.includes(viewport) && forCanvas) {
     css.push(`display:none`);
   }
-  if (block.type === "spacer") {
-    css.push(`height:${block.props["height"] || "48px"}`);
+  if (block.type === "spacer" && !style.height) {
+    addCssValue(css, "height", block.props["height"] || "48px");
   }
   return css.length ? ` style="${escapeAttr(css.join(";"))}"` : "";
 }
@@ -3611,6 +3816,70 @@ function renderListItems(items: string): string {
     .join("");
 }
 
+/**
+ * Blocks dangerous URL schemes for href/src values. Allows relative paths,
+ * anchors, and ordinary schemes; returns "" for javascript:/data:/vbscript:/
+ * file: so neither the live canvas nor the built site can execute them. Mirror
+ * of the same helper in schema.ts — keep both in sync.
+ */
+function safeUrl(value: string): string {
+  const trimmed = (value ?? "").trim();
+  if (/^(javascript|vbscript|data|file):/i.test(trimmed)) return "";
+  return trimmed;
+}
+
+/**
+ * Defense-in-depth sanitizer for raw `html` blocks shown on the live editor
+ * canvas (which runs in the renderer with the preload bridge in scope). The
+ * production CSP already blocks inline handlers, but we additionally strip
+ * <script>/<object>/<embed>, on* event-handler attributes, and
+ * javascript:/vbscript: URLs. Parsing into a <template> is inert (no script
+ * execution, no resource loads). Canvas-only: the serialized/built output keeps
+ * the user's authored HTML verbatim.
+ */
+function sanitizeHtmlForCanvas(html: string): string {
+  const tpl = document.createElement("template");
+  tpl.innerHTML = html;
+  const toRemove: Element[] = [];
+  const walker = document.createTreeWalker(
+    tpl.content,
+    NodeFilter.SHOW_ELEMENT,
+  );
+  let node = walker.nextNode() as Element | null;
+  while (node) {
+    const tag = node.tagName.toLowerCase();
+    if (tag === "script" || tag === "object" || tag === "embed") {
+      toRemove.push(node);
+    } else {
+      for (const attr of Array.from(node.attributes)) {
+        const name = attr.name.toLowerCase();
+        if (name.startsWith("on")) {
+          node.removeAttribute(attr.name);
+        } else if (
+          (name === "href" || name === "src" || name === "xlink:href") &&
+          /^\s*(javascript|vbscript):/i.test(attr.value)
+        ) {
+          node.removeAttribute(attr.name);
+        }
+      }
+    }
+    node = walker.nextNode() as Element | null;
+  }
+  for (const el of toRemove) el.remove();
+  return tpl.innerHTML;
+}
+
+/** Appends to a log element, trimming the front so it can't grow without bound. */
+const MAX_LOG_CHARS = 100_000;
+function appendCappedLog(el: HTMLElement, chunk: string): void {
+  const next = (el.textContent ?? "") + chunk;
+  el.textContent =
+    next.length > MAX_LOG_CHARS
+      ? next.slice(next.length - MAX_LOG_CHARS)
+      : next;
+  el.scrollTop = el.scrollHeight;
+}
+
 function blockToHtml(
   block: Block,
   viewport = state.currentViewport,
@@ -3648,7 +3917,7 @@ function blockToHtml(
       return `<img${common}${srcAttr} alt="${escapeAttr(block.props["alt"] ?? "")}" />`;
     }
     case "button":
-      return `<a${common} href="${escapeAttr(block.props["href"] ?? "#")}">${plainTextToHtml(block.props["text"] ?? "")}</a>`;
+      return `<a${common} href="${escapeAttr(safeUrl(block.props["href"] ?? "#") || "#")}">${plainTextToHtml(block.props["text"] ?? "")}</a>`;
     case "section":
       return `<section${common}>${plainTextToHtml(block.props["text"] ?? "")}</section>`;
     case "divider":
@@ -3710,9 +3979,11 @@ function blockToHtml(
       if (!block.props["src"] && forCanvas) {
         return `<section${common}><div class="canvas-empty">Missing embed URL.</div></section>`;
       }
-      return `<iframe${common} src="${escapeAttr(block.props["src"] ?? "")}" title="${escapeAttr(block.props["title"] ?? "Embed")}" loading="lazy"></iframe>`;
+      return `<iframe${common} src="${escapeAttr(safeUrl(block.props["src"] ?? ""))}" title="${escapeAttr(block.props["title"] ?? "Embed")}" loading="lazy"></iframe>`;
     case "html":
-      return block.raw ?? "";
+      return forCanvas
+        ? sanitizeHtmlForCanvas(block.raw ?? "")
+        : (block.raw ?? "");
     case "feature":
       return `<div${structuralCommon(block, "zephus-feature", viewport, forCanvas)}><div class="zephus-feature-icon">${plainTextToHtml(
         block.props["icon"] ?? "★",
@@ -3756,7 +4027,7 @@ function blockToHtml(
         .map((f) => `<li>${plainTextToHtml(f)}</li>`)
         .join("");
       const cta = block.props["ctaText"]
-        ? `<a class="button" href="${escapeAttr(block.props["ctaHref"] ?? "#")}">${plainTextToHtml(
+        ? `<a class="button" href="${escapeAttr(safeUrl(block.props["ctaHref"] ?? "#") || "#")}">${plainTextToHtml(
             block.props["ctaText"],
           )}</a>`
         : "";
@@ -3772,7 +4043,7 @@ function blockToHtml(
     }
     case "cta": {
       const cta = block.props["buttonText"]
-        ? `<a class="button" href="${escapeAttr(block.props["buttonHref"] ?? "#")}">${plainTextToHtml(
+        ? `<a class="button" href="${escapeAttr(safeUrl(block.props["buttonHref"] ?? "#") || "#")}">${plainTextToHtml(
             block.props["buttonText"],
           )}</a>`
         : "";
@@ -3784,10 +4055,16 @@ function blockToHtml(
           : ""
       }${cta}</div>`;
     }
-    default:
-      // Unknown block type — render a placeholder so it's visible in the canvas
-      // and not silently dropped.
-      return `<div${common} class="canvas-unknown-block">Unknown block: ${escapeHtml((block as { type: string }).type)}</div>`;
+    default: {
+      const unknownType = (block as { type: string }).type;
+      // Canvas: show a visible placeholder. Serialization: mirror schema.ts so
+      // the unknown block round-trips byte-identically and is not lost.
+      if (forCanvas) {
+        return `<div${common} class="canvas-unknown-block">Unknown block: ${escapeHtml(unknownType)}</div>`;
+      }
+      const payload = encodeDataPayload(block.props);
+      return `<div data-zephus-block="${escapeAttr(unknownType)}" data-zephus-props="${escapeAttr(payload)}" class="zephus-unknown-block"><!-- Unknown block type: ${escapeHtml(unknownType)} --></div>`;
+    }
   }
 }
 
@@ -3803,7 +4080,11 @@ function sectionToHtml(
     ? ` class="${escapeAttr(section.props["cls"])}"`
     : "";
   const wrapper = section.props["wrapper"] ?? "none";
-  if (wrapper === "none") return body;
+  const hasSectionSurface =
+    Boolean(section.style && Object.keys(section.style).length > 0) ||
+    Boolean(section.locked) ||
+    Boolean(section.props["cls"]);
+  if (wrapper === "none" && !hasSectionSurface) return body;
   const styleBlock = {
     id: section.id,
     type: "section",
@@ -3851,6 +4132,41 @@ function commitBlockChange(summary: string): void {
   renderLayers();
   renderCanvas();
   renderProperties();
+}
+
+let inspectorUndoActive = false;
+
+function beginInspectorEdit(): void {
+  if (inspectorUndoActive) return;
+  pushUndo();
+  inspectorUndoActive = true;
+}
+
+function endInspectorEdit(): void {
+  inspectorUndoActive = false;
+}
+
+function commitInspectorChange(
+  summary: string,
+  rerenderProperties = false,
+): void {
+  beginInspectorEdit();
+  syncBlocksFromSections();
+  syncSelectionState();
+  trackChange(summary);
+  markDirty(true);
+  renderLayers();
+  renderCanvas();
+  if (rerenderProperties) {
+    endInspectorEdit();
+    renderProperties();
+  }
+}
+
+function wireInspectorControl<T extends HTMLElement>(control: T): T {
+  control.addEventListener("focus", beginInspectorEdit);
+  control.addEventListener("blur", endInspectorEdit);
+  return control;
 }
 
 function addSectionAt(index: number, template?: SectionTemplate): void {
@@ -4189,6 +4505,192 @@ function hydrateCanvasAssets(root: HTMLElement): void {
   });
 }
 
+type ResizeCorner = "nw" | "ne" | "sw" | "se";
+type ResizeTarget =
+  | { kind: "block"; node: Block }
+  | { kind: "section"; node: SectionNode };
+
+const MIN_RESIZE_WIDTH = 40;
+const MIN_RESIZE_HEIGHT = 24;
+
+function resizeStyleTarget(target: ResizeTarget): BlockStyle {
+  target.node.style = target.node.style ?? {};
+  if (state.currentViewport === "desktop") return target.node.style;
+  target.node.style.responsive = target.node.style.responsive ?? {};
+  target.node.style.responsive[state.currentViewport] =
+    target.node.style.responsive[state.currentViewport] ?? {};
+  return target.node.style.responsive[state.currentViewport]!;
+}
+
+function effectiveNodeStyle(node: { style?: BlockStyle }): BlockStyle {
+  const base = node.style ? JSON.parse(JSON.stringify(node.style)) : {};
+  const responsive =
+    state.currentViewport === "desktop"
+      ? undefined
+      : node.style?.responsive?.[state.currentViewport];
+  if (responsive) Object.assign(base, responsive);
+  return base;
+}
+
+function makeCanvasLinksInert(root: HTMLElement): void {
+  root.addEventListener(
+    "click",
+    (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (target.closest("a[href]")) event.preventDefault();
+    },
+    true,
+  );
+}
+
+function applyCanvasBoxStyle(
+  element: HTMLElement,
+  node: { style?: BlockStyle },
+): void {
+  const style = effectiveNodeStyle(node);
+  if (style.width) element.style.width = style.width;
+  if (style.height) element.style.height = style.height;
+  if (style.maxWidth) element.style.maxWidth = style.maxWidth;
+  if (style.background) element.style.background = style.background;
+  if (style.color) element.style.color = style.color;
+  if (style.padding) element.style.padding = style.padding;
+  if (style.margin) element.style.margin = style.margin;
+  if (style.radius) element.style.borderRadius = style.radius;
+  if (style.shadow === "sm") element.style.boxShadow = "var(--shadow-sm)";
+  if (style.shadow === "md") element.style.boxShadow = "var(--shadow-md)";
+  if (style.shadow === "lg") element.style.boxShadow = "var(--shadow-lg)";
+}
+
+function addResizeHandles(
+  shell: HTMLElement,
+  target: ResizeTarget,
+  getSubject: () => HTMLElement,
+): void {
+  const handleWrap = document.createElement("div");
+  handleWrap.className = "resize-handles";
+  for (const corner of ["nw", "ne", "sw", "se"] as ResizeCorner[]) {
+    const handle = document.createElement("button");
+    handle.type = "button";
+    handle.className = `resize-handle ${corner}`;
+    handle.setAttribute("aria-label", `Resize ${corner}`);
+    handle.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      beginCanvasResize(event, corner, target, getSubject(), handle);
+    });
+    handle.addEventListener("keydown", (event) => {
+      if (
+        !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)
+      )
+        return;
+      event.preventDefault();
+      event.stopPropagation();
+      resizeCanvasTargetByKeyboard(event.key, corner, target, getSubject());
+    });
+    handleWrap.appendChild(handle);
+  }
+  shell.appendChild(handleWrap);
+}
+
+function resizeCanvasTargetByKeyboard(
+  key: string,
+  corner: ResizeCorner,
+  target: ResizeTarget,
+  subject: HTMLElement,
+): void {
+  const rect = subject.getBoundingClientRect();
+  const fromLeft = corner === "nw" || corner === "sw";
+  const fromTop = corner === "nw" || corner === "ne";
+  let width = rect.width;
+  let height = rect.height;
+  const step = 10;
+
+  if (key === "ArrowRight") width += fromLeft ? -step : step;
+  if (key === "ArrowLeft") width += fromLeft ? step : -step;
+  if (key === "ArrowDown") height += fromTop ? -step : step;
+  if (key === "ArrowUp") height += fromTop ? step : -step;
+
+  const style = resizeStyleTarget(target);
+  style.width = `${Math.max(MIN_RESIZE_WIDTH, Math.round(width))}px`;
+  style.height = `${Math.max(MIN_RESIZE_HEIGHT, Math.round(height))}px`;
+  subject.style.width = style.width;
+  subject.style.height = style.height;
+  pushUndo();
+  commitInspectorChange(
+    `Resized ${target.kind === "block" ? target.node.type : target.node.label}`,
+    true,
+  );
+}
+
+function beginCanvasResize(
+  event: PointerEvent,
+  corner: ResizeCorner,
+  target: ResizeTarget,
+  subject: HTMLElement,
+  handle: HTMLElement,
+): void {
+  pushUndo();
+  inspectorUndoActive = true;
+  const startX = event.clientX;
+  const startY = event.clientY;
+  const rect = subject.getBoundingClientRect();
+  const startWidth = rect.width;
+  const startHeight = rect.height;
+  const fromLeft = corner === "nw" || corner === "sw";
+  const fromTop = corner === "nw" || corner === "ne";
+  try {
+    handle.setPointerCapture(event.pointerId);
+  } catch {
+    /* pointer capture is best effort */
+  }
+
+  const onMove = (moveEvent: PointerEvent): void => {
+    const dx = moveEvent.clientX - startX;
+    const dy = moveEvent.clientY - startY;
+    const width = Math.max(
+      MIN_RESIZE_WIDTH,
+      Math.round(startWidth + (fromLeft ? -dx : dx)),
+    );
+    const height = Math.max(
+      MIN_RESIZE_HEIGHT,
+      Math.round(startHeight + (fromTop ? -dy : dy)),
+    );
+    const style = resizeStyleTarget(target);
+    style.width = `${width}px`;
+    style.height = `${height}px`;
+    subject.style.width = style.width;
+    subject.style.height = style.height;
+  };
+
+  let finished = false;
+  const finish = (): void => {
+    if (finished) return;
+    finished = true;
+    document.removeEventListener("pointermove", onMove);
+    document.removeEventListener("pointerup", onUp);
+    document.removeEventListener("pointercancel", onCancel);
+    window.removeEventListener("blur", onCancel);
+    try {
+      handle.releasePointerCapture(event.pointerId);
+    } catch {
+      /* pointer capture is best effort */
+    }
+    commitInspectorChange(
+      `Resized ${target.kind === "block" ? target.node.type : target.node.label}`,
+      true,
+    );
+    endInspectorEdit();
+  };
+  const onUp = (): void => finish();
+  const onCancel = (): void => finish();
+
+  document.addEventListener("pointermove", onMove);
+  document.addEventListener("pointerup", onUp, { once: true });
+  document.addEventListener("pointercancel", onCancel, { once: true });
+  window.addEventListener("blur", onCancel, { once: true });
+}
+
 function renderCanvas(): void {
   const canvas = $("canvas");
   canvas.innerHTML = "";
@@ -4229,6 +4731,18 @@ function renderCanvas(): void {
         ? " selected"
         : "") +
       (section.locked ? " locked" : "");
+    applyCanvasBoxStyle(sectionShell, section);
+    if (
+      section.id === state.selectedSectionId &&
+      !state.selectedId &&
+      !section.locked
+    ) {
+      addResizeHandles(
+        sectionShell,
+        { kind: "section", node: section },
+        () => sectionShell,
+      );
+    }
 
     const sectionChrome = document.createElement("div");
     sectionChrome.className = "section-chrome";
@@ -4318,7 +4832,7 @@ function renderCanvas(): void {
             TEXT_EDITABLE.includes(block.type) &&
             !block.locked
           ) {
-            startInlineEdit(preview, block);
+            startFirstInlineEdit(preview, block);
             return;
           }
           state.selectedId = block.id;
@@ -4366,6 +4880,7 @@ function renderCanvas(): void {
       const preview = document.createElement("div");
       preview.className = "block-preview";
       preview.innerHTML = blockToHtml(block, state.currentViewport, true);
+      makeCanvasLinksInert(preview);
 
       shell.onclick = (event) => {
         event.stopPropagation();
@@ -4378,11 +4893,7 @@ function renderCanvas(): void {
 
       if (TEXT_EDITABLE.includes(block.type) && !block.locked) {
         preview.classList.add("editable-text");
-        preview.title = "Double-click to edit text";
-        preview.ondblclick = (event) => {
-          event.stopPropagation();
-          startInlineEdit(preview, block);
-        };
+        attachInlineEditors(preview, block);
       }
 
       shell.addEventListener("dragstart", (event) => {
@@ -4402,6 +4913,11 @@ function renderCanvas(): void {
       });
       shell.addEventListener("drop", (event) => handleDrop(event));
       shell.append(chrome, preview);
+      if (block.id === state.selectedId && !block.locked) {
+        addResizeHandles(shell, { kind: "block", node: block }, () => {
+          return (preview.firstElementChild as HTMLElement | null) ?? preview;
+        });
+      }
       sectionBody.appendChild(shell);
     });
 
@@ -4487,27 +5003,241 @@ function handleDrop(e: DragEvent): void {
   dropSectionId = null;
 }
 
-function startInlineEdit(el: HTMLElement, block: Block): void {
+interface InlineEditTarget {
+  prop: string;
+  multiline?: boolean;
+  lineIndex?: number;
+  pairSide?: "left" | "right";
+}
+
+function updateLineValue(
+  raw: string,
+  index: number,
+  value: string,
+  pairSide?: "left" | "right",
+): string {
+  const lines = splitLines(raw);
+  while (lines.length <= index) lines.push("");
+  if (!pairSide) {
+    lines[index] = value;
+  } else {
+    const [left, right] = splitPair(lines[index] ?? "");
+    lines[index] =
+      pairSide === "left" ? `${value} :: ${right}` : `${left} :: ${value}`;
+  }
+  return lines.join("\n");
+}
+
+function targetCurrentValue(block: Block, target: InlineEditTarget): string {
+  const raw = block.props[target.prop] ?? "";
+  if (target.lineIndex === undefined) return raw;
+  const line = splitLines(raw)[target.lineIndex] ?? "";
+  if (!target.pairSide) return line;
+  const [left, right] = splitPair(line);
+  return target.pairSide === "left" ? left : right;
+}
+
+function applyInlineValue(
+  block: Block,
+  target: InlineEditTarget,
+  value: string,
+): void {
+  if (target.lineIndex === undefined) {
+    block.props[target.prop] = value;
+    return;
+  }
+  block.props[target.prop] = updateLineValue(
+    block.props[target.prop] ?? "",
+    target.lineIndex,
+    value,
+    target.pairSide,
+  );
+}
+
+function attachInlineTarget(
+  root: HTMLElement,
+  selector: string,
+  block: Block,
+  target: InlineEditTarget,
+): HTMLElement | null {
+  const el = root.querySelector<HTMLElement>(selector);
+  if (!el) return null;
+  el.classList.add("editable-text-target");
+  el.title = "Double-click to edit text";
+  el.ondblclick = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    startInlineEdit(el, block, target);
+  };
+  return el;
+}
+
+function attachInlineEditors(root: HTMLElement, block: Block): HTMLElement[] {
+  const targets: HTMLElement[] = [];
+  const add = (selector: string, target: InlineEditTarget) => {
+    const el = attachInlineTarget(root, selector, block, target);
+    if (el) targets.push(el);
+  };
+  switch (block.type) {
+    case "heading":
+    case "text":
+    case "button":
+    case "section":
+      add(":scope > *", { prop: "text", multiline: block.type !== "button" });
+      break;
+    case "columns":
+      root.querySelectorAll<HTMLElement>(".zephus-column").forEach((_, i) =>
+        add(`.zephus-column:nth-of-type(${i + 1})`, {
+          prop: `col${i + 1}`,
+          multiline: true,
+        }),
+      );
+      break;
+    case "card":
+      add("h3", { prop: "title" });
+      add("p", { prop: "text", multiline: true });
+      break;
+    case "quote":
+      add("p", { prop: "text", multiline: true });
+      add("cite", { prop: "cite" });
+      break;
+    case "list":
+      root.querySelectorAll<HTMLElement>("li").forEach((_, i) =>
+        add(`li:nth-of-type(${i + 1})`, {
+          prop: "items",
+          lineIndex: i,
+        }),
+      );
+      break;
+    case "feature":
+      add(".zephus-feature-icon", { prop: "icon" });
+      add("h3", { prop: "title" });
+      add("p", { prop: "text", multiline: true });
+      break;
+    case "testimonial":
+      add("blockquote", { prop: "quote", multiline: true });
+      add("figcaption strong", { prop: "author" });
+      add("figcaption span", { prop: "role" });
+      break;
+    case "accordion":
+      root.querySelectorAll<HTMLElement>("details").forEach((_, i) => {
+        add(`details:nth-of-type(${i + 1}) summary`, {
+          prop: "items",
+          lineIndex: i,
+          pairSide: "left",
+        });
+        add(`details:nth-of-type(${i + 1}) p`, {
+          prop: "items",
+          lineIndex: i,
+          pairSide: "right",
+          multiline: true,
+        });
+      });
+      break;
+    case "stats":
+      root.querySelectorAll<HTMLElement>(".zephus-stat").forEach((_, i) => {
+        add(`.zephus-stat:nth-of-type(${i + 1}) .zephus-stat-num`, {
+          prop: "items",
+          lineIndex: i,
+          pairSide: "left",
+        });
+        add(`.zephus-stat:nth-of-type(${i + 1}) .zephus-stat-label`, {
+          prop: "items",
+          lineIndex: i,
+          pairSide: "right",
+        });
+      });
+      break;
+    case "pricing":
+      add("h3", { prop: "plan" });
+      add(".zephus-price-amount", { prop: "price" });
+      add(".zephus-price-period", { prop: "period" });
+      root.querySelectorAll<HTMLElement>("li").forEach((_, i) =>
+        add(`li:nth-of-type(${i + 1})`, {
+          prop: "features",
+          lineIndex: i,
+        }),
+      );
+      add("a.button", { prop: "ctaText" });
+      break;
+    case "cta":
+      add("h2", { prop: "heading" });
+      add("p", { prop: "text", multiline: true });
+      add("a.button", { prop: "buttonText" });
+      break;
+  }
+  return targets;
+}
+
+function startFirstInlineEdit(root: HTMLElement, block: Block): void {
+  const first = attachInlineEditors(root, block)[0];
+  if (!first) return;
+  first.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+}
+
+function startInlineEdit(
+  el: HTMLElement,
+  block: Block,
+  target: InlineEditTarget = { prop: "text" },
+): void {
+  const original = targetCurrentValue(block, target);
+  let finished = false;
   el.setAttribute("contenteditable", "true");
   el.setAttribute("role", "textbox");
   el.setAttribute("aria-label", "Edit text");
+  el.classList.add("inline-editing");
   el.focus();
-  const finish = () => {
+  const selection = window.getSelection();
+  if (selection) {
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    range.collapse(false);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+  const cleanup = (): void => {
     el.removeAttribute("contenteditable");
     el.removeAttribute("role");
     el.removeAttribute("aria-label");
+    el.classList.remove("inline-editing");
+    el.removeEventListener("blur", finish);
+    el.removeEventListener("keydown", onKeydown);
+  };
+  const finish = () => {
+    if (finished) return;
+    finished = true;
     const newText = el.innerText.trim();
-    if (newText !== (block.props["text"] ?? "")) {
+    cleanup();
+    if (newText !== original) {
       pushUndo();
-      block.props["text"] = newText;
+      applyInlineValue(block, target, newText);
       commitBlockChange(`Edited ${block.type} content`);
     } else {
       renderCanvas();
       renderProperties();
     }
-    el.removeEventListener("blur", finish);
+  };
+  const cancel = (): void => {
+    if (finished) return;
+    finished = true;
+    el.innerText = original;
+    cleanup();
+    renderCanvas();
+    renderProperties();
+  };
+  const onKeydown = (event: KeyboardEvent): void => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      cancel();
+      return;
+    }
+    if (event.key === "Enter" && (!target.multiline || !event.shiftKey)) {
+      event.preventDefault();
+      finish();
+    }
   };
   el.addEventListener("blur", finish);
+  el.addEventListener("keydown", onKeydown);
 }
 
 function defaultProps(type: BlockType): Record<string, string> {
@@ -4621,6 +5351,7 @@ function labeledInput(
   const input = document.createElement("input");
   input.className = "text";
   input.value = value;
+  wireInspectorControl(input);
   input.oninput = () => onChange(input.value);
   wrap.append(label, input);
   return wrap;
@@ -4639,6 +5370,7 @@ function labeledTextarea(
   const input = document.createElement("textarea");
   input.rows = rows;
   input.value = value;
+  wireInspectorControl(input);
   input.oninput = () => onChange(input.value);
   wrap.append(label, input);
   return wrap;
@@ -4683,10 +5415,12 @@ function labeledLength(
   num.type = "number";
   num.className = "text length-num";
   num.setAttribute("aria-label", `${key} value`);
+  wireInspectorControl(num);
 
   const unit = document.createElement("select");
   unit.className = "length-unit";
   unit.setAttribute("aria-label", `${key} unit`);
+  wireInspectorControl(unit);
   for (const u of LENGTH_UNITS) {
     const o = document.createElement("option");
     o.value = u;
@@ -4699,6 +5433,7 @@ function labeledLength(
   raw.className = "text length-raw";
   raw.placeholder = "e.g. 2rem 0";
   raw.setAttribute("aria-label", `${key} custom value`);
+  wireInspectorControl(raw);
 
   const parsed = parseLength(value);
   num.value = parsed.num;
@@ -4765,12 +5500,14 @@ function createColorControl(
   swatch.type = "color";
   swatch.className = "color-swatch";
   swatch.value = isHexColor(value) ? expandHex(value) : "#000000";
+  wireInspectorControl(swatch);
 
   const text = document.createElement("input");
   text.type = "text";
   text.className = "text color-text";
   text.value = value;
   text.placeholder = "#3b82f6, rgb(), var(--accent)…";
+  wireInspectorControl(text);
 
   const clear = document.createElement("button");
   clear.type = "button";
@@ -4958,6 +5695,7 @@ function labeledLink(
   input.className = "text";
   input.value = value;
   input.setAttribute("aria-label", key);
+  wireInspectorControl(input);
   input.oninput = () => onChange(input.value);
   const pick = document.createElement("button");
   pick.type = "button";
@@ -5316,28 +6054,25 @@ function renderProperties(): void {
     panel.appendChild(header);
 
     const commitSection = (key: string, value: string) => {
-      pushUndo();
       section.props[key] = value;
       if (key === "label") section.label = value || section.label;
-      commitBlockChange(`Updated ${section.label}`);
+      commitInspectorChange(`Updated ${section.label}`);
     };
 
     const commitSectionStyle = (
       key: keyof BlockStyle,
       value: string | boolean | string[],
     ) => {
-      pushUndo();
       section.style = section.style ?? {};
       (section.style as Record<string, unknown>)[key] = value;
-      commitBlockChange(`Updated ${section.label} style`);
+      commitInspectorChange(`Updated ${section.label} style`);
     };
 
     const contentGroup = propertyGroup("Content");
     contentGroup.appendChild(
       labeledInput("Section label", section.label, (value) => {
-        pushUndo();
         section.label = value.trim() || "Section";
-        commitBlockChange("Renamed section");
+        commitInspectorChange("Renamed section");
       }),
     );
     const wrapper = document.createElement("label");
@@ -5345,6 +6080,7 @@ function renderProperties(): void {
     const wrapperLabel = document.createElement("span");
     wrapperLabel.textContent = "Wrapper";
     const wrapperSelect = document.createElement("select");
+    wireInspectorControl(wrapperSelect);
     for (const value of ["none", "box"]) {
       const option = document.createElement("option");
       option.value = value;
@@ -5364,6 +6100,16 @@ function renderProperties(): void {
     panel.appendChild(contentGroup);
 
     const layoutGroup = propertyGroup("Layout");
+    layoutGroup.appendChild(
+      labeledLength("Width", section.style?.width ?? "", (value) =>
+        commitSectionStyle("width", value),
+      ),
+    );
+    layoutGroup.appendChild(
+      labeledLength("Height", section.style?.height ?? "", (value) =>
+        commitSectionStyle("height", value),
+      ),
+    );
     layoutGroup.appendChild(
       labeledLength("Padding", section.style?.padding ?? "", (value) =>
         commitSectionStyle("padding", value),
@@ -5440,19 +6186,17 @@ function renderProperties(): void {
   panel.appendChild(header);
 
   const commit = (key: string, value: string) => {
-    pushUndo();
     block.props[key] = value;
-    commitBlockChange(`Updated ${block.type} ${key}`);
+    commitInspectorChange(`Updated ${block.type} ${key}`);
   };
 
   const commitStyle = (
     key: keyof BlockStyle,
     value: string | boolean | string[],
   ) => {
-    pushUndo();
     block.style = block.style ?? {};
     (block.style as Record<string, unknown>)[key] = value;
-    commitBlockChange(`Updated ${block.type} style`);
+    commitInspectorChange(`Updated ${block.type} style`);
   };
 
   const contentGroup = propertyGroup("Content");
@@ -5471,6 +6215,7 @@ function renderProperties(): void {
     const label = document.createElement("span");
     label.textContent = "Heading level";
     const select = document.createElement("select");
+    wireInspectorControl(select);
     for (let i = 1; i <= editorRules.maxHeadingLevel; i++) {
       const opt = document.createElement("option");
       opt.value = String(i);
@@ -5512,6 +6257,7 @@ function renderProperties(): void {
     const variantLabel = document.createElement("span");
     variantLabel.textContent = "Button style";
     const variantSelect = document.createElement("select");
+    wireInspectorControl(variantSelect);
     const currentVariant = /\bsecondary\b/.test(block.props["cls"] ?? "")
       ? "secondary"
       : "primary";
@@ -5565,6 +6311,7 @@ function renderProperties(): void {
     const countLabel = document.createElement("span");
     countLabel.textContent = "Columns";
     const select = document.createElement("select");
+    wireInspectorControl(select);
     for (const value of ["2", "3", "4"]) {
       const opt = document.createElement("option");
       opt.value = value;
@@ -5575,8 +6322,10 @@ function renderProperties(): void {
       select.appendChild(opt);
     }
     select.onchange = () => {
-      commit("count", select.value);
-      commitStyle("columns", select.value);
+      block.props["count"] = select.value;
+      block.style = block.style ?? {};
+      block.style.columns = select.value;
+      commitInspectorChange(`Updated ${block.type} columns`, true);
     };
     count.append(countLabel, select);
     contentGroup.appendChild(count);
@@ -5640,6 +6389,7 @@ function renderProperties(): void {
     orderedSpan.textContent = "Ordered list";
     const orderedInput = document.createElement("input");
     orderedInput.type = "checkbox";
+    wireInspectorControl(orderedInput);
     orderedInput.checked = block.props["ordered"] === "true";
     orderedInput.onchange = () =>
       commit("ordered", orderedInput.checked ? "true" : "false");
@@ -5775,6 +6525,7 @@ function renderProperties(): void {
   const alignLabel = document.createElement("span");
   alignLabel.textContent = "Alignment";
   const alignSelect = document.createElement("select");
+  wireInspectorControl(alignSelect);
   for (const value of ["left", "center", "right"] as const) {
     const opt = document.createElement("option");
     opt.value = value;
@@ -5785,6 +6536,16 @@ function renderProperties(): void {
   alignSelect.onchange = () => commitStyle("align", alignSelect.value);
   align.append(alignLabel, alignSelect);
   layoutGroup.appendChild(align);
+  layoutGroup.appendChild(
+    labeledLength("Width", block.style?.width ?? "", (v) =>
+      commitStyle("width", v),
+    ),
+  );
+  layoutGroup.appendChild(
+    labeledLength("Height", block.style?.height ?? "", (v) =>
+      commitStyle("height", v),
+    ),
+  );
   layoutGroup.appendChild(
     labeledLength("Max width", block.style?.maxWidth ?? "", (v) =>
       commitStyle("maxWidth", v),
@@ -5806,6 +6567,7 @@ function renderProperties(): void {
   stackLabel.textContent = "Stack on mobile";
   const stackInput = document.createElement("input");
   stackInput.type = "checkbox";
+  wireInspectorControl(stackInput);
   stackInput.checked = block.style?.stackOnMobile ?? false;
   stackInput.onchange = () => commitStyle("stackOnMobile", stackInput.checked);
   stack.append(stackLabel, stackInput);
@@ -5843,6 +6605,7 @@ function renderProperties(): void {
   const shadowLabel = document.createElement("span");
   shadowLabel.textContent = "Shadow";
   const shadowSelect = document.createElement("select");
+  wireInspectorControl(shadowSelect);
   for (const value of ["none", "sm", "md", "lg"] as const) {
     const opt = document.createElement("option");
     opt.value = value;
@@ -5861,36 +6624,46 @@ function renderProperties(): void {
       commit("cls", v),
     ),
   );
-  const responsive = document.createElement("div");
-  responsive.className = "responsive-note";
-  responsive.innerHTML = `<strong>${state.currentViewport}</strong> override`;
-  advancedGroup.appendChild(responsive);
-  const currentResponsive =
-    block.style?.responsive?.[state.currentViewport] ?? {};
-  advancedGroup.appendChild(
-    labeledLength("Viewport padding", currentResponsive.padding ?? "", (v) => {
-      pushUndo();
+  if (state.currentViewport !== "desktop") {
+    const responsive = document.createElement("div");
+    responsive.className = "responsive-note";
+    responsive.innerHTML = `<strong>${state.currentViewport}</strong> override`;
+    advancedGroup.appendChild(responsive);
+    const currentResponsive =
+      block.style?.responsive?.[state.currentViewport] ?? {};
+    const commitResponsiveStyle = (
+      key: "width" | "height" | "padding" | "margin",
+      value: string,
+    ): void => {
       block.style = block.style ?? {};
       block.style.responsive = block.style.responsive ?? {};
       block.style.responsive[state.currentViewport] = {
         ...block.style.responsive[state.currentViewport],
-        padding: v,
+        [key]: value,
       };
-      commitBlockChange(`Updated ${state.currentViewport} override`);
-    }),
-  );
-  advancedGroup.appendChild(
-    labeledLength("Viewport margin", currentResponsive.margin ?? "", (v) => {
-      pushUndo();
-      block.style = block.style ?? {};
-      block.style.responsive = block.style.responsive ?? {};
-      block.style.responsive[state.currentViewport] = {
-        ...block.style.responsive[state.currentViewport],
-        margin: v,
-      };
-      commitBlockChange(`Updated ${state.currentViewport} override`);
-    }),
-  );
+      commitInspectorChange(`Updated ${state.currentViewport} override`);
+    };
+    advancedGroup.appendChild(
+      labeledLength("Viewport width", currentResponsive.width ?? "", (v) =>
+        commitResponsiveStyle("width", v),
+      ),
+    );
+    advancedGroup.appendChild(
+      labeledLength("Viewport height", currentResponsive.height ?? "", (v) =>
+        commitResponsiveStyle("height", v),
+      ),
+    );
+    advancedGroup.appendChild(
+      labeledLength("Viewport padding", currentResponsive.padding ?? "", (v) =>
+        commitResponsiveStyle("padding", v),
+      ),
+    );
+    advancedGroup.appendChild(
+      labeledLength("Viewport margin", currentResponsive.margin ?? "", (v) =>
+        commitResponsiveStyle("margin", v),
+      ),
+    );
+  }
   if (
     block.type === "section" ||
     block.type === "card" ||
@@ -5945,7 +6718,9 @@ function setMode(mode: Mode): void {
   if (mode === "visual" && !state.visualEditable) {
     showModal(
       "Visual Mode Unavailable",
-      "This page was detached from visual mode after a structural code edit. Reattach it from Page Settings to resume GUI editing.",
+      state.managedStatus === "out-of-sync"
+        ? "This page was edited outside Zephus. Review it in Code mode, then reattach it from Page Settings to resume GUI editing."
+        : "This page was detached from visual mode after a structural code edit. Reattach it from Page Settings to resume GUI editing.",
       [{ label: "OK", kind: "primary", onClick: closeModal }],
     );
     return;
@@ -5957,7 +6732,8 @@ function setMode(mode: Mode): void {
 
   if (mode === "code") {
     state.rawCode =
-      state.managedStatus === "detached"
+      state.managedStatus === "detached" ||
+      state.managedStatus === "out-of-sync"
         ? getCode() || state.rawCode
         : currentManagedSource();
     setCode(state.rawCode);
@@ -6027,6 +6803,27 @@ async function performSave(): Promise<boolean> {
         state.generatedCode =
           detached.generatedSource ?? detached.source ?? content;
         state.rawCode = content;
+      } else if (state.managedStatus === "out-of-sync") {
+        const detached = await window.zephus.detachPageDocument(
+          state.project.path,
+          state.page,
+          state.project.astro.pagesDir,
+          content,
+        );
+        if (!detached.ok || !detached.pageDocument) {
+          setStatus("Save failed: " + (detached.error ?? "unknown"));
+          return false;
+        }
+        state.pageDocument = detached.pageDocument;
+        state.siteDocument = detached.site;
+        state.managedStatus = detached.pageDocument.managedFileStatus;
+        state.visualEditable = false;
+        state.generatedCode =
+          detached.generatedSource ?? detached.source ?? content;
+        state.rawCode = content;
+        setStatus(
+          "Page saved as hand-authored Astro. Reattach when you want visual editing again.",
+        );
       } else {
         const visualDoc = pageDocumentFromState();
         if (!visualDoc) {
@@ -6185,8 +6982,7 @@ async function runInstallFlow(projectPath: string): Promise<boolean> {
   wrap.append(status, logEl);
 
   const unsub = window.zephus.onInstallLog((chunk) => {
-    logEl.textContent += chunk;
-    logEl.scrollTop = logEl.scrollHeight;
+    appendCappedLog(logEl, chunk);
   });
 
   return new Promise<boolean>((resolve) => {
@@ -6246,6 +7042,7 @@ async function togglePreview(): Promise<void> {
     await window.zephus.stopPreview();
     state.previewUrl = null;
     state.unsubLog?.();
+    state.unsubLog = null;
     frame.removeAttribute("sandbox");
     frame.removeAttribute("src");
     frame.classList.add("hidden");
@@ -6267,8 +7064,7 @@ async function togglePreview(): Promise<void> {
   setStatus("Starting dev server (npm run dev)…");
   state.unsubLog = window.zephus.onPreviewLog((chunk) => {
     const logEl = $("dev-log");
-    logEl.textContent += chunk;
-    logEl.scrollTop = logEl.scrollHeight;
+    appendCappedLog(logEl, chunk);
   });
   const result = await window.zephus.startPreview(state.project.path);
   if (!result.ok || !result.url) {
@@ -6427,6 +7223,15 @@ function onKeydown(e: KeyboardEvent): void {
     return;
   }
   if (state.mode !== "visual") return;
+  // Don't hijack native editing keys while typing in a field or inline editor.
+  const active = document.activeElement as HTMLElement | null;
+  const editing =
+    !!active &&
+    (active.isContentEditable ||
+      active.tagName === "INPUT" ||
+      active.tagName === "TEXTAREA" ||
+      active.tagName === "SELECT");
+  if (editing) return;
   if (mod && e.key === "z" && !e.shiftKey) {
     doUndo();
     e.preventDefault();
@@ -6440,15 +7245,6 @@ function onKeydown(e: KeyboardEvent): void {
       e.preventDefault();
     }
   } else if (e.key === "Delete" || e.key === "Backspace") {
-    // Only when not editing text in an input/textarea/contenteditable.
-    const active = document.activeElement as HTMLElement | null;
-    const editing =
-      active &&
-      (active.isContentEditable ||
-        active.tagName === "INPUT" ||
-        active.tagName === "TEXTAREA" ||
-        active.tagName === "SELECT");
-    if (editing) return;
     const block = findSelectedBlock();
     if (block && !block.locked) {
       void deleteBlock(block);
@@ -6456,8 +7252,6 @@ function onKeydown(e: KeyboardEvent): void {
     }
   }
 }
-
-/* ---------- Start view tabs and theme picker ---------- */
 
 /* ---------- Start view tabs and theme picker ---------- */
 
@@ -6548,7 +7342,13 @@ function openThemePreviewModal(theme: ThemeMeta): void {
 
   const meta = document.createElement("div");
   meta.className = "theme-preview-meta";
-  meta.innerHTML = `<p class="theme-preview-kicker">Read-only preview</p><p class="theme-preview-description">${theme.description}</p>`;
+  const kicker = document.createElement("p");
+  kicker.className = "theme-preview-kicker";
+  kicker.textContent = "Read-only preview";
+  const description = document.createElement("p");
+  description.className = "theme-preview-description";
+  description.textContent = theme.description;
+  meta.append(kicker, description);
 
   const frameWrap = document.createElement("div");
   frameWrap.className = "theme-preview-modal-frame";
@@ -6653,7 +7453,13 @@ function buildThemeCard(
 
   const body = document.createElement("div");
   body.className = "theme-card-body";
-  body.innerHTML = `<span class="t-name">${theme.name}</span><span class="t-desc">${theme.description}</span>`;
+  const name = document.createElement("span");
+  name.className = "t-name";
+  name.textContent = theme.name;
+  const desc = document.createElement("span");
+  desc.className = "t-desc";
+  desc.textContent = theme.description;
+  body.append(name, desc);
 
   const actions = document.createElement("div");
   actions.className = "theme-card-actions";
@@ -6730,7 +7536,7 @@ async function renderThemesInTab(): Promise<void> {
     syncCreateButtonState();
     refreshIcons();
   } catch (err) {
-    container.innerHTML = `<p class="muted">Could not load themes: ${err}</p>`;
+    container.innerHTML = `<p class="muted">Could not load themes: ${escapeHtml(String(err))}</p>`;
   }
 }
 
@@ -6781,21 +7587,14 @@ async function renderSettingsInTab(): Promise<void> {
   const checkRow = document.createElement("div");
   checkRow.className = "settings-row";
   const checkLeft = document.createElement("span");
-  const checkNowBtn = document.createElement("button");
-  checkNowBtn.className = "btn secondary mini-btn";
-  checkNowBtn.textContent = "Check for Updates Now";
-  checkNowBtn.onclick = async () => {
-    checkNowBtn.textContent = "Checking…";
-    checkNowBtn.disabled = true;
-    try {
-      await window.zephus.checkForUpdates();
-    } catch {
-      // Ignored: status is surfaced via updater-status listener
-    }
-    checkNowBtn.textContent = "Check for Updates Now";
-    checkNowBtn.disabled = false;
-  };
-  checkRow.append(checkLeft, checkNowBtn);
+  checkLeft.dataset.updaterStatusText = "true";
+  checkLeft.textContent = updaterStatusMessage();
+  const updateActions = document.createElement("div");
+  updateActions.className = "settings-inline-actions";
+  updateActions.dataset.updaterActions = "true";
+  renderUpdaterActions(updateActions);
+
+  checkRow.append(checkLeft, updateActions);
   updatesSec.appendChild(checkRow);
   form.appendChild(updatesSec);
 
@@ -7041,7 +7840,14 @@ async function renderAboutAndLicensesInTab(): Promise<void> {
       loadLicensesBtn.textContent = "Reload Dependency Licenses";
 
       if (!result.ok) {
-        licensesListContainer.innerHTML = `<p class="muted" style="padding: 16px; color: var(--danger);">${result.error ?? "Could not load production license data."}</p>`;
+        licensesListContainer.innerHTML = "";
+        const error = document.createElement("p");
+        error.className = "muted";
+        error.style.padding = "16px";
+        error.style.color = "var(--danger)";
+        error.textContent =
+          result.error ?? "Could not load production license data.";
+        licensesListContainer.appendChild(error);
         return;
       }
 
@@ -7091,6 +7897,14 @@ async function createSiteFromTabFlow(): Promise<void> {
   const theme = selectedTabTheme;
   const folder = await window.zephus.chooseNewSiteFolder();
   if (!folder) return;
+  const node = await window.zephus.getNodeStatus();
+  if (node.status !== "ok") {
+    showModal("Node.js Required", nodeStatusMessage(node), [
+      { label: "Open Settings", kind: "primary", onClick: openSettingsModal },
+      { label: "Cancel", kind: "ghost", onClick: closeModal },
+    ]);
+    return;
+  }
   setStatus("Creating site from theme…");
   const r = await window.zephus.createSite(folder, theme);
   if (!r.ok) {
@@ -7104,9 +7918,136 @@ async function createSiteFromTabFlow(): Promise<void> {
   await runInstallFlow(folder);
 }
 
+function installEditorSmokeHook(): void {
+  window.__zephusRunEditorSmoke = () => {
+    const failures: string[] = [];
+    const assert = (condition: unknown, message: string): void => {
+      if (!condition) failures.push(message);
+    };
+
+    const section: SectionNode = {
+      id: "smoke-section",
+      type: "section",
+      label: "Smoke Section",
+      props: { wrapper: "none", cls: "" },
+      children: [
+        {
+          id: "smoke-heading",
+          type: "heading",
+          props: { text: "Smoke Title", level: "2" },
+          style: {},
+        },
+        {
+          id: "smoke-button",
+          type: "button",
+          props: {
+            text: "Smoke Link",
+            href: "https://example.com",
+            cls: "",
+          },
+          style: {},
+        },
+      ],
+    };
+    state.sections = [section];
+    state.selectedSectionId = section.id;
+    state.selectedId = "smoke-heading";
+    state.page = "src/pages/index.astro";
+    state.currentMeta = {
+      page: state.page,
+      route: "/",
+      slug: "index",
+      title: "Smoke",
+      navLabel: "Smoke",
+      metaDescription: "",
+      navVisible: true,
+      isHome: true,
+    };
+    state.pageMeta = state.currentMeta ? [state.currentMeta] : [];
+    state.currentViewport = "desktop";
+    state.undo = [];
+    state.redo = [];
+    markPageDirty(state, false);
+    syncBlocksFromSections();
+
+    $("view-start").classList.add("hidden");
+    $("view-editor").classList.remove("hidden");
+    $("project-name").textContent = "Smoke Project";
+    setMode("visual");
+    renderLayers();
+    renderCanvas();
+    renderProperties();
+
+    assert(
+      !!document.querySelector(".block.selected"),
+      "Editor smoke: selected block did not render.",
+    );
+    assert(
+      document.querySelectorAll(".resize-handle").length === 4,
+      "Editor smoke: selected block resize handles missing.",
+    );
+
+    const textInput = document.querySelector<HTMLInputElement>(
+      "#properties input.text",
+    );
+    assert(!!textInput, "Editor smoke: inspector text input missing.");
+    if (textInput) {
+      textInput.focus();
+      textInput.value = "";
+      for (const char of "Smoke Typed") {
+        textInput.value += char;
+        textInput.dispatchEvent(new Event("input", { bubbles: true }));
+        assert(
+          document.activeElement === textInput,
+          "Editor smoke: inspector input lost focus while typing.",
+        );
+      }
+      assert(
+        section.children[0]?.props["text"] === "Smoke Typed",
+        "Editor smoke: inspector input did not update block props.",
+      );
+      textInput.blur();
+    }
+
+    const target = document.querySelector<HTMLElement>(
+      ".block-preview .editable-text-target",
+    );
+    assert(!!target, "Editor smoke: inline editable target missing.");
+    if (target) {
+      target.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+      assert(
+        target.isContentEditable,
+        "Editor smoke: double-click did not start inline editing.",
+      );
+      target.textContent = "Inline Edited";
+      target.dispatchEvent(
+        new KeyboardEvent("keydown", { bubbles: true, key: "Enter" }),
+      );
+      assert(
+        section.children[0]?.props["text"] === "Inline Edited",
+        "Editor smoke: inline edit did not update block props.",
+      );
+    }
+
+    const canvasLink = document.querySelector<HTMLAnchorElement>(
+      '.block-preview a[href="https://example.com"]',
+    );
+    assert(!!canvasLink, "Editor smoke: canvas link missing.");
+    if (canvasLink) {
+      const allowed = canvasLink.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      );
+      assert(!allowed, "Editor smoke: canvas link was not inert.");
+    }
+
+    return failures;
+  };
+}
+
 /* ---------- Wire up ---------- */
 
 function init(): void {
+  if (window.location.search.includes("smoke=1")) installEditorSmokeHook();
   initStartTabs();
 
   // Prevent stray file drops from navigating the window away from the app.
@@ -7197,6 +8138,13 @@ async function bootstrap(): Promise<void> {
   window.zephus.onUpdaterStatus((data) => {
     updaterSnapshot = data;
     renderHomeStatusPanels();
+    refreshUpdaterControls();
+    if (data.status === "downloaded") {
+      setStatus(
+        `Update ${updateVersionLabel(data.version)} downloaded. Restart Zephus to apply it.`,
+      );
+      promptDownloadedUpdate();
+    }
   });
   refreshIcons();
 

@@ -234,6 +234,7 @@ export function createModalController(refreshIcons: () => void) {
     showModal,
     showModalNode,
     closeModal,
+    isOpen: isModalOpen,
     choose,
     confirmDestructive,
     confirmRestoreDraft,

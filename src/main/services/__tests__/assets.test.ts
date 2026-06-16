@@ -74,6 +74,27 @@ describe("importAssetsFromPaths", () => {
     expect(result.errors).toHaveLength(1);
     expect(result.ok).toBe(false);
   });
+
+  it("rejects imports when public is a symlink outside the project", () => {
+    const outside = fs.mkdtempSync(
+      path.join(os.tmpdir(), "zephus-assets-out-"),
+    );
+    try {
+      fs.symlinkSync(outside, path.join(projectDir, "public"), "dir");
+
+      const result = importAssetsFromPaths(projectDir, "public", [
+        makeSource("photo.png"),
+      ]);
+      expect(result.ok).toBe(false);
+      expect(result.errors[0]).toContain("escapes");
+      expect(fs.existsSync(path.join(outside, "assets/images/photo.png"))).toBe(
+        false,
+      );
+      expect(fs.existsSync(path.join(outside, "assets"))).toBe(false);
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("listProjectAssets", () => {
@@ -92,6 +113,21 @@ describe("listProjectAssets", () => {
     const result = listProjectAssets(projectDir, "public");
     expect(result.ok).toBe(true);
     expect(result.assets).toEqual([]);
+  });
+
+  it("rejects listings when public is a symlink outside the project", () => {
+    const outside = fs.mkdtempSync(
+      path.join(os.tmpdir(), "zephus-assets-out-"),
+    );
+    try {
+      fs.symlinkSync(outside, path.join(projectDir, "public"), "dir");
+
+      const result = listProjectAssets(projectDir, "public");
+      expect(result.ok).toBe(false);
+      expect(result.error).toContain("escapes");
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
   });
 });
 
@@ -114,5 +150,28 @@ describe("readAssetDataUrl", () => {
       "/../../etc/passwd.png",
     );
     expect(result.ok).toBe(false);
+  });
+
+  it("rejects reads when public is a symlink outside the project", () => {
+    const outside = fs.mkdtempSync(
+      path.join(os.tmpdir(), "zephus-assets-out-"),
+    );
+    try {
+      fs.mkdirSync(path.join(outside, "assets", "images"), {
+        recursive: true,
+      });
+      fs.writeFileSync(path.join(outside, "assets", "images", "pic.png"), "x");
+      fs.symlinkSync(outside, path.join(projectDir, "public"), "dir");
+
+      const result = readAssetDataUrl(
+        projectDir,
+        "public",
+        "/assets/images/pic.png",
+      );
+      expect(result.ok).toBe(false);
+      expect(result.error).toContain("escapes");
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
   });
 });

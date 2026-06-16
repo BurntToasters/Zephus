@@ -71,7 +71,19 @@ function richSections(): SectionNode[] {
       type: "section",
       label: "Main Content",
       props: { wrapper: "box", cls: "rich" },
-      style: { background: "#eef2ff", padding: "2rem", align: "center" },
+      style: {
+        background: "#eef2ff",
+        padding: "2rem",
+        align: "center",
+        width: "720px",
+        height: "360px",
+        responsive: {
+          mobile: {
+            width: "320px",
+            height: "240px",
+          },
+        },
+      },
       children: [
         {
           id: "h",
@@ -81,7 +93,7 @@ function richSections(): SectionNode[] {
             level: "1",
             cls: "",
           },
-          style: { color: "#111827" },
+          style: { color: "#111827", width: "640px", height: "48px" },
         },
         {
           id: "p",
@@ -145,6 +157,12 @@ describe("schema round-trip", () => {
       'It\'s a <bold> & "quoted" title — café',
     );
     expect(heading.style?.color).toBe("#111827");
+    expect(heading.style?.width).toBe("640px");
+    expect(heading.style?.height).toBe("48px");
+    expect(section.style?.width).toBe("720px");
+    expect(section.style?.height).toBe("360px");
+    expect(section.style?.responsive?.mobile?.width).toBe("320px");
+    expect(section.style?.responsive?.mobile?.height).toBe("240px");
 
     const button = section.children[2]!;
     expect(button.props["href"]).toBe("mailto:a'b@example.com");
@@ -167,6 +185,12 @@ describe("schema round-trip", () => {
     const astro = fs.readFileSync(path.join(tmpDir, rel), "utf8");
     // Raw angle brackets from user text must be entity-escaped in the body.
     expect(astro).toContain("&lt;bold&gt;");
+    expect(astro).toContain('data-zephus-id="section-main"');
+    expect(astro).toContain('data-zephus-id="h"');
+    expect(astro).toContain("@media (max-width: 720px)");
+    expect(astro).toContain(
+      '[data-zephus-id="section-main"]{width:320px;height:240px}',
+    );
     // The data payload attribute must not contain a literal apostrophe.
     const propMatch = astro.match(/data-zephus-props="([^"]*)"/);
     expect(propMatch).toBeTruthy();
@@ -200,11 +224,43 @@ describe("schema round-trip", () => {
     expect(heading!.props["text"]).toBe(
       'It\'s a <bold> & "quoted" title — café',
     );
+    expect(heading!.style?.width).toBe("640px");
+    expect(heading!.style?.height).toBe("48px");
 
     const button = blocks.find((b) => b.type === "button");
     expect(button?.props["href"]).toBe("mailto:a'b@example.com");
 
     const quote = blocks.find((b) => b.type === "quote");
     expect(quote?.props["cite"]).toBe("O'Brien");
+  });
+
+  it("parses legacy inline width and height styles", () => {
+    ensureVisualSchema(tmpDir, pagesDir);
+    createSchemaPage(tmpDir, pagesDir, "story");
+    const rel = pagePathFromSlug(pagesDir, "story");
+    fs.writeFileSync(
+      path.join(tmpDir, rel),
+      `---
+import BaseLayout from '../layouts/BaseLayout.astro';
+---
+<BaseLayout title="Story">
+  <h1 style="width:640px;height:72px;max-width:900px">Legacy heading</h1>
+</BaseLayout>
+`,
+      "utf8",
+    );
+    fs.rmSync(path.join(tmpDir, ".zephus", "pages"), {
+      recursive: true,
+      force: true,
+    });
+
+    const reparsed = readPageDocument(tmpDir, rel, pagesDir);
+    expect(reparsed.ok).toBe(true);
+    const heading = reparsed
+      .pageDocument!.sections.flatMap((section) => section.children)
+      .find((block) => block.type === "heading");
+    expect(heading?.style?.width).toBe("640px");
+    expect(heading?.style?.height).toBe("72px");
+    expect(heading?.style?.maxWidth).toBe("900px");
   });
 });

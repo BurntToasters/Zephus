@@ -74,6 +74,27 @@ describe("detectAstro", () => {
     const result = detectAstro(tmpDir);
     expect(result.srcDir).toBe("source");
     expect(result.pagesDir).toBe(path.join("source", "pages"));
+    expect(result.configReadError).toBe(false);
+  });
+
+  it("falls back when Astro config directories escape the project", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "astro.config.mjs"),
+      `export default defineConfig({
+        srcDir: '../source',
+        publicDir: '/tmp/public',
+        outDir: 'C:\\\\build'
+      });`,
+    );
+    const pkg = { dependencies: { astro: "^5.0.0" } };
+    fs.writeFileSync(path.join(tmpDir, "package.json"), JSON.stringify(pkg));
+
+    const result = detectAstro(tmpDir);
+    expect(result.srcDir).toBe("src");
+    expect(result.pagesDir).toBe(path.join("src", "pages"));
+    expect(result.publicDir).toBe("public");
+    expect(result.outDir).toBe("dist");
+    expect(result.configReadError).toBe(true);
   });
 
   it("detects Astro v6 project", () => {
@@ -104,5 +125,18 @@ describe("listPages", () => {
     expect(pages).toContain(path.join("src", "pages", "index.astro"));
     expect(pages).toContain(path.join("src", "pages", "about.md"));
     expect(pages).not.toContain(path.join("src", "pages", "style.css"));
+  });
+
+  it("does not walk pages directories outside the project", () => {
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "zephus-outside-"));
+    try {
+      fs.mkdirSync(path.join(outside, "pages"), { recursive: true });
+      fs.writeFileSync(path.join(outside, "pages", "leak.astro"), "");
+      expect(
+        listPages(tmpDir, path.relative(tmpDir, path.join(outside, "pages"))),
+      ).toEqual([]);
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
   });
 });

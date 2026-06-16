@@ -27,6 +27,12 @@ function isGithubPrereleaseVersion(version) {
   return /-(beta|alpha|rc|db)(?:[.-]|$)/i.test(version);
 }
 
+function updateMetadataChannel(version) {
+  if (/-db(?:[.-]|$)/i.test(version)) return 'db';
+  if (/-beta(?:[.-]|$)/i.test(version)) return 'beta';
+  return null;
+}
+
 const args = process.argv.slice(2);
 const archArgIndex = args.findIndex((arg) => arg === '--arch');
 const TARGET_ARCH = archArgIndex !== -1 && args[archArgIndex + 1] ? args[archArgIndex + 1] : null;
@@ -39,9 +45,17 @@ const SIGNABLE_EXTENSIONS = [
   '.appimage',
   '.deb',
   '.rpm',
+  '.flatpak',
   '.appx',
   '.msix',
 ];
+
+const UPDATE_METADATA_ALIASES = {
+  'latest.yml': '{channel}.yml',
+  'latest-mac.yml': '{channel}-mac.yml',
+  'latest-linux.yml': '{channel}-linux.yml',
+  'latest-linux-arm64.yml': '{channel}-linux-arm64.yml',
+};
 
 const ARCH_PATTERNS = {
   x64: ['-x86_64', '-amd64', '-x64', '_x64', '_amd64'],
@@ -121,13 +135,22 @@ function signFile(filePath) {
       gpgArgs.push('--local-user', GPG_KEY_ID);
     }
 
+    // Pass the passphrase over stdin (--passphrase-fd 0) instead of as an argv
+    // argument, so it is never visible via `ps` / /proc/<pid>/cmdline.
+    let passphraseInput;
     if (GPG_PASSPHRASE) {
-      gpgArgs.push('--pinentry-mode', 'loopback', '--passphrase', GPG_PASSPHRASE);
+      gpgArgs.push('--pinentry-mode', 'loopback', '--passphrase-fd', '0');
+      passphraseInput = GPG_PASSPHRASE.endsWith('\n')
+        ? GPG_PASSPHRASE
+        : GPG_PASSPHRASE + '\n';
     }
 
     gpgArgs.push('--output', ascFile, filePath);
 
-    execFileSync('gpg', gpgArgs, { stdio: 'pipe' });
+    execFileSync('gpg', gpgArgs, {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      input: passphraseInput,
+    });
     console.log('   ✓ Created ' + path.basename(ascFile));
     return ascFile;
   } catch (error) {
@@ -154,6 +177,28 @@ function generateChecksumFile(files, platform) {
   console.log('\n✓ Checksums written to: SHA256SUMS-' + platform + '.txt');
 
   return checksumFile;
+}
+
+function generateUpdateMetadataAliases() {
+  const channel = updateMetadataChannel(VERSION);
+  if (!channel) return [];
+
+  const aliases = [];
+  for (const [sourceName, aliasTemplate] of Object.entries(UPDATE_METADATA_ALIASES)) {
+    const sourcePath = path.join(RELEASE_DIR, sourceName);
+    if (!fs.existsSync(sourcePath)) continue;
+
+    const aliasPath = path.join(RELEASE_DIR, aliasTemplate.replace('{channel}', channel));
+    fs.copyFileSync(sourcePath, aliasPath);
+    aliases.push(aliasPath);
+  }
+
+  if (aliases.length > 0) {
+    console.log('\nGenerated update metadata aliases for ' + channel + ':');
+    aliases.forEach((file) => console.log('   • ' + path.basename(file)));
+  }
+
+  return aliases;
 }
 
 function sleep(ms) {
@@ -292,8 +337,9 @@ function uploadToRelease(uploadUrl, filePath) {
   return new Promise((resolve, reject) => {
     const fileName = path.basename(filePath);
     const fileContent = fs.readFileSync(filePath);
-    const contentType =
-      fileName.endsWith('.asc') || fileName.endsWith('.txt')
+    const contentType = fileName.endsWith('.yml')
+      ? 'text/yaml'
+      : fileName.endsWith('.asc') || fileName.endsWith('.txt')
         ? 'text/plain'
         : 'application/octet-stream';
 
@@ -319,9 +365,6 @@ function uploadToRelease(uploadUrl, filePath) {
       res.on('end', () => {
         if (res.statusCode >= 200 && res.statusCode < 300) {
           resolve(JSON.parse(data));
-        } else if (res.statusCode === 422) {
-          console.log('   ⚠ ' + fileName + ' already exists, skipping');
-          resolve(null);
         } else {
           reject(new Error('Upload failed ' + res.statusCode + ': ' + data));
         }
@@ -332,6 +375,21 @@ function uploadToRelease(uploadUrl, filePath) {
     req.write(fileContent);
     req.end();
   });
+}
+
+async function deleteExistingAsset(release, fileName) {
+  const asset = Array.isArray(release.assets)
+    ? release.assets.find((item) => item && item.name === fileName)
+    : null;
+
+  if (!asset) return;
+
+  process.stdout.write('replacing existing... ');
+  await githubRequestWithRetry(
+    'DELETE',
+    '/repos/' + REPO_OWNER + '/' + REPO_NAME + '/releases/assets/' + asset.id
+  );
+  release.assets = release.assets.filter((item) => item.id !== asset.id);
 }
 
 async function getOrCreateRelease() {
@@ -438,8 +496,10 @@ async function uploadSignatures(release, filesToUpload) {
     process.stdout.write('   Uploading: ' + fileName + '... ');
 
     try {
+      await deleteExistingAsset(release, fileName);
       const result = await uploadToRelease(release.upload_url, filePath);
       if (result) {
+        if (Array.isArray(release.assets)) release.assets.push(result);
         console.log('✓');
       }
     } catch (error) {
@@ -520,7 +580,8 @@ async function main() {
     );
   }
 
-  const filesToUpload = [...signatureFiles, checksumFile];
+  const updateMetadataAliases = generateUpdateMetadataAliases();
+  const filesToUpload = [...signatureFiles, checksumFile, ...updateMetadataAliases];
 
   console.log('\nFiles queued for upload:');
   filesToUpload.forEach((f) => console.log('   • ' + path.basename(f)));
@@ -542,7 +603,7 @@ async function main() {
 
   const generatedFiles = fs
     .readdirSync(RELEASE_DIR)
-    .filter((f) => f.endsWith('.asc') || f.startsWith('SHA256SUMS'));
+    .filter((f) => f.endsWith('.asc') || f.startsWith('SHA256SUMS') || f.endsWith('.yml'));
   generatedFiles.forEach((f) => console.log('   • ' + f));
 
   if (!GH_TOKEN) {

@@ -1,4 +1,6 @@
 import { BrowserWindow, dialog, ipcMain, app, shell } from "electron";
+import * as fs from "fs";
+import * as path from "path";
 import {
   GlobalSettings,
   OperationResult,
@@ -69,7 +71,7 @@ import {
   installUpdate,
 } from "./updater";
 import { watchFile, stopWatching } from "./services/watch";
-import { checkNodeVersion } from "./services/nodeCheck";
+import { checkNodeVersion, validateNodePath } from "./services/nodeCheck";
 import { IPC } from "./ipcChannels";
 
 export { IPC };
@@ -78,6 +80,38 @@ interface IpcRegistrationOptions {
   assertUpdaterSender?: (senderId?: number) => boolean;
   markUpdateInstalling?: () => void;
   clearUpdateInstalling?: () => void;
+}
+
+const approvedProjectRoots = new Set<string>();
+
+function canonicalProjectRoot(projectPath: string): string {
+  if (typeof projectPath !== "string" || !projectPath) {
+    throw new Error("Invalid project path.");
+  }
+  const resolved = path.resolve(projectPath);
+  try {
+    return fs.realpathSync.native(resolved);
+  } catch {
+    return resolved;
+  }
+}
+
+function approveProjectRoot(projectPath: string): string {
+  const root = canonicalProjectRoot(projectPath);
+  approvedProjectRoots.add(root);
+  return root;
+}
+
+function assertApprovedProject(projectPath: string): void {
+  const root = canonicalProjectRoot(projectPath);
+  if (!approvedProjectRoots.has(root)) {
+    throw new Error("Unauthorized project path.");
+  }
+}
+
+function approved<T>(projectPath: string, fn: () => T): T {
+  assertApprovedProject(projectPath);
+  return fn();
 }
 
 export function registerIpcHandlers(
@@ -112,7 +146,10 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC.projectOpen, (_e, projectPath: string) => {
     const result = openProject(projectPath);
     // Strict open policy: only record Zephus projects in recents.
-    if (result.ok && result.isZephusProject) recordRecentProject(projectPath);
+    if (result.ok && result.isZephusProject) {
+      approveProjectRoot(projectPath);
+      recordRecentProject(projectPath);
+    }
     return result;
   });
 
@@ -127,6 +164,7 @@ export function registerIpcHandlers(
     ): Promise<OperationResult> => {
       const created = createSite(targetPath, themeId);
       if (!created.ok) return created;
+      approveProjectRoot(targetPath);
       try {
         await initGitRepo(targetPath);
       } catch {
@@ -139,7 +177,7 @@ export function registerIpcHandlers(
   ipcMain.handle(
     IPC.createPage,
     (_e, projectPath: string, pageName: string, pagesDir: string) =>
-      createPage(projectPath, pageName, pagesDir),
+      approved(projectPath, () => createPage(projectPath, pageName, pagesDir)),
   );
 
   ipcMain.handle(
@@ -150,7 +188,10 @@ export function registerIpcHandlers(
       page: string,
       pagesDir: string,
       nextSlug: string,
-    ) => renamePage(projectPath, page, pagesDir, nextSlug),
+    ) =>
+      approved(projectPath, () =>
+        renamePage(projectPath, page, pagesDir, nextSlug),
+      ),
   );
 
   ipcMain.handle(
@@ -161,25 +202,30 @@ export function registerIpcHandlers(
       page: string,
       pagesDir: string,
       slugInput?: string,
-    ) => duplicatePage(projectPath, page, pagesDir, slugInput),
+    ) =>
+      approved(projectPath, () =>
+        duplicatePage(projectPath, page, pagesDir, slugInput),
+      ),
   );
 
   ipcMain.handle(
     IPC.deletePage,
     (_e, projectPath: string, page: string, pagesDir: string) =>
-      deletePage(projectPath, page, pagesDir),
+      approved(projectPath, () => deletePage(projectPath, page, pagesDir)),
   );
 
   ipcMain.handle(
     IPC.listPageMeta,
     (_e, projectPath: string, pagesDir: string) =>
-      listPageMetadata(projectPath, pagesDir),
+      approved(projectPath, () => listPageMetadata(projectPath, pagesDir)),
   );
 
   ipcMain.handle(
     IPC.readPageMeta,
     (_e, projectPath: string, page: string, pagesDir: string): PageMeta =>
-      readPageMetadata(projectPath, page, pagesDir),
+      approved(projectPath, () =>
+        readPageMetadata(projectPath, page, pagesDir),
+      ),
   );
 
   ipcMain.handle(
@@ -190,57 +236,71 @@ export function registerIpcHandlers(
       page: string,
       pagesDir: string,
       partial: Partial<PageMeta>,
-    ) => writePageMetadata(projectPath, page, pagesDir, partial),
+    ) =>
+      approved(projectPath, () =>
+        writePageMetadata(projectPath, page, pagesDir, partial),
+      ),
   );
 
   ipcMain.handle(
     IPC.schemaEnsure,
     (_e, projectPath: string, pagesDir: string) =>
-      ensureVisualSchema(projectPath, pagesDir),
+      approved(projectPath, () => ensureVisualSchema(projectPath, pagesDir)),
   );
 
   ipcMain.handle(IPC.siteDocumentRead, (_e, projectPath: string) =>
-    readSiteDocument(projectPath),
+    approved(projectPath, () => readSiteDocument(projectPath)),
   );
 
   ipcMain.handle(
     IPC.siteDocumentWrite,
     (_e, projectPath: string, site: SiteDocument, pagesDir: string) =>
-      writeSiteDocument(projectPath, site, pagesDir),
+      approved(projectPath, () =>
+        writeSiteDocument(projectPath, site, pagesDir),
+      ),
   );
 
   ipcMain.handle(
     IPC.pageDocumentRead,
     (_e, projectPath: string, page: string, pagesDir: string) =>
-      readPageDocument(projectPath, page, pagesDir),
+      approved(projectPath, () =>
+        readPageDocument(projectPath, page, pagesDir),
+      ),
   );
 
   ipcMain.handle(
     IPC.pageDocumentWrite,
     (_e, projectPath: string, pagesDir: string, doc: PageDocument) =>
-      writePageDocument(projectPath, pagesDir, doc),
+      approved(projectPath, () =>
+        writePageDocument(projectPath, pagesDir, doc),
+      ),
   );
 
   ipcMain.handle(
     IPC.pageDocumentDetach,
     (_e, projectPath: string, page: string, pagesDir: string, source: string) =>
-      detachPageDocument(projectPath, page, pagesDir, source),
+      approved(projectPath, () =>
+        detachPageDocument(projectPath, page, pagesDir, source),
+      ),
   );
 
   ipcMain.handle(
     IPC.pageDocumentReattach,
     (_e, projectPath: string, page: string, pagesDir: string) =>
-      reattachPageDocument(projectPath, page, pagesDir),
+      approved(projectPath, () =>
+        reattachPageDocument(projectPath, page, pagesDir),
+      ),
   );
 
   ipcMain.handle(IPC.gitStatus, (_e, projectPath: string) =>
-    getGitStatus(projectPath),
+    approved(projectPath, () => getGitStatus(projectPath)),
   );
 
   ipcMain.handle(
     IPC.gitInit,
     async (_e, projectPath: string): Promise<OperationResult> => {
       try {
+        assertApprovedProject(projectPath);
         await initGitRepo(projectPath);
         return { ok: true };
       } catch (error) {
@@ -258,6 +318,19 @@ export function registerIpcHandlers(
     IPC.settingsWriteGlobal,
     (_e, settings: GlobalSettings): OperationResult => {
       try {
+        // A compromised renderer must not be able to persist an arbitrary
+        // customNodePath that is later spawned. Validate it; reject if bad.
+        if (
+          settings &&
+          settings.customNodePath !== null &&
+          settings.customNodePath !== undefined
+        ) {
+          const validation = validateNodePath(settings.customNodePath);
+          if (!validation.ok) {
+            return { ok: false, error: validation.error };
+          }
+          settings.customNodePath = validation.path ?? null;
+        }
         writeGlobalSettings(settings);
         return { ok: true };
       } catch (error) {
@@ -274,7 +347,7 @@ export function registerIpcHandlers(
   );
 
   ipcMain.handle(IPC.settingsReadRepo, (_e, projectPath: string) =>
-    readRepoSettings(projectPath),
+    approved(projectPath, () => readRepoSettings(projectPath)),
   );
 
   ipcMain.handle(IPC.nodeStatus, () =>
@@ -318,19 +391,31 @@ export function registerIpcHandlers(
   ipcMain.handle(
     IPC.nodeSetPath,
     async (_e, customPath: string | null): Promise<unknown> => {
-      const normalized =
-        typeof customPath === "string" && customPath.trim().length > 0
-          ? customPath.trim()
-          : null;
+      // Clearing the custom path is always allowed.
+      if (
+        customPath === null ||
+        (typeof customPath === "string" && customPath.trim().length === 0)
+      ) {
+        const settings = readGlobalSettings();
+        settings.customNodePath = null;
+        writeGlobalSettings(settings);
+        return checkNodeVersion(null);
+      }
+      // Validate the path shape *before* persisting or probing it, so a
+      // compromised renderer cannot point the app at an arbitrary executable.
+      const validation = validateNodePath(customPath);
+      if (!validation.ok || !validation.path) {
+        return checkNodeVersion(readGlobalSettings().customNodePath);
+      }
       const settings = readGlobalSettings();
-      settings.customNodePath = normalized;
+      settings.customNodePath = validation.path;
       writeGlobalSettings(settings);
-      return checkNodeVersion(normalized);
+      return checkNodeVersion(validation.path);
     },
   );
 
   ipcMain.handle(IPC.settingsMerged, (_e, projectPath: string) =>
-    getMergedSettings(projectPath),
+    approved(projectPath, () => getMergedSettings(projectPath)),
   );
 
   ipcMain.handle(IPC.licensesRead, () => readProductionLicenses());
@@ -342,41 +427,49 @@ export function registerIpcHandlers(
   });
 
   ipcMain.handle(IPC.fileRead, (_e, projectPath: string, rel: string) =>
-    readProjectFile(projectPath, rel),
+    approved(projectPath, () => readProjectFile(projectPath, rel)),
   );
 
   ipcMain.handle(
     IPC.fileWrite,
     (_e, projectPath: string, rel: string, content: string) =>
-      writeProjectFile(projectPath, rel, content),
+      approved(projectPath, () => writeProjectFile(projectPath, rel, content)),
   );
 
   ipcMain.handle(
     IPC.importImage,
     (_e, projectPath: string, publicDir: string) =>
-      importImage(getWindow(), projectPath, publicDir),
+      approved(projectPath, () =>
+        importImage(getWindow(), projectPath, publicDir),
+      ),
   );
 
   ipcMain.handle(
     IPC.importAssets,
     (_e, projectPath: string, publicDir: string) =>
-      importAssets(getWindow(), projectPath, publicDir),
+      approved(projectPath, () =>
+        importAssets(getWindow(), projectPath, publicDir),
+      ),
   );
 
   ipcMain.handle(
     IPC.importAssetPaths,
     (_e, projectPath: string, publicDir: string, paths: string[]) =>
-      importAssetsFromPaths(projectPath, publicDir, paths),
+      approved(projectPath, () =>
+        importAssetsFromPaths(projectPath, publicDir, paths),
+      ),
   );
 
   ipcMain.handle(IPC.listAssets, (_e, projectPath: string, publicDir: string) =>
-    listProjectAssets(projectPath, publicDir),
+    approved(projectPath, () => listProjectAssets(projectPath, publicDir)),
   );
 
   ipcMain.handle(
     IPC.assetDataUrl,
     (_e, projectPath: string, publicDir: string, webPath: string) =>
-      readAssetDataUrl(projectPath, publicDir, webPath),
+      approved(projectPath, () =>
+        readAssetDataUrl(projectPath, publicDir, webPath),
+      ),
   );
 
   ipcMain.handle(IPC.listReusableSections, () => listReusableSections());
@@ -392,7 +485,7 @@ export function registerIpcHandlers(
   ipcMain.handle(
     IPC.draftRead,
     (_e, projectPath: string, scope: "page" | "site", target: string) =>
-      readDraft(projectPath, scope, target),
+      approved(projectPath, () => readDraft(projectPath, scope, target)),
   );
 
   ipcMain.handle(IPC.draftList, () => listDraftSummaries());
@@ -405,18 +498,22 @@ export function registerIpcHandlers(
       scope: "page" | "site",
       target: string,
       content: string,
-    ) => writeDraft(projectPath, scope, target, content),
+    ) =>
+      approved(projectPath, () =>
+        writeDraft(projectPath, scope, target, content),
+      ),
   );
 
   ipcMain.handle(
     IPC.draftClear,
     (_e, projectPath: string, scope: "page" | "site", target: string) =>
-      clearDraft(projectPath, scope, target),
+      approved(projectPath, () => clearDraft(projectPath, scope, target)),
   );
 
   ipcMain.handle(
     IPC.watchStart,
     (event, projectPath: string, rel: string): OperationResult => {
+      assertApprovedProject(projectPath);
       watchFile(projectPath, rel, (changed) => {
         if (!event.sender.isDestroyed())
           event.sender.send(IPC.externalChange, changed);
@@ -431,10 +528,11 @@ export function registerIpcHandlers(
   });
 
   ipcMain.handle(IPC.pagesList, (_e, projectPath: string, pagesDir: string) =>
-    listPages(projectPath, pagesDir),
+    approved(projectPath, () => listPages(projectPath, pagesDir)),
   );
 
   ipcMain.handle(IPC.previewStart, async (event, projectPath: string) => {
+    assertApprovedProject(projectPath);
     return startDevServer(projectPath, (chunk) => {
       if (!event.sender.isDestroyed()) event.sender.send(IPC.previewLog, chunk);
     });
@@ -448,17 +546,19 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC.themePreviewEnsure, () => ensureThemePreviewServer());
 
   ipcMain.handle(IPC.publish, (_e, projectPath: string, outDir: string) =>
-    buildAndReveal(projectPath, outDir),
+    approved(projectPath, () => buildAndReveal(projectPath, outDir)),
   );
 
   ipcMain.handle(IPC.depsInstalled, (_e, projectPath: string): boolean =>
-    dependenciesInstalled(projectPath),
+    approved(projectPath, () => dependenciesInstalled(projectPath)),
   );
 
   ipcMain.handle(IPC.depsInstall, (event, projectPath: string) =>
-    installDependencies(projectPath, (chunk) => {
-      if (!event.sender.isDestroyed()) event.sender.send(IPC.depsLog, chunk);
-    }),
+    approved(projectPath, () =>
+      installDependencies(projectPath, (chunk) => {
+        if (!event.sender.isDestroyed()) event.sender.send(IPC.depsLog, chunk);
+      }),
+    ),
   );
 
   ipcMain.handle(IPC.updaterCheck, (event) => {
@@ -471,7 +571,7 @@ export function registerIpcHandlers(
     if (!assertUpdaterSender(event.sender.id)) {
       return { status: "error", error: "Unauthorized sender." };
     }
-    return downloadUpdate();
+    return downloadUpdate(readGlobalSettings);
   });
   ipcMain.handle(IPC.updaterCancel, (event) => {
     if (!assertUpdaterSender(event.sender.id)) {
@@ -486,7 +586,7 @@ export function registerIpcHandlers(
     }
     options?.markUpdateInstalling?.();
     try {
-      installUpdate();
+      installUpdate(readGlobalSettings);
       return { ok: true };
     } catch (error) {
       options?.clearUpdateInstalling?.();

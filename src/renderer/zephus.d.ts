@@ -95,6 +95,8 @@ type ViewportKey = "desktop" | "tablet" | "mobile";
 
 interface BlockStyle {
   align?: "left" | "center" | "right";
+  width?: string;
+  height?: string;
   maxWidth?: string;
   background?: string;
   color?: string;
@@ -111,6 +113,8 @@ interface BlockStyle {
       ViewportKey,
       {
         align?: "left" | "center" | "right";
+        width?: string;
+        height?: string;
         maxWidth?: string;
         padding?: string;
         margin?: string;
@@ -582,4 +586,5 @@ interface ZephusApi {
 
 interface Window {
   zephus: ZephusApi;
+  __zephusRunEditorSmoke?: () => string[];
 }

@@ -26,7 +26,7 @@ beforeEach(() => {
     path.join(tmpDir, "package.json"),
     JSON.stringify({
       scripts: { dev: "astro dev", build: "astro build" },
-      dependencies: { astro: "^5.0.0" },
+      dependencies: { astro: "^6.0.0" },
     }),
   );
   fs.writeFileSync(path.join(tmpDir, "astro.config.mjs"), "export default {};");
@@ -88,6 +88,45 @@ describe("schema service", () => {
     expect(page.pageDocument?.managedFileStatus).toBe("managed");
   });
 
+  it("strips dangerous URL schemes from emitted links (build side)", () => {
+    ensureVisualSchema(tmpDir, pagesDir);
+    const created = createSchemaPage(tmpDir, pagesDir, "danger");
+    expect(created.ok).toBe(true);
+    const pagePath = pagePathFromSlug(pagesDir, "danger");
+    const current = readPageDocument(tmpDir, pagePath, pagesDir);
+    expect(current.ok).toBe(true);
+
+    // Constructed at runtime so the eslint no-script-url rule doesn't flag the
+    // test source itself.
+    const jsScheme = "java" + "script:";
+    const written = writePageDocument(tmpDir, pagesDir, {
+      ...current.pageDocument!,
+      sections: [
+        {
+          ...current.pageDocument!.sections[0],
+          children: [
+            {
+              id: "b1",
+              type: "button",
+              props: { text: "Click", href: `${jsScheme}alert(1)`, cls: "" },
+            },
+            {
+              id: "e1",
+              type: "embed",
+              props: { src: `${jsScheme}alert(2)`, title: "Embed", cls: "" },
+            },
+          ],
+        },
+      ],
+    });
+    expect(written.ok).toBe(true);
+
+    const astro = fs.readFileSync(path.join(tmpDir, pagePath), "utf8");
+    expect(astro).not.toContain(jsScheme);
+    // Button falls back to a safe anchor target.
+    expect(astro).toContain('href="#"');
+  });
+
   it("creates, exports, detaches, and reattaches schema pages", () => {
     ensureVisualSchema(tmpDir, pagesDir);
     const created = createSchemaPage(tmpDir, pagesDir, "about/team");
@@ -112,6 +151,8 @@ describe("schema service", () => {
             margin: "2rem 0",
             radius: "20px",
             maxWidth: "840px",
+            width: "80%",
+            height: "420px",
           },
           children: [
             {
@@ -129,8 +170,11 @@ describe("schema service", () => {
       ],
     });
     expect(updated.ok).toBe(true);
-    expect(fs.readFileSync(path.join(tmpDir, aboutPath), "utf8")).toContain(
-      '<section class="team-shell" style="max-width:840px;background:#eef2ff;padding:3rem;margin:2rem 0;border-radius:20px">',
+    const savedAstro = fs.readFileSync(path.join(tmpDir, aboutPath), "utf8");
+    expect(savedAstro).toContain('data-zephus-block="section"');
+    expect(savedAstro).toContain('class="team-shell"');
+    expect(savedAstro).toContain(
+      'style="width:80%;height:420px;max-width:840px;background:#eef2ff;padding:3rem;margin:2rem 0;border-radius:20px"',
     );
 
     const detached = detachPageDocument(
@@ -152,6 +196,101 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
     expect(reattached.ok).toBe(true);
     expect(reattached.pageDocument?.detached).toBe(false);
     expect(reattached.pageDocument?.managedFileStatus).toBe("managed");
+  });
+
+  it("drops block style values that can break CSS declarations", () => {
+    ensureVisualSchema(tmpDir, pagesDir);
+    const created = createSchemaPage(tmpDir, pagesDir, "style-hardening");
+    expect(created.ok).toBe(true);
+    const page = pagePathFromSlug(pagesDir, "style-hardening");
+    const current = readPageDocument(tmpDir, page, pagesDir);
+    expect(current.ok).toBe(true);
+
+    const saved = writePageDocument(tmpDir, pagesDir, {
+      ...current.pageDocument!,
+      sections: [
+        {
+          id: "unsafe-section",
+          type: "section",
+          props: { wrapper: "box", cls: "" },
+          style: {
+            width: "100px;color:red",
+            height: "80px",
+            background: "red;position:fixed",
+          },
+          children: [],
+        },
+      ],
+    });
+    expect(saved.ok).toBe(true);
+
+    const astro = fs.readFileSync(path.join(tmpDir, page), "utf8");
+    expect(astro).toContain("height:80px");
+    expect(astro).not.toContain("width:100px;color:red");
+    expect(astro).not.toContain("position:fixed");
+  });
+
+  it("does not overwrite out-of-sync managed Astro pages", () => {
+    ensureVisualSchema(tmpDir, pagesDir);
+    const created = createSchemaPage(tmpDir, pagesDir, "manual-edit");
+    expect(created.ok).toBe(true);
+    const page = pagePathFromSlug(pagesDir, "manual-edit");
+    const pageFile = path.join(tmpDir, page);
+    const manualSource = `---
+import BaseLayout from '../layouts/BaseLayout.astro';
+---
+<BaseLayout title="Manual">
+  <h1>Manual edit stays</h1>
+</BaseLayout>
+`;
+    fs.writeFileSync(pageFile, manualSource, "utf8");
+
+    const ensured = ensureVisualSchema(tmpDir, pagesDir);
+    expect(ensured.ok).toBe(true);
+    expect(fs.readFileSync(pageFile, "utf8")).toBe(manualSource);
+
+    const reread = readPageDocument(tmpDir, page, pagesDir);
+    expect(reread.ok).toBe(true);
+    expect(reread.pageDocument?.managedFileStatus).toBe("out-of-sync");
+    expect(reread.source).toBe(manualSource);
+  });
+
+  it("keeps a real section element for wrapperless styled sections", () => {
+    ensureVisualSchema(tmpDir, pagesDir);
+    const created = createSchemaPage(tmpDir, pagesDir, "styled-none");
+    expect(created.ok).toBe(true);
+    const page = pagePathFromSlug(pagesDir, "styled-none");
+    const current = readPageDocument(tmpDir, page, pagesDir);
+    expect(current.ok).toBe(true);
+
+    const saved = writePageDocument(tmpDir, pagesDir, {
+      ...current.pageDocument!,
+      sections: [
+        {
+          id: "styled-section",
+          type: "section",
+          label: "Styled None",
+          props: { wrapper: "none", cls: "" },
+          style: {
+            width: "760px",
+            responsive: { mobile: { width: "320px" } },
+          },
+          children: [
+            {
+              id: "copy",
+              type: "text",
+              props: { text: "Still targetable", cls: "" },
+            },
+          ],
+        },
+      ],
+    });
+    expect(saved.ok).toBe(true);
+
+    const astro = fs.readFileSync(path.join(tmpDir, page), "utf8");
+    expect(astro).toContain('data-zephus-id="styled-section"');
+    expect(astro).toContain('style="width:760px"');
+    expect(astro).toContain('[data-zephus-id="styled-section"]{width:320px}');
   });
 
   it("writes managed shell and design artifacts when site settings change", () => {

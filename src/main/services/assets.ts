@@ -3,6 +3,7 @@ import * as fs from "fs";
 import * as path from "path";
 import log from "electron-log";
 import { AssetCategory, AssetEntry, AssetListResult } from "../types";
+import { resolveProjectRelativeDir } from "./projectPaths";
 
 export interface ImportImageResult {
   ok: boolean;
@@ -73,6 +74,46 @@ function uniqueName(dir: string, base: string): string {
   return candidate;
 }
 
+function assertRealChild(root: string, target: string, error: string): void {
+  if (target !== root && !target.startsWith(root + path.sep)) {
+    throw new Error(error);
+  }
+}
+
+function resolveRealPublicRoot(
+  projectPath: string,
+  publicRoot: string,
+): string {
+  const realProjectRoot = fs.realpathSync.native(projectPath);
+  const realPublicRoot = fs.realpathSync.native(publicRoot);
+  assertRealChild(
+    realProjectRoot,
+    realPublicRoot,
+    "Public directory escapes the project directory.",
+  );
+  return realPublicRoot;
+}
+
+function ensureRealPublicRoot(projectPath: string, publicRoot: string): string {
+  const realProjectRoot = fs.realpathSync.native(projectPath);
+  let existingPath = publicRoot;
+  while (!fs.existsSync(existingPath)) {
+    const parent = path.dirname(existingPath);
+    if (parent === existingPath) {
+      throw new Error("Public directory escapes the project directory.");
+    }
+    existingPath = parent;
+  }
+  const realExisting = fs.realpathSync.native(existingPath);
+  assertRealChild(
+    realProjectRoot,
+    realExisting,
+    "Public directory escapes the project directory.",
+  );
+  fs.mkdirSync(publicRoot, { recursive: true });
+  return resolveRealPublicRoot(projectPath, publicRoot);
+}
+
 /**
  * Copies a single source file into the categorized assets directory
  * (public/assets/<category>/) and returns its web-root-relative path.
@@ -84,8 +125,20 @@ function copyIntoAssets(
 ): { webPath: string; category: AssetCategory } {
   const ext = path.extname(sourcePath).slice(1);
   const category = categoryForExtension(ext);
-  const targetDir = path.join(projectPath, publicDir, ASSETS_ROOT, category);
+  const publicRoot = resolveProjectRelativeDir(
+    projectPath,
+    publicDir,
+    "public",
+  ).absolute;
+  const realPublicRoot = ensureRealPublicRoot(projectPath, publicRoot);
+  const targetDir = path.join(publicRoot, ASSETS_ROOT, category);
   fs.mkdirSync(targetDir, { recursive: true });
+  const realTargetDir = fs.realpathSync.native(targetDir);
+  assertRealChild(
+    realPublicRoot,
+    realTargetDir,
+    "Asset directory escapes the public directory.",
+  );
   const name = uniqueName(targetDir, path.basename(sourcePath));
   fs.copyFileSync(sourcePath, path.join(targetDir, name));
   return { webPath: `/${ASSETS_ROOT}/${category}/${name}`, category };
@@ -165,6 +218,14 @@ export function importAssetsFromPaths(
 
   for (const source of paths) {
     try {
+      const ext = path.extname(source).slice(1).toLowerCase();
+      if (!ext || !ALL_ASSET_EXTENSIONS.includes(ext)) {
+        errors.push(
+          `${path.basename(source)}: unsupported file type` +
+            (ext ? ` (.${ext})` : ""),
+        );
+        continue;
+      }
       const stat = fs.statSync(source);
       if (!stat.isFile()) {
         errors.push(`${path.basename(source)}: not a file`);
@@ -260,7 +321,11 @@ export function readAssetDataUrl(
 ): AssetDataUrlResult {
   try {
     const relative = webPath.replace(/^\/+/, "");
-    const publicRoot = path.resolve(projectPath, publicDir);
+    const publicRoot = resolveProjectRelativeDir(
+      projectPath,
+      publicDir,
+      "public",
+    ).absolute;
     const resolved = path.resolve(publicRoot, relative);
     if (
       resolved !== publicRoot &&
@@ -268,6 +333,13 @@ export function readAssetDataUrl(
     ) {
       return { ok: false, error: "Path escapes the public directory." };
     }
+    const realPublicRoot = resolveRealPublicRoot(projectPath, publicRoot);
+    const realResolved = fs.realpathSync.native(resolved);
+    assertRealChild(
+      realPublicRoot,
+      realResolved,
+      "Path escapes the public directory.",
+    );
     const ext = path.extname(resolved).slice(1).toLowerCase();
     const mime = MIME_BY_EXTENSION[ext];
     if (!mime) return { ok: false, error: "Unsupported image type." };
@@ -298,13 +370,22 @@ export function listProjectAssets(
 ): AssetListResult {
   const assets: AssetEntry[] = [];
   try {
-    const assetsRoot = path.join(projectPath, publicDir, ASSETS_ROOT);
+    const publicRoot = resolveProjectRelativeDir(
+      projectPath,
+      publicDir,
+      "public",
+    ).absolute;
+    if (!fs.existsSync(publicRoot)) {
+      return { ok: true, assets };
+    }
+    resolveRealPublicRoot(projectPath, publicRoot);
+    const assetsRoot = path.join(publicRoot, ASSETS_ROOT);
     if (fs.existsSync(assetsRoot)) {
       collectAssets(assetsRoot, `/${ASSETS_ROOT}`, null, assets);
     }
 
     // Legacy location from earlier Zephus versions.
-    const legacyImages = path.join(projectPath, publicDir, "images");
+    const legacyImages = path.join(publicRoot, "images");
     if (fs.existsSync(legacyImages)) {
       collectAssets(legacyImages, "/images", "images", assets);
     }

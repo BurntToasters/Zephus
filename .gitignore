@@ -142,8 +142,11 @@ vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
 .DS_Store
-.kiro/
 .site_examples/
+**/.*/
+!.github/
+!.husky/
+!.husky/**
 
 # Zephus build artifacts
 release/
