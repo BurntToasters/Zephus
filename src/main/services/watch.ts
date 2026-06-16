@@ -23,7 +23,12 @@ export function watchFile(
   onChange: ChangeCallback,
 ): void {
   stopWatching();
-  const full = path.join(projectPath, relativePath);
+  const root = path.resolve(projectPath);
+  const full = path.resolve(root, relativePath);
+  if (full !== root && !full.startsWith(root + path.sep)) {
+    log.warn("Refusing to watch path outside project", full);
+    return;
+  }
   try {
     const watcher = fs.watch(full, (eventType) => {
       if (eventType !== "change" && eventType !== "rename") return;

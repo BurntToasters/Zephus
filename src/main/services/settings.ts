@@ -9,6 +9,7 @@ import {
   MAX_RECENT_PROJECTS,
   RepoSettings,
 } from "../types";
+import { readJsonSafe, writeFileAtomic } from "./fsSafe";
 
 /**
  * Resolves the OS-specific user config directory for Zephus.
@@ -23,35 +24,35 @@ function globalSettingsPath(): string {
 
 export function readGlobalSettings(): GlobalSettings {
   const file = globalSettingsPath();
-  try {
-    if (!fs.existsSync(file)) {
-      writeGlobalSettings(DEFAULT_GLOBAL_SETTINGS);
-      return { ...DEFAULT_GLOBAL_SETTINGS };
-    }
-    const parsed = JSON.parse(
-      fs.readFileSync(file, "utf8"),
-    ) as Partial<GlobalSettings>;
-    // Merge with defaults so missing keys are filled, invalid file falls back in catch.
-    return {
-      ...DEFAULT_GLOBAL_SETTINGS,
-      ...parsed,
-      recentProjects: Array.isArray(parsed.recentProjects)
-        ? parsed.recentProjects
-        : [],
-    };
-  } catch (error) {
-    log.error(
-      "Failed to read global settings; using defaults for this session.",
-      error,
-    );
+  if (!fs.existsSync(file)) {
+    writeGlobalSettings(DEFAULT_GLOBAL_SETTINGS);
     return { ...DEFAULT_GLOBAL_SETTINGS };
   }
+  // Corrupt settings are backed up (not overwritten) by readJsonSafe; we fall
+  // back to in-memory defaults for the session without clobbering the backup.
+  const { data, corrupt } = readJsonSafe<Partial<GlobalSettings>>(file);
+  if (corrupt || !data) {
+    if (corrupt) {
+      log.error(
+        "Using default settings this session; settings.json backed up.",
+      );
+    }
+    return { ...DEFAULT_GLOBAL_SETTINGS };
+  }
+  return {
+    ...DEFAULT_GLOBAL_SETTINGS,
+    ...data,
+    recentProjects: Array.isArray(data.recentProjects)
+      ? data.recentProjects
+      : [],
+  };
 }
 
 export function writeGlobalSettings(settings: GlobalSettings): void {
-  const file = globalSettingsPath();
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, JSON.stringify(settings, null, 2) + "\n", "utf8");
+  writeFileAtomic(
+    globalSettingsPath(),
+    JSON.stringify(settings, null, 2) + "\n",
+  );
 }
 
 /** Records a project path at the top of the recent-projects list (deduped, capped). */
@@ -92,19 +93,9 @@ export function isZephusProject(projectPath: string): boolean {
 
 export function readRepoSettings(projectPath: string): RepoSettings {
   const file = repoSettingsPath(projectPath);
-  try {
-    if (!fs.existsSync(file)) return { ...DEFAULT_REPO_SETTINGS };
-    const parsed = JSON.parse(
-      fs.readFileSync(file, "utf8"),
-    ) as Partial<RepoSettings>;
-    return { ...DEFAULT_REPO_SETTINGS, ...parsed };
-  } catch (error) {
-    log.error(
-      "Failed to read repo settings; using defaults for this session.",
-      error,
-    );
-    return { ...DEFAULT_REPO_SETTINGS };
-  }
+  const { data } = readJsonSafe<Partial<RepoSettings>>(file);
+  if (!data) return { ...DEFAULT_REPO_SETTINGS };
+  return { ...DEFAULT_REPO_SETTINGS, ...data };
 }
 
 /**

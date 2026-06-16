@@ -43,6 +43,13 @@ import {
   FileCode,
   Link,
   GitBranch,
+  AlertTriangle,
+  Star,
+  Quote,
+  ChevronDown,
+  BarChart,
+  Tag,
+  Megaphone,
 } from "lucide";
 
 type Mode = "visual" | "code";
@@ -63,6 +70,12 @@ const PALETTE: { type: BlockType; label: string }[] = [
   { type: "quote", label: "Quote" },
   { type: "list", label: "List" },
   { type: "embed", label: "Embed" },
+  { type: "feature", label: "Feature" },
+  { type: "testimonial", label: "Testimonial" },
+  { type: "accordion", label: "FAQ / Accordion" },
+  { type: "stats", label: "Stats" },
+  { type: "pricing", label: "Pricing" },
+  { type: "cta", label: "Call to Action" },
   { type: "html", label: "HTML" },
 ];
 
@@ -80,11 +93,18 @@ const PALETTE_ICONS: Record<BlockType, string> = {
   quote: "align-left",
   list: "align-left",
   embed: "link",
+  feature: "star",
+  testimonial: "quote",
+  accordion: "chevron-down",
+  stats: "bar-chart",
+  pricing: "tag",
+  cta: "megaphone",
   html: "code-xml",
 };
 
 function refreshIcons(): void {
   createIcons({
+    attrs: { "aria-hidden": "true", focusable: "false" },
     icons: {
       Settings,
       Clock,
@@ -112,6 +132,13 @@ function refreshIcons(): void {
       FileCode,
       Link,
       GitBranch,
+      AlertTriangle,
+      Star,
+      Quote,
+      ChevronDown,
+      BarChart,
+      Tag,
+      Megaphone,
     },
   });
 }
@@ -128,88 +155,206 @@ const TEXT_EDITABLE: BlockType[] = [
 interface SectionTemplate {
   id: string;
   label: string;
-  html: string;
+  /** Schema block factory — produces fresh editable blocks per insert. */
+  blocks?: () => BlockNode[];
+  /** Legacy/saved sections inserted as a single preserved HTML block. */
+  html?: string;
 }
 
-// Prebuilt section clusters inserted as a single preserved HTML block.
+/** Build a fresh editable block node with merged default props. */
+function mk(
+  type: BlockType,
+  props: Record<string, string> = {},
+  style?: BlockStyle,
+): BlockNode {
+  const node: BlockNode = {
+    id: uid(),
+    type,
+    props: { ...defaultProps(type), ...props },
+  };
+  if (style) node.style = style;
+  return node;
+}
+
+// Prebuilt section clusters inserted as fully editable schema blocks.
 const TEMPLATES: SectionTemplate[] = [
   {
     id: "hero",
     label: "Hero",
-    html: `<section class="hero">
-      <h1>Your headline here</h1>
-      <p>A short supporting sentence about your product or site.</p>
-      <a class="button" href="#">Get started</a>
-    </section>`,
+    blocks: () => [
+      mk(
+        "heading",
+        { text: "Your headline goes here", level: "1" },
+        { align: "center" },
+      ),
+      mk(
+        "text",
+        {
+          text: "A short supporting sentence about your product or site.",
+          cls: "lead",
+        },
+        { align: "center" },
+      ),
+      mk("button", { text: "Get started", href: "#" }, { align: "center" }),
+    ],
   },
   {
     id: "features",
     label: "Features",
-    html: `<section class="features">
-      <div class="feature"><h3>Fast</h3><p>Describe a benefit.</p></div>
-      <div class="feature"><h3>Simple</h3><p>Describe a benefit.</p></div>
-      <div class="feature"><h3>Flexible</h3><p>Describe a benefit.</p></div>
-    </section>`,
+    blocks: () => [
+      mk("heading", { text: "Why choose us", level: "2" }, { align: "center" }),
+      mk("feature", {
+        icon: "⚡",
+        title: "Fast",
+        text: "Describe a key benefit in one short sentence.",
+      }),
+      mk("feature", {
+        icon: "🎯",
+        title: "Simple",
+        text: "Describe a key benefit in one short sentence.",
+      }),
+      mk("feature", {
+        icon: "🧩",
+        title: "Flexible",
+        text: "Describe a key benefit in one short sentence.",
+      }),
+    ],
+  },
+  {
+    id: "stats",
+    label: "Stats",
+    blocks: () => [
+      mk(
+        "heading",
+        { text: "By the numbers", level: "2" },
+        { align: "center" },
+      ),
+      mk("stats", {
+        items:
+          "10k+ :: Happy customers\n99.9% :: Uptime\n4.9/5 :: Average rating",
+      }),
+    ],
   },
   {
     id: "pricing",
     label: "Pricing",
-    html: `<section class="pricing-grid">
-      <article class="price-card"><h3>Starter</h3><p>$9/mo</p><ul><li>One site</li><li>Email support</li></ul></article>
-      <article class="price-card"><h3>Pro</h3><p>$29/mo</p><ul><li>Unlimited pages</li><li>Priority support</li></ul></article>
-      <article class="price-card"><h3>Studio</h3><p>$99/mo</p><ul><li>Team seats</li><li>Custom onboarding</li></ul></article>
-    </section>`,
+    blocks: () => [
+      mk(
+        "heading",
+        { text: "Simple, honest pricing", level: "2" },
+        { align: "center" },
+      ),
+      mk(
+        "text",
+        { text: "Choose the plan that fits your needs.", cls: "lead" },
+        { align: "center" },
+      ),
+      mk("pricing", {
+        plan: "Starter",
+        price: "$9",
+        period: "/mo",
+        features: "One site\nEmail support",
+        ctaText: "Choose Starter",
+      }),
+      mk("pricing", {
+        plan: "Pro",
+        price: "$29",
+        period: "/mo",
+        features: "Unlimited pages\nPriority support",
+        ctaText: "Choose Pro",
+      }),
+      mk("pricing", {
+        plan: "Studio",
+        price: "$99",
+        period: "/mo",
+        features: "Team seats\nCustom onboarding",
+        ctaText: "Choose Studio",
+      }),
+    ],
   },
   {
     id: "faq",
     label: "FAQ",
-    html: `<section class="faq-list">
-      <details open><summary>What is this for?</summary><p>Answer the most common buyer question.</p></details>
-      <details><summary>How long does setup take?</summary><p>Share the expected time-to-value.</p></details>
-      <details><summary>Can I customize it?</summary><p>Explain the limits and flexibility.</p></details>
-    </section>`,
+    blocks: () => [
+      mk(
+        "heading",
+        { text: "Frequently asked questions", level: "2" },
+        { align: "center" },
+      ),
+      mk("accordion", {
+        items:
+          "What is this for? :: Answer the most common buyer question.\nHow long does setup take? :: Share the expected time-to-value.\nCan I customize it? :: Explain the limits and flexibility.",
+      }),
+    ],
   },
   {
     id: "testimonials",
     label: "Testimonials",
-    html: `<section class="testimonials">
-      <blockquote><p>"A short customer quote."</p><cite>Customer Name</cite></blockquote>
-      <blockquote><p>"Another proof point from a happy client."</p><cite>Founder, Studio</cite></blockquote>
-    </section>`,
+    blocks: () => [
+      mk(
+        "heading",
+        { text: "Loved by teams everywhere", level: "2" },
+        { align: "center" },
+      ),
+      mk("testimonial", {
+        quote: "A short customer quote that builds trust.",
+        author: "Customer Name",
+        role: "Founder, Studio",
+      }),
+      mk("testimonial", {
+        quote: "Another proof point from a happy client.",
+        author: "Happy Client",
+        role: "CEO, Company",
+      }),
+    ],
   },
   {
     id: "cta",
     label: "Call to action",
-    html: `<section class="cta">
-      <h2>Ready to begin?</h2>
-      <a class="button" href="#">Contact us</a>
-    </section>`,
+    blocks: () => [
+      mk("cta", {
+        heading: "Ready to begin?",
+        text: "Join thousands already building with us.",
+        buttonText: "Contact us",
+        buttonHref: "#",
+      }),
+    ],
   },
   {
     id: "logo-wall",
     label: "Logo Wall",
-    html: `<section class="logo-wall">
-      <span>Client One</span>
-      <span>Client Two</span>
-      <span>Client Three</span>
-      <span>Client Four</span>
-    </section>`,
+    blocks: () => [
+      mk("heading", { text: "Trusted by", level: "3" }, { align: "center" }),
+      mk(
+        "text",
+        {
+          text: "Client One · Client Two · Client Three · Client Four",
+          cls: "lead",
+        },
+        { align: "center" },
+      ),
+    ],
   },
   {
     id: "contact",
     label: "Contact",
-    html: `<section class="contact-card">
-      <h2>Say hello</h2>
-      <p>Drop in your email, address, or scheduling link.</p>
-      <a class="button" href="mailto:hello@example.com">Email us</a>
-    </section>`,
+    blocks: () => [
+      mk("heading", { text: "Say hello", level: "2" }),
+      mk("text", { text: "Drop in your email, address, or scheduling link." }),
+      mk("button", { text: "Email us", href: "mailto:hello@example.com" }),
+    ],
   },
   {
     id: "footer",
     label: "Footer",
-    html: `<footer class="site-footer">
-      <p>&copy; Your Site. Built with Zephus.</p>
-    </footer>`,
+    blocks: () => [
+      mk("divider"),
+      mk(
+        "text",
+        { text: "© Your Site. Built with Zephus." },
+        { align: "center" },
+      ),
+    ],
   },
 ];
 
@@ -218,12 +363,20 @@ const editorRules = {
   maxHeadingLevel: 6,
 };
 
+/** Cache of saved reusable sections, refreshed by renderTemplates(). */
+let reusableSectionsCache: ReusableSection[] = [];
+
 const state = createEditorSession();
 
 function $(id: string): HTMLElement {
   const el = document.getElementById(id);
   if (!el) throw new Error(`Missing element #${id}`);
   return el;
+}
+
+/** Like $ but returns null if element absent (for optional UI elements). */
+function $maybe(id: string): HTMLElement | null {
+  return document.getElementById(id);
 }
 
 // Cached app settings, loaded at startup and refreshed on save.
@@ -244,6 +397,41 @@ const { closeModal, showModal, showModalNode } = modalController;
 
 function setStatus(message: string): void {
   $("status-bar").textContent = message;
+}
+
+const TOOLBAR_TIPS: Record<string, string> = {
+  Up: "Move up",
+  Down: "Move down",
+  Dup: "Duplicate",
+  Wrap: "Wrap in a section",
+  Lock: "Lock (prevent edits)",
+  Unlock: "Unlock",
+  Delete: "Delete",
+  "Add Block": "Add a block inside",
+};
+
+/**
+ * Maps raw build/preview/install errors to plain-language guidance for
+ * non-technical users. Falls back to the shortest meaningful line.
+ */
+function friendlyError(raw: string | undefined): string {
+  const e = (raw ?? "").toString();
+  if (!e.trim()) return "Something went wrong. Please try again.";
+  if (/not installed|run npm install/i.test(e))
+    return "Your site's dependencies aren't installed yet. Zephus will install them — try again.";
+  if (/node(\.js)?\s*\/?\s*npm not found|ENOENT|not recognized/i.test(e))
+    return "Node.js was not found. Install it from nodejs.org, or set a custom Node.js location in Settings.";
+  if (/did not report a URL|timeout/i.test(e))
+    return "The preview took too long to start. Check the Dev Server Log panel for details.";
+  if (/EADDRINUSE|address already in use|port/i.test(e))
+    return "The preview port is already in use. Close any other running dev servers and try again.";
+  if (/EACCES|permission denied/i.test(e))
+    return "Permission denied writing to the project folder. Check the folder's permissions.";
+  if (/ENOSPC|no space/i.test(e))
+    return "Your disk is full. Free up space and try again.";
+  // Fallback: first non-empty line, trimmed to something readable.
+  const firstLine = e.split("\n").find((l) => l.trim()) ?? e;
+  return firstLine.length > 240 ? firstLine.slice(0, 240) + "…" : firstLine;
 }
 
 function uid(): string {
@@ -448,119 +636,113 @@ function syncHomeActionState(): void {
 }
 
 function renderHomeStatusPanels(): void {
-  const projectHost = $("home-project-status");
-  const recoveryHost = $("home-recovery-list");
-  const updateHost = $("home-update-status");
-  projectHost.innerHTML = "";
-  recoveryHost.innerHTML = "";
-  updateHost.innerHTML = "";
+  const recoveryHost = $maybe("home-recovery-list");
+  if (recoveryHost) {
+    recoveryHost.innerHTML = "";
+    const drafts = homeDraftSummaries.slice(0, 4);
+    if (drafts.length === 0) {
+      recoveryHost.classList.add("hidden");
+    } else {
+      recoveryHost.classList.remove("hidden");
 
-  if (appSettings?.lastOpenedProject) {
-    const lastProject = appSettings.lastOpenedProject;
-    projectHost.appendChild(
-      buildHomeStatusCard(
-        `Last project: ${projectBaseName(lastProject)}`,
-        lastProject,
-        [
-          {
-            label: "Resume",
-            onClick: () => void openProjectByPath(lastProject),
-          },
-        ],
-      ),
-    );
-  } else {
-    projectHost.appendChild(
-      buildHomeStatusCard(
-        "No project resumed yet",
-        "Create a new Zephus site or open an existing one to keep a quick resume target here.",
-      ),
-    );
-  }
+      const alertHeader = document.createElement("div");
+      alertHeader.className = "pane-header-title";
+      alertHeader.style.marginBottom = "12px";
+      alertHeader.innerHTML = `
+        <p class="pane-kicker" style="color: var(--warning);">Unsaved Work Recovery</p>
+        <strong style="font-size: 14px;">Zephus detected unsaved page or site drafts.</strong>
+      `;
+      recoveryHost.appendChild(alertHeader);
 
-  const drafts = homeDraftSummaries.slice(0, 4);
-  if (drafts.length === 0) {
-    recoveryHost.appendChild(
-      buildHomeStatusCard(
-        "No recovery drafts waiting",
-        "Unsaved page and site-shell drafts will appear here when Zephus has something recoverable.",
-      ),
-    );
-  } else {
-    for (const draft of drafts) {
-      recoveryHost.appendChild(
-        buildHomeStatusCard(
-          `${projectBaseName(draft.projectPath)} - ${formatRelativeTime(draft.savedAt)}`,
-          homeDraftLabel(draft),
-          [
-            {
-              label: "Resume Draft",
-              onClick: () => {
-                pendingHomeDraftResume = draft;
-                void openProjectByPath(draft.projectPath);
+      const alertList = document.createElement("div");
+      alertList.className = "home-status-stack";
+
+      for (const draft of drafts) {
+        alertList.appendChild(
+          buildHomeStatusCard(
+            `${projectBaseName(draft.projectPath)} - ${formatRelativeTime(draft.savedAt)}`,
+            homeDraftLabel(draft),
+            [
+              {
+                label: "Resume Draft",
+                onClick: () => {
+                  pendingHomeDraftResume = draft;
+                  void openProjectByPath(draft.projectPath);
+                },
               },
-            },
-          ],
-        ),
-      );
+            ],
+          ),
+        );
+      }
+      recoveryHost.appendChild(alertList);
     }
   }
 
-  const updateCard = (() => {
-    if (!updaterSnapshot) {
-      return buildHomeStatusCard(
-        "Update status",
-        "Automatic update checks run from your settings. You can also trigger a manual check any time.",
-        [{ label: "Settings", onClick: () => void openSettingsModal() }],
-      );
-    }
-    if (updaterSnapshot.status === "available") {
-      return buildHomeStatusCard(
-        `Update available${updaterSnapshot.version ? `: v${updaterSnapshot.version}` : ""}`,
-        "A new Zephus build is ready to download from the updater flow.",
-        [{ label: "Settings", onClick: () => void openSettingsModal() }],
-      );
-    }
-    if (updaterSnapshot.status === "downloading") {
-      return buildHomeStatusCard(
-        "Downloading update",
-        `${Math.round(updaterSnapshot.percent ?? 0)}% complete.`,
-      );
-    }
-    if (updaterSnapshot.status === "downloaded") {
-      return buildHomeStatusCard(
-        `Update ready${updaterSnapshot.version ? `: v${updaterSnapshot.version}` : ""}`,
-        "The downloaded update can be installed from the current updater flow.",
-      );
-    }
-    if (updaterSnapshot.status === "checking") {
-      return buildHomeStatusCard(
-        "Checking for updates",
-        "Zephus is contacting the update feed right now.",
-      );
-    }
-    if (updaterSnapshot.status === "error") {
-      return buildHomeStatusCard(
-        "Update check had an issue",
-        updaterSnapshot.error ?? "The updater returned an unknown error.",
-        [{ label: "Settings", onClick: () => void openSettingsModal() }],
-      );
-    }
-    if (updaterSnapshot.status === "not-available") {
-      return buildHomeStatusCard(
-        "You are up to date",
-        updaterSnapshot.version
-          ? `Current version: v${updaterSnapshot.version}.`
-          : "No newer update is available right now.",
-      );
-    }
-    return buildHomeStatusCard(
-      "Update status",
-      `Current updater state: ${updaterSnapshot.status}.`,
-    );
-  })();
+  // Render sidebar status badge
+  renderSidebarUpdateStatus();
+}
 
-  updateHost.appendChild(updateCard);
+function renderSidebarUpdateStatus(): void {
+  const sidebarUpdate = $("sidebar-update-status");
+  if (!sidebarUpdate) return;
+  sidebarUpdate.innerHTML = "";
+
+  if (!updaterSnapshot) {
+    sidebarUpdate.classList.remove("clickable");
+    sidebarUpdate.onclick = null;
+    sidebarUpdate.innerHTML = `
+      <div class="update-status-dot"></div>
+      <span>Up to date</span>
+    `;
+    return;
+  }
+
+  if (updaterSnapshot.status === "available") {
+    sidebarUpdate.classList.add("clickable");
+    sidebarUpdate.onclick = () => void switchStartTab("settings");
+    sidebarUpdate.innerHTML = `
+      <div class="update-status-dot active"></div>
+      <span style="color: #ffffff; font-weight: bold;">Update Available</span>
+    `;
+  } else if (updaterSnapshot.status === "downloading") {
+    sidebarUpdate.classList.remove("clickable");
+    sidebarUpdate.onclick = null;
+    sidebarUpdate.innerHTML = `
+      <div class="update-status-dot active"></div>
+      <span>Downloading (${Math.round(updaterSnapshot.percent ?? 0)}%)</span>
+    `;
+  } else if (updaterSnapshot.status === "downloaded") {
+    sidebarUpdate.classList.remove("clickable");
+    sidebarUpdate.onclick = null;
+    sidebarUpdate.innerHTML = `
+      <div class="update-status-dot active"></div>
+      <span>Restart to install</span>
+    `;
+  } else if (updaterSnapshot.status === "checking") {
+    sidebarUpdate.classList.remove("clickable");
+    sidebarUpdate.onclick = null;
+    sidebarUpdate.innerHTML = `
+      <div class="update-status-dot"></div>
+      <span>Checking updates…</span>
+    `;
+  } else if (updaterSnapshot.status === "error") {
+    sidebarUpdate.classList.add("clickable");
+    sidebarUpdate.onclick = () => void switchStartTab("settings");
+    sidebarUpdate.innerHTML = `
+      <div class="update-status-dot error"></div>
+      <span>Update Error</span>
+    `;
+  } else {
+    sidebarUpdate.classList.remove("clickable");
+    sidebarUpdate.onclick = null;
+    const versionStr = updaterSnapshot.version
+      ? `v${updaterSnapshot.version}`
+      : "";
+    sidebarUpdate.innerHTML = `
+      <div class="update-status-dot"></div>
+      <span>Up to date${versionStr ? " · " + versionStr : ""}</span>
+    `;
+  }
 }
 
 function renderProjectOverview(): void {
@@ -989,12 +1171,42 @@ async function renderRecent(): Promise<void> {
   const settings = await window.zephus.readGlobalSettings();
   appSettings = settings;
   const list = $("recent-list");
+  if (!list) return;
   list.innerHTML = "";
   if (settings.recentProjects.length === 0) {
-    const li = document.createElement("li");
-    li.className = "recent-empty";
-    li.textContent = "No recent projects yet.";
-    list.appendChild(li);
+    const welcome = document.createElement("div");
+    welcome.className = "welcome-card";
+    welcome.innerHTML = `
+      <div class="welcome-icon-pill">
+        <i data-lucide="layout"></i>
+      </div>
+      <h3 class="welcome-title">Welcome to Zephus</h3>
+      <p class="welcome-copy">
+        Create a new Astro site from one of the starter templates, or open an existing Zephus project from your computer.
+      </p>
+      <div class="welcome-buttons">
+        <button id="btn-welcome-open" class="btn primary">
+          <i data-lucide="folder-open"></i> Open Folder
+        </button>
+        <button id="btn-welcome-create" class="btn">
+          <i data-lucide="compass"></i> Explore Templates
+        </button>
+      </div>
+    `;
+
+    // Wire up buttons
+    const openBtn = welcome.querySelector(
+      "#btn-welcome-open",
+    ) as HTMLButtonElement;
+    if (openBtn) openBtn.onclick = () => void chooseFolder();
+
+    const createBtn = welcome.querySelector(
+      "#btn-welcome-create",
+    ) as HTMLButtonElement;
+    if (createBtn) createBtn.onclick = () => void switchStartTab("create");
+
+    list.appendChild(welcome);
+    refreshIcons();
     renderHomeStatusPanels();
     syncHomeActionState();
     return;
@@ -1152,6 +1364,93 @@ async function openSettingsModal(): Promise<void> {
   updatesSec.appendChild(checkRow);
   form.appendChild(updatesSec);
 
+  // --- Environment Section (Node.js) ---
+  const envSec = document.createElement("div");
+  envSec.className = "settings-section";
+
+  const envHeader = document.createElement("h4");
+  envHeader.className = "settings-section-title";
+  envHeader.textContent = "Environment";
+  envSec.appendChild(envHeader);
+
+  const nodeRow = document.createElement("div");
+  nodeRow.className = "settings-row";
+
+  const nodeCopy = document.createElement("div");
+  nodeCopy.className = "settings-inline-copy";
+  const nodeStatusText = document.createElement("span");
+  nodeStatusText.textContent = "Checking Node.js…";
+  const nodeStrong = document.createElement("strong");
+  nodeStrong.textContent = "Node.js (for build & preview)";
+  nodeCopy.append(nodeStrong, nodeStatusText);
+
+  const nodeBtns = document.createElement("div");
+  nodeBtns.className = "settings-inline-actions";
+  const nodeBrowseBtn = document.createElement("button");
+  nodeBrowseBtn.className = "btn secondary mini-btn";
+  nodeBrowseBtn.textContent = "Set Custom Location…";
+  const nodeAutoBtn = document.createElement("button");
+  nodeAutoBtn.className = "btn ghost mini-btn";
+  nodeAutoBtn.textContent = "Use Auto-detect";
+  nodeBtns.append(nodeBrowseBtn, nodeAutoBtn);
+
+  nodeRow.append(nodeCopy, nodeBtns);
+  envSec.appendChild(nodeRow);
+
+  const applyNodeStatus = (res: NodeCheckResult): void => {
+    const label =
+      res.status === "ok"
+        ? `Node.js ${res.version} detected ✓`
+        : res.status === "outdated"
+          ? `Node.js ${res.version ?? "?"} — version 22.12+ required`
+          : res.status === "missing"
+            ? "Node.js not found — set a custom location below"
+            : "Node.js status could not be determined";
+    const source = settings.customNodePath
+      ? `Custom: ${settings.customNodePath}`
+      : "Auto-detect (system PATH)";
+    nodeStatusText.textContent = `${label} · ${source}`;
+    nodeAutoBtn.disabled = !settings.customNodePath;
+  };
+
+  nodeBrowseBtn.onclick = async () => {
+    nodeBrowseBtn.disabled = true;
+    try {
+      const res = await window.zephus.pickNodePath();
+      if (
+        (res.status === "ok" || res.status === "outdated") &&
+        res.usedCustomPath &&
+        res.binaryPath
+      ) {
+        settings.customNodePath = res.binaryPath;
+      }
+      applyNodeStatus(res);
+    } catch {
+      nodeStatusText.textContent = "Could not set Node.js location.";
+    }
+    nodeBrowseBtn.disabled = false;
+  };
+
+  nodeAutoBtn.onclick = async () => {
+    nodeAutoBtn.disabled = true;
+    try {
+      const res = await window.zephus.setNodePath(null);
+      settings.customNodePath = null;
+      applyNodeStatus(res);
+    } catch {
+      nodeStatusText.textContent = "Could not reset Node.js location.";
+    }
+  };
+
+  window.zephus
+    .getNodeStatus()
+    .then(applyNodeStatus)
+    .catch(() => {
+      nodeStatusText.textContent = "Could not check Node.js.";
+    });
+
+  form.appendChild(envSec);
+
   // --- Appearance Section ---
   const apSec = document.createElement("div");
   apSec.className = "settings-section";
@@ -1280,6 +1579,7 @@ async function openSettingsModal(): Promise<void> {
           confirmBlockDelete: true,
           autosave: false,
           codeFontSize: 13,
+          customNodePath: null,
         };
         await window.zephus.writeGlobalSettings(defaults);
         document.documentElement.setAttribute("data-theme", "system");
@@ -1315,6 +1615,31 @@ async function openSettingsModal(): Promise<void> {
 
 function applyCodeFontSize(size: number): void {
   document.documentElement.style.setProperty("--code-font-size", `${size}px`);
+}
+
+/**
+ * Mirrors the project's design tokens onto the canvas so users see live
+ * font/color changes while editing, without needing to save and reload.
+ * Note: Google Fonts won't load in the renderer (CSP), so custom webfonts
+ * fall back to their stack here. Real font visible in dev-server preview.
+ */
+function applyDesignPreview(): void {
+  const canvas = document.getElementById("canvas");
+  if (!canvas) return;
+  const design = effectiveSiteDocument(state)?.design;
+  const props: Array<[string, string | undefined]> = [
+    ["--zephus-accent", design?.accent],
+    ["--zephus-foreground", design?.foreground],
+    ["--zephus-background", design?.background],
+    ["--zephus-surface", design?.surface],
+    ["--zephus-font-family", design?.fontFamily],
+    ["--zephus-heading-font", design?.headingFontFamily],
+    ["--zephus-radius", design?.radius],
+  ];
+  for (const [name, value] of props) {
+    if (value && value.trim()) canvas.style.setProperty(name, value);
+    else canvas.style.removeProperty(name);
+  }
 }
 
 function renderLicenseValue(value: string | null): string {
@@ -1452,6 +1777,7 @@ async function openProjectByPath(folder: string): Promise<void> {
   }
 
   state.project = result;
+  clearAssetCache();
   await renderRecent();
 
   if (!result.pkg.ready) {
@@ -1583,8 +1909,17 @@ async function refreshGit(): Promise<void> {
     refreshIcons();
     return;
   }
+  if (git.zephusIgnored) {
+    const warn = document.createElement("div");
+    warn.className = "g-warning";
+    warn.innerHTML = `<i data-lucide="alert-triangle"></i> <span><strong>.zephus is git-ignored.</strong> Commit it — it stores this project's Zephus save state and is required to open the site on other machines.</span>`;
+    panel.appendChild(warn);
+  }
   if (total === 0) {
-    panel.innerHTML = '<p class="muted">No changes.</p>';
+    const none = document.createElement("p");
+    none.className = "muted";
+    none.textContent = "No changes.";
+    panel.appendChild(none);
     refreshIcons();
     return;
   }
@@ -1610,6 +1945,22 @@ function renderPalette(): void {
     li.innerHTML = `<i data-lucide="${iconName}"></i> <span>${item.label}</span>`;
     li.draggable = true;
     li.dataset["type"] = item.type;
+    li.tabIndex = 0;
+    li.setAttribute("role", "button");
+    li.setAttribute("aria-label", `Add ${item.label} block`);
+    li.title = `Add ${item.label} (or drag onto the canvas)`;
+    const insert = () => {
+      const sectionId = activeSectionId();
+      const section = findSection(sectionId) ?? state.sections[0];
+      addBlockAt(item.type, section ? section.children.length : 0, sectionId);
+    };
+    li.onclick = insert;
+    li.onkeydown = (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        insert();
+      }
+    };
     li.addEventListener("dragstart", (e) => {
       e.dataTransfer?.setData("text/zephus-new", item.type);
     });
@@ -1621,20 +1972,20 @@ function renderPalette(): void {
 async function renderTemplates(): Promise<void> {
   const palette = $("template-palette");
   palette.innerHTML = "";
-  // Templates are HTML blocks; hide them if HTML blocks are disallowed.
   const allowed = editorRules.allowedBlocks;
-  if (allowed && !allowed.includes("html")) {
-    palette.innerHTML = '<li class="muted">Disabled by project rules.</li>';
-    return;
-  }
+  const htmlAllowed = !allowed || allowed.includes("html");
   const saved = await window.zephus.listReusableSections().catch(() => null);
-  const merged = [
+  // Built-in templates insert editable schema blocks; saved sections are
+  // preserved HTML and only shown when HTML blocks are permitted.
+  const savedSections = htmlAllowed && saved?.ok ? saved.sections : [];
+  reusableSectionsCache = savedSections;
+  const merged: SectionTemplate[] = [
     ...TEMPLATES,
-    ...((saved?.ok ? saved.sections : []).map((section) => ({
+    ...savedSections.map((section) => ({
       id: section.id,
       label: `${section.label} (Saved)`,
       html: section.html,
-    })) as SectionTemplate[]),
+    })),
   ];
   for (const tpl of merged) {
     const li = document.createElement("li");
@@ -2090,6 +2441,17 @@ async function openSiteShellModal(): Promise<void> {
   const ctaHref = document.createElement("input");
   ctaHref.className = "text";
   ctaHref.value = nextSite.shell.navCtaHref;
+  const ctaHrefField = document.createElement("div");
+  ctaHrefField.className = "link-field";
+  const ctaHrefPick = document.createElement("button");
+  ctaHrefPick.type = "button";
+  ctaHrefPick.className = "btn ghost mini-btn";
+  ctaHrefPick.textContent = "Choose…";
+  ctaHrefPick.onclick = () =>
+    openLinkPicker(ctaHref.value, (href) => {
+      ctaHref.value = href;
+    });
+  ctaHrefField.append(ctaHref, ctaHrefPick);
   const footerHtml = document.createElement("textarea");
   footerHtml.rows = 4;
   footerHtml.value = nextSite.shell.footerHtml;
@@ -2103,7 +2465,7 @@ async function openSiteShellModal(): Promise<void> {
     ["Announcement text", announcementText],
     ["Show announcement", announcementVisible],
     ["CTA label", ctaLabel],
-    ["CTA link", ctaHref],
+    ["CTA link", ctaHrefField],
     ["Footer HTML", footerHtml],
     ["Custom head HTML", customHeadHtml],
   ] as [string, HTMLElement][]) {
@@ -2124,6 +2486,22 @@ async function openSiteShellModal(): Promise<void> {
         label: "Stage Shell",
         kind: "primary",
         onClick: async () => {
+          const newFooter = footerHtml.value.trim();
+          const newHead = customHeadHtml.value.trim();
+          const hadFooter = Boolean(nextSite.shell.footerHtml.trim());
+          const hadHead = Boolean(nextSite.shell.customHeadHtml.trim());
+          // Gate: warn user when they first add raw HTML (they might not
+          // understand it injects unescaped content into their site).
+          if ((newFooter && !hadFooter) || (newHead && !hadHead)) {
+            const proceed = await modalController.confirmDestructive(
+              "Custom HTML Warning",
+              "Footer HTML and Custom head HTML are injected directly into " +
+                "your site without escaping. Only add content you trust " +
+                "(analytics, fonts, embeds). Proceed?",
+              "I understand, save it",
+            );
+            if (!proceed) return;
+          }
           nextSite.shell.layoutMode = "managed";
           nextSite.shell.siteTitle =
             siteTitle.value.trim() || nextSite.siteName;
@@ -2158,12 +2536,6 @@ async function openDesignSystemModal(): Promise<void> {
   wrap.className = "meta-form";
 
   const inputs = {
-    accent: document.createElement("input"),
-    background: document.createElement("input"),
-    foreground: document.createElement("input"),
-    surface: document.createElement("input"),
-    fontFamily: document.createElement("input"),
-    headingFontFamily: document.createElement("input"),
     radius: document.createElement("input"),
     containerWidth: document.createElement("input"),
   };
@@ -2172,12 +2544,16 @@ async function openDesignSystemModal(): Promise<void> {
     input.className = "text";
   }
 
-  inputs.accent.value = nextSite.design.accent;
-  inputs.background.value = nextSite.design.background;
-  inputs.foreground.value = nextSite.design.foreground;
-  inputs.surface.value = nextSite.design.surface;
-  inputs.fontFamily.value = nextSite.design.fontFamily;
-  inputs.headingFontFamily.value = nextSite.design.headingFontFamily;
+  const colorControls = {
+    accent: createColorControl(nextSite.design.accent),
+    background: createColorControl(nextSite.design.background),
+    foreground: createColorControl(nextSite.design.foreground),
+    surface: createColorControl(nextSite.design.surface),
+  };
+
+  const bodyFont = createFontControl(nextSite.design.fontFamily);
+  const headingFont = createFontControl(nextSite.design.headingFontFamily);
+
   inputs.radius.value = nextSite.design.radius;
   inputs.containerWidth.value = nextSite.design.containerWidth;
 
@@ -2191,12 +2567,12 @@ async function openDesignSystemModal(): Promise<void> {
   }
 
   for (const [labelText, field] of [
-    ["Accent color", inputs.accent],
-    ["Background", inputs.background],
-    ["Foreground", inputs.foreground],
-    ["Surface", inputs.surface],
-    ["Body font", inputs.fontFamily],
-    ["Heading font", inputs.headingFontFamily],
+    ["Accent color", colorControls.accent.element],
+    ["Background", colorControls.background.element],
+    ["Foreground", colorControls.foreground.element],
+    ["Surface", colorControls.surface.element],
+    ["Body font", bodyFont.element],
+    ["Heading font", headingFont.element],
     ["Radius", inputs.radius],
     ["Container width", inputs.containerWidth],
     ["Shadow depth", shadow],
@@ -2216,13 +2592,16 @@ async function openDesignSystemModal(): Promise<void> {
       kind: "primary",
       onClick: async () => {
         nextSite.shell.layoutMode = "managed";
-        nextSite.design.accent = inputs.accent.value.trim();
-        nextSite.design.background = inputs.background.value.trim();
-        nextSite.design.foreground = inputs.foreground.value.trim();
-        nextSite.design.surface = inputs.surface.value.trim();
-        nextSite.design.fontFamily = inputs.fontFamily.value.trim();
-        nextSite.design.headingFontFamily =
-          inputs.headingFontFamily.value.trim();
+        nextSite.design.accent = colorControls.accent.getValue().trim();
+        nextSite.design.background = colorControls.background.getValue().trim();
+        nextSite.design.foreground = colorControls.foreground.getValue().trim();
+        nextSite.design.surface = colorControls.surface.getValue().trim();
+        nextSite.design.fontFamily = bodyFont.getStack();
+        nextSite.design.headingFontFamily = headingFont.getStack();
+        nextSite.design.fontImportUrl = buildFontImportUrl([
+          bodyFont.getGoogle(),
+          headingFont.getGoogle(),
+        ]);
         nextSite.design.radius = inputs.radius.value.trim();
         nextSite.design.containerWidth = inputs.containerWidth.value.trim();
         nextSite.design.shadow = shadow.value as DesignTokenSet["shadow"];
@@ -2862,6 +3241,23 @@ async function loadPage(
 
 async function onExternalChange(): Promise<void> {
   if (!state.project || !state.page) return;
+
+  // Ignore change events caused by Zephus's own writes: if the on-disk content
+  // matches what we last generated/loaded, there is nothing external to merge.
+  try {
+    const onDisk = await window.zephus.readFile(state.project.path, state.page);
+    if (
+      onDisk.ok &&
+      typeof onDisk.content === "string" &&
+      (onDisk.content === state.rawCode ||
+        onDisk.content === state.generatedCode)
+    ) {
+      return;
+    }
+  } catch {
+    // If we cannot read the file, fall through to the prompt.
+  }
+
   const choice = await modalController.choose<"keep" | "reload">(
     "File Changed on Disk",
     "The current page was modified outside Zephus. Reload it from disk or keep your in-app version?",
@@ -3158,6 +3554,31 @@ function classAttr(block: Block): string {
   return cls ? ` class="${escapeAttr(cls)}"` : "";
 }
 
+function structuralCommon(
+  block: Block,
+  fixedClass: string,
+  viewport = state.currentViewport,
+  forCanvas = false,
+): string {
+  const userCls = block.props["cls"]
+    ? " " + escapeAttr(block.props["cls"])
+    : "";
+  return `${metadataAttrs(block)} class="${fixedClass}${userCls}"${styleAttr(block, viewport, forCanvas)}`;
+}
+
+function splitLines(raw: string): string[] {
+  return (raw ?? "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function splitPair(line: string, sep = "::"): [string, string] {
+  const i = line.indexOf(sep);
+  if (i < 0) return [line.trim(), ""];
+  return [line.slice(0, i).trim(), line.slice(i + sep.length).trim()];
+}
+
 function plainTextToHtml(text: string): string {
   return escapeHtml(text).replace(/\n/g, "<br />");
 }
@@ -3196,11 +3617,17 @@ function blockToHtml(
     }
     case "text":
       return `<p${common}>${plainTextToHtml(block.props["text"] ?? "")}</p>`;
-    case "image":
-      if (!block.props["src"] && forCanvas) {
+    case "image": {
+      const src = block.props["src"] ?? "";
+      if (!src && forCanvas) {
         return `<figure${common}><div class="canvas-empty">Missing image. Choose one in Properties.</div></figure>`;
       }
-      return `<img${common} src="${escapeAttr(block.props["src"] ?? "")}" alt="${escapeAttr(block.props["alt"] ?? "")}" />`;
+      const isProjectAsset = forCanvas && src.startsWith("/");
+      const srcAttr = isProjectAsset
+        ? ` src="" data-asset-src="${escapeAttr(src)}"`
+        : ` src="${escapeAttr(src)}"`;
+      return `<img${common}${srcAttr} alt="${escapeAttr(block.props["alt"] ?? "")}" />`;
+    }
     case "button":
       return `<a${common} href="${escapeAttr(block.props["href"] ?? "#")}">${plainTextToHtml(block.props["text"] ?? "")}</a>`;
     case "section":
@@ -3235,12 +3662,15 @@ function blockToHtml(
         return `<section${common}><div class="canvas-empty">No gallery images yet.</div></section>`;
       }
       return `<section${common}>${images
-        .map(
-          (src, index) =>
-            `<img src="${escapeAttr(src)}" alt="${escapeAttr(
-              block.props[`alt${index + 1}`] ?? `Gallery image ${index + 1}`,
-            )}" />`,
-        )
+        .map((src, index) => {
+          const isProjectAsset = forCanvas && src.startsWith("/");
+          const srcAttr = isProjectAsset
+            ? ` src="" data-asset-src="${escapeAttr(src)}"`
+            : ` src="${escapeAttr(src)}"`;
+          return `<img${srcAttr} alt="${escapeAttr(
+            block.props[`alt${index + 1}`] ?? `Gallery image ${index + 1}`,
+          )}" />`;
+        })
         .join("")}</section>`;
     }
     case "quote":
@@ -3264,6 +3694,81 @@ function blockToHtml(
       return `<iframe${common} src="${escapeAttr(block.props["src"] ?? "")}" title="${escapeAttr(block.props["title"] ?? "Embed")}" loading="lazy"></iframe>`;
     case "html":
       return block.raw ?? "";
+    case "feature":
+      return `<div${structuralCommon(block, "zephus-feature", viewport, forCanvas)}><div class="zephus-feature-icon">${plainTextToHtml(
+        block.props["icon"] ?? "★",
+      )}</div><h3>${plainTextToHtml(
+        block.props["title"] ?? "Feature",
+      )}</h3><p>${plainTextToHtml(block.props["text"] ?? "")}</p></div>`;
+    case "testimonial":
+      return `<figure${structuralCommon(block, "zephus-testimonial", viewport, forCanvas)}><blockquote>${plainTextToHtml(
+        block.props["quote"] ?? "",
+      )}</blockquote><figcaption><strong>${plainTextToHtml(
+        block.props["author"] ?? "",
+      )}</strong>${
+        block.props["role"]
+          ? ` <span>${plainTextToHtml(block.props["role"])}</span>`
+          : ""
+      }</figcaption></figure>`;
+    case "accordion": {
+      const items = splitLines(block.props["items"] ?? "")
+        .map((line) => splitPair(line))
+        .map(
+          ([q, a]) =>
+            `<details><summary>${plainTextToHtml(q)}</summary><p>${plainTextToHtml(a)}</p></details>`,
+        )
+        .join("");
+      return `<div${structuralCommon(block, "zephus-accordion", viewport, forCanvas)}>${items}</div>`;
+    }
+    case "stats": {
+      const items = splitLines(block.props["items"] ?? "")
+        .map((line) => splitPair(line))
+        .map(
+          ([n, l]) =>
+            `<div class="zephus-stat"><span class="zephus-stat-num">${plainTextToHtml(
+              n,
+            )}</span><span class="zephus-stat-label">${plainTextToHtml(l)}</span></div>`,
+        )
+        .join("");
+      return `<div${structuralCommon(block, "zephus-stats", viewport, forCanvas)}>${items}</div>`;
+    }
+    case "pricing": {
+      const features = splitLines(block.props["features"] ?? "")
+        .map((f) => `<li>${plainTextToHtml(f)}</li>`)
+        .join("");
+      const cta = block.props["ctaText"]
+        ? `<a class="button" href="${escapeAttr(block.props["ctaHref"] ?? "#")}">${plainTextToHtml(
+            block.props["ctaText"],
+          )}</a>`
+        : "";
+      return `<div${structuralCommon(block, "zephus-pricing", viewport, forCanvas)}><h3>${plainTextToHtml(
+        block.props["plan"] ?? "Plan",
+      )}</h3><div class="zephus-price"><span class="zephus-price-amount">${plainTextToHtml(
+        block.props["price"] ?? "",
+      )}</span>${
+        block.props["period"]
+          ? `<span class="zephus-price-period">${plainTextToHtml(block.props["period"])}</span>`
+          : ""
+      }</div><ul>${features}</ul>${cta}</div>`;
+    }
+    case "cta": {
+      const cta = block.props["buttonText"]
+        ? `<a class="button" href="${escapeAttr(block.props["buttonHref"] ?? "#")}">${plainTextToHtml(
+            block.props["buttonText"],
+          )}</a>`
+        : "";
+      return `<div${structuralCommon(block, "zephus-cta", viewport, forCanvas)}><h2>${plainTextToHtml(
+        block.props["heading"] ?? "",
+      )}</h2>${
+        block.props["text"]
+          ? `<p>${plainTextToHtml(block.props["text"])}</p>`
+          : ""
+      }${cta}</div>`;
+    }
+    default:
+      // Unknown block type — render a placeholder so it's visible in the canvas
+      // and not silently dropped.
+      return `<div${common} class="canvas-unknown-block">Unknown block: ${escapeHtml((block as { type: string }).type)}</div>`;
   }
 }
 
@@ -3331,14 +3836,18 @@ function commitBlockChange(summary: string): void {
 
 function addSectionAt(index: number, template?: SectionTemplate): void {
   pushUndo();
+  let children: BlockNode[] = [];
+  if (template?.blocks) {
+    children = template.blocks();
+  } else if (template?.html) {
+    children = [{ id: uid(), type: "html", props: {}, raw: template.html }];
+  }
   const section: SectionNode = {
     id: uid(),
     type: "section",
     label: template ? template.label : `Section ${state.sections.length + 1}`,
     props: { wrapper: "box", cls: "" },
-    children: template
-      ? [{ id: uid(), type: "html", props: {}, raw: template.html }]
-      : [],
+    children,
   };
   state.sections.splice(index, 0, section);
   state.selectedId = null;
@@ -3605,9 +4114,60 @@ function openSectionInsertModal(index: number): void {
     wrap.appendChild(btn);
   }
 
+  for (const saved of reusableSectionsCache) {
+    const tpl = resolveSavedSectionTemplate(saved.id);
+    if (!tpl) continue;
+    const btn = document.createElement("button");
+    btn.className = "btn";
+    btn.textContent = `${saved.label} (Saved)`;
+    btn.onclick = () => {
+      closeModal();
+      addSectionAt(index, tpl);
+    };
+    wrap.appendChild(btn);
+  }
+
   showModalNode("Add Section", wrap, [
     { label: "Close", kind: "ghost", onClick: closeModal },
   ]);
+}
+
+/** Build an insertable template from a cached saved (HTML) reusable section. */
+function resolveSavedSectionTemplate(id: string): SectionTemplate | null {
+  const saved = reusableSectionsCache.find((s) => s.id === id);
+  if (!saved) return null;
+  return { id: saved.id, label: saved.label, html: saved.html };
+}
+
+/** Cache of webPath → data URL for canvas image hydration. */
+const assetDataUrlCache = new Map<string, Promise<string | null>>();
+
+function clearAssetCache(): void {
+  assetDataUrlCache.clear();
+}
+
+function fetchAssetDataUrl(webPath: string): Promise<string | null> {
+  if (!state.project) return Promise.resolve(null);
+  const cached = assetDataUrlCache.get(webPath);
+  if (cached) return cached;
+  const project = state.project;
+  const promise = window.zephus
+    .readAssetDataUrl(project.path, project.astro.publicDir, webPath)
+    .then((res) => (res.ok && res.dataUrl ? res.dataUrl : null))
+    .catch(() => null);
+  assetDataUrlCache.set(webPath, promise);
+  return promise;
+}
+
+function hydrateCanvasAssets(root: HTMLElement): void {
+  const imgs = root.querySelectorAll<HTMLImageElement>("img[data-asset-src]");
+  imgs.forEach((img) => {
+    const webPath = img.getAttribute("data-asset-src");
+    if (!webPath) return;
+    void fetchAssetDataUrl(webPath).then((dataUrl) => {
+      if (dataUrl) img.src = dataUrl;
+    });
+  });
 }
 
 function renderCanvas(): void {
@@ -3679,6 +4239,7 @@ function renderCanvas(): void {
       const btn = document.createElement("button");
       btn.className = "mini-btn";
       btn.textContent = label;
+      btn.title = TOOLBAR_TIPS[label] ?? label;
       btn.onclick = (event) => {
         event.stopPropagation();
         handler();
@@ -3724,6 +4285,30 @@ function renderCanvas(): void {
         (block.locked ? " locked" : "");
       shell.draggable = !block.locked;
       shell.title = blockLabel(block);
+      shell.tabIndex = 0;
+      shell.setAttribute("role", "button");
+      shell.setAttribute(
+        "aria-label",
+        `${blockLabel(block)} block${block.id === state.selectedId ? ", selected" : ""}`,
+      );
+      shell.onkeydown = (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          if (
+            block.id === state.selectedId &&
+            TEXT_EDITABLE.includes(block.type) &&
+            !block.locked
+          ) {
+            startInlineEdit(preview, block);
+            return;
+          }
+          state.selectedId = block.id;
+          state.selectedSectionId = section.id;
+          renderLayers();
+          renderCanvas();
+          renderProperties();
+        }
+      };
 
       const chrome = document.createElement("div");
       chrome.className = "block-chrome";
@@ -3750,6 +4335,7 @@ function renderCanvas(): void {
         const btn = document.createElement("button");
         btn.className = "mini-btn";
         btn.textContent = label;
+        btn.title = TOOLBAR_TIPS[label] ?? label;
         btn.onclick = (event) => {
           event.stopPropagation();
           handler();
@@ -3772,6 +4358,8 @@ function renderCanvas(): void {
       };
 
       if (TEXT_EDITABLE.includes(block.type) && !block.locked) {
+        preview.classList.add("editable-text");
+        preview.title = "Double-click to edit text";
         preview.ondblclick = (event) => {
           event.stopPropagation();
           startInlineEdit(preview, block);
@@ -3806,6 +4394,9 @@ function renderCanvas(): void {
   });
 
   canvas.appendChild(buildSectionInsertButton(state.sections.length));
+
+  hydrateCanvasAssets(canvas);
+  applyDesignPreview();
 
   canvas.ondragover = (e) => {
     e.preventDefault();
@@ -3851,7 +4442,9 @@ function handleDrop(e: DragEvent): void {
     dropIndex < 0 ? (targetSection?.children.length ?? 0) : dropIndex;
 
   if (templateId) {
-    const tpl = TEMPLATES.find((t) => t.id === templateId);
+    const tpl =
+      TEMPLATES.find((t) => t.id === templateId) ??
+      resolveSavedSectionTemplate(templateId);
     if (!tpl) return;
     addSectionAt(state.sections.length, tpl);
   } else if (newType) {
@@ -3877,9 +4470,13 @@ function handleDrop(e: DragEvent): void {
 
 function startInlineEdit(el: HTMLElement, block: Block): void {
   el.setAttribute("contenteditable", "true");
+  el.setAttribute("role", "textbox");
+  el.setAttribute("aria-label", "Edit text");
   el.focus();
   const finish = () => {
     el.removeAttribute("contenteditable");
+    el.removeAttribute("role");
+    el.removeAttribute("aria-label");
     const newText = el.innerText.trim();
     if (newText !== (block.props["text"] ?? "")) {
       pushUndo();
@@ -3901,7 +4498,11 @@ function defaultProps(type: BlockType): Record<string, string> {
     case "text":
       return { text: "New paragraph of text.", cls: "" };
     case "image":
-      return { src: "", alt: "", cls: "" };
+      return {
+        src: "/assets/images/placeholder-landscape.svg",
+        alt: "",
+        cls: "",
+      };
     case "button":
       return { text: "Click me", href: "#", cls: "" };
     case "section":
@@ -3922,7 +4523,7 @@ function defaultProps(type: BlockType): Record<string, string> {
     case "gallery":
       return {
         images:
-          "/images/example-1.png\n/images/example-2.png\n/images/example-3.png",
+          "/assets/images/placeholder-square.svg\n/assets/images/placeholder-square.svg\n/assets/images/placeholder-square.svg",
         cls: "",
       };
     case "quote":
@@ -3939,6 +4540,49 @@ function defaultProps(type: BlockType): Record<string, string> {
       };
     case "embed":
       return { src: "", title: "Embed", cls: "" };
+    case "feature":
+      return {
+        icon: "★",
+        title: "Feature title",
+        text: "A short sentence describing this feature or benefit.",
+        cls: "",
+      };
+    case "testimonial":
+      return {
+        quote: "This product changed how our whole team works.",
+        author: "Customer Name",
+        role: "Title, Company",
+        cls: "",
+      };
+    case "accordion":
+      return {
+        items:
+          "What is your refund policy? :: We offer a 30-day money-back guarantee.\nDo you offer support? :: Yes, by email within one business day.",
+        cls: "",
+      };
+    case "stats":
+      return {
+        items: "10k+ :: Happy customers\n99.9% :: Uptime\n24/7 :: Support",
+        cls: "",
+      };
+    case "pricing":
+      return {
+        plan: "Pro",
+        price: "$12",
+        period: "/mo",
+        features: "Everything in Free\nUnlimited projects\nPriority support",
+        ctaText: "Choose Pro",
+        ctaHref: "#",
+        cls: "",
+      };
+    case "cta":
+      return {
+        heading: "Ready to get started?",
+        text: "Join thousands of happy customers today.",
+        buttonText: "Get started",
+        buttonHref: "#",
+        cls: "",
+      };
     case "html":
       return {};
   }
@@ -3981,6 +4625,464 @@ function labeledTextarea(
   return wrap;
 }
 
+const LENGTH_UNITS = ["px", "rem", "em", "%", "vh", "vw", "auto", "custom"];
+
+interface ParsedLength {
+  num: string;
+  unit: string;
+  raw?: string;
+}
+
+function parseLength(value: string): ParsedLength {
+  const t = (value ?? "").trim();
+  if (!t) return { num: "", unit: "px" };
+  if (t === "auto") return { num: "", unit: "auto" };
+  const m = /^(-?\d*\.?\d+)(px|rem|em|%|vh|vw)?$/.exec(t);
+  if (m) return { num: m[1] ?? "", unit: m[2] ?? "px" };
+  return { num: "", unit: "custom", raw: t };
+}
+
+/**
+ * Length input: number + unit dropdown (px/rem/%/…), so novices never type raw
+ * CSS. Falls back to a free-text "custom" field for compound values like
+ * "2rem 0" or calc().
+ */
+function labeledLength(
+  key: string,
+  value: string,
+  onChange: (v: string) => void,
+): HTMLElement {
+  const wrap = document.createElement("label");
+  wrap.className = "meta-field";
+  const label = document.createElement("span");
+  label.textContent = key;
+
+  const control = document.createElement("div");
+  control.className = "length-control";
+
+  const num = document.createElement("input");
+  num.type = "number";
+  num.className = "text length-num";
+  num.setAttribute("aria-label", `${key} value`);
+
+  const unit = document.createElement("select");
+  unit.className = "length-unit";
+  unit.setAttribute("aria-label", `${key} unit`);
+  for (const u of LENGTH_UNITS) {
+    const o = document.createElement("option");
+    o.value = u;
+    o.textContent = u;
+    unit.appendChild(o);
+  }
+
+  const raw = document.createElement("input");
+  raw.type = "text";
+  raw.className = "text length-raw";
+  raw.placeholder = "e.g. 2rem 0";
+  raw.setAttribute("aria-label", `${key} custom value`);
+
+  const parsed = parseLength(value);
+  num.value = parsed.num;
+  unit.value = parsed.unit;
+  if (parsed.unit === "custom") raw.value = parsed.raw ?? value;
+
+  const emit = (): void => {
+    if (unit.value === "auto") onChange("auto");
+    else if (unit.value === "custom") onChange(raw.value.trim());
+    else onChange(num.value ? `${num.value}${unit.value}` : "");
+  };
+
+  const sync = (): void => {
+    num.style.display =
+      unit.value === "auto" || unit.value === "custom" ? "none" : "";
+    raw.style.display = unit.value === "custom" ? "" : "none";
+  };
+
+  num.oninput = emit;
+  raw.oninput = emit;
+  unit.onchange = () => {
+    sync();
+    emit();
+  };
+  sync();
+
+  control.append(num, unit, raw);
+  wrap.append(label, control);
+  return wrap;
+}
+
+function isHexColor(value: string): boolean {
+  return /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(value.trim());
+}
+
+/** Expands shorthand #abc to #aabbcc so <input type=color> accepts it. */
+function expandHex(value: string): string {
+  const v = value.trim();
+  if (/^#[0-9a-fA-F]{3}$/.test(v)) {
+    return (
+      "#" +
+      v
+        .slice(1)
+        .split("")
+        .map((c) => c + c)
+        .join("")
+    );
+  }
+  return v;
+}
+
+/**
+ * A color control combining a native swatch picker with a free-text field so
+ * users can also enter rgb()/rgba(), CSS variables, named colors, or clear it.
+ */
+function createColorControl(
+  value: string,
+  onChange: (v: string) => void = () => {},
+): { element: HTMLElement; getValue: () => string } {
+  const control = document.createElement("div");
+  control.className = "color-control";
+
+  const swatch = document.createElement("input");
+  swatch.type = "color";
+  swatch.className = "color-swatch";
+  swatch.value = isHexColor(value) ? expandHex(value) : "#000000";
+
+  const text = document.createElement("input");
+  text.type = "text";
+  text.className = "text color-text";
+  text.value = value;
+  text.placeholder = "#3b82f6, rgb(), var(--accent)…";
+
+  const clear = document.createElement("button");
+  clear.type = "button";
+  clear.className = "color-clear";
+  clear.title = "Clear color";
+  clear.setAttribute("aria-label", "Clear color");
+  clear.textContent = "✕";
+
+  swatch.oninput = () => {
+    text.value = swatch.value;
+    onChange(swatch.value);
+  };
+  text.oninput = () => {
+    if (isHexColor(text.value)) swatch.value = expandHex(text.value);
+    onChange(text.value);
+  };
+  clear.onclick = () => {
+    text.value = "";
+    onChange("");
+  };
+
+  control.append(swatch, text, clear);
+  return { element: control, getValue: () => text.value };
+}
+
+function labeledColor(
+  key: string,
+  value: string,
+  onChange: (v: string) => void,
+): HTMLElement {
+  const wrap = document.createElement("label");
+  wrap.className = "meta-field";
+  const label = document.createElement("span");
+  label.textContent = key;
+  const { element } = createColorControl(value, onChange);
+  element.querySelector(".color-text")?.setAttribute("aria-label", key);
+  element
+    .querySelector(".color-swatch")
+    ?.setAttribute("aria-label", `${key} color picker`);
+  wrap.append(label, element);
+  return wrap;
+}
+
+type LinkKind = "page" | "url" | "email" | "phone" | "anchor";
+
+function detectLinkKind(value: string): LinkKind {
+  const t = value.trim();
+  if (t.startsWith("mailto:")) return "email";
+  if (t.startsWith("tel:")) return "phone";
+  if (t.startsWith("#")) return "anchor";
+  if (/^(https?:)?\/\//i.test(t)) return "url";
+  if (state.pageMeta.some((p) => p.route === t)) return "page";
+  return t ? "url" : "page";
+}
+
+/**
+ * Opens a modal to build a link as a project page, external URL, email,
+ * phone, or on-page anchor, returning the resulting href string.
+ */
+function openLinkPicker(current: string, onPick: (href: string) => void): void {
+  const wrap = document.createElement("div");
+  wrap.className = "meta-form";
+
+  const typeField = document.createElement("label");
+  typeField.className = "meta-field";
+  const typeSpan = document.createElement("span");
+  typeSpan.textContent = "Link type";
+  const typeSelect = document.createElement("select");
+  const kinds: [LinkKind, string][] = [
+    ["page", "Page in this site"],
+    ["url", "External URL"],
+    ["email", "Email address"],
+    ["phone", "Phone number"],
+    ["anchor", "Anchor on this page"],
+  ];
+  for (const [value, lbl] of kinds) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = lbl;
+    typeSelect.appendChild(option);
+  }
+  typeField.append(typeSpan, typeSelect);
+
+  const pageSelect = document.createElement("select");
+  pageSelect.className = "text";
+  for (const meta of state.pageMeta) {
+    const option = document.createElement("option");
+    option.value = meta.route;
+    option.textContent = `${meta.title} (${meta.route})`;
+    pageSelect.appendChild(option);
+  }
+
+  const valueInput = document.createElement("input");
+  valueInput.className = "text";
+
+  const valueField = document.createElement("div");
+
+  let kind = detectLinkKind(current);
+  typeSelect.value = kind;
+
+  const prefillFor = (k: LinkKind, v: string): string => {
+    const t = v.trim();
+    if (k === "email") return t.startsWith("mailto:") ? t.slice(7) : "";
+    if (k === "phone") return t.startsWith("tel:") ? t.slice(4) : "";
+    if (k === "anchor") return t.startsWith("#") ? t.slice(1) : "";
+    if (k === "url") return /^(https?:)?\/\//i.test(t) ? t : "";
+    return "";
+  };
+
+  const renderValue = (): void => {
+    valueField.innerHTML = "";
+    const row = document.createElement("label");
+    row.className = "meta-field";
+    const span = document.createElement("span");
+    if (kind === "page") {
+      span.textContent = "Target page";
+      if (state.pageMeta.some((p) => p.route === current)) {
+        pageSelect.value = current;
+      }
+      row.append(span, pageSelect);
+    } else {
+      span.textContent =
+        kind === "url"
+          ? "URL"
+          : kind === "email"
+            ? "Email address"
+            : kind === "phone"
+              ? "Phone number"
+              : "Anchor id";
+      valueInput.placeholder =
+        kind === "url"
+          ? "https://example.com"
+          : kind === "email"
+            ? "name@example.com"
+            : kind === "phone"
+              ? "+1 555 123 4567"
+              : "section-id";
+      valueInput.value = prefillFor(kind, current);
+      row.append(span, valueInput);
+    }
+    valueField.appendChild(row);
+  };
+
+  typeSelect.onchange = () => {
+    kind = typeSelect.value as LinkKind;
+    renderValue();
+  };
+  renderValue();
+
+  wrap.append(typeField, valueField);
+
+  showModalNode("Choose Link", wrap, [
+    { label: "Cancel", kind: "ghost", onClick: closeModal },
+    {
+      label: "Use Link",
+      kind: "primary",
+      onClick: () => {
+        let href: string;
+        const raw = valueInput.value.trim();
+        if (kind === "page") href = pageSelect.value || "/";
+        else if (kind === "email") href = raw ? `mailto:${raw}` : "";
+        else if (kind === "phone") href = raw ? `tel:${raw}` : "";
+        else if (kind === "anchor")
+          href = raw ? `#${raw.replace(/^#/, "")}` : "";
+        else href = raw;
+        closeModal();
+        onPick(href);
+      },
+    },
+  ]);
+}
+
+function labeledLink(
+  key: string,
+  value: string,
+  onChange: (v: string) => void,
+): HTMLElement {
+  const wrap = document.createElement("label");
+  wrap.className = "meta-field";
+  const label = document.createElement("span");
+  label.textContent = key;
+  const row = document.createElement("div");
+  row.className = "link-field";
+  const input = document.createElement("input");
+  input.className = "text";
+  input.value = value;
+  input.setAttribute("aria-label", key);
+  input.oninput = () => onChange(input.value);
+  const pick = document.createElement("button");
+  pick.type = "button";
+  pick.className = "btn ghost mini-btn";
+  pick.textContent = "Choose…";
+  pick.onclick = () =>
+    openLinkPicker(input.value, (href) => {
+      input.value = href;
+      onChange(href);
+    });
+  row.append(input, pick);
+  wrap.append(label, row);
+  return wrap;
+}
+
+interface FontOption {
+  label: string;
+  stack: string;
+  /** Google Fonts family spec (e.g. "Inter:wght@400;600"), if applicable. */
+  google?: string;
+}
+
+const FONT_OPTIONS: FontOption[] = [
+  { label: "System UI", stack: "system-ui, sans-serif" },
+  {
+    label: "Inter",
+    stack: "'Inter', sans-serif",
+    google: "Inter:wght@400;500;600;700",
+  },
+  {
+    label: "Roboto",
+    stack: "'Roboto', sans-serif",
+    google: "Roboto:wght@400;500;700",
+  },
+  {
+    label: "Open Sans",
+    stack: "'Open Sans', sans-serif",
+    google: "Open+Sans:wght@400;600;700",
+  },
+  { label: "Lato", stack: "'Lato', sans-serif", google: "Lato:wght@400;700" },
+  {
+    label: "Montserrat",
+    stack: "'Montserrat', sans-serif",
+    google: "Montserrat:wght@400;600;700",
+  },
+  {
+    label: "Poppins",
+    stack: "'Poppins', sans-serif",
+    google: "Poppins:wght@400;500;600;700",
+  },
+  {
+    label: "Playfair Display",
+    stack: "'Playfair Display', serif",
+    google: "Playfair+Display:wght@400;600;700",
+  },
+  {
+    label: "Merriweather",
+    stack: "'Merriweather', serif",
+    google: "Merriweather:wght@400;700",
+  },
+  { label: "Georgia (serif)", stack: "Georgia, 'Times New Roman', serif" },
+  { label: "Monospace", stack: "ui-monospace, 'SF Mono', Menlo, monospace" },
+];
+
+interface FontControl {
+  element: HTMLElement;
+  getStack: () => string;
+  getGoogle: () => string | null;
+}
+
+/**
+ * A font selector: a curated dropdown (system + popular Google Fonts) plus a
+ * custom CSS font-family option, with a preview line. Google selections also
+ * return a family spec so the layout can load the webfont.
+ */
+function createFontControl(value: string): FontControl {
+  const wrap = document.createElement("div");
+  wrap.className = "font-control";
+
+  const select = document.createElement("select");
+  select.className = "text";
+  FONT_OPTIONS.forEach((opt, index) => {
+    const option = document.createElement("option");
+    option.value = String(index);
+    option.textContent = opt.label;
+    select.appendChild(option);
+  });
+  const customOption = document.createElement("option");
+  customOption.value = "custom";
+  customOption.textContent = "Custom…";
+  select.appendChild(customOption);
+
+  const customInput = document.createElement("input");
+  customInput.className = "text font-custom";
+  customInput.placeholder = "'Brand Sans', system-ui, sans-serif";
+
+  const preview = document.createElement("div");
+  preview.className = "font-preview";
+  preview.textContent = "The quick brown fox jumps over the lazy dog";
+
+  const matchIndex = FONT_OPTIONS.findIndex((o) => o.stack === value.trim());
+  if (matchIndex >= 0) {
+    select.value = String(matchIndex);
+  } else if (value.trim()) {
+    select.value = "custom";
+    customInput.value = value;
+  } else {
+    select.value = "0";
+  }
+
+  const currentStack = (): string =>
+    select.value === "custom"
+      ? customInput.value.trim()
+      : (FONT_OPTIONS[Number(select.value)]?.stack ?? "");
+
+  const sync = (): void => {
+    customInput.style.display = select.value === "custom" ? "" : "none";
+    preview.style.fontFamily = currentStack() || "inherit";
+  };
+  select.onchange = sync;
+  customInput.oninput = () => {
+    preview.style.fontFamily = currentStack() || "inherit";
+  };
+  sync();
+
+  wrap.append(select, customInput, preview);
+  return {
+    element: wrap,
+    getStack: currentStack,
+    getGoogle: () =>
+      select.value === "custom"
+        ? null
+        : (FONT_OPTIONS[Number(select.value)]?.google ?? null),
+  };
+}
+
+/** Builds a Google Fonts css2 URL from family specs, or "" if none. */
+function buildFontImportUrl(googleSpecs: (string | null)[]): string {
+  const unique = [...new Set(googleSpecs.filter((g): g is string => !!g))];
+  if (unique.length === 0) return "";
+  const families = unique.map((g) => `family=${g}`).join("&");
+  return `https://fonts.googleapis.com/css2?${families}&display=swap`;
+}
+
 function propertyGroup(title: string): HTMLElement {
   const wrap = document.createElement("section");
   wrap.className = "prop-group";
@@ -3991,50 +5093,174 @@ function propertyGroup(title: string): HTMLElement {
 }
 
 async function chooseAssetForImage(block: Block): Promise<void> {
+  openAssetBrowser({
+    filter: "images",
+    title: "Image Browser",
+    onSelect: (webPath) => {
+      pushUndo();
+      block.props["src"] = webPath;
+      commitBlockChange(`Updated image asset for ${block.type}`);
+    },
+  });
+}
+
+interface AssetBrowserOptions {
+  filter?: AssetEntry["category"] | "all";
+  title?: string;
+  onSelect: (webPath: string) => void;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+const CATEGORY_ICONS: Record<AssetEntry["category"], string> = {
+  images: "image",
+  media: "play",
+  documents: "file-code",
+  other: "file-code",
+};
+
+function openAssetBrowser(options: AssetBrowserOptions): void {
   if (!state.project) return;
-  const result = await window.zephus.listAssets(
-    state.project.path,
-    state.project.astro.publicDir,
-  );
+  const project = state.project;
+  const filter = options.filter ?? "all";
+
   const wrap = document.createElement("div");
   wrap.className = "asset-browser";
-  if (result.ok && result.assets.length > 0) {
-    for (const asset of result.assets) {
-      const row = document.createElement("button");
-      row.className = "asset-row";
-      row.textContent = asset.fileName;
-      row.onclick = () => {
-        closeModal();
-        pushUndo();
-        block.props["src"] = asset.webPath;
-        commitBlockChange(`Updated image asset for ${block.type}`);
-      };
-      wrap.appendChild(row);
+
+  const dropzone = document.createElement("div");
+  dropzone.className = "asset-dropzone";
+  dropzone.setAttribute("tabindex", "0");
+  dropzone.setAttribute("role", "region");
+  dropzone.setAttribute("aria-label", "Drop files here to import");
+  dropzone.innerHTML =
+    "<span>Drag & drop files here, or use Import below</span>";
+
+  const grid = document.createElement("div");
+  grid.className = "asset-grid";
+
+  wrap.append(dropzone, grid);
+
+  const renderThumb = async (
+    tile: HTMLElement,
+    asset: AssetEntry,
+  ): Promise<void> => {
+    if (asset.category !== "images") return;
+    try {
+      const res = await window.zephus.readAssetDataUrl(
+        project.path,
+        project.astro.publicDir,
+        asset.webPath,
+      );
+      if (res.ok && res.dataUrl) {
+        const img = document.createElement("img");
+        img.src = res.dataUrl;
+        img.alt = asset.fileName;
+        tile.querySelector(".asset-thumb")?.replaceChildren(img);
+      }
+    } catch {
+      /* leave icon fallback */
     }
-  } else {
-    const empty = document.createElement("p");
-    empty.className = "muted";
-    empty.textContent = "No imported images yet.";
-    wrap.appendChild(empty);
-  }
-  showModalNode("Asset Browser", wrap, [
+  };
+
+  const refresh = async (): Promise<void> => {
+    grid.innerHTML = "";
+    const result = await window.zephus.listAssets(
+      project.path,
+      project.astro.publicDir,
+    );
+    const assets = (result.ok ? result.assets : []).filter(
+      (a) => filter === "all" || a.category === filter,
+    );
+    if (assets.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "muted";
+      empty.textContent = "No assets yet. Import or drop files to get started.";
+      grid.appendChild(empty);
+      return;
+    }
+    for (const asset of assets) {
+      const tile = document.createElement("button");
+      tile.className = "asset-tile";
+      tile.title = `${asset.fileName} · ${formatBytes(asset.size)}`;
+      const thumb = document.createElement("div");
+      thumb.className = "asset-thumb";
+      const icon = document.createElement("i");
+      icon.setAttribute("data-lucide", CATEGORY_ICONS[asset.category]);
+      thumb.appendChild(icon);
+      const name = document.createElement("span");
+      name.className = "asset-name";
+      name.textContent = asset.fileName.split("/").pop() ?? asset.fileName;
+      tile.append(thumb, name);
+      tile.onclick = () => {
+        closeModal();
+        options.onSelect(asset.webPath);
+      };
+      grid.appendChild(tile);
+      void renderThumb(tile, asset);
+    }
+    refreshIcons();
+  };
+
+  const handleDropPaths = async (paths: string[]): Promise<void> => {
+    if (paths.length === 0) return;
+    const res = await window.zephus.importAssetPaths(
+      project.path,
+      project.astro.publicDir,
+      paths,
+    );
+    if (res.errors.length > 0) {
+      setStatus(`Some files failed to import: ${res.errors.join("; ")}`);
+    } else {
+      setStatus(`Imported ${res.imported.length} file(s).`);
+    }
+    await refresh();
+  };
+
+  dropzone.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    dropzone.classList.add("dragover");
+  });
+  dropzone.addEventListener("dragleave", () => {
+    dropzone.classList.remove("dragover");
+  });
+  dropzone.addEventListener("drop", (event) => {
+    event.preventDefault();
+    dropzone.classList.remove("dragover");
+    const files = Array.from(event.dataTransfer?.files ?? []);
+    const paths = files
+      .map((file) => {
+        try {
+          return window.zephus.getDroppedFilePath(file);
+        } catch {
+          return "";
+        }
+      })
+      .filter(Boolean);
+    void handleDropPaths(paths);
+  });
+
+  void refresh();
+
+  showModalNode(options.title ?? "Asset Browser", wrap, [
     {
-      label: "Import New Image",
+      label: "Import Files",
       kind: "primary",
       onClick: async () => {
         if (!state.project) return;
-        const imported = await window.zephus.importImage(
-          state.project.path,
-          state.project.astro.publicDir,
+        const res = await window.zephus.importAssets(
+          project.path,
+          project.astro.publicDir,
         );
-        if (imported.ok && imported.webPath) {
-          closeModal();
-          pushUndo();
-          block.props["src"] = imported.webPath;
-          commitBlockChange("Imported image asset");
-        } else if (!imported.canceled) {
-          setStatus("Image import failed: " + (imported.error ?? "unknown"));
+        if (res.errors.length > 0) {
+          setStatus(`Some files failed: ${res.errors.join("; ")}`);
+        } else if (res.imported.length > 0) {
+          setStatus(`Imported ${res.imported.length} file(s).`);
         }
+        await refresh();
       },
     },
     { label: "Close", kind: "ghost", onClick: closeModal },
@@ -4120,22 +5346,22 @@ function renderProperties(): void {
 
     const layoutGroup = propertyGroup("Layout");
     layoutGroup.appendChild(
-      labeledInput("Padding", section.style?.padding ?? "", (value) =>
+      labeledLength("Padding", section.style?.padding ?? "", (value) =>
         commitSectionStyle("padding", value),
       ),
     );
     layoutGroup.appendChild(
-      labeledInput("Margin", section.style?.margin ?? "", (value) =>
+      labeledLength("Margin", section.style?.margin ?? "", (value) =>
         commitSectionStyle("margin", value),
       ),
     );
     layoutGroup.appendChild(
-      labeledInput("Max width", section.style?.maxWidth ?? "", (value) =>
+      labeledLength("Max width", section.style?.maxWidth ?? "", (value) =>
         commitSectionStyle("maxWidth", value),
       ),
     );
     layoutGroup.appendChild(
-      labeledInput("Gap", section.style?.gap ?? "", (value) =>
+      labeledLength("Gap", section.style?.gap ?? "", (value) =>
         commitSectionStyle("gap", value),
       ),
     );
@@ -4143,17 +5369,17 @@ function renderProperties(): void {
 
     const styleGroup = propertyGroup("Style");
     styleGroup.appendChild(
-      labeledInput("Background", section.style?.background ?? "", (value) =>
+      labeledColor("Background", section.style?.background ?? "", (value) =>
         commitSectionStyle("background", value),
       ),
     );
     styleGroup.appendChild(
-      labeledInput("Text color", section.style?.color ?? "", (value) =>
+      labeledColor("Text color", section.style?.color ?? "", (value) =>
         commitSectionStyle("color", value),
       ),
     );
     styleGroup.appendChild(
-      labeledInput("Radius", section.style?.radius ?? "", (value) =>
+      labeledLength("Radius", section.style?.radius ?? "", (value) =>
         commitSectionStyle("radius", value),
       ),
     );
@@ -4260,8 +5486,37 @@ function renderProperties(): void {
       ),
     );
     contentGroup.appendChild(
-      labeledInput("Link", block.props["href"] ?? "", (v) => commit("href", v)),
+      labeledLink("Link", block.props["href"] ?? "", (v) => commit("href", v)),
     );
+    const variant = document.createElement("label");
+    variant.className = "meta-field";
+    const variantLabel = document.createElement("span");
+    variantLabel.textContent = "Button style";
+    const variantSelect = document.createElement("select");
+    const currentVariant = /\bsecondary\b/.test(block.props["cls"] ?? "")
+      ? "secondary"
+      : "primary";
+    for (const [value, text] of [
+      ["primary", "Primary (filled)"],
+      ["secondary", "Secondary (outline)"],
+    ] as const) {
+      const opt = document.createElement("option");
+      opt.value = value;
+      opt.textContent = text;
+      if (value === currentVariant) opt.selected = true;
+      variantSelect.appendChild(opt);
+    }
+    variantSelect.onchange = () => {
+      const rest = (block.props["cls"] ?? "")
+        .split(/\s+/)
+        .filter((c) => c && c !== "secondary")
+        .join(" ");
+      const next =
+        variantSelect.value === "secondary" ? `${rest} secondary`.trim() : rest;
+      commit("cls", next);
+    };
+    variant.append(variantLabel, variantSelect);
+    contentGroup.appendChild(variant);
   } else if (block.type === "image") {
     const imageRow = document.createElement("div");
     imageRow.className = "prop-actions";
@@ -4329,6 +5584,26 @@ function renderProperties(): void {
       ),
     );
   } else if (block.type === "gallery") {
+    const galleryRow = document.createElement("div");
+    galleryRow.className = "prop-actions";
+    const addImg = document.createElement("button");
+    addImg.className = "btn";
+    addImg.textContent = "Add Image from Assets";
+    addImg.onclick = () =>
+      openAssetBrowser({
+        filter: "images",
+        title: "Add Gallery Image",
+        onSelect: (webPath) => {
+          pushUndo();
+          const existing = (block.props["images"] ?? "").trim();
+          block.props["images"] = existing
+            ? `${existing}\n${webPath}`
+            : webPath;
+          commitBlockChange("Added gallery image");
+        },
+      });
+    galleryRow.appendChild(addImg);
+    contentGroup.appendChild(galleryRow);
     contentGroup.appendChild(
       labeledTextarea("Image paths", block.props["images"] ?? "", (v) =>
         commit("images", v),
@@ -4368,6 +5643,110 @@ function renderProperties(): void {
         commit("height", v),
       ),
     );
+  } else if (block.type === "feature") {
+    contentGroup.appendChild(
+      labeledInput("Icon (emoji or text)", block.props["icon"] ?? "", (v) =>
+        commit("icon", v),
+      ),
+    );
+    contentGroup.appendChild(
+      labeledInput("Title", block.props["title"] ?? "", (v) =>
+        commit("title", v),
+      ),
+    );
+    contentGroup.appendChild(
+      labeledTextarea("Description", block.props["text"] ?? "", (v) =>
+        commit("text", v),
+      ),
+    );
+  } else if (block.type === "testimonial") {
+    contentGroup.appendChild(
+      labeledTextarea("Quote", block.props["quote"] ?? "", (v) =>
+        commit("quote", v),
+      ),
+    );
+    contentGroup.appendChild(
+      labeledInput("Author", block.props["author"] ?? "", (v) =>
+        commit("author", v),
+      ),
+    );
+    contentGroup.appendChild(
+      labeledInput("Role / company", block.props["role"] ?? "", (v) =>
+        commit("role", v),
+      ),
+    );
+  } else if (block.type === "accordion") {
+    contentGroup.appendChild(
+      labeledTextarea(
+        "Items (one per line: Question :: Answer)",
+        block.props["items"] ?? "",
+        (v) => commit("items", v),
+        6,
+      ),
+    );
+  } else if (block.type === "stats") {
+    contentGroup.appendChild(
+      labeledTextarea(
+        "Stats (one per line: Number :: Label)",
+        block.props["items"] ?? "",
+        (v) => commit("items", v),
+        5,
+      ),
+    );
+  } else if (block.type === "pricing") {
+    contentGroup.appendChild(
+      labeledInput("Plan name", block.props["plan"] ?? "", (v) =>
+        commit("plan", v),
+      ),
+    );
+    contentGroup.appendChild(
+      labeledInput("Price", block.props["price"] ?? "", (v) =>
+        commit("price", v),
+      ),
+    );
+    contentGroup.appendChild(
+      labeledInput("Period (e.g. /mo)", block.props["period"] ?? "", (v) =>
+        commit("period", v),
+      ),
+    );
+    contentGroup.appendChild(
+      labeledTextarea(
+        "Features (one per line)",
+        block.props["features"] ?? "",
+        (v) => commit("features", v),
+      ),
+    );
+    contentGroup.appendChild(
+      labeledInput("Button label", block.props["ctaText"] ?? "", (v) =>
+        commit("ctaText", v),
+      ),
+    );
+    contentGroup.appendChild(
+      labeledLink("Button link", block.props["ctaHref"] ?? "", (v) =>
+        commit("ctaHref", v),
+      ),
+    );
+  } else if (block.type === "cta") {
+    contentGroup.appendChild(
+      labeledInput("Heading", block.props["heading"] ?? "", (v) =>
+        commit("heading", v),
+      ),
+    );
+    contentGroup.appendChild(
+      labeledTextarea("Text", block.props["text"] ?? "", (v) =>
+        commit("text", v),
+      ),
+    );
+    contentGroup.appendChild(
+      labeledInput("Button label", block.props["buttonText"] ?? "", (v) =>
+        commit("buttonText", v),
+      ),
+    );
+    contentGroup.appendChild(
+      labeledLink("Button link", block.props["buttonHref"] ?? "", (v) =>
+        commit("buttonHref", v),
+      ),
+    );
   }
   panel.appendChild(contentGroup);
 
@@ -4388,12 +5767,12 @@ function renderProperties(): void {
   align.append(alignLabel, alignSelect);
   layoutGroup.appendChild(align);
   layoutGroup.appendChild(
-    labeledInput("Max width", block.style?.maxWidth ?? "", (v) =>
+    labeledLength("Max width", block.style?.maxWidth ?? "", (v) =>
       commitStyle("maxWidth", v),
     ),
   );
   layoutGroup.appendChild(
-    labeledInput("Gap", block.style?.gap ?? "", (v) => commitStyle("gap", v)),
+    labeledLength("Gap", block.style?.gap ?? "", (v) => commitStyle("gap", v)),
   );
   if (block.type === "columns" || block.type === "gallery") {
     layoutGroup.appendChild(
@@ -4416,27 +5795,27 @@ function renderProperties(): void {
 
   const styleGroup = propertyGroup("Style");
   styleGroup.appendChild(
-    labeledInput("Background", block.style?.background ?? "", (v) =>
+    labeledColor("Background", block.style?.background ?? "", (v) =>
       commitStyle("background", v),
     ),
   );
   styleGroup.appendChild(
-    labeledInput("Text color", block.style?.color ?? "", (v) =>
+    labeledColor("Text color", block.style?.color ?? "", (v) =>
       commitStyle("color", v),
     ),
   );
   styleGroup.appendChild(
-    labeledInput("Padding", block.style?.padding ?? "", (v) =>
+    labeledLength("Padding", block.style?.padding ?? "", (v) =>
       commitStyle("padding", v),
     ),
   );
   styleGroup.appendChild(
-    labeledInput("Margin", block.style?.margin ?? "", (v) =>
+    labeledLength("Margin", block.style?.margin ?? "", (v) =>
       commitStyle("margin", v),
     ),
   );
   styleGroup.appendChild(
-    labeledInput("Radius", block.style?.radius ?? "", (v) =>
+    labeledLength("Radius", block.style?.radius ?? "", (v) =>
       commitStyle("radius", v),
     ),
   );
@@ -4470,7 +5849,7 @@ function renderProperties(): void {
   const currentResponsive =
     block.style?.responsive?.[state.currentViewport] ?? {};
   advancedGroup.appendChild(
-    labeledInput("Viewport padding", currentResponsive.padding ?? "", (v) => {
+    labeledLength("Viewport padding", currentResponsive.padding ?? "", (v) => {
       pushUndo();
       block.style = block.style ?? {};
       block.style.responsive = block.style.responsive ?? {};
@@ -4482,7 +5861,7 @@ function renderProperties(): void {
     }),
   );
   advancedGroup.appendChild(
-    labeledInput("Viewport margin", currentResponsive.margin ?? "", (v) => {
+    labeledLength("Viewport margin", currentResponsive.margin ?? "", (v) => {
       pushUndo();
       block.style = block.style ?? {};
       block.style.responsive = block.style.responsive ?? {};
@@ -4770,6 +6149,76 @@ function setViewport(vp: "desktop" | "tablet" | "mobile"): void {
   }
 }
 
+/**
+ * Runs `npm install` for a project with a live-log modal. Resolves true on
+ * success. Used after scaffolding and before preview/publish when node_modules
+ * is missing — so a novice never has to touch a terminal.
+ */
+async function runInstallFlow(projectPath: string): Promise<boolean> {
+  const wrap = document.createElement("div");
+  wrap.className = "install-flow";
+  const status = document.createElement("p");
+  status.className = "muted";
+  status.textContent =
+    "Installing dependencies… This can take a minute on first run.";
+  const logEl = document.createElement("pre");
+  logEl.className = "dev-log install-log";
+  wrap.append(status, logEl);
+
+  const unsub = window.zephus.onInstallLog((chunk) => {
+    logEl.textContent += chunk;
+    logEl.scrollTop = logEl.scrollHeight;
+  });
+
+  return new Promise<boolean>((resolve) => {
+    let done = false;
+    showModalNode("Setting Up Your Site", wrap, [
+      {
+        label: "Run in Background",
+        kind: "ghost",
+        onClick: () => {
+          if (!done) {
+            closeModal();
+            resolve(false);
+          }
+        },
+      },
+    ]);
+
+    void window.zephus
+      .installDependencies(projectPath)
+      .then((result) => {
+        done = true;
+        unsub();
+        if (result.ok) {
+          status.textContent = "Dependencies installed. You're ready to go.";
+          setStatus("Dependencies installed.");
+          closeModal();
+          resolve(true);
+        } else {
+          status.textContent = "Install failed: " + friendlyError(result.error);
+          setStatus("Dependency install failed.");
+          resolve(false);
+        }
+      })
+      .catch(() => {
+        done = true;
+        unsub();
+        resolve(false);
+      });
+  });
+}
+
+/** Ensures deps are installed; offers to install if not. Returns true if ready. */
+async function ensureDependencies(): Promise<boolean> {
+  if (!state.project) return false;
+  const installed = await window.zephus.dependenciesInstalled(
+    state.project.path,
+  );
+  if (installed) return true;
+  return runInstallFlow(state.project.path);
+}
+
 async function togglePreview(): Promise<void> {
   if (!state.project) return;
   const frame = $("preview-frame") as HTMLIFrameElement;
@@ -4778,6 +6227,8 @@ async function togglePreview(): Promise<void> {
     await window.zephus.stopPreview();
     state.previewUrl = null;
     state.unsubLog?.();
+    frame.removeAttribute("sandbox");
+    frame.removeAttribute("src");
     frame.classList.add("hidden");
     $("btn-preview").innerHTML = `<i data-lucide="play"></i> Start Preview`;
     refreshIcons();
@@ -4793,6 +6244,7 @@ async function togglePreview(): Promise<void> {
     });
     if (!resolved) return;
   }
+  if (!(await ensureDependencies())) return;
   setStatus("Starting dev server (npm run dev)…");
   state.unsubLog = window.zephus.onPreviewLog((chunk) => {
     const logEl = $("dev-log");
@@ -4801,12 +6253,13 @@ async function togglePreview(): Promise<void> {
   });
   const result = await window.zephus.startPreview(state.project.path);
   if (!result.ok || !result.url) {
-    setStatus("Preview failed: " + (result.error ?? "unknown error"));
+    setStatus("Preview failed: " + friendlyError(result.error));
     state.unsubLog?.();
     state.unsubLog = null;
     return;
   }
   state.previewUrl = result.url;
+  frame.setAttribute("sandbox", "allow-scripts allow-same-origin");
   frame.src = result.url;
   frame.classList.remove("hidden");
   $("canvas").classList.add("hidden");
@@ -4821,13 +6274,14 @@ async function togglePreview(): Promise<void> {
 
 async function publishSite(): Promise<void> {
   if (!state.project) return;
+  if (!(await ensureDependencies())) return;
   setStatus("Building site for production (npm run build)…");
   const r = await window.zephus.publish(
     state.project.path,
     state.project.astro.outDir,
   );
   if (!r.ok) {
-    showModal("Build Failed", r.error ?? "Unknown error during build.", [
+    showModal("Build Failed", friendlyError(r.error), [
       { label: "OK", kind: "primary", onClick: closeModal },
     ]);
     setStatus("Build failed.");
@@ -4836,12 +6290,32 @@ async function publishSite(): Promise<void> {
   setStatus(
     "Build complete. Output: " + (r.outputDir ?? state.project.astro.outDir),
   );
-  showModal(
-    "Site Published",
-    "Your production build is ready. The output folder has been opened in " +
-      "your file manager. Deploy its contents to any static hosting provider.",
-    [{ label: "OK", kind: "primary", onClick: closeModal }],
-  );
+  const pubWrap = document.createElement("div");
+  pubWrap.className = "publish-done";
+  pubWrap.innerHTML = `
+    <p>Your site was built into the <strong>${escapeHtml(r.outputDir ?? state.project.astro.outDir)}</strong> folder (now open in your file manager).</p>
+    <p>To put it online, upload that folder to a free static host:</p>
+    <ul class="publish-hosts">
+      <li><a href="https://app.netlify.com/drop">Netlify Drop</a> — drag the folder onto the page, done.</li>
+      <li><a href="https://pages.cloudflare.com">Cloudflare Pages</a> — connect or upload.</li>
+      <li><a href="https://pages.github.com">GitHub Pages</a> — if your project is on GitHub.</li>
+    </ul>
+    <p class="muted">Tip: Netlify Drop is the easiest — no account needed to start.</p>
+  `;
+  showModalNode("Site Built — Ready to Go Online", pubWrap, [
+    {
+      label: "Open Output Folder",
+      kind: "ghost",
+      onClick: () => {
+        if (state.project)
+          void window.zephus.publish(
+            state.project.path,
+            state.project.astro.outDir,
+          );
+      },
+    },
+    { label: "Done", kind: "primary", onClick: closeModal },
+  ]);
 }
 
 /* ---------- Close ---------- */
@@ -4859,6 +6333,7 @@ async function closeProject(): Promise<void> {
   state.unsubExternal?.();
   state.unsubExternal = null;
   state.project = null;
+  clearAssetCache();
   state.siteDocument = null;
   state.pendingSiteDocument = null;
   state.pendingSiteEditorKind = null;
@@ -4939,48 +6414,77 @@ function onKeydown(e: KeyboardEvent): void {
   } else if (mod && (e.key === "y" || (e.key === "z" && e.shiftKey))) {
     doRedo();
     e.preventDefault();
+  } else if (mod && (e.key === "d" || e.key === "D")) {
+    const block = findSelectedBlock();
+    if (block) {
+      duplicateSelectedBlock(block);
+      e.preventDefault();
+    }
+  } else if (e.key === "Delete" || e.key === "Backspace") {
+    // Only when not editing text in an input/textarea/contenteditable.
+    const active = document.activeElement as HTMLElement | null;
+    const editing =
+      active &&
+      (active.isContentEditable ||
+        active.tagName === "INPUT" ||
+        active.tagName === "TEXTAREA" ||
+        active.tagName === "SELECT");
+    if (editing) return;
+    const block = findSelectedBlock();
+    if (block && !block.locked) {
+      void deleteBlock(block);
+      e.preventDefault();
+    }
   }
 }
+
+/* ---------- Start view tabs and theme picker ---------- */
 
 /* ---------- Start view tabs and theme picker ---------- */
 
 function initStartTabs(): void {
   const tabRecent = $("tab-recent");
   const tabCreate = $("tab-create");
-  const paneRecent = $("pane-recent");
-  const paneCreate = $("pane-create");
+  const tabSettings = $("tab-settings");
+  const tabAbout = $("tab-about");
 
-  tabRecent.onclick = () => {
-    tabRecent.classList.add("active");
-    tabCreate.classList.remove("active");
-    paneRecent.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
+  if (tabRecent) tabRecent.onclick = () => void switchStartTab("recent");
+  if (tabCreate) tabCreate.onclick = () => void switchStartTab("create");
+  if (tabSettings) tabSettings.onclick = () => void switchStartTab("settings");
+  if (tabAbout) tabAbout.onclick = () => void switchStartTab("about");
+}
 
-  tabCreate.onclick = async () => {
-    tabCreate.classList.add("active");
-    tabRecent.classList.remove("active");
-    paneCreate.scrollIntoView({ behavior: "smooth", block: "start" });
+async function switchStartTab(
+  target: "recent" | "create" | "settings" | "about",
+): Promise<void> {
+  const tabs = ["recent", "create", "settings", "about"] as const;
+  for (const t of tabs) {
+    const tabBtn = $("tab-" + t);
+    const pane = $("pane-" + t);
+    if (tabBtn) tabBtn.classList.toggle("active", t === target);
+    if (pane) {
+      pane.classList.toggle("active", t === target);
+      pane.classList.toggle("hidden", t !== target);
+    }
+  }
+  if (target === "create") {
     await renderThemesInTab();
-  };
+  } else if (target === "settings") {
+    await renderSettingsInTab();
+  } else if (target === "about") {
+    await renderAboutAndLicensesInTab();
+  }
 }
 
 async function activateHomeSection(
-  section: "recent" | "create",
+  section: "recent" | "create" | "settings" | "about",
 ): Promise<void> {
-  const tabRecent = $("tab-recent");
-  const tabCreate = $("tab-create");
-  tabRecent.classList.toggle("active", section === "recent");
-  tabCreate.classList.toggle("active", section === "create");
-  if (section === "create") {
-    $("pane-create").scrollIntoView({ behavior: "smooth", block: "start" });
-    await renderThemesInTab();
-    return;
-  }
-  $("pane-recent").scrollIntoView({ behavior: "smooth", block: "start" });
+  await switchStartTab(section);
 }
 
 function syncCreateButtonState(): void {
   const btnCreate = $("btn-create") as HTMLButtonElement;
+  if (!btnCreate) return;
   const enabled = selectedTabTheme !== null;
   btnCreate.disabled = !enabled;
   btnCreate.classList.toggle("disabled", !enabled);
@@ -4993,14 +6497,17 @@ function previewUrlForTheme(theme: ThemeMeta): string | null {
 
 function selectThemeCard(themeId: string): void {
   selectedTabTheme = themeId;
-  for (const card of Array.from(
-    $("theme-list-container").querySelectorAll<HTMLElement>(".theme-card"),
-  )) {
-    const selected = card.dataset.themeId === themeId;
-    card.classList.toggle("selected", selected);
-    const label = card.querySelector<HTMLElement>(".theme-select-btn");
-    if (label) {
-      label.textContent = selected ? "Selected" : "Select";
+  const container = $("theme-list-container");
+  if (container) {
+    for (const card of Array.from(
+      container.querySelectorAll<HTMLElement>(".theme-card"),
+    )) {
+      const selected = card.dataset.themeId === themeId;
+      card.classList.toggle("selected", selected);
+      const label = card.querySelector<HTMLElement>(".theme-select-btn");
+      if (label) {
+        label.textContent = selected ? "Selected" : "Select";
+      }
     }
   }
   syncCreateButtonState();
@@ -5056,7 +6563,43 @@ function openThemePreviewModal(theme: ThemeMeta): void {
   );
 }
 
-function buildThemeCard(theme: ThemeMeta): HTMLElement {
+function getThemeHeaderDetails(themeId: string): {
+  gradient: string;
+  icon: string;
+} {
+  const id = themeId.toLowerCase();
+  if (id.includes("doc")) {
+    return {
+      gradient: "linear-gradient(135deg, #312e81, #1e3a8a)",
+      icon: "book-open",
+    };
+  } else if (id.includes("blog")) {
+    return {
+      gradient: "linear-gradient(135deg, #7c2d12, #451a03)",
+      icon: "edit-3",
+    };
+  } else if (id.includes("port")) {
+    return {
+      gradient: "linear-gradient(135deg, #164e63, #155e75)",
+      icon: "image",
+    };
+  } else if (id.includes("min") || id.includes("blank")) {
+    return {
+      gradient: "linear-gradient(135deg, #374151, #111827)",
+      icon: "terminal",
+    };
+  } else {
+    return {
+      gradient: "linear-gradient(135deg, #064e3b, #022c22)",
+      icon: "rocket",
+    };
+  }
+}
+
+function buildThemeCard(
+  theme: ThemeMeta,
+  previewBase: string | null,
+): HTMLElement {
   const card = document.createElement("article");
   card.className = "theme-card";
   card.dataset.themeId = theme.id;
@@ -5065,19 +6608,28 @@ function buildThemeCard(theme: ThemeMeta): HTMLElement {
     card.classList.add("selected");
   }
 
-  const previewUrl = previewUrlForTheme(theme);
-  const preview = document.createElement("div");
-  preview.className = "theme-card-preview";
-  if (previewUrl) {
+  const details = getThemeHeaderDetails(theme.id);
+  const header = document.createElement("div");
+  header.className = "theme-card-icon-header";
+
+  if (previewBase) {
+    const previewUrl = new URL(theme.previewPath, previewBase).toString();
+    header.classList.add("has-preview");
     const frame = document.createElement("iframe");
     frame.className = "theme-card-preview-frame";
+    frame.setAttribute("sandbox", "allow-scripts allow-same-origin");
+    frame.setAttribute("title", `${theme.name} preview`);
+    frame.setAttribute("aria-hidden", "true");
+    frame.setAttribute("tabindex", "-1");
     frame.src = previewUrl;
-    frame.sandbox.add("allow-same-origin");
-    frame.sandbox.add("allow-scripts");
-    frame.title = `${theme.name} thumbnail preview`;
-    preview.appendChild(frame);
+    header.appendChild(frame);
   } else {
-    preview.innerHTML = `<div class="theme-card-preview-empty">Preview unavailable</div>`;
+    header.style.background = details.gradient;
+    header.innerHTML = `
+      <div class="theme-card-icon-pill">
+        <i data-lucide="${details.icon}"></i>
+      </div>
+    `;
   }
 
   const body = document.createElement("div");
@@ -5104,7 +6656,7 @@ function buildThemeCard(theme: ThemeMeta): HTMLElement {
   };
 
   actions.append(previewBtn, selectBtn);
-  card.append(preview, body, actions);
+  card.append(header, body, actions);
 
   card.onclick = () => selectThemeCard(theme.id);
   card.ondblclick = () => {
@@ -5123,6 +6675,7 @@ function buildThemeCard(theme: ThemeMeta): HTMLElement {
 
 async function renderThemesInTab(): Promise<void> {
   const container = $("theme-list-container");
+  if (!container) return;
   container.innerHTML = `<p class="muted">Loading theme previews…</p>`;
 
   try {
@@ -5141,11 +6694,376 @@ async function renderThemesInTab(): Promise<void> {
 
     container.innerHTML = "";
     for (const theme of startThemes) {
-      container.appendChild(buildThemeCard(theme));
+      const card = buildThemeCard(theme, themePreviewBaseUrl);
+      container.appendChild(card);
+      // Scale the live preview iframe to fit the card header.
+      const frame = card.querySelector<HTMLIFrameElement>(
+        ".theme-card-preview-frame",
+      );
+      const headerEl = card.querySelector<HTMLElement>(
+        ".theme-card-icon-header",
+      );
+      if (frame && headerEl) {
+        const scale = headerEl.offsetWidth / 1280;
+        frame.style.transform = `scale(${scale})`;
+      }
     }
     syncCreateButtonState();
+    refreshIcons();
   } catch (err) {
     container.innerHTML = `<p class="muted">Could not load themes: ${err}</p>`;
+  }
+}
+
+async function renderSettingsInTab(): Promise<void> {
+  const container = $("settings-tab-container");
+  if (!container) return;
+  container.innerHTML = "";
+
+  let settings: GlobalSettings;
+  try {
+    settings = await window.zephus.readGlobalSettings();
+  } catch {
+    setStatus("Could not load settings.");
+    return;
+  }
+
+  const form = document.createElement("div");
+  form.className = "settings-form";
+
+  // --- Updates Section ---
+  const updatesSec = document.createElement("div");
+  updatesSec.className = "settings-section";
+
+  const updHeader = document.createElement("h4");
+  updHeader.className = "settings-section-title";
+  updHeader.textContent = "Updates";
+  updatesSec.appendChild(updHeader);
+
+  const autoUpd = checkboxRow(
+    "set-auto-update",
+    "Startup check",
+    settings.autoCheckUpdates,
+  );
+  updatesSec.appendChild(autoUpd.row);
+
+  const chan = selectField(
+    "Update channel",
+    [
+      { value: "auto", label: "Auto (match install)" },
+      { value: "stable", label: "Stable" },
+      { value: "beta", label: "Beta" },
+      { value: "developer", label: "Developer (db)" },
+    ],
+    settings.updateChannel,
+  );
+  updatesSec.appendChild(chan.wrap);
+
+  const checkRow = document.createElement("div");
+  checkRow.className = "settings-row";
+  const checkLeft = document.createElement("span");
+  const checkNowBtn = document.createElement("button");
+  checkNowBtn.className = "btn secondary mini-btn";
+  checkNowBtn.textContent = "Check for Updates Now";
+  checkNowBtn.onclick = async () => {
+    checkNowBtn.textContent = "Checking…";
+    checkNowBtn.disabled = true;
+    try {
+      await window.zephus.checkForUpdates();
+    } catch {
+      // Ignored: status is surfaced via updater-status listener
+    }
+    checkNowBtn.textContent = "Check for Updates Now";
+    checkNowBtn.disabled = false;
+  };
+  checkRow.append(checkLeft, checkNowBtn);
+  updatesSec.appendChild(checkRow);
+  form.appendChild(updatesSec);
+
+  // --- Environment Section (Node.js) ---
+  const envSec = document.createElement("div");
+  envSec.className = "settings-section";
+
+  const envHeader = document.createElement("h4");
+  envHeader.className = "settings-section-title";
+  envHeader.textContent = "Environment";
+  envSec.appendChild(envHeader);
+
+  const nodeRow = document.createElement("div");
+  nodeRow.className = "settings-row";
+
+  const nodeCopy = document.createElement("div");
+  nodeCopy.className = "settings-inline-copy";
+  const nodeStatusText = document.createElement("span");
+  nodeStatusText.textContent = "Checking Node.js…";
+  const nodeStrong = document.createElement("strong");
+  nodeStrong.textContent = "Node.js (for build & preview)";
+  nodeCopy.append(nodeStrong, nodeStatusText);
+
+  const nodeBtns = document.createElement("div");
+  nodeBtns.className = "settings-inline-actions";
+  const nodeBrowseBtn = document.createElement("button");
+  nodeBrowseBtn.className = "btn secondary mini-btn";
+  nodeBrowseBtn.textContent = "Set Custom Location…";
+  const nodeAutoBtn = document.createElement("button");
+  nodeAutoBtn.className = "btn ghost mini-btn";
+  nodeAutoBtn.textContent = "Use Auto-detect";
+  nodeBtns.append(nodeBrowseBtn, nodeAutoBtn);
+
+  nodeRow.append(nodeCopy, nodeBtns);
+  envSec.appendChild(nodeRow);
+
+  const applyNodeStatus = (res: NodeCheckResult): void => {
+    const label =
+      res.status === "ok"
+        ? `Node.js ${res.version} detected ✓`
+        : res.status === "outdated"
+          ? `Node.js ${res.version ?? "?"} — version 22.12+ required`
+          : res.status === "missing"
+            ? "Node.js not found — set a custom location below"
+            : "Node.js status could not be determined";
+    const source = settings.customNodePath
+      ? `Custom: ${settings.customNodePath}`
+      : "Auto-detect (system PATH)";
+    nodeStatusText.textContent = `${label} · ${source}`;
+    nodeAutoBtn.disabled = !settings.customNodePath;
+  };
+
+  nodeBrowseBtn.onclick = async () => {
+    nodeBrowseBtn.disabled = true;
+    try {
+      const res = await window.zephus.pickNodePath();
+      if (
+        (res.status === "ok" || res.status === "outdated") &&
+        res.usedCustomPath &&
+        res.binaryPath
+      ) {
+        settings.customNodePath = res.binaryPath;
+      }
+      applyNodeStatus(res);
+    } catch {
+      nodeStatusText.textContent = "Could not set Node.js location.";
+    }
+    nodeBrowseBtn.disabled = false;
+  };
+
+  nodeAutoBtn.onclick = async () => {
+    nodeAutoBtn.disabled = true;
+    try {
+      const res = await window.zephus.setNodePath(null);
+      settings.customNodePath = null;
+      applyNodeStatus(res);
+    } catch {
+      nodeStatusText.textContent = "Could not reset Node.js location.";
+    }
+  };
+
+  window.zephus
+    .getNodeStatus()
+    .then(applyNodeStatus)
+    .catch(() => {
+      nodeStatusText.textContent = "Could not check Node.js.";
+    });
+
+  form.appendChild(envSec);
+
+  // --- Appearance Section ---
+  const apSec = document.createElement("div");
+  apSec.className = "settings-section";
+
+  const apHeader = document.createElement("h4");
+  apHeader.className = "settings-section-title";
+  apHeader.textContent = "Appearance";
+  apSec.appendChild(apHeader);
+
+  const theme = selectField(
+    "Theme",
+    [
+      { value: "system", label: "System" },
+      { value: "dark", label: "Dark" },
+      { value: "light", label: "Light" },
+    ],
+    settings.theme,
+  );
+  apSec.appendChild(theme.wrap);
+
+  const fontSize = selectField(
+    "Editor font size",
+    [12, 13, 14, 15, 16, 18].map((n) => ({
+      value: String(n),
+      label: `${n}px`,
+    })),
+    String(settings.codeFontSize),
+  );
+  apSec.appendChild(fontSize.wrap);
+  form.appendChild(apSec);
+
+  // --- Editor Section ---
+  const edSec = document.createElement("div");
+  edSec.className = "settings-section";
+
+  const edHeader = document.createElement("h4");
+  edHeader.className = "settings-section-title";
+  edHeader.textContent = "Editor";
+  edSec.appendChild(edHeader);
+
+  const restore = checkboxRow(
+    "set-restore",
+    "Reopen last project",
+    settings.restoreLastProject,
+  );
+  edSec.appendChild(restore.row);
+
+  const autosave = checkboxRow(
+    "set-autosave",
+    "Autosave changes",
+    settings.autosave,
+  );
+  edSec.appendChild(autosave.row);
+
+  const confirmDel = checkboxRow(
+    "set-confirm-del",
+    "Confirm delete block",
+    settings.confirmBlockDelete,
+  );
+  edSec.appendChild(confirmDel.row);
+  form.appendChild(edSec);
+
+  // --- Actions/Buttons Row ---
+  const actionsRow = document.createElement("div");
+  actionsRow.className = "settings-panel-buttons";
+
+  const resetBtn = document.createElement("button");
+  resetBtn.className = "btn danger";
+  resetBtn.textContent = "Reset to Defaults";
+  resetBtn.onclick = async () => {
+    if (!confirm("Reset all Zephus settings to defaults?")) return;
+    const defaults: GlobalSettings = {
+      ...settings,
+      theme: "system",
+      autoCheckUpdates: true,
+      updateChannel: "auto",
+      restoreLastProject: false,
+      confirmBlockDelete: true,
+      autosave: false,
+      codeFontSize: 13,
+      customNodePath: null,
+    };
+    await window.zephus.writeGlobalSettings(defaults);
+    document.documentElement.setAttribute("data-theme", "system");
+    applyCodeFontSize(13);
+    setStatus("Settings reset to defaults.");
+    await renderSettingsInTab();
+  };
+
+  const saveBtn = document.createElement("button");
+  saveBtn.className = "btn primary";
+  saveBtn.textContent = "Save Settings";
+  saveBtn.onclick = async () => {
+    settings.autoCheckUpdates = autoUpd.input.checked;
+    settings.updateChannel = chan.select
+      .value as GlobalSettings["updateChannel"];
+    settings.theme = theme.select.value as GlobalSettings["theme"];
+    settings.codeFontSize = Number(fontSize.select.value);
+    settings.restoreLastProject = restore.input.checked;
+    settings.autosave = autosave.input.checked;
+    settings.confirmBlockDelete = confirmDel.input.checked;
+
+    await window.zephus.writeGlobalSettings(settings);
+    document.documentElement.setAttribute("data-theme", settings.theme);
+    applyCodeFontSize(settings.codeFontSize);
+    appSettings = settings;
+    setStatus("Settings saved.");
+  };
+
+  actionsRow.append(resetBtn, saveBtn);
+  form.appendChild(actionsRow);
+  container.appendChild(form);
+}
+
+async function renderAboutAndLicensesInTab(): Promise<void> {
+  const versionText = $("about-app-version");
+  if (versionText) {
+    try {
+      const v = await window.zephus.getAppVersion();
+      versionText.textContent = `v${v}`;
+    } catch {
+      versionText.textContent = "v0.1.0-db.1";
+    }
+  }
+
+  const configBtn = $maybe("btn-about-config");
+  if (configBtn) {
+    configBtn.onclick = () => void window.zephus.openConfigFolder();
+  }
+
+  const loadLicensesBtn = $("btn-load-licenses") as HTMLButtonElement;
+  const openRawLicensesBtn = $("btn-open-raw-licenses");
+  const licensesListContainer = $("about-licenses-list");
+
+  if (openRawLicensesBtn) {
+    openRawLicensesBtn.onclick = async () => {
+      const opened = await window.zephus.openProductionLicensesFile();
+      if (!opened.ok) {
+        setStatus(opened.error ?? "Could not open licenses.json.");
+      }
+    };
+  }
+
+  if (loadLicensesBtn && licensesListContainer) {
+    loadLicensesBtn.onclick = async () => {
+      loadLicensesBtn.disabled = true;
+      loadLicensesBtn.textContent = "Loading Licenses…";
+      licensesListContainer.classList.remove("hidden");
+      licensesListContainer.innerHTML = `<p class="muted" style="padding: 16px;">Loading bundled production license data…</p>`;
+
+      const result = await window.zephus.readProductionLicenses();
+      loadLicensesBtn.disabled = false;
+      loadLicensesBtn.textContent = "Reload Dependency Licenses";
+
+      if (!result.ok) {
+        licensesListContainer.innerHTML = `<p class="muted" style="padding: 16px; color: var(--danger);">${result.error ?? "Could not load production license data."}</p>`;
+        return;
+      }
+
+      licensesListContainer.innerHTML = "";
+      const tableWrap = document.createElement("div");
+      tableWrap.className = "licenses-table-wrap";
+
+      const table = document.createElement("table");
+      table.className = "licenses-table";
+      table.innerHTML = `
+        <thead>
+          <tr>
+            <th>Package</th>
+            <th>License</th>
+            <th>Repository</th>
+            <th>License URL</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${result.entries
+            .map(
+              (entry) => `
+                <tr>
+                  <td class="licenses-package-cell">
+                    <div class="licenses-package-name">${escapeHtml(entry.packageId)}</div>
+                    <div class="licenses-package-parents">${escapeHtml(
+                      entry.parents.slice(0, 4).join(" > ") ||
+                        "Direct dependency",
+                    )}</div>
+                  </td>
+                  <td>${escapeHtml(entry.licenses)}</td>
+                  <td class="licenses-link-cell">${renderLicenseValue(entry.repository)}</td>
+                  <td class="licenses-link-cell">${renderLicenseValue(entry.licenseUrl)}</td>
+                </tr>`,
+            )
+            .join("")}
+        </tbody>
+      `;
+      tableWrap.appendChild(table);
+      licensesListContainer.appendChild(tableWrap);
+    };
   }
 }
 
@@ -5157,30 +7075,74 @@ async function createSiteFromTabFlow(): Promise<void> {
   setStatus("Creating site from theme…");
   const r = await window.zephus.createSite(folder, theme);
   if (!r.ok) {
-    showModal("Could Not Create Site", r.error ?? "Unknown error.", [
+    showModal("Could Not Create Site", friendlyError(r.error), [
       { label: "OK", kind: "primary", onClick: closeModal },
     ]);
     return;
   }
   await openProjectByPath(folder);
+  // First-run convenience: install deps now so preview/publish just work.
+  await runInstallFlow(folder);
 }
 
 /* ---------- Wire up ---------- */
 
 function init(): void {
   initStartTabs();
-  $("btn-create").onclick = () => void createSiteFromTabFlow();
-  $("btn-settings").onclick = () => void openSettingsModal();
-  $("btn-home-settings").onclick = () => void openSettingsModal();
-  $("btn-home-licenses").onclick = () => void openProductionLicensesModal();
-  $("btn-home-create").onclick = () => void activateHomeSection("create");
-  $("btn-resume-last").onclick = () => {
-    const lastProject = appSettings?.lastOpenedProject;
-    if (lastProject) {
-      void openProjectByPath(lastProject);
+
+  // Prevent stray file drops from navigating the window away from the app.
+  // Specific dropzones call preventDefault + stopPropagation to handle drops.
+  window.addEventListener("dragover", (event) => event.preventDefault());
+  window.addEventListener("drop", (event) => event.preventDefault());
+
+  // Warn before closing/reloading with unsaved work. Drafts also auto-save,
+  // but this is an explicit last-chance rail.
+  window.addEventListener("beforeunload", (event) => {
+    if (state.project && isGlobalDirty(state)) {
+      event.preventDefault();
+      event.returnValue = "";
     }
-  };
-  $("btn-open").onclick = () => void chooseFolder();
+  });
+
+  // Populate sidebar version label.
+  const sidebarVersion = $("sidebar-app-version");
+  if (sidebarVersion) {
+    window.zephus
+      .getAppVersion()
+      .then((v) => {
+        sidebarVersion.textContent = `v${v}`;
+      })
+      .catch(() => {
+        sidebarVersion.textContent = "";
+      });
+  }
+
+  const btnCreate = $("btn-create");
+  if (btnCreate) btnCreate.onclick = () => void createSiteFromTabFlow();
+  const btnSettings = $maybe("btn-settings");
+  if (btnSettings) btnSettings.onclick = () => void openSettingsModal();
+  const btnHomeSettings = $maybe("btn-home-settings");
+  if (btnHomeSettings) btnHomeSettings.onclick = () => void openSettingsModal();
+  const btnHomeLicenses = $maybe("btn-home-licenses");
+  if (btnHomeLicenses)
+    btnHomeLicenses.onclick = () => void openProductionLicensesModal();
+  const btnHomeCreate = $maybe("btn-home-create");
+  if (btnHomeCreate)
+    btnHomeCreate.onclick = () => void activateHomeSection("create");
+
+  const btnResumeLast = $("btn-resume-last");
+  if (btnResumeLast) {
+    btnResumeLast.onclick = () => {
+      const lastProject = appSettings?.lastOpenedProject;
+      if (lastProject) {
+        void openProjectByPath(lastProject);
+      }
+    };
+  }
+
+  const btnOpen = $("btn-open");
+  if (btnOpen) btnOpen.onclick = () => void chooseFolder();
+
   $("btn-new-page").onclick = () => void newPageFlow();
   $("btn-regen-nav").onclick = () => void regenerateNav();
   $("btn-site-shell").onclick = () => void openSiteShellModal();
@@ -5232,9 +7194,11 @@ async function showOnboardingIfNew(): Promise<void> {
   if (settings.recentProjects.length > 0) return;
   showModal(
     "Welcome to Zephus",
-    "Zephus is a local WYSIWYG website editor for Astro sites. " +
-      "Create a new site from one of the bundled themes, or open an existing Zephus project. " +
-      "Your sites live on your machine and are backed by Git — no account needed.",
+    "Zephus builds real websites visually — no coding needed. " +
+      "Pick a starter template and Zephus sets everything up for you, " +
+      "including installing what the site needs to run. " +
+      "Then drag blocks, edit text, and click Preview to see it live. " +
+      "Note: Zephus needs Node.js installed on your computer to preview and build sites.",
     [
       {
         label: "Create My First Site",

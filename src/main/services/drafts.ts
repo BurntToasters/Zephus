@@ -1,6 +1,5 @@
 import { app } from "electron";
 import * as crypto from "crypto";
-import * as fs from "fs";
 import * as path from "path";
 import {
   DraftData,
@@ -10,6 +9,7 @@ import {
   DraftSummaryResult,
   OperationResult,
 } from "../types";
+import { readJsonSafe, writeFileAtomic } from "./fsSafe";
 
 type DraftStore = Record<string, DraftData>;
 
@@ -35,14 +35,8 @@ function draftKey(
 }
 
 function readStore(): DraftStore {
-  const file = draftsPath();
-  if (!fs.existsSync(file)) return {};
-  try {
-    const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as DraftStore;
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch {
-    return {};
-  }
+  const { data } = readJsonSafe<DraftStore>(draftsPath());
+  return data && typeof data === "object" ? data : {};
 }
 
 function normalizeDraft(
@@ -77,9 +71,7 @@ function normalizeDraft(
 }
 
 function writeStore(store: DraftStore): void {
-  const file = draftsPath();
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, JSON.stringify(store, null, 2) + "\n", "utf8");
+  writeFileAtomic(draftsPath(), JSON.stringify(store, null, 2) + "\n");
 }
 
 export function readDraft(

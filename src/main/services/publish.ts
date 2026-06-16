@@ -4,6 +4,8 @@ import { shell } from "electron";
 import * as path from "path";
 import log from "electron-log";
 import { OperationResult } from "../types";
+import { readGlobalSettings } from "./settings";
+import { buildSpawnEnv } from "./nodeCheck";
 
 const execFileAsync = promisify(execFile);
 const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
@@ -20,12 +22,16 @@ export async function buildAndReveal(
   projectPath: string,
   outDir: string,
 ): Promise<PublishResult> {
+  if (typeof projectPath !== "string" || !projectPath) {
+    return { ok: false, error: "Invalid project path." };
+  }
   try {
+    const env = await buildSpawnEnv(readGlobalSettings().customNodePath);
     await execFileAsync(npmCmd, ["run", "build"], {
       cwd: projectPath,
       windowsHide: true,
       maxBuffer: 20 * 1024 * 1024,
-      env: { ...process.env, FORCE_COLOR: "0" },
+      env: { ...env, FORCE_COLOR: "0" },
     });
     const output = path.join(projectPath, outDir);
     shell.openPath(output).catch(() => {

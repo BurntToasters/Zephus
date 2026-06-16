@@ -14,113 +14,161 @@
     <!-- Project selection view -->
     <section id="view-start" class="view">
       <div class="start-atmosphere"></div>
-      <div class="start-shell">
-        <header class="start-hero">
-          <div class="start-hero-copy">
-            <p class="start-kicker">Visual Astro Builder</p>
-            <h1 class="brand">Zephus</h1>
-            <p class="start-lead">
-              Resume work fast, recover unsaved drafts, and launch new sites
-              from bundled themes without leaving your local workflow.
-            </p>
-          </div>
-          <div class="start-hero-tools">
-            <div class="start-hero-note">
-              <span class="home-note-label">Builder Command Center</span>
-              <span class="home-note-copy"
-                >Zephus projects only. Local-first. Schema-backed visual
-                editing.</span
-              >
+      <div class="start-container">
+        <!-- Sidebar Navigation -->
+        <aside class="start-sidebar">
+          <div class="start-brand">
+            <div class="brand-logo"></div>
+            <div class="brand-meta">
+              <h1 class="brand-title">Zephus</h1>
+              <p class="brand-subtitle">Visual Astro Builder</p>
             </div>
-            <button
-              id="btn-settings"
-              class="btn ghost gear-btn"
-              title="Settings"
-            >
-              <i data-lucide="settings"></i>
+          </div>
+          <nav class="start-nav" aria-label="Sections">
+            <button id="tab-recent" class="start-nav-item active">
+              <i data-lucide="clock"></i>
+              <span>Recent Sites</span>
             </button>
+            <button id="tab-create" class="start-nav-item">
+              <i data-lucide="compass"></i>
+              <span>Starter Themes</span>
+            </button>
+            <button id="tab-settings" class="start-nav-item">
+              <i data-lucide="settings"></i>
+              <span>App Settings</span>
+            </button>
+            <button id="tab-about" class="start-nav-item">
+              <i data-lucide="info"></i>
+              <span>About & Licenses</span>
+            </button>
+          </nav>
+          <div class="start-sidebar-footer">
+            <span id="sidebar-app-version" class="sidebar-version-text"></span>
+            <div id="sidebar-update-status" class="update-status-pill"></div>
           </div>
-        </header>
+        </aside>
 
-        <div class="hub-tabs home-section-tabs">
-          <button id="tab-recent" class="hub-tab active">
-            <i data-lucide="clock"></i> Resume Work
-          </button>
-          <button id="tab-create" class="hub-tab">
-            <i data-lucide="compass"></i> Get Started
-          </button>
-        </div>
+        <!-- Main Workspace Panes -->
+        <main class="start-main">
+          <!-- Pane 1: Recent Sites -->
+          <section id="pane-recent" class="start-pane active">
+            <!-- Unsaved draft recovery alert shows up here if any exist -->
+            <div
+              id="home-recovery-list"
+              class="recovery-alert-container hidden"
+            ></div>
 
-        <div class="home-quick-actions">
-          <button id="btn-open" class="btn primary">
-            <i data-lucide="folder-open"></i> Open Existing Site
-          </button>
-          <button id="btn-resume-last" class="btn">
-            <i data-lucide="clock"></i> Resume Last Project
-          </button>
-          <button id="btn-home-create" class="btn">
-            <i data-lucide="plus"></i> Create New Site
-          </button>
-          <button id="btn-home-licenses" class="btn ghost">
-            <i data-lucide="file-code"></i> View Licenses
-          </button>
-          <button id="btn-home-settings" class="btn ghost">
-            <i data-lucide="settings"></i> Settings
-          </button>
-        </div>
-
-        <div class="home-grid">
-          <section
-            id="pane-recent"
-            class="home-panel hub-pane home-panel-recent"
-          >
-            <div class="home-panel-header">
-              <div>
-                <p class="panel-kicker">Resume work</p>
-                <h2 class="panel-title">Recent Zephus Sites</h2>
+            <header class="pane-header">
+              <div class="pane-header-title">
+                <p class="pane-kicker">Resume Work</p>
+                <h2 class="pane-title">Recent Projects</h2>
               </div>
-              <span class="panel-meta"
-                >Open directly from where you left off.</span
-              >
+              <div class="pane-header-actions">
+                <button id="btn-open" class="btn primary">
+                  <i data-lucide="folder-open"></i> Open Folder
+                </button>
+                <button id="btn-resume-last" class="btn">
+                  <i data-lucide="play"></i> Resume Last Project
+                </button>
+              </div>
+            </header>
+
+            <div class="pane-content">
+              <ul id="recent-list" class="recent-grid"></ul>
             </div>
-            <ul id="recent-list" class="recent-list"></ul>
           </section>
 
-          <aside class="home-panel hub-pane home-panel-status">
-            <div class="home-panel-header">
-              <div>
-                <p class="panel-kicker">Recovery + Status</p>
-                <h2 class="panel-title">Builder Signals</h2>
+          <!-- Pane 2: Theme Discovery -->
+          <section id="pane-create" class="start-pane hidden">
+            <header class="pane-header">
+              <div class="pane-header-title">
+                <p class="pane-kicker">Start New</p>
+                <h2 class="pane-title">Theme Discovery</h2>
               </div>
-            </div>
-            <div id="home-project-status" class="home-status-stack"></div>
-            <div id="home-recovery-list" class="home-status-stack"></div>
-            <div id="home-update-status" class="home-status-stack"></div>
-          </aside>
+              <div class="pane-header-actions">
+                <button id="btn-create" class="btn primary disabled" disabled>
+                  <i data-lucide="plus"></i> Choose Folder & Create Site
+                </button>
+              </div>
+            </header>
 
-          <section
-            id="pane-create"
-            class="home-panel hub-pane home-panel-themes"
-          >
-            <div class="home-panel-header">
-              <div>
-                <p class="panel-kicker">Start new</p>
-                <h2 class="panel-title">Theme Discovery</h2>
+            <div class="pane-content">
+              <div id="theme-list-container" class="theme-grid">
+                <!-- Populated dynamically by zephusEngine.ts -->
               </div>
-              <span class="panel-meta"
-                >Preview every bundled starter before creating a site.</span
-              >
-            </div>
-            <div id="theme-list-container" class="theme-grid">
-              <!-- Populated dynamically by zephusEngine.ts -->
-            </div>
-            <div class="pane-actions home-theme-actions">
-              <button id="btn-create" class="btn primary disabled" disabled>
-                <i data-lucide="plus"></i> Choose Folder & Create Site
-              </button>
             </div>
           </section>
-        </div>
+
+          <!-- Pane 3: App Settings -->
+          <section id="pane-settings" class="start-pane hidden">
+            <header class="pane-header">
+              <div class="pane-header-title">
+                <p class="pane-kicker">Configuration</p>
+                <h2 class="pane-title">App Settings</h2>
+              </div>
+            </header>
+
+            <div class="pane-content">
+              <div id="settings-tab-container" class="settings-container">
+                <!-- Populated dynamically by zephusEngine.ts -->
+              </div>
+            </div>
+          </section>
+
+          <!-- Pane 4: About & Licenses -->
+          <section id="pane-about" class="start-pane hidden">
+            <header class="pane-header">
+              <div class="pane-header-title">
+                <p class="pane-kicker">Information</p>
+                <h2 class="pane-title">About & Licenses</h2>
+              </div>
+            </header>
+
+            <div class="pane-content">
+              <div class="about-container">
+                <div class="about-hero">
+                  <div class="about-brand-logo"></div>
+                  <h3 class="about-app-name">Zephus</h3>
+                  <p id="about-app-version" class="about-app-version">
+                    v0.1.0-db.1
+                  </p>
+                  <p class="about-lead">
+                    Zephus is a local-first, schema-backed visual editor for
+                    Astro websites. Your sites live on your machine and are
+                    backed by Git — no external accounts or cloud databases
+                    required.
+                  </p>
+                  <div class="about-actions">
+                    <button id="btn-about-config" class="btn">
+                      <i data-lucide="folder-open"></i> Open Config Directory
+                    </button>
+                  </div>
+                </div>
+                <div class="about-licenses-section">
+                  <h4>Third-Party Licenses</h4>
+                  <p class="licenses-intro-text">
+                    Zephus is built using open source software. Click below to
+                    inspect dependency licenses.
+                  </p>
+                  <div class="licenses-trigger-row">
+                    <button id="btn-load-licenses" class="btn primary">
+                      Load Dependency Licenses
+                    </button>
+                    <button id="btn-open-raw-licenses" class="btn ghost">
+                      Open raw licenses.json
+                    </button>
+                  </div>
+                  <div
+                    id="about-licenses-list"
+                    class="about-licenses-list-container"
+                  >
+                    <!-- Populated dynamically when requested -->
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </main>
       </div>
     </section>
 
@@ -142,13 +190,28 @@
             </button>
           </div>
           <div class="vp-toggle">
-            <button id="vp-desktop" class="vp-btn active" title="Desktop">
+            <button
+              id="vp-desktop"
+              class="vp-btn active"
+              title="Desktop"
+              aria-label="Desktop view"
+            >
               <i data-lucide="monitor"></i>
             </button>
-            <button id="vp-tablet" class="vp-btn" title="Tablet">
+            <button
+              id="vp-tablet"
+              class="vp-btn"
+              title="Tablet"
+              aria-label="Tablet view"
+            >
               <i data-lucide="tablet"></i>
             </button>
-            <button id="vp-mobile" class="vp-btn" title="Mobile">
+            <button
+              id="vp-mobile"
+              class="vp-btn"
+              title="Mobile"
+              aria-label="Mobile view"
+            >
               <i data-lucide="smartphone"></i>
             </button>
           </div>
@@ -180,11 +243,16 @@
       </header>
 
       <div class="editor-body">
-        <aside class="panel left">
+        <aside class="panel left" aria-label="Pages, blocks and site tools">
           <div class="panel-section">
             <h3>
               Pages
-              <button id="btn-new-page" class="mini-btn" title="New page">
+              <button
+                id="btn-new-page"
+                class="mini-btn"
+                title="New page"
+                aria-label="New page"
+              >
                 <i data-lucide="plus"></i>
               </button>
             </h3>
@@ -231,14 +299,10 @@
           ></div>
           <div id="canvas" class="canvas"></div>
           <div id="code-editor" class="code-editor hidden"></div>
-          <iframe
-            id="preview-frame"
-            class="preview-frame hidden"
-            sandbox="allow-scripts allow-same-origin"
-          ></iframe>
+          <iframe id="preview-frame" class="preview-frame hidden"></iframe>
         </main>
 
-        <aside class="panel right">
+        <aside class="panel right" aria-label="Properties and project status">
           <div class="panel-section">
             <h3>Project Overview</h3>
             <div id="project-overview" class="properties">
@@ -273,12 +337,24 @@
           </div>
         </aside>
       </div>
-      <div id="status-bar" class="status-bar"></div>
+      <div
+        id="status-bar"
+        class="status-bar"
+        role="status"
+        aria-live="polite"
+      ></div>
     </section>
 
     <!-- Modal -->
     <div id="modal-overlay" class="modal-overlay hidden">
-      <div id="modal-shell" class="modal">
+      <div
+        id="modal-shell"
+        class="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modal-title"
+        tabindex="-1"
+      >
         <h2 id="modal-title"></h2>
         <div id="modal-body" class="modal-body"></div>
         <div id="modal-actions" class="modal-actions"></div>

@@ -2,17 +2,64 @@ import { BrowserWindow, dialog } from "electron";
 import * as fs from "fs";
 import * as path from "path";
 import log from "electron-log";
-import { AssetEntry, AssetListResult } from "../types";
+import { AssetCategory, AssetEntry, AssetListResult } from "../types";
 
 export interface ImportImageResult {
   ok: boolean;
-  /** Web-root-relative path to reference in markup, e.g. /images/photo.png */
+  /** Web-root-relative path to reference in markup, e.g. /assets/images/photo.png */
   webPath?: string;
   canceled?: boolean;
   error?: string;
 }
 
-const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "svg", "webp", "avif"];
+export interface ImportAssetsResult {
+  ok: boolean;
+  imported: { webPath: string; category: AssetCategory }[];
+  errors: string[];
+}
+
+const EXTENSIONS_BY_CATEGORY: Record<
+  Exclude<AssetCategory, "other">,
+  string[]
+> = {
+  images: ["png", "jpg", "jpeg", "gif", "svg", "webp", "avif", "ico"],
+  media: ["mp4", "webm", "mov", "mp3", "wav", "ogg", "m4a", "m4v"],
+  documents: [
+    "pdf",
+    "doc",
+    "docx",
+    "txt",
+    "md",
+    "csv",
+    "xls",
+    "xlsx",
+    "ppt",
+    "pptx",
+    "odt",
+    "rtf",
+  ],
+};
+
+const IMAGE_EXTENSIONS = EXTENSIONS_BY_CATEGORY.images;
+
+/** All non-image extensions, used for the "all assets" file dialog filter. */
+const ALL_ASSET_EXTENSIONS = [
+  ...EXTENSIONS_BY_CATEGORY.images,
+  ...EXTENSIONS_BY_CATEGORY.media,
+  ...EXTENSIONS_BY_CATEGORY.documents,
+];
+
+/** The base directory for Zephus-managed assets, relative to the web root. */
+const ASSETS_ROOT = "assets";
+
+/** Maps a file extension (no dot) to its asset category. */
+export function categoryForExtension(ext: string): AssetCategory {
+  const normalized = ext.replace(/^\./, "").toLowerCase();
+  for (const [category, exts] of Object.entries(EXTENSIONS_BY_CATEGORY)) {
+    if (exts.includes(normalized)) return category as AssetCategory;
+  }
+  return "other";
+}
 
 function uniqueName(dir: string, base: string): string {
   let candidate = base;
@@ -27,8 +74,26 @@ function uniqueName(dir: string, base: string): string {
 }
 
 /**
- * Prompts the user to pick an image, copies it into the project's
- * public/images directory, and returns the web-root-relative path.
+ * Copies a single source file into the categorized assets directory
+ * (public/assets/<category>/) and returns its web-root-relative path.
+ */
+function copyIntoAssets(
+  projectPath: string,
+  publicDir: string,
+  sourcePath: string,
+): { webPath: string; category: AssetCategory } {
+  const ext = path.extname(sourcePath).slice(1);
+  const category = categoryForExtension(ext);
+  const targetDir = path.join(projectPath, publicDir, ASSETS_ROOT, category);
+  fs.mkdirSync(targetDir, { recursive: true });
+  const name = uniqueName(targetDir, path.basename(sourcePath));
+  fs.copyFileSync(sourcePath, path.join(targetDir, name));
+  return { webPath: `/${ASSETS_ROOT}/${category}/${name}`, category };
+}
+
+/**
+ * Prompts the user to pick an image, copies it into public/assets/images,
+ * and returns the web-root-relative path. Kept for the image block flow.
  */
 export async function importImage(
   win: BrowserWindow | null,
@@ -46,11 +111,8 @@ export async function importImage(
 
   const source = result.filePaths[0]!;
   try {
-    const imagesDir = path.join(projectPath, publicDir, "images");
-    fs.mkdirSync(imagesDir, { recursive: true });
-    const name = uniqueName(imagesDir, path.basename(source));
-    fs.copyFileSync(source, path.join(imagesDir, name));
-    return { ok: true, webPath: `/images/${name}` };
+    const { webPath } = copyIntoAssets(projectPath, publicDir, source);
+    return { ok: true, webPath };
   } catch (error) {
     log.error("Image import failed", error);
     return {
@@ -60,14 +122,72 @@ export async function importImage(
   }
 }
 
-export function listProjectImages(
+/**
+ * Prompts the user to pick one or more assets of any supported type and
+ * imports them into their categorized directories.
+ */
+export async function importAssets(
+  win: BrowserWindow | null,
   projectPath: string,
   publicDir: string,
-): AssetListResult {
-  const imagesDir = path.join(projectPath, publicDir, "images");
-  const assets: AssetEntry[] = [];
+): Promise<ImportAssetsResult> {
+  const result = await dialog.showOpenDialog(win ?? undefined!, {
+    title: "Choose Assets",
+    properties: ["openFile", "multiSelections"],
+    filters: [
+      { name: "All Assets", extensions: ALL_ASSET_EXTENSIONS },
+      { name: "Images", extensions: EXTENSIONS_BY_CATEGORY.images },
+      { name: "Media", extensions: EXTENSIONS_BY_CATEGORY.media },
+      { name: "Documents", extensions: EXTENSIONS_BY_CATEGORY.documents },
+    ],
+  });
+  if (result.canceled || result.filePaths.length === 0) {
+    return { ok: false, imported: [], errors: [] };
+  }
+  return importAssetsFromPaths(projectPath, publicDir, result.filePaths);
+}
 
-  function walk(dir: string, prefix = ""): void {
+/**
+ * Imports assets from explicit file paths (used for drag-and-drop). Each file
+ * is routed to its category folder. Returns per-file success and any errors.
+ */
+export function importAssetsFromPaths(
+  projectPath: string,
+  publicDir: string,
+  sourcePaths: string[],
+): ImportAssetsResult {
+  const imported: { webPath: string; category: AssetCategory }[] = [];
+  const errors: string[] = [];
+
+  const paths = Array.isArray(sourcePaths)
+    ? sourcePaths.filter((p): p is string => typeof p === "string" && !!p)
+    : [];
+
+  for (const source of paths) {
+    try {
+      const stat = fs.statSync(source);
+      if (!stat.isFile()) {
+        errors.push(`${path.basename(source)}: not a file`);
+        continue;
+      }
+      imported.push(copyIntoAssets(projectPath, publicDir, source));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      errors.push(`${path.basename(source)}: ${message}`);
+    }
+  }
+
+  return { ok: errors.length === 0, imported, errors };
+}
+
+/** Walks a directory tree collecting asset files under a given web prefix. */
+function collectAssets(
+  baseDir: string,
+  webPrefix: string,
+  forcedCategory: AssetCategory | null,
+  out: AssetEntry[],
+): void {
+  function walk(dir: string, rel: string): void {
     let entries: fs.Dirent[];
     try {
       entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -75,31 +195,124 @@ export function listProjectImages(
       return;
     }
     for (const entry of entries) {
-      const rel = prefix ? path.join(prefix, entry.name) : entry.name;
+      const childRel = rel ? `${rel}/${entry.name}` : entry.name;
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        walk(full, rel);
+        walk(full, childRel);
         continue;
       }
       if (!entry.isFile()) continue;
       const ext = path.extname(entry.name).slice(1).toLowerCase();
-      if (!IMAGE_EXTENSIONS.includes(ext)) continue;
-      const stat = fs.statSync(full);
-      assets.push({
-        fileName: rel.split(path.sep).join("/"),
-        size: stat.size,
-        webPath: `/images/${rel.split(path.sep).join("/")}`,
+      const category = forcedCategory ?? categoryForExtension(ext);
+      let size: number;
+      try {
+        size = fs.statSync(full).size;
+      } catch {
+        continue;
+      }
+      out.push({
+        fileName: childRel,
+        size,
+        webPath: `${webPrefix}/${childRel}`,
+        category,
       });
     }
   }
+  walk(baseDir, "");
+}
 
+export function listProjectImages(
+  projectPath: string,
+  publicDir: string,
+): AssetListResult {
+  return listProjectAssets(projectPath, publicDir);
+}
+
+const MIME_BY_EXTENSION: Record<string, string> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  svg: "image/svg+xml",
+  webp: "image/webp",
+  avif: "image/avif",
+  ico: "image/x-icon",
+};
+
+/** Max file size to inline as a data URL for thumbnails (5 MB). */
+const MAX_DATA_URL_BYTES = 5 * 1024 * 1024;
+
+export interface AssetDataUrlResult {
+  ok: boolean;
+  dataUrl?: string;
+  error?: string;
+}
+
+/**
+ * Reads an image asset (referenced by its web path) and returns it as a data
+ * URL for in-app thumbnails. The renderer's CSP allows data: images but not
+ * file://, so this is how previews are shown without the dev server running.
+ */
+export function readAssetDataUrl(
+  projectPath: string,
+  publicDir: string,
+  webPath: string,
+): AssetDataUrlResult {
   try {
-    if (!fs.existsSync(imagesDir)) return { ok: true, assets: [] };
-    walk(imagesDir);
+    const relative = webPath.replace(/^\/+/, "");
+    const publicRoot = path.resolve(projectPath, publicDir);
+    const resolved = path.resolve(publicRoot, relative);
+    if (
+      resolved !== publicRoot &&
+      !resolved.startsWith(publicRoot + path.sep)
+    ) {
+      return { ok: false, error: "Path escapes the public directory." };
+    }
+    const ext = path.extname(resolved).slice(1).toLowerCase();
+    const mime = MIME_BY_EXTENSION[ext];
+    if (!mime) return { ok: false, error: "Unsupported image type." };
+    const stat = fs.statSync(resolved);
+    if (stat.size > MAX_DATA_URL_BYTES) {
+      return { ok: false, error: "Image too large to preview." };
+    }
+    const buffer = fs.readFileSync(resolved);
+    return {
+      ok: true,
+      dataUrl: `data:${mime};base64,${buffer.toString("base64")}`,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+/**
+ * Lists all managed assets under public/assets/<category>/, plus any legacy
+ * images under public/images/ so existing projects keep working.
+ */
+export function listProjectAssets(
+  projectPath: string,
+  publicDir: string,
+): AssetListResult {
+  const assets: AssetEntry[] = [];
+  try {
+    const assetsRoot = path.join(projectPath, publicDir, ASSETS_ROOT);
+    if (fs.existsSync(assetsRoot)) {
+      collectAssets(assetsRoot, `/${ASSETS_ROOT}`, null, assets);
+    }
+
+    // Legacy location from earlier Zephus versions.
+    const legacyImages = path.join(projectPath, publicDir, "images");
+    if (fs.existsSync(legacyImages)) {
+      collectAssets(legacyImages, "/images", "images", assets);
+    }
+
     assets.sort((a, b) => a.fileName.localeCompare(b.fileName));
     return { ok: true, assets };
   } catch (error) {
-    log.error("Failed to list project images", error);
+    log.error("Failed to list project assets", error);
     return {
       ok: false,
       assets: [],

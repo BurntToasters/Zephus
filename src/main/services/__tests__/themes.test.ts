@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildPreviewTheme, listThemes, themePreviewPath } from "../../themes";
+import { buildTheme, listThemes, themePreviewPath } from "../../themes";
 
 describe("theme previews", () => {
   it("exposes preview metadata for every bundled theme", () => {
@@ -13,21 +13,44 @@ describe("theme previews", () => {
     expect(new Set(themes.map((theme) => theme.id)).size).toBe(themes.length);
   });
 
-  it("rewrites root-absolute links for preview builds", () => {
-    const theme = buildPreviewTheme("project", "preview-project");
-    expect(theme).not.toBeNull();
-    const files = theme!.files;
+  it("scaffolds a .gitignore that keeps .zephus committed", () => {
+    for (const meta of listThemes()) {
+      const theme = buildTheme(meta.id, "demo-site");
+      expect(theme).not.toBeNull();
+      const gitignore = theme!.files[".gitignore"];
+      expect(gitignore).toBeTruthy();
+      // Standard Astro ignores present.
+      expect(gitignore).toContain("node_modules/");
+      expect(gitignore).toContain("dist/");
+      // .zephus must NOT be ignored (it is the project save state).
+      expect(/^\.zephus\/?$/m.test(gitignore!)).toBe(false);
+      expect(gitignore).toContain(".zephus");
+    }
+  });
 
-    expect(files["astro.config.mjs"]).toContain("base: '/theme/project'");
-    expect(files["src/layouts/BaseLayout.astro"]).toContain(
-      'href="/theme/project/"',
-    );
-    expect(files["src/layouts/BaseLayout.astro"]).toContain(
-      'href="/theme/project/about"',
-    );
-    expect(files["src/pages/index.astro"]).toContain(
-      'href="/theme/project/contact"',
-    );
-    expect(files["public/styles/global.css"]).toContain("--accent");
+  it("ships valid Zephus schema sidecars for every theme", () => {
+    for (const meta of listThemes()) {
+      const theme = buildTheme(meta.id, "demo-site");
+      expect(theme).not.toBeNull();
+      const files = theme!.files;
+
+      // Site document sidecar.
+      const siteRaw = files[".zephus/site.json"];
+      expect(siteRaw).toBeTruthy();
+      const site = JSON.parse(siteRaw!);
+      expect(site.schemaVersion).toBe(1);
+      expect(site.shell.layoutMode).toBe("managed");
+      expect(site.shell.navItems.length).toBeGreaterThan(0);
+      expect(typeof site.design.accent).toBe("string");
+
+      // At least one page sidecar + a matching stub .astro.
+      const indexDoc = JSON.parse(files[".zephus/pages/index.json"]!);
+      expect(indexDoc.schemaVersion).toBe(1);
+      expect(indexDoc.isHome).toBe(true);
+      expect(indexDoc.sections.length).toBeGreaterThan(0);
+      expect(indexDoc.sections[0].children.length).toBeGreaterThan(0);
+      expect(files["src/pages/index.astro"]).toBeTruthy();
+      expect(files["public/styles/global.css"]).toContain("--accent");
+    }
   });
 });

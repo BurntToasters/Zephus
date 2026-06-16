@@ -42,6 +42,8 @@ export interface GitStatus {
   modified: string[];
   added: string[];
   deleted: string[];
+  /** True if .zephus/ is git-ignored (a misconfiguration). */
+  zephusIgnored?: boolean;
   error?: string;
 }
 
@@ -55,6 +57,8 @@ export interface GlobalSettings {
   confirmBlockDelete: boolean;
   autosave: boolean;
   codeFontSize: number;
+  /** Optional explicit path to a Node.js binary for builds/previews. */
+  customNodePath: string | null;
 }
 
 export interface RepoSettings {
@@ -136,7 +140,13 @@ export type EditorBlockType =
   | "gallery"
   | "quote"
   | "list"
-  | "embed";
+  | "embed"
+  | "feature"
+  | "testimonial"
+  | "accordion"
+  | "stats"
+  | "pricing"
+  | "cta";
 
 export interface EditorBlock {
   id: string;
@@ -222,6 +232,8 @@ export interface DesignTokenSet {
   radius: string;
   shadow: "none" | "sm" | "md" | "lg";
   containerWidth: string;
+  /** Optional Google Fonts stylesheet URL injected into the managed layout. */
+  fontImportUrl?: string;
 }
 
 export interface NavItem {
@@ -304,7 +316,10 @@ export interface AssetEntry {
   webPath: string;
   fileName: string;
   size: number;
+  category: AssetCategory;
 }
+
+export type AssetCategory = "images" | "media" | "documents" | "other";
 
 export interface AssetListResult {
   ok: boolean;
@@ -390,6 +405,7 @@ export const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {
   confirmBlockDelete: true,
   autosave: false,
   codeFontSize: 13,
+  customNodePath: null,
 };
 
 export const DEFAULT_REPO_SETTINGS: RepoSettings = {

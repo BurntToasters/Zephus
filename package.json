@@ -1,6 +1,6 @@
 {
   "name": "zephus",
-  "version": "0.1.0-db.1",
+  "version": "0.1.0-db.2",
   "private": true,
   "description": "Local WYSIWYG website editor for Astro sites",
   "desktopName": "run.rosie.zephus.desktop",
@@ -137,7 +137,7 @@
     "@eslint/js": "^10.0.1",
     "@types/node": "^25.3.0",
     "@vitest/coverage-v8": "^4.0.18",
-    "astro": "^5.18.2",
+    "astro": "^6.0.0",
     "codemirror": "^6.0.2",
     "cross-env": "^10.1.0",
     "dotenv-cli": "^11.0.0",
