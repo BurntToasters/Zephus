@@ -4,6 +4,7 @@ import {
   meetsMinimumNodeVersion,
   parseNodeVersion,
 } from "../nodeCheck";
+import { npmCommand } from "../npmCommand";
 
 describe("nodeCheck", () => {
   describe("parseNodeVersion", () => {
@@ -76,6 +77,22 @@ describe("nodeCheck", () => {
       const result = evaluateNodeVersionOutput("garbage");
       expect(result.status).toBe("unknown");
       expect(result.version).toBeNull();
+    });
+  });
+});
+
+describe("npmCommand", () => {
+  it("runs npm directly on Unix-like platforms", () => {
+    expect(npmCommand(["install"], "darwin")).toEqual({
+      command: "npm",
+      args: ["install"],
+    });
+  });
+
+  it("routes npm.cmd through cmd.exe on Windows", () => {
+    expect(npmCommand(["run", "dev"], "win32")).toEqual({
+      command: "cmd.exe",
+      args: ["/d", "/s", "/c", "npm.cmd", "run", "dev"],
     });
   });
 });

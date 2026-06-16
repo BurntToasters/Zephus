@@ -371,6 +371,7 @@ body {
 }
 
 .recent-grid li {
+  position: relative;
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 20px;
   background: linear-gradient(
@@ -383,6 +384,106 @@ body {
   -webkit-backdrop-filter: blur(12px);
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   overflow: hidden;
+}
+
+.recent-project {
+  width: 100%;
+  min-height: 128px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px 54px 20px 20px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.recent-project-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.recent-project .proj-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.recent-project .path {
+  display: block;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.recent-badge {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: rgba(79, 70, 229, 0.16);
+  color: #b9c3ff;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.recent-project-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.recent-remove {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 2;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  background: rgba(9, 9, 11, 0.72);
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(-2px);
+  transition:
+    opacity 0.16s ease,
+    transform 0.16s ease,
+    color 0.16s ease,
+    border-color 0.16s ease,
+    background 0.16s ease;
+}
+
+.recent-remove svg {
+  width: 16px;
+  height: 16px;
+}
+
+.recent-grid li:hover .recent-remove,
+.recent-grid li:focus-within .recent-remove {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.recent-remove:hover {
+  border-color: rgba(239, 68, 68, 0.45);
+  background: rgba(239, 68, 68, 0.14);
+  color: #fecaca;
 }
 
 .recent-grid li:hover {
@@ -2503,6 +2604,15 @@ body {
   .next-action-title {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .recent-project {
+    padding-right: 20px;
+  }
+
+  .recent-remove {
+    opacity: 1;
+    transform: none;
   }
 
   .overview-row span:last-child {

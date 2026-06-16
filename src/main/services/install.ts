@@ -5,8 +5,7 @@ import log from "electron-log";
 import { OperationResult } from "../types";
 import { readGlobalSettings } from "./settings";
 import { buildSpawnEnv } from "./nodeCheck";
-
-const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
+import { npmCommand } from "./npmCommand";
 
 export type InstallLogListener = (chunk: string) => void;
 
@@ -41,7 +40,8 @@ export async function installDependencies(
   return new Promise<OperationResult>((resolve) => {
     let child;
     try {
-      child = spawn(npmCmd, ["install"], {
+      const npm = npmCommand(["install"]);
+      child = spawn(npm.command, npm.args, {
         cwd: projectPath,
         windowsHide: true,
         env: { ...env, FORCE_COLOR: "0" },

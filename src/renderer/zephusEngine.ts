@@ -1215,6 +1215,7 @@ async function renderRecent(): Promise<void> {
     const li = document.createElement("li");
     const button = document.createElement("button");
     button.className = "recent-project";
+    button.type = "button";
     const head = document.createElement("div");
     head.className = "recent-project-head";
     const name = document.createElement("span");
@@ -1242,9 +1243,27 @@ async function renderRecent(): Promise<void> {
     meta.append(managed, resume);
     button.append(head, pathSpan, meta);
     button.onclick = () => void openProjectByPath(p);
+    const removeButton = document.createElement("button");
+    removeButton.type = "button";
+    removeButton.className = "recent-remove";
+    removeButton.title = "Remove from recent projects";
+    removeButton.setAttribute(
+      "aria-label",
+      `Remove ${projectBaseName(p)} from recent projects`,
+    );
+    removeButton.innerHTML = `<i data-lucide="x"></i>`;
+    removeButton.onclick = async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      await window.zephus.removeRecentProject(p);
+      setStatus("Removed recent project: " + projectBaseName(p));
+      await renderRecent();
+    };
     li.appendChild(button);
+    li.appendChild(removeButton);
     list.appendChild(li);
   });
+  refreshIcons();
   renderHomeStatusPanels();
   syncHomeActionState();
 }

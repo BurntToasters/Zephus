@@ -6,9 +6,9 @@ import log from "electron-log";
 import { OperationResult } from "../types";
 import { readGlobalSettings } from "./settings";
 import { buildSpawnEnv } from "./nodeCheck";
+import { npmCommand } from "./npmCommand";
 
 const execFileAsync = promisify(execFile);
-const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
 
 export interface PublishResult extends OperationResult {
   outputDir?: string;
@@ -27,7 +27,8 @@ export async function buildAndReveal(
   }
   try {
     const env = await buildSpawnEnv(readGlobalSettings().customNodePath);
-    await execFileAsync(npmCmd, ["run", "build"], {
+    const npm = npmCommand(["run", "build"]);
+    await execFileAsync(npm.command, npm.args, {
       cwd: projectPath,
       windowsHide: true,
       maxBuffer: 20 * 1024 * 1024,
