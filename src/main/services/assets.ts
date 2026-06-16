@@ -218,6 +218,14 @@ export function importAssetsFromPaths(
 
   for (const source of paths) {
     try {
+      const ext = path.extname(source).slice(1).toLowerCase();
+      if (!ext || !ALL_ASSET_EXTENSIONS.includes(ext)) {
+        errors.push(
+          `${path.basename(source)}: unsupported file type` +
+            (ext ? ` (.${ext})` : ""),
+        );
+        continue;
+      }
       const stat = fs.statSync(source);
       if (!stat.isFile()) {
         errors.push(`${path.basename(source)}: not a file`);

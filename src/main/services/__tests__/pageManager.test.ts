@@ -24,7 +24,7 @@ beforeEach(() => {
     path.join(tmpDir, "package.json"),
     JSON.stringify({
       scripts: { dev: "astro dev", build: "astro build" },
-      dependencies: { astro: "^5.0.0" },
+      dependencies: { astro: "^6.0.0" },
     }),
   );
   fs.writeFileSync(path.join(tmpDir, "astro.config.mjs"), "export default {};");

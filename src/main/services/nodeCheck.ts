@@ -1,10 +1,55 @@
 import { execFile } from "child_process";
 import { promisify } from "util";
+import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import log from "electron-log";
 
 const execFileAsync = promisify(execFile);
+
+export interface NodePathValidation {
+  ok: boolean;
+  /** The validated, normalized absolute path (only when ok). */
+  path?: string;
+  error?: string;
+}
+
+/**
+ * Validates a user/renderer-supplied custom Node.js binary path *before* it is
+ * persisted or executed. A renderer compromise must not be able to point the
+ * app at an arbitrary executable that is later spawned (defense in depth on top
+ * of contextIsolation/sandbox). Requirements:
+ *   - absolute path
+ *   - exists and is a regular file (symlinks to a file are allowed via stat)
+ *   - basename is `node` or `node.exe` (case-insensitive)
+ * Pure/synchronous and never spawns the binary; safe to call on every write.
+ */
+export function validateNodePath(input: unknown): NodePathValidation {
+  if (typeof input !== "string" || input.trim().length === 0) {
+    return { ok: false, error: "Node.js path must be a non-empty string." };
+  }
+  const candidate = input.trim();
+  if (!path.isAbsolute(candidate)) {
+    return { ok: false, error: "Node.js path must be absolute." };
+  }
+  const base = path.basename(candidate).toLowerCase();
+  if (base !== "node" && base !== "node.exe") {
+    return {
+      ok: false,
+      error: 'Node.js path must point at a file named "node" or "node.exe".',
+    };
+  }
+  let stat: fs.Stats;
+  try {
+    stat = fs.statSync(candidate);
+  } catch {
+    return { ok: false, error: "Node.js path does not exist." };
+  }
+  if (!stat.isFile()) {
+    return { ok: false, error: "Node.js path is not a regular file." };
+  }
+  return { ok: true, path: candidate };
+}
 
 /**
  * Minimum Node.js version required to build/preview Astro 6 projects.

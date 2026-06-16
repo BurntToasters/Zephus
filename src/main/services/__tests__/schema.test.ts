@@ -26,7 +26,7 @@ beforeEach(() => {
     path.join(tmpDir, "package.json"),
     JSON.stringify({
       scripts: { dev: "astro dev", build: "astro build" },
-      dependencies: { astro: "^5.0.0" },
+      dependencies: { astro: "^6.0.0" },
     }),
   );
   fs.writeFileSync(path.join(tmpDir, "astro.config.mjs"), "export default {};");
@@ -86,6 +86,45 @@ describe("schema service", () => {
     expect(page.ok).toBe(true);
     expect(page.pageDocument?.sections[0]?.children.length).toBeGreaterThan(0);
     expect(page.pageDocument?.managedFileStatus).toBe("managed");
+  });
+
+  it("strips dangerous URL schemes from emitted links (build side)", () => {
+    ensureVisualSchema(tmpDir, pagesDir);
+    const created = createSchemaPage(tmpDir, pagesDir, "danger");
+    expect(created.ok).toBe(true);
+    const pagePath = pagePathFromSlug(pagesDir, "danger");
+    const current = readPageDocument(tmpDir, pagePath, pagesDir);
+    expect(current.ok).toBe(true);
+
+    // Constructed at runtime so the eslint no-script-url rule doesn't flag the
+    // test source itself.
+    const jsScheme = "java" + "script:";
+    const written = writePageDocument(tmpDir, pagesDir, {
+      ...current.pageDocument!,
+      sections: [
+        {
+          ...current.pageDocument!.sections[0],
+          children: [
+            {
+              id: "b1",
+              type: "button",
+              props: { text: "Click", href: `${jsScheme}alert(1)`, cls: "" },
+            },
+            {
+              id: "e1",
+              type: "embed",
+              props: { src: `${jsScheme}alert(2)`, title: "Embed", cls: "" },
+            },
+          ],
+        },
+      ],
+    });
+    expect(written.ok).toBe(true);
+
+    const astro = fs.readFileSync(path.join(tmpDir, pagePath), "utf8");
+    expect(astro).not.toContain(jsScheme);
+    // Button falls back to a safe anchor target.
+    expect(astro).toContain('href="#"');
   });
 
   it("creates, exports, detaches, and reattaches schema pages", () => {

@@ -1,12 +1,64 @@
 import { describe, expect, it } from "vitest";
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
 import {
   evaluateNodeVersionOutput,
   meetsMinimumNodeVersion,
   parseNodeVersion,
+  validateNodePath,
 } from "../nodeCheck";
 import { npmCommand } from "../npmCommand";
 
 describe("nodeCheck", () => {
+  describe("validateNodePath", () => {
+    it("rejects non-strings, empty, and relative paths", () => {
+      expect(validateNodePath(null).ok).toBe(false);
+      expect(validateNodePath("").ok).toBe(false);
+      expect(validateNodePath("   ").ok).toBe(false);
+      expect(validateNodePath("node").ok).toBe(false);
+      expect(validateNodePath("./node").ok).toBe(false);
+    });
+
+    it("rejects an absolute path whose basename is not node/node.exe", () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "zephus-node-"));
+      const evil = path.join(dir, "evil.sh");
+      fs.writeFileSync(evil, "#!/bin/sh\n");
+      try {
+        expect(validateNodePath(evil).ok).toBe(false);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it("rejects a node-named path that does not exist or is a directory", () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "zephus-node-"));
+      try {
+        expect(validateNodePath(path.join(dir, "node")).ok).toBe(false);
+        fs.mkdirSync(path.join(dir, "subdir-node"));
+        // A directory literally named "node".
+        const nodeDir = path.join(dir, "node-dir", "node");
+        fs.mkdirSync(nodeDir, { recursive: true });
+        expect(validateNodePath(nodeDir).ok).toBe(false);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it("accepts an absolute file named node", () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "zephus-node-"));
+      const good = path.join(dir, "node");
+      fs.writeFileSync(good, "#!/bin/sh\n");
+      try {
+        const result = validateNodePath(good);
+        expect(result.ok).toBe(true);
+        expect(result.path).toBe(good);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+  });
+
   describe("parseNodeVersion", () => {
     it("parses standard `node --version` output", () => {
       expect(parseNodeVersion("v22.12.0\n")).toEqual({

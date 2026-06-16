@@ -343,10 +343,20 @@ function fonts(
   headingSerif = false,
 ): Pick<DesignTokenSet, "fontFamily" | "headingFontFamily" | "fontImportUrl"> {
   const families: string[] = [];
-  const spec = (f: GFont) =>
-    `family=${f.name.replace(/ /g, "+")}:wght@${(f.weights ?? [400, 600, 700]).join(";")}`;
-  families.push(spec(body));
-  if (heading.name !== body.name) families.push(spec(heading));
+  const dedupeSort = (w: number[]): number[] =>
+    Array.from(new Set(w)).sort((a, b) => a - b);
+  const specFor = (name: string, weights: number[]) =>
+    `family=${name.replace(/ /g, "+")}:wght@${dedupeSort(weights).join(";")}`;
+  const bodyWeights = body.weights ?? [400, 600, 700];
+  const headingWeights = heading.weights ?? [400, 600, 700];
+  if (heading.name === body.name) {
+    // Same family for body + headings: request the union of both weight sets,
+    // otherwise heading-only weights (e.g. 700/800) are never fetched.
+    families.push(specFor(body.name, [...bodyWeights, ...headingWeights]));
+  } else {
+    families.push(specFor(body.name, bodyWeights));
+    families.push(specFor(heading.name, headingWeights));
+  }
   const stack = (f: GFont, serif: boolean) =>
     `"${f.name}", ${serif ? SERIF_FALLBACK : SANS_FALLBACK}`;
   return {

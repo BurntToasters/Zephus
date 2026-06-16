@@ -135,13 +135,22 @@ function signFile(filePath) {
       gpgArgs.push('--local-user', GPG_KEY_ID);
     }
 
+    // Pass the passphrase over stdin (--passphrase-fd 0) instead of as an argv
+    // argument, so it is never visible via `ps` / /proc/<pid>/cmdline.
+    let passphraseInput;
     if (GPG_PASSPHRASE) {
-      gpgArgs.push('--pinentry-mode', 'loopback', '--passphrase', GPG_PASSPHRASE);
+      gpgArgs.push('--pinentry-mode', 'loopback', '--passphrase-fd', '0');
+      passphraseInput = GPG_PASSPHRASE.endsWith('\n')
+        ? GPG_PASSPHRASE
+        : GPG_PASSPHRASE + '\n';
     }
 
     gpgArgs.push('--output', ascFile, filePath);
 
-    execFileSync('gpg', gpgArgs, { stdio: 'pipe' });
+    execFileSync('gpg', gpgArgs, {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      input: passphraseInput,
+    });
     console.log('   ✓ Created ' + path.basename(ascFile));
     return ascFile;
   } catch (error) {

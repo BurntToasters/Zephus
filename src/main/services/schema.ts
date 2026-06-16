@@ -463,7 +463,7 @@ function renderManagedLayout(
   const cta =
     site.shell.navCtaLabel.trim() && site.shell.navCtaHref.trim()
       ? `\n      <a class="zephus-shell-cta" href="${escapeAttr(
-          site.shell.navCtaHref,
+          safeUrl(site.shell.navCtaHref) || "#",
         )}">${escapeHtml(site.shell.navCtaLabel)}</a>`
       : "";
   const announcement =
@@ -980,6 +980,17 @@ function escapeAttr(value: string): string {
 }
 
 /**
+ * Blocks dangerous URL schemes for href/src values (mirror of the renderer's
+ * safeUrl). Returns "" for javascript:/data:/vbscript:/file: so the built site
+ * never emits an executable URL. Keep in sync with zephusEngine.ts.
+ */
+function safeUrl(value: string): string {
+  const trimmed = (value ?? "").trim();
+  if (/^(javascript|vbscript|data|file):/i.test(trimmed)) return "";
+  return trimmed;
+}
+
+/**
  * Sanitizes a value destined for a CSS declaration. Strips characters that
  * could break out of the declaration/rule (`;{}<>` and newlines) to prevent
  * CSS injection from design-token values in site.json. Caps length.
@@ -1146,7 +1157,7 @@ function renderBlockNode(block: BlockNode): string {
     case "image":
       return `<img${common} src="${escapeAttr(block.props["src"] ?? "")}" alt="${escapeAttr(block.props["alt"] ?? "")}" />`;
     case "button":
-      return `<a${common} href="${escapeAttr(block.props["href"] ?? "#")}">${plainTextToHtml(block.props["text"] ?? "")}</a>`;
+      return `<a${common} href="${escapeAttr(safeUrl(block.props["href"] ?? "#") || "#")}">${plainTextToHtml(block.props["text"] ?? "")}</a>`;
     case "section":
       return `<section${common}>${plainTextToHtml(block.props["text"] ?? "")}</section>`;
     case "divider":
@@ -1199,7 +1210,7 @@ function renderBlockNode(block: BlockNode): string {
       )}</${tag}>`;
     }
     case "embed":
-      return `<iframe${common} src="${escapeAttr(block.props["src"] ?? "")}" title="${escapeAttr(block.props["title"] ?? "Embed")}" loading="lazy"></iframe>`;
+      return `<iframe${common} src="${escapeAttr(safeUrl(block.props["src"] ?? ""))}" title="${escapeAttr(block.props["title"] ?? "Embed")}" loading="lazy"></iframe>`;
     case "html":
       return block.raw ?? "";
     case "feature":
@@ -1245,7 +1256,7 @@ function renderBlockNode(block: BlockNode): string {
         .map((f) => `<li>${plainTextToHtml(f)}</li>`)
         .join("");
       const cta = block.props["ctaText"]
-        ? `<a class="button" href="${escapeAttr(block.props["ctaHref"] ?? "#")}">${plainTextToHtml(
+        ? `<a class="button" href="${escapeAttr(safeUrl(block.props["ctaHref"] ?? "#") || "#")}">${plainTextToHtml(
             block.props["ctaText"],
           )}</a>`
         : "";
@@ -1261,7 +1272,7 @@ function renderBlockNode(block: BlockNode): string {
     }
     case "cta": {
       const cta = block.props["buttonText"]
-        ? `<a class="button" href="${escapeAttr(block.props["buttonHref"] ?? "#")}">${plainTextToHtml(
+        ? `<a class="button" href="${escapeAttr(safeUrl(block.props["buttonHref"] ?? "#") || "#")}">${plainTextToHtml(
             block.props["buttonText"],
           )}</a>`
         : "";

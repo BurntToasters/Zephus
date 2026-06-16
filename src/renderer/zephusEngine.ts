@@ -106,6 +106,29 @@ const PALETTE_ICONS: Record<BlockType, string> = {
   html: "code-xml",
 };
 
+/** Runtime set of all valid block types, used to validate untrusted code-mode input. */
+const KNOWN_BLOCK_TYPES: ReadonlySet<string> = new Set(
+  Object.keys(PALETTE_ICONS),
+);
+
+const DANGEROUS_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
+/** Coerces an arbitrary decoded object into a flat string-prop record, dropping
+ * prototype-pollution keys and non-primitive values. */
+function sanitizeStringRecord(
+  input: Record<string, unknown> | undefined,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!input || typeof input !== "object") return out;
+  for (const [key, value] of Object.entries(input)) {
+    if (DANGEROUS_KEYS.has(key)) continue;
+    if (typeof value === "string") out[key] = value;
+    else if (typeof value === "number" || typeof value === "boolean")
+      out[key] = String(value);
+  }
+  return out;
+}
+
 function refreshIcons(): void {
   createIcons({
     attrs: { "aria-hidden": "true", focusable: "false" },
@@ -1453,10 +1476,13 @@ function selectField(
   const wrap = document.createElement("div");
   wrap.className = "settings-row";
 
+  const selectId = `zephus-select-${uid()}`;
   const label = document.createElement("label");
   label.textContent = labelText;
+  label.htmlFor = selectId;
 
   const select = document.createElement("select");
+  select.id = selectId;
   for (const opt of options) {
     const o = document.createElement("option");
     o.value = opt.value;
@@ -3512,18 +3538,21 @@ function parseInner(inner: string): Block[] {
     const el = node as HTMLElement;
     const tag = el.tagName.toLowerCase();
     const cls = el.getAttribute("class") ?? "";
-    const storedType = el.dataset["zephusBlock"] as BlockType | undefined;
-    const storedProps = parseJsonAttr<Record<string, string>>(
+    const storedType = el.dataset["zephusBlock"];
+    const storedProps = parseJsonAttr<Record<string, unknown>>(
       el.dataset["zephusProps"] ?? null,
     );
     const storedStyle = parseJsonAttr<BlockStyle>(
       el.dataset["zephusStyle"] ?? null,
     );
-    if (storedType && storedProps) {
+    // Only trust the stored type if it is a known block type; otherwise fall
+    // through to structural tag parsing / verbatim preservation. Props are
+    // coerced to a flat string record (prototype-pollution keys dropped).
+    if (storedType && KNOWN_BLOCK_TYPES.has(storedType) && storedProps) {
       blocks.push({
         id: uid(),
-        type: storedType,
-        props: storedProps,
+        type: storedType as BlockType,
+        props: sanitizeStringRecord(storedProps),
         style: storedStyle,
         locked: el.dataset["zephusLocked"] === "true",
         raw: storedType === "html" ? el.outerHTML : undefined,
@@ -3624,7 +3653,16 @@ function parseInner(inner: string): Block[] {
 function parseJsonAttr<T>(value: string | null): T | undefined {
   if (!value) return undefined;
   try {
-    return JSON.parse(decodeURIComponent(value)) as T;
+    const parsed = JSON.parse(decodeURIComponent(value)) as unknown;
+    // Strip prototype-pollution keys from any decoded object before use.
+    if (parsed && typeof parsed === "object") {
+      for (const key of DANGEROUS_KEYS) {
+        if (Object.prototype.hasOwnProperty.call(parsed, key)) {
+          delete (parsed as Record<string, unknown>)[key];
+        }
+      }
+    }
+    return parsed as T;
   } catch {
     return undefined;
   }
@@ -3645,18 +3683,24 @@ function styleFromLegacyProps(el: HTMLElement): BlockStyle | undefined {
   return Object.values(style).some(Boolean) ? style : undefined;
 }
 
+/**
+ * Encodes a value as a URI-encoded JSON payload for a data-* attribute.
+ * Mirrors schema.ts encodeDataPayload exactly (apostrophes encoded too) so the
+ * editor serialization is byte-identical to the build renderer output.
+ */
+function encodeDataPayload(value: unknown): string {
+  return encodeURIComponent(JSON.stringify(value)).replace(/'/g, "%27");
+}
+
 function metadataAttrs(block: Block): string {
   const attrs = [
+    `data-zephus-id="${escapeAttr(block.id)}"`,
     `data-zephus-block="${escapeAttr(block.type)}"`,
-    `data-zephus-props="${escapeAttr(
-      encodeURIComponent(JSON.stringify(block.props)),
-    )}"`,
+    `data-zephus-props="${escapeAttr(encodeDataPayload(block.props))}"`,
   ];
   if (block.style) {
     attrs.push(
-      `data-zephus-style="${escapeAttr(
-        encodeURIComponent(JSON.stringify(block.style)),
-      )}"`,
+      `data-zephus-style="${escapeAttr(encodeDataPayload(block.style))}"`,
     );
   }
   if (block.locked) attrs.push(`data-zephus-locked="true"`);
@@ -3772,6 +3816,70 @@ function renderListItems(items: string): string {
     .join("");
 }
 
+/**
+ * Blocks dangerous URL schemes for href/src values. Allows relative paths,
+ * anchors, and ordinary schemes; returns "" for javascript:/data:/vbscript:/
+ * file: so neither the live canvas nor the built site can execute them. Mirror
+ * of the same helper in schema.ts — keep both in sync.
+ */
+function safeUrl(value: string): string {
+  const trimmed = (value ?? "").trim();
+  if (/^(javascript|vbscript|data|file):/i.test(trimmed)) return "";
+  return trimmed;
+}
+
+/**
+ * Defense-in-depth sanitizer for raw `html` blocks shown on the live editor
+ * canvas (which runs in the renderer with the preload bridge in scope). The
+ * production CSP already blocks inline handlers, but we additionally strip
+ * <script>/<object>/<embed>, on* event-handler attributes, and
+ * javascript:/vbscript: URLs. Parsing into a <template> is inert (no script
+ * execution, no resource loads). Canvas-only: the serialized/built output keeps
+ * the user's authored HTML verbatim.
+ */
+function sanitizeHtmlForCanvas(html: string): string {
+  const tpl = document.createElement("template");
+  tpl.innerHTML = html;
+  const toRemove: Element[] = [];
+  const walker = document.createTreeWalker(
+    tpl.content,
+    NodeFilter.SHOW_ELEMENT,
+  );
+  let node = walker.nextNode() as Element | null;
+  while (node) {
+    const tag = node.tagName.toLowerCase();
+    if (tag === "script" || tag === "object" || tag === "embed") {
+      toRemove.push(node);
+    } else {
+      for (const attr of Array.from(node.attributes)) {
+        const name = attr.name.toLowerCase();
+        if (name.startsWith("on")) {
+          node.removeAttribute(attr.name);
+        } else if (
+          (name === "href" || name === "src" || name === "xlink:href") &&
+          /^\s*(javascript|vbscript):/i.test(attr.value)
+        ) {
+          node.removeAttribute(attr.name);
+        }
+      }
+    }
+    node = walker.nextNode() as Element | null;
+  }
+  for (const el of toRemove) el.remove();
+  return tpl.innerHTML;
+}
+
+/** Appends to a log element, trimming the front so it can't grow without bound. */
+const MAX_LOG_CHARS = 100_000;
+function appendCappedLog(el: HTMLElement, chunk: string): void {
+  const next = (el.textContent ?? "") + chunk;
+  el.textContent =
+    next.length > MAX_LOG_CHARS
+      ? next.slice(next.length - MAX_LOG_CHARS)
+      : next;
+  el.scrollTop = el.scrollHeight;
+}
+
 function blockToHtml(
   block: Block,
   viewport = state.currentViewport,
@@ -3809,7 +3917,7 @@ function blockToHtml(
       return `<img${common}${srcAttr} alt="${escapeAttr(block.props["alt"] ?? "")}" />`;
     }
     case "button":
-      return `<a${common} href="${escapeAttr(block.props["href"] ?? "#")}">${plainTextToHtml(block.props["text"] ?? "")}</a>`;
+      return `<a${common} href="${escapeAttr(safeUrl(block.props["href"] ?? "#") || "#")}">${plainTextToHtml(block.props["text"] ?? "")}</a>`;
     case "section":
       return `<section${common}>${plainTextToHtml(block.props["text"] ?? "")}</section>`;
     case "divider":
@@ -3871,9 +3979,11 @@ function blockToHtml(
       if (!block.props["src"] && forCanvas) {
         return `<section${common}><div class="canvas-empty">Missing embed URL.</div></section>`;
       }
-      return `<iframe${common} src="${escapeAttr(block.props["src"] ?? "")}" title="${escapeAttr(block.props["title"] ?? "Embed")}" loading="lazy"></iframe>`;
+      return `<iframe${common} src="${escapeAttr(safeUrl(block.props["src"] ?? ""))}" title="${escapeAttr(block.props["title"] ?? "Embed")}" loading="lazy"></iframe>`;
     case "html":
-      return block.raw ?? "";
+      return forCanvas
+        ? sanitizeHtmlForCanvas(block.raw ?? "")
+        : (block.raw ?? "");
     case "feature":
       return `<div${structuralCommon(block, "zephus-feature", viewport, forCanvas)}><div class="zephus-feature-icon">${plainTextToHtml(
         block.props["icon"] ?? "★",
@@ -3917,7 +4027,7 @@ function blockToHtml(
         .map((f) => `<li>${plainTextToHtml(f)}</li>`)
         .join("");
       const cta = block.props["ctaText"]
-        ? `<a class="button" href="${escapeAttr(block.props["ctaHref"] ?? "#")}">${plainTextToHtml(
+        ? `<a class="button" href="${escapeAttr(safeUrl(block.props["ctaHref"] ?? "#") || "#")}">${plainTextToHtml(
             block.props["ctaText"],
           )}</a>`
         : "";
@@ -3933,7 +4043,7 @@ function blockToHtml(
     }
     case "cta": {
       const cta = block.props["buttonText"]
-        ? `<a class="button" href="${escapeAttr(block.props["buttonHref"] ?? "#")}">${plainTextToHtml(
+        ? `<a class="button" href="${escapeAttr(safeUrl(block.props["buttonHref"] ?? "#") || "#")}">${plainTextToHtml(
             block.props["buttonText"],
           )}</a>`
         : "";
@@ -3945,10 +4055,16 @@ function blockToHtml(
           : ""
       }${cta}</div>`;
     }
-    default:
-      // Unknown block type — render a placeholder so it's visible in the canvas
-      // and not silently dropped.
-      return `<div${common} class="canvas-unknown-block">Unknown block: ${escapeHtml((block as { type: string }).type)}</div>`;
+    default: {
+      const unknownType = (block as { type: string }).type;
+      // Canvas: show a visible placeholder. Serialization: mirror schema.ts so
+      // the unknown block round-trips byte-identically and is not lost.
+      if (forCanvas) {
+        return `<div${common} class="canvas-unknown-block">Unknown block: ${escapeHtml(unknownType)}</div>`;
+      }
+      const payload = encodeDataPayload(block.props);
+      return `<div data-zephus-block="${escapeAttr(unknownType)}" data-zephus-props="${escapeAttr(payload)}" class="zephus-unknown-block"><!-- Unknown block type: ${escapeHtml(unknownType)} --></div>`;
+    }
   }
 }
 
@@ -6866,8 +6982,7 @@ async function runInstallFlow(projectPath: string): Promise<boolean> {
   wrap.append(status, logEl);
 
   const unsub = window.zephus.onInstallLog((chunk) => {
-    logEl.textContent += chunk;
-    logEl.scrollTop = logEl.scrollHeight;
+    appendCappedLog(logEl, chunk);
   });
 
   return new Promise<boolean>((resolve) => {
@@ -6927,6 +7042,7 @@ async function togglePreview(): Promise<void> {
     await window.zephus.stopPreview();
     state.previewUrl = null;
     state.unsubLog?.();
+    state.unsubLog = null;
     frame.removeAttribute("sandbox");
     frame.removeAttribute("src");
     frame.classList.add("hidden");
@@ -6948,8 +7064,7 @@ async function togglePreview(): Promise<void> {
   setStatus("Starting dev server (npm run dev)…");
   state.unsubLog = window.zephus.onPreviewLog((chunk) => {
     const logEl = $("dev-log");
-    logEl.textContent += chunk;
-    logEl.scrollTop = logEl.scrollHeight;
+    appendCappedLog(logEl, chunk);
   });
   const result = await window.zephus.startPreview(state.project.path);
   if (!result.ok || !result.url) {
@@ -7108,6 +7223,15 @@ function onKeydown(e: KeyboardEvent): void {
     return;
   }
   if (state.mode !== "visual") return;
+  // Don't hijack native editing keys while typing in a field or inline editor.
+  const active = document.activeElement as HTMLElement | null;
+  const editing =
+    !!active &&
+    (active.isContentEditable ||
+      active.tagName === "INPUT" ||
+      active.tagName === "TEXTAREA" ||
+      active.tagName === "SELECT");
+  if (editing) return;
   if (mod && e.key === "z" && !e.shiftKey) {
     doUndo();
     e.preventDefault();
@@ -7121,15 +7245,6 @@ function onKeydown(e: KeyboardEvent): void {
       e.preventDefault();
     }
   } else if (e.key === "Delete" || e.key === "Backspace") {
-    // Only when not editing text in an input/textarea/contenteditable.
-    const active = document.activeElement as HTMLElement | null;
-    const editing =
-      active &&
-      (active.isContentEditable ||
-        active.tagName === "INPUT" ||
-        active.tagName === "TEXTAREA" ||
-        active.tagName === "SELECT");
-    if (editing) return;
     const block = findSelectedBlock();
     if (block && !block.locked) {
       void deleteBlock(block);
@@ -7137,8 +7252,6 @@ function onKeydown(e: KeyboardEvent): void {
     }
   }
 }
-
-/* ---------- Start view tabs and theme picker ---------- */
 
 /* ---------- Start view tabs and theme picker ---------- */
 

@@ -234,6 +234,63 @@ async function completeSmokeRun(windowRef: BrowserWindow): Promise<void> {
   }
 }
 
+/** True for the renderer's own file:// origin or the localhost dev-server preview. */
+function isAllowedFrameUrl(target: string, rendererRootUrl: string): boolean {
+  if (target.startsWith(rendererRootUrl)) return true;
+  if (target === "about:blank") return true;
+  return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i.test(target);
+}
+
+/**
+ * Installs deny-by-default navigation/window-open guards on a webContents.
+ * Top-frame navigations away from the renderer are blocked (external http(s)
+ * opens in the OS browser); subframe navigations are restricted to the renderer
+ * origin and the localhost preview; redirects outside those are blocked.
+ */
+function installNavigationGuards(contents: Electron.WebContents): void {
+  const rendererRoot = pathToFileURL(rendererPath("")).toString();
+  const rendererRootUrl = rendererRoot.endsWith("/")
+    ? rendererRoot
+    : `${rendererRoot}/`;
+  const isInternal = (target: string): boolean =>
+    target.startsWith(rendererRootUrl);
+  const openExternal = (url: string): void => {
+    if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
+  };
+
+  contents.setWindowOpenHandler(({ url }) => {
+    openExternal(url);
+    return { action: "deny" };
+  });
+  contents.on("will-navigate", (event, url) => {
+    if (!isInternal(url)) {
+      event.preventDefault();
+      openExternal(url);
+    }
+  });
+  contents.on("will-frame-navigate", (details) => {
+    if (!isAllowedFrameUrl(details.url, rendererRootUrl)) {
+      details.preventDefault();
+    }
+  });
+  contents.on("will-redirect", (event, url) => {
+    if (!isAllowedFrameUrl(url, rendererRootUrl)) {
+      event.preventDefault();
+    }
+  });
+}
+
+/**
+ * Applies navigation guards to every webContents the app creates (covers the
+ * preview iframe and any future webviews), as defense in depth beyond the
+ * per-window installation in createMainWindow.
+ */
+function installGlobalNavigationGuards(): void {
+  app.on("web-contents-created", (_event, contents) => {
+    installNavigationGuards(contents);
+  });
+}
+
 function createMainWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -257,24 +314,9 @@ function createMainWindow(): void {
     query: isSmoke ? { smoke: "1" } : undefined,
   });
 
-  // Security: block in-app navigation and new windows. External links open in
-  // the OS browser; everything else is denied.
-  const rendererRoot = pathToFileURL(rendererPath("")).toString();
-  const rendererRootUrl = rendererRoot.endsWith("/")
-    ? rendererRoot
-    : `${rendererRoot}/`;
-  const isInternal = (target: string): boolean =>
-    target.startsWith(rendererRootUrl);
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
-    return { action: "deny" };
-  });
-  mainWindow.webContents.on("will-navigate", (event, url) => {
-    if (!isInternal(url)) {
-      event.preventDefault();
-      if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
-    }
-  });
+  // Security: navigation/window-open guards are applied to every webContents
+  // via installGlobalNavigationGuards() (registered before this window is
+  // created), so no per-window installation is needed here.
 
   mainWindow.once("ready-to-show", () => {
     if (splashWindow) {
@@ -325,7 +367,8 @@ function initAutoUpdater(): void {
 function setupSecurityHeaders(): void {
   const CSP =
     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
-    "img-src 'self' data:; connect-src 'self'; " +
+    "img-src 'self' data:; connect-src 'self'; object-src 'none'; " +
+    "base-uri 'self'; frame-ancestors 'none'; form-action 'self'; " +
     "frame-src 'self' http://localhost:* http://127.0.0.1:*";
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     if (!details.url.startsWith("file://")) {
@@ -436,6 +479,7 @@ if (!isPrimaryInstance) {
 
   app.whenReady().then(() => {
     setupSecurityHeaders();
+    installGlobalNavigationGuards();
     registerIpcHandlers(getMainWindow, {
       assertUpdaterSender: (senderId) =>
         Boolean(

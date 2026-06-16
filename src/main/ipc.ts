@@ -71,7 +71,7 @@ import {
   installUpdate,
 } from "./updater";
 import { watchFile, stopWatching } from "./services/watch";
-import { checkNodeVersion } from "./services/nodeCheck";
+import { checkNodeVersion, validateNodePath } from "./services/nodeCheck";
 import { IPC } from "./ipcChannels";
 
 export { IPC };
@@ -318,6 +318,19 @@ export function registerIpcHandlers(
     IPC.settingsWriteGlobal,
     (_e, settings: GlobalSettings): OperationResult => {
       try {
+        // A compromised renderer must not be able to persist an arbitrary
+        // customNodePath that is later spawned. Validate it; reject if bad.
+        if (
+          settings &&
+          settings.customNodePath !== null &&
+          settings.customNodePath !== undefined
+        ) {
+          const validation = validateNodePath(settings.customNodePath);
+          if (!validation.ok) {
+            return { ok: false, error: validation.error };
+          }
+          settings.customNodePath = validation.path ?? null;
+        }
         writeGlobalSettings(settings);
         return { ok: true };
       } catch (error) {
@@ -378,14 +391,26 @@ export function registerIpcHandlers(
   ipcMain.handle(
     IPC.nodeSetPath,
     async (_e, customPath: string | null): Promise<unknown> => {
-      const normalized =
-        typeof customPath === "string" && customPath.trim().length > 0
-          ? customPath.trim()
-          : null;
+      // Clearing the custom path is always allowed.
+      if (
+        customPath === null ||
+        (typeof customPath === "string" && customPath.trim().length === 0)
+      ) {
+        const settings = readGlobalSettings();
+        settings.customNodePath = null;
+        writeGlobalSettings(settings);
+        return checkNodeVersion(null);
+      }
+      // Validate the path shape *before* persisting or probing it, so a
+      // compromised renderer cannot point the app at an arbitrary executable.
+      const validation = validateNodePath(customPath);
+      if (!validation.ok || !validation.path) {
+        return checkNodeVersion(readGlobalSettings().customNodePath);
+      }
       const settings = readGlobalSettings();
-      settings.customNodePath = normalized;
+      settings.customNodePath = validation.path;
       writeGlobalSettings(settings);
-      return checkNodeVersion(normalized);
+      return checkNodeVersion(validation.path);
     },
   );
 

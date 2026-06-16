@@ -46,9 +46,32 @@ describe("readProjectFile", () => {
       fs.rmSync(outside, { recursive: true, force: true });
     }
   });
+  it("rejects reading .env and .git files", () => {
+    fs.writeFileSync(path.join(tmpDir, ".env"), "SECRET=1");
+    fs.mkdirSync(path.join(tmpDir, ".git"), { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, ".git", "config"), "[core]");
+
+    const env = readProjectFile(tmpDir, ".env");
+    expect(env.ok).toBe(false);
+    const envLocal = (() => {
+      fs.writeFileSync(path.join(tmpDir, ".env.local"), "X=1");
+      return readProjectFile(tmpDir, ".env.local");
+    })();
+    expect(envLocal.ok).toBe(false);
+    const gitCfg = readProjectFile(tmpDir, ".git/config");
+    expect(gitCfg.ok).toBe(false);
+  });
 });
 
 describe("writeProjectFile", () => {
+  it("rejects writing .env and .git files", () => {
+    const env = writeProjectFile(tmpDir, ".env", "SECRET=1");
+    expect(env.ok).toBe(false);
+    expect(fs.existsSync(path.join(tmpDir, ".env"))).toBe(false);
+    const gitCfg = writeProjectFile(tmpDir, ".git/hooks/pre-commit", "x");
+    expect(gitCfg.ok).toBe(false);
+  });
+
   it("writes a file inside the project", () => {
     const result = writeProjectFile(tmpDir, "sub/dir/file.txt", "data");
     expect(result.ok).toBe(true);

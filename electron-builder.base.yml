@@ -1,15 +1,21 @@
 appId: run.rosie.zephus
 productName: Zephus
 asar: true
+electronFuses:
+  runAsNode: false
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  onlyLoadAppFromAsar: true
 files:
   - "dist/**/*"
   - "template-previews/dist/**/*"
-  - "src/renderer/**/*"
+  - "src/renderer/index.html"
+  - "src/renderer/splash.html"
+  - "src/renderer/styles.css"
+  - "src/renderer/zephusEngine.js"
   - "licenses.json"
   - "!**/node_modules/*/{test,__tests__,tests}/**"
   - "!**/*.md"
-  - "!src/renderer/**/*.ts"
-  - "!src/renderer/**/*.map"
 directories:
   output: release
 publish:
