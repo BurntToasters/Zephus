@@ -1294,7 +1294,13 @@ function renderSections(sections: SectionNode[]): string {
       const body = section.children
         .map((child) => renderBlockNode(child))
         .join("\n");
-      if (section.props["wrapper"] === "none") return body;
+      const hasSectionSurface =
+        Boolean(section.style && Object.keys(section.style).length > 0) ||
+        Boolean(section.locked) ||
+        Boolean(section.props["cls"]);
+      if (section.props["wrapper"] === "none" && !hasSectionSurface) {
+        return body;
+      }
       const cls = section.props["cls"]
         ? ` class="${escapeAttr(section.props["cls"])}"`
         : "";
@@ -1840,9 +1846,10 @@ export function readPageDocument(
       ok: true,
       site,
       pageDocument: nextDoc,
-      source: doc.detached
-        ? (actualSource ?? generatedSource)
-        : generatedSource,
+      source:
+        doc.detached || managedFileStatus === "out-of-sync"
+          ? (actualSource ?? generatedSource)
+          : generatedSource,
       generatedSource,
     };
   } catch (error) {

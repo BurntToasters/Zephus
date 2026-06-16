@@ -520,9 +520,12 @@ function syncVisualModeState(): void {
   const visualBtn = $("mode-visual") as HTMLButtonElement;
   visualBtn.disabled = !state.visualEditable;
   visualBtn.classList.toggle("disabled", !state.visualEditable);
-  visualBtn.title = state.visualEditable
-    ? "Visual"
-    : "Detached pages are code-only until reattached.";
+  visualBtn.title =
+    state.managedStatus === "out-of-sync"
+      ? "This page was edited outside Zephus. Reattach it to resume visual editing."
+      : state.visualEditable
+        ? "Visual"
+        : "Detached pages are code-only until reattached.";
 }
 
 // CodeMirror code editor, mounted once on first editor entry.
@@ -3325,7 +3328,8 @@ async function loadPage(
   state.siteDocument = res.site;
   state.pageDocument = res.pageDocument;
   state.managedStatus = res.pageDocument.managedFileStatus;
-  state.visualEditable = state.managedStatus !== "detached";
+  state.visualEditable =
+    state.managedStatus !== "detached" && state.managedStatus !== "out-of-sync";
   const initialSource = res.source ?? "";
   capturePageFrame(initialSource);
   syncCurrentMeta();
@@ -6594,7 +6598,9 @@ function setMode(mode: Mode): void {
   if (mode === "visual" && !state.visualEditable) {
     showModal(
       "Visual Mode Unavailable",
-      "This page was detached from visual mode after a structural code edit. Reattach it from Page Settings to resume GUI editing.",
+      state.managedStatus === "out-of-sync"
+        ? "This page was edited outside Zephus. Review it in Code mode, then reattach it from Page Settings to resume GUI editing."
+        : "This page was detached from visual mode after a structural code edit. Reattach it from Page Settings to resume GUI editing.",
       [{ label: "OK", kind: "primary", onClick: closeModal }],
     );
     return;
@@ -6606,7 +6612,8 @@ function setMode(mode: Mode): void {
 
   if (mode === "code") {
     state.rawCode =
-      state.managedStatus === "detached"
+      state.managedStatus === "detached" ||
+      state.managedStatus === "out-of-sync"
         ? getCode() || state.rawCode
         : currentManagedSource();
     setCode(state.rawCode);
@@ -6676,6 +6683,27 @@ async function performSave(): Promise<boolean> {
         state.generatedCode =
           detached.generatedSource ?? detached.source ?? content;
         state.rawCode = content;
+      } else if (state.managedStatus === "out-of-sync") {
+        const detached = await window.zephus.detachPageDocument(
+          state.project.path,
+          state.page,
+          state.project.astro.pagesDir,
+          content,
+        );
+        if (!detached.ok || !detached.pageDocument) {
+          setStatus("Save failed: " + (detached.error ?? "unknown"));
+          return false;
+        }
+        state.pageDocument = detached.pageDocument;
+        state.siteDocument = detached.site;
+        state.managedStatus = detached.pageDocument.managedFileStatus;
+        state.visualEditable = false;
+        state.generatedCode =
+          detached.generatedSource ?? detached.source ?? content;
+        state.rawCode = content;
+        setStatus(
+          "Page saved as hand-authored Astro. Reattach when you want visual editing again.",
+        );
       } else {
         const visualDoc = pageDocumentFromState();
         if (!visualDoc) {
@@ -7197,7 +7225,13 @@ function openThemePreviewModal(theme: ThemeMeta): void {
 
   const meta = document.createElement("div");
   meta.className = "theme-preview-meta";
-  meta.innerHTML = `<p class="theme-preview-kicker">Read-only preview</p><p class="theme-preview-description">${theme.description}</p>`;
+  const kicker = document.createElement("p");
+  kicker.className = "theme-preview-kicker";
+  kicker.textContent = "Read-only preview";
+  const description = document.createElement("p");
+  description.className = "theme-preview-description";
+  description.textContent = theme.description;
+  meta.append(kicker, description);
 
   const frameWrap = document.createElement("div");
   frameWrap.className = "theme-preview-modal-frame";
@@ -7689,7 +7723,14 @@ async function renderAboutAndLicensesInTab(): Promise<void> {
       loadLicensesBtn.textContent = "Reload Dependency Licenses";
 
       if (!result.ok) {
-        licensesListContainer.innerHTML = `<p class="muted" style="padding: 16px; color: var(--danger);">${result.error ?? "Could not load production license data."}</p>`;
+        licensesListContainer.innerHTML = "";
+        const error = document.createElement("p");
+        error.className = "muted";
+        error.style.padding = "16px";
+        error.style.color = "var(--danger)";
+        error.textContent =
+          result.error ?? "Could not load production license data.";
+        licensesListContainer.appendChild(error);
         return;
       }
 

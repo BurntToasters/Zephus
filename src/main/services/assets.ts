@@ -94,6 +94,26 @@ function resolveRealPublicRoot(
   return realPublicRoot;
 }
 
+function ensureRealPublicRoot(projectPath: string, publicRoot: string): string {
+  const realProjectRoot = fs.realpathSync.native(projectPath);
+  let existingPath = publicRoot;
+  while (!fs.existsSync(existingPath)) {
+    const parent = path.dirname(existingPath);
+    if (parent === existingPath) {
+      throw new Error("Public directory escapes the project directory.");
+    }
+    existingPath = parent;
+  }
+  const realExisting = fs.realpathSync.native(existingPath);
+  assertRealChild(
+    realProjectRoot,
+    realExisting,
+    "Public directory escapes the project directory.",
+  );
+  fs.mkdirSync(publicRoot, { recursive: true });
+  return resolveRealPublicRoot(projectPath, publicRoot);
+}
+
 /**
  * Copies a single source file into the categorized assets directory
  * (public/assets/<category>/) and returns its web-root-relative path.
@@ -110,9 +130,9 @@ function copyIntoAssets(
     publicDir,
     "public",
   ).absolute;
+  const realPublicRoot = ensureRealPublicRoot(projectPath, publicRoot);
   const targetDir = path.join(publicRoot, ASSETS_ROOT, category);
   fs.mkdirSync(targetDir, { recursive: true });
-  const realPublicRoot = resolveRealPublicRoot(projectPath, publicRoot);
   const realTargetDir = fs.realpathSync.native(targetDir);
   assertRealChild(
     realPublicRoot,

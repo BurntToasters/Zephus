@@ -213,6 +213,45 @@ import BaseLayout from '../layouts/BaseLayout.astro';
     const reread = readPageDocument(tmpDir, page, pagesDir);
     expect(reread.ok).toBe(true);
     expect(reread.pageDocument?.managedFileStatus).toBe("out-of-sync");
+    expect(reread.source).toBe(manualSource);
+  });
+
+  it("keeps a real section element for wrapperless styled sections", () => {
+    ensureVisualSchema(tmpDir, pagesDir);
+    const created = createSchemaPage(tmpDir, pagesDir, "styled-none");
+    expect(created.ok).toBe(true);
+    const page = pagePathFromSlug(pagesDir, "styled-none");
+    const current = readPageDocument(tmpDir, page, pagesDir);
+    expect(current.ok).toBe(true);
+
+    const saved = writePageDocument(tmpDir, pagesDir, {
+      ...current.pageDocument!,
+      sections: [
+        {
+          id: "styled-section",
+          type: "section",
+          label: "Styled None",
+          props: { wrapper: "none", cls: "" },
+          style: {
+            width: "760px",
+            responsive: { mobile: { width: "320px" } },
+          },
+          children: [
+            {
+              id: "copy",
+              type: "text",
+              props: { text: "Still targetable", cls: "" },
+            },
+          ],
+        },
+      ],
+    });
+    expect(saved.ok).toBe(true);
+
+    const astro = fs.readFileSync(path.join(tmpDir, page), "utf8");
+    expect(astro).toContain('data-zephus-id="styled-section"');
+    expect(astro).toContain('style="width:760px"');
+    expect(astro).toContain('[data-zephus-id="styled-section"]{width:320px}');
   });
 
   it("writes managed shell and design artifacts when site settings change", () => {

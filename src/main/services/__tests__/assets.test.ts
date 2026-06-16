@@ -90,6 +90,7 @@ describe("importAssetsFromPaths", () => {
       expect(fs.existsSync(path.join(outside, "assets/images/photo.png"))).toBe(
         false,
       );
+      expect(fs.existsSync(path.join(outside, "assets"))).toBe(false);
     } finally {
       fs.rmSync(outside, { recursive: true, force: true });
     }
