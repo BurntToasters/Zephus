@@ -1755,7 +1755,14 @@ async function openSettingsModal(): Promise<void> {
       label: "Reset to Defaults",
       kind: "danger",
       onClick: async () => {
-        if (!confirm("Reset all Zephus settings to defaults?")) return;
+        if (
+          !(await modalController.confirmDestructive(
+            "Reset Settings",
+            "Reset all Zephus settings to defaults?",
+            "Reset",
+          ))
+        )
+          return;
         const defaults: GlobalSettings = {
           ...settings,
           theme: "system",
@@ -2010,7 +2017,11 @@ async function openProjectByPath(folder: string): Promise<void> {
 
 async function enterEditor(result: ProjectOpenResult): Promise<void> {
   $("view-start").classList.add("hidden");
-  $("view-editor").classList.remove("hidden");
+  const editorView = $("view-editor");
+  editorView.classList.remove("hidden");
+  // Move focus into the editor so keyboard/SR users aren't dropped on <body>.
+  editorView.setAttribute("tabindex", "-1");
+  editorView.focus();
   $("project-name").textContent = result.name;
   const ensured = await window.zephus.ensureVisualSchema(
     result.path,
@@ -4981,7 +4992,13 @@ function handleDrop(e: DragEvent): void {
       TEMPLATES.find((t) => t.id === templateId) ??
       resolveSavedSectionTemplate(templateId);
     if (!tpl) return;
-    addSectionAt(state.sections.length, tpl);
+    // Honor the drop position: insert after the section dropped onto, or
+    // append when dropped on empty canvas space.
+    const overSection = dropSectionId ? findSection(dropSectionId) : null;
+    const insertAt = overSection
+      ? state.sections.indexOf(overSection) + 1
+      : state.sections.length;
+    addSectionAt(insertAt, tpl);
   } else if (newType) {
     addBlockAt(newType as BlockType, target, targetSection?.id);
   } else if (moveBlockId) {
@@ -5406,7 +5423,14 @@ function labeledLength(
   const wrap = document.createElement("label");
   wrap.className = "meta-field";
   const label = document.createElement("span");
-  label.textContent = key;
+  // Friendlier wording for CSS box-model terms (non-technical audience).
+  const FRIENDLY: Record<string, string> = {
+    Padding: "Inner spacing",
+    Margin: "Outer spacing",
+    Radius: "Corner roundness",
+    Gap: "Space between",
+  };
+  label.textContent = FRIENDLY[key] ?? key;
 
   const control = document.createElement("div");
   control.className = "length-control";
@@ -6078,13 +6102,17 @@ function renderProperties(): void {
     const wrapper = document.createElement("label");
     wrapper.className = "meta-field";
     const wrapperLabel = document.createElement("span");
-    wrapperLabel.textContent = "Wrapper";
+    wrapperLabel.textContent = "Background container";
     const wrapperSelect = document.createElement("select");
     wireInspectorControl(wrapperSelect);
+    const wrapperLabels: Record<string, string> = {
+      none: "None (transparent)",
+      box: "Boxed surface",
+    };
     for (const value of ["none", "box"]) {
       const option = document.createElement("option");
       option.value = value;
-      option.textContent = value;
+      option.textContent = wrapperLabels[value] ?? value;
       option.selected = (section.props["wrapper"] ?? "none") === value;
       wrapperSelect.appendChild(option);
     }
@@ -6093,8 +6121,10 @@ function renderProperties(): void {
     wrapper.append(wrapperLabel, wrapperSelect);
     contentGroup.appendChild(wrapper);
     contentGroup.appendChild(
-      labeledInput("CSS class", section.props["cls"] ?? "", (value) =>
-        commitSection("cls", value),
+      labeledInput(
+        "CSS class (optional)",
+        section.props["cls"] ?? "",
+        (value) => commitSection("cls", value),
       ),
     );
     panel.appendChild(contentGroup);
@@ -6620,7 +6650,7 @@ function renderProperties(): void {
 
   const advancedGroup = propertyGroup("Advanced");
   advancedGroup.appendChild(
-    labeledInput("CSS class", block.props["cls"] ?? "", (v) =>
+    labeledInput("CSS class (optional)", block.props["cls"] ?? "", (v) =>
       commit("cls", v),
     ),
   );
@@ -6673,7 +6703,14 @@ function renderProperties(): void {
     saveSection.className = "btn";
     saveSection.textContent = "Save as Reusable Section";
     saveSection.onclick = async () => {
-      const label = prompt("Reusable section name");
+      const label = await modalController.promptText(
+        "Save as Reusable Section",
+        {
+          label: "Section name",
+          placeholder: "e.g. Hero with CTA",
+          confirmLabel: "Save",
+        },
+      );
       if (!label) return;
       const result = await window.zephus.saveReusableSection(
         label,
@@ -7174,6 +7211,8 @@ async function closeProject(): Promise<void> {
   markDirty(false);
   $("view-editor").classList.add("hidden");
   $("view-start").classList.remove("hidden");
+  // Return focus to the active start tab rather than leaving it on <body>.
+  document.querySelector<HTMLElement>(".start-nav-item.active")?.focus();
   renderLayers();
   renderProjectOverview();
   renderNextActions();
@@ -7274,7 +7313,10 @@ async function switchStartTab(
   for (const t of tabs) {
     const tabBtn = $("tab-" + t);
     const pane = $("pane-" + t);
-    if (tabBtn) tabBtn.classList.toggle("active", t === target);
+    if (tabBtn) {
+      tabBtn.classList.toggle("active", t === target);
+      tabBtn.setAttribute("aria-selected", t === target ? "true" : "false");
+    }
     if (pane) {
       pane.classList.toggle("active", t === target);
       pane.classList.toggle("hidden", t !== target);
@@ -7317,6 +7359,7 @@ function selectThemeCard(themeId: string): void {
     )) {
       const selected = card.dataset.themeId === themeId;
       card.classList.toggle("selected", selected);
+      card.setAttribute("aria-pressed", selected ? "true" : "false");
       const label = card.querySelector<HTMLElement>(".theme-select-btn");
       if (label) {
         label.textContent = selected ? "Selected" : "Select";
@@ -7423,6 +7466,12 @@ function buildThemeCard(
   card.className = "theme-card";
   card.dataset.themeId = theme.id;
   card.tabIndex = 0;
+  card.setAttribute("role", "button");
+  card.setAttribute("aria-label", `Select ${theme.name} theme`);
+  card.setAttribute(
+    "aria-pressed",
+    selectedTabTheme === theme.id ? "true" : "false",
+  );
   if (selectedTabTheme === theme.id) {
     card.classList.add("selected");
   }
@@ -7755,7 +7804,14 @@ async function renderSettingsInTab(): Promise<void> {
   resetBtn.className = "btn danger";
   resetBtn.textContent = "Reset to Defaults";
   resetBtn.onclick = async () => {
-    if (!confirm("Reset all Zephus settings to defaults?")) return;
+    if (
+      !(await modalController.confirmDestructive(
+        "Reset Settings",
+        "Reset all Zephus settings to defaults?",
+        "Reset",
+      ))
+    )
+      return;
     const defaults: GlobalSettings = {
       ...settings,
       theme: "system",

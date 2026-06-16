@@ -205,16 +205,6 @@ export interface BlockNode extends EditorBlock {
   form?: FormDefinition;
 }
 
-export interface ContainerNode {
-  id: string;
-  type: "container";
-  label: string;
-  style?: BlockStyle;
-  locked?: boolean;
-  hidden?: boolean;
-  children: BlockNode[];
-}
-
 export interface SectionNode {
   id: string;
   type: "section";

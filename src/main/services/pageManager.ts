@@ -1,6 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import { OperationResult, PageListResult, PageMeta } from "../types";
+import { assertRealpathInside, safeResolve } from "./fsSafe";
 import {
   createSchemaPage,
   deletePageSchema,
@@ -16,13 +17,11 @@ import {
   writePageDocument,
 } from "./schema";
 
-function safeResolve(projectPath: string, relativePath: string): string {
-  const resolved = path.resolve(projectPath, relativePath);
-  const root = path.resolve(projectPath);
-  if (resolved !== root && !resolved.startsWith(root + path.sep)) {
-    throw new Error("Path escapes the project directory.");
-  }
-  return resolved;
+/** Resolves a project page path with symlink-aware containment. */
+function resolvePage(projectPath: string, relativePath: string): string {
+  const full = safeResolve(projectPath, relativePath);
+  assertRealpathInside(projectPath, full);
+  return full;
 }
 
 export { normalizePageSlug, routeFromPage };
@@ -162,9 +161,9 @@ export function renamePage(
   const nextSlug = normalizePageSlug(nextSlugInput);
   if (!nextSlug) return { ok: false, error: "Invalid page slug." };
   const ext = path.extname(page) || ".astro";
-  const from = safeResolve(projectPath, page);
+  const from = resolvePage(projectPath, page);
   const nextRel = pagePathFromSlug(pagesDir, nextSlug, ext);
-  const to = safeResolve(projectPath, nextRel);
+  const to = resolvePage(projectPath, nextRel);
   if (from === to) return { ok: true };
   if (fs.existsSync(to)) {
     return { ok: false, error: `A page at ${nextSlug} already exists.` };
@@ -218,7 +217,7 @@ export function duplicatePage(
   slugInput?: string,
 ): OperationResult {
   try {
-    const from = safeResolve(projectPath, page);
+    const from = resolvePage(projectPath, page);
     const ext = path.extname(page) || ".astro";
     const currentSlug =
       normalizePageSlug(routeFromPage(page, pagesDir).replace(/^\//, "")) ??
@@ -227,7 +226,7 @@ export function duplicatePage(
     if (!baseSlug) return { ok: false, error: "Invalid duplicate slug." };
     const nextSlug = uniqueSlug(projectPath, pagesDir, baseSlug, ext);
     const nextRel = pagePathFromSlug(pagesDir, nextSlug, ext);
-    const to = safeResolve(projectPath, nextRel);
+    const to = resolvePage(projectPath, nextRel);
     fs.mkdirSync(path.dirname(to), { recursive: true });
     fs.copyFileSync(from, to);
     const copied = duplicatePageSchema(projectPath, pagesDir, page, nextSlug);
@@ -259,7 +258,7 @@ export function deletePage(
   pagesDir: string,
 ): OperationResult {
   try {
-    const full = safeResolve(projectPath, page);
+    const full = resolvePage(projectPath, page);
     if (!fs.existsSync(full)) {
       return { ok: false, error: "Page does not exist." };
     }

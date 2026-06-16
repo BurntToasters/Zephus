@@ -1,0 +1,43 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`build render parity (renderBlockNode goldens) > renders accordion-17 to stable markup 1`] = `"<div data-zephus-id="fix-accordion" data-zephus-block="accordion" data-zephus-props="%7B%22items%22%3A%22Q1%20%3A%3A%20A1%5CnQ2%20%3A%3A%20A2%22%2C%22cls%22%3A%22%22%7D" class="zephus-accordion"><details><summary>Q1</summary><p>A1</p></details><details><summary>Q2</summary><p>A2</p></details></div>"`;
+
+exports[`build render parity (renderBlockNode goldens) > renders button-3 to stable markup 1`] = `"<a data-zephus-id="fix-button" data-zephus-block="button" data-zephus-props="%7B%22text%22%3A%22Go%22%2C%22href%22%3A%22%2Fcontact%22%2C%22cls%22%3A%22%22%7D" href="/contact">Go</a>"`;
+
+exports[`build render parity (renderBlockNode goldens) > renders button-4 to stable markup 1`] = `"<a data-zephus-id="fix-button" data-zephus-block="button" data-zephus-props="%7B%22text%22%3A%22Bad%22%2C%22href%22%3A%22javascript%3Aalert(1)%22%2C%22cls%22%3A%22%22%7D" href="#">Bad</a>"`;
+
+exports[`build render parity (renderBlockNode goldens) > renders card-9 to stable markup 1`] = `"<article data-zephus-id="fix-card" data-zephus-block="card" data-zephus-props="%7B%22title%22%3A%22Card%22%2C%22text%22%3A%22Body%22%2C%22cls%22%3A%22%22%7D"><h3>Card</h3><p>Body</p></article>"`;
+
+exports[`build render parity (renderBlockNode goldens) > renders columns-8 to stable markup 1`] = `"<section data-zephus-id="fix-columns" data-zephus-block="columns" data-zephus-props="%7B%22count%22%3A%222%22%2C%22col1%22%3A%22A%22%2C%22col2%22%3A%22B%22%2C%22cls%22%3A%22%22%7D" data-zephus-style="%7B%22columns%22%3A%222%22%2C%22gap%22%3A%221.5rem%22%2C%22stackOnMobile%22%3Atrue%7D" style="gap:1.5rem;grid-template-columns:repeat(2, minmax(0, 1fr))"><div class="zephus-column">A</div><div class="zephus-column">B</div></section>"`;
+
+exports[`build render parity (renderBlockNode goldens) > renders cta-20 to stable markup 1`] = `"<div data-zephus-id="fix-cta" data-zephus-block="cta" data-zephus-props="%7B%22heading%22%3A%22Ready%3F%22%2C%22text%22%3A%22Go%20now%22%2C%22buttonText%22%3A%22Start%22%2C%22buttonHref%22%3A%22%2Fstart%22%2C%22cls%22%3A%22%22%7D" class="zephus-cta"><h2>Ready?</h2><p>Go now</p><a class="button" href="/start">Start</a></div>"`;
+
+exports[`build render parity (renderBlockNode goldens) > renders divider-6 to stable markup 1`] = `"<hr data-zephus-id="fix-divider" data-zephus-block="divider" data-zephus-props="%7B%22cls%22%3A%22%22%7D" />"`;
+
+exports[`build render parity (renderBlockNode goldens) > renders embed-13 to stable markup 1`] = `"<iframe data-zephus-id="fix-embed" data-zephus-block="embed" data-zephus-props="%7B%22src%22%3A%22https%3A%2F%2Fexample.com%22%2C%22title%22%3A%22Map%22%2C%22cls%22%3A%22%22%7D" src="https://example.com" title="Map" loading="lazy"></iframe>"`;
+
+exports[`build render parity (renderBlockNode goldens) > renders feature-15 to stable markup 1`] = `"<div data-zephus-id="fix-feature" data-zephus-block="feature" data-zephus-props="%7B%22icon%22%3A%22%E2%9A%A1%22%2C%22title%22%3A%22Fast%22%2C%22text%22%3A%22Body%22%2C%22cls%22%3A%22%22%7D" class="zephus-feature"><div class="zephus-feature-icon">⚡</div><h3>Fast</h3><p>Body</p></div>"`;
+
+exports[`build render parity (renderBlockNode goldens) > renders gallery-10 to stable markup 1`] = `"<section data-zephus-id="fix-gallery" data-zephus-block="gallery" data-zephus-props="%7B%22images%22%3A%22%2Fa.svg%5Cn%2Fb.svg%22%2C%22cls%22%3A%22%22%7D"><img src="/a.svg" alt="Gallery image 1" /><img src="/b.svg" alt="Gallery image 2" /></section>"`;
+
+exports[`build render parity (renderBlockNode goldens) > renders heading-0 to stable markup 1`] = `"<h2 data-zephus-id="fix-heading" data-zephus-block="heading" data-zephus-props="%7B%22text%22%3A%22Hello%20%26%20%3Cworld%3E%22%2C%22level%22%3A%222%22%2C%22cls%22%3A%22%22%7D">Hello &amp; &lt;world&gt;</h2>"`;
+
+exports[`build render parity (renderBlockNode goldens) > renders html-14 to stable markup 1`] = `"<div>raw <b>html</b></div>"`;
+
+exports[`build render parity (renderBlockNode goldens) > renders image-2 to stable markup 1`] = `"<img data-zephus-id="fix-image" data-zephus-block="image" data-zephus-props="%7B%22src%22%3A%22%2Fassets%2Fimages%2Fx.svg%22%2C%22alt%22%3A%22Alt%22%2C%22cls%22%3A%22%22%7D" src="/assets/images/x.svg" alt="Alt" />"`;
+
+exports[`build render parity (renderBlockNode goldens) > renders list-12 to stable markup 1`] = `"<ol data-zephus-id="fix-list" data-zephus-block="list" data-zephus-props="%7B%22items%22%3A%22One%5CnTwo%22%2C%22ordered%22%3A%22true%22%2C%22cls%22%3A%22%22%7D"><li>One</li><li>Two</li></ol>"`;
+
+exports[`build render parity (renderBlockNode goldens) > renders pricing-19 to stable markup 1`] = `"<div data-zephus-id="fix-pricing" data-zephus-block="pricing" data-zephus-props="%7B%22plan%22%3A%22Pro%22%2C%22price%22%3A%22%2412%22%2C%22period%22%3A%22%2Fmo%22%2C%22features%22%3A%22A%5CnB%22%2C%22ctaText%22%3A%22Buy%22%2C%22ctaHref%22%3A%22%2Fpricing%22%2C%22cls%22%3A%22%22%7D" data-zephus-style="%7B%22shadow%22%3A%22md%22%7D" class="zephus-pricing" style="box-shadow:var(--shadow-md)"><h3>Pro</h3><div class="zephus-price"><span class="zephus-price-amount">$12</span><span class="zephus-price-period">/mo</span></div><ul><li>A</li><li>B</li></ul><a class="button" href="/pricing">Buy</a></div>"`;
+
+exports[`build render parity (renderBlockNode goldens) > renders quote-11 to stable markup 1`] = `"<blockquote data-zephus-id="fix-quote" data-zephus-block="quote" data-zephus-props="%7B%22text%22%3A%22Quoted%22%2C%22cite%22%3A%22Author%22%2C%22cls%22%3A%22%22%7D"><p>Quoted</p><cite>Author</cite></blockquote>"`;
+
+exports[`build render parity (renderBlockNode goldens) > renders section-5 to stable markup 1`] = `"<section data-zephus-id="fix-section" data-zephus-block="section" data-zephus-props="%7B%22text%22%3A%22Body%22%2C%22wrapper%22%3A%22box%22%2C%22cls%22%3A%22%22%7D">Body</section>"`;
+
+exports[`build render parity (renderBlockNode goldens) > renders spacer-7 to stable markup 1`] = `"<div data-zephus-id="fix-spacer" data-zephus-block="spacer" data-zephus-props="%7B%22height%22%3A%2264px%22%2C%22cls%22%3A%22%22%7D" style="height:64px"></div>"`;
+
+exports[`build render parity (renderBlockNode goldens) > renders stats-18 to stable markup 1`] = `"<div data-zephus-id="fix-stats" data-zephus-block="stats" data-zephus-props="%7B%22items%22%3A%222k%20%3A%3A%20Users%5Cn4.9%20%3A%3A%20Rating%22%2C%22cls%22%3A%22%22%7D" class="zephus-stats"><div class="zephus-stat"><span class="zephus-stat-num">2k</span><span class="zephus-stat-label">Users</span></div><div class="zephus-stat"><span class="zephus-stat-num">4.9</span><span class="zephus-stat-label">Rating</span></div></div>"`;
+
+exports[`build render parity (renderBlockNode goldens) > renders testimonial-16 to stable markup 1`] = `"<figure data-zephus-id="fix-testimonial" data-zephus-block="testimonial" data-zephus-props="%7B%22quote%22%3A%22Great%22%2C%22author%22%3A%22Sam%22%2C%22role%22%3A%22CEO%22%2C%22cls%22%3A%22%22%7D" class="zephus-testimonial"><blockquote>Great</blockquote><figcaption><strong>Sam</strong> <span>CEO</span></figcaption></figure>"`;
+
+exports[`build render parity (renderBlockNode goldens) > renders text-1 to stable markup 1`] = `"<p data-zephus-id="fix-text" data-zephus-block="text" data-zephus-props="%7B%22text%22%3A%22Line%20one%5CnLine%20two%22%2C%22cls%22%3A%22lead%22%7D" class="lead">Line one<br />Line two</p>"`;

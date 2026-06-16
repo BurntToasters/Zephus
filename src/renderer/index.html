@@ -24,22 +24,46 @@
               <p class="brand-subtitle">Visual Astro Builder</p>
             </div>
           </div>
-          <nav class="start-nav" aria-label="Sections">
-            <button id="tab-recent" class="start-nav-item active">
+          <nav class="start-nav" aria-label="Sections" role="tablist">
+            <button
+              id="tab-recent"
+              class="start-nav-item active"
+              role="tab"
+              aria-selected="true"
+              aria-controls="pane-recent"
+            >
               <i data-lucide="clock"></i>
               <span>Recent Sites</span>
             </button>
-            <button id="tab-create" class="start-nav-item">
+            <button
+              id="tab-create"
+              class="start-nav-item"
+              role="tab"
+              aria-selected="false"
+              aria-controls="pane-create"
+            >
               <i data-lucide="compass"></i>
               <span>Starter Themes</span>
             </button>
-            <button id="tab-settings" class="start-nav-item">
+            <button
+              id="tab-settings"
+              class="start-nav-item"
+              role="tab"
+              aria-selected="false"
+              aria-controls="pane-settings"
+            >
               <i data-lucide="settings"></i>
               <span>App Settings</span>
             </button>
-            <button id="tab-about" class="start-nav-item">
+            <button
+              id="tab-about"
+              class="start-nav-item"
+              role="tab"
+              aria-selected="false"
+              aria-controls="pane-about"
+            >
               <i data-lucide="info"></i>
-              <span>About & Licenses</span>
+              <span>About &amp; Licenses</span>
             </button>
           </nav>
           <div class="start-sidebar-footer">
@@ -51,7 +75,12 @@
         <!-- Main Workspace Panes -->
         <main class="start-main">
           <!-- Pane 1: Recent Sites -->
-          <section id="pane-recent" class="start-pane active">
+          <section
+            id="pane-recent"
+            class="start-pane active"
+            role="tabpanel"
+            aria-labelledby="tab-recent"
+          >
             <!-- Unsaved draft recovery alert shows up here if any exist -->
             <div
               id="home-recovery-list"
@@ -79,7 +108,12 @@
           </section>
 
           <!-- Pane 2: Theme Discovery -->
-          <section id="pane-create" class="start-pane hidden">
+          <section
+            id="pane-create"
+            class="start-pane hidden"
+            role="tabpanel"
+            aria-labelledby="tab-create"
+          >
             <header class="pane-header">
               <div class="pane-header-title">
                 <p class="pane-kicker">Start New</p>
@@ -100,7 +134,12 @@
           </section>
 
           <!-- Pane 3: App Settings -->
-          <section id="pane-settings" class="start-pane hidden">
+          <section
+            id="pane-settings"
+            class="start-pane hidden"
+            role="tabpanel"
+            aria-labelledby="tab-settings"
+          >
             <header class="pane-header">
               <div class="pane-header-title">
                 <p class="pane-kicker">Configuration</p>
@@ -116,7 +155,12 @@
           </section>
 
           <!-- Pane 4: About & Licenses -->
-          <section id="pane-about" class="start-pane hidden">
+          <section
+            id="pane-about"
+            class="start-pane hidden"
+            role="tabpanel"
+            aria-labelledby="tab-about"
+          >
             <header class="pane-header">
               <div class="pane-header-title">
                 <p class="pane-kicker">Information</p>
@@ -130,7 +174,7 @@
                   <div class="about-brand-logo"></div>
                   <h3 class="about-app-name">Zephus</h3>
                   <p id="about-app-version" class="about-app-version">
-                    v0.1.0-db.1
+                    v0.1.0-db.5
                   </p>
                   <p class="about-lead">
                     Zephus is a local-first, schema-backed visual editor for

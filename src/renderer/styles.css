@@ -1,6 +1,7 @@
 :root {
   /* Zinc & Indigo color palette */
   --bg: #09090b; /* Zinc 950 */
+  --bg-app: #0d0d10; /* recessed app/canvas backdrop */
   --bg-alt: #18181b; /* Zinc 900 */
   --panel: #18181b; /* Zinc 900 */
   --panel-card: #27272a; /* Zinc 800 */

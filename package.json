@@ -1,6 +1,6 @@
 {
   "name": "zephus",
-  "version": "0.1.0-db.4",
+  "version": "0.1.0-db.5",
   "private": true,
   "description": "Local WYSIWYG website editor for Astro sites",
   "desktopName": "run.rosie.zephus.desktop",
@@ -15,8 +15,8 @@
   "main": "dist/main/main.js",
   "packageManager": "npm@11.10.1",
   "engines": {
-    "node": ">=24.x",
-    "npm": ">=10.x"
+    "node": ">=24",
+    "npm": ">=10"
   },
   "scripts": {
     "gitprune": "node build-scripts/git-prune-local-branches.js",

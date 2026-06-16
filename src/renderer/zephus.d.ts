@@ -196,16 +196,6 @@ interface BlockNode extends EditorBlock {
   form?: FormDefinition;
 }
 
-interface ContainerNode {
-  id: string;
-  type: "container";
-  label: string;
-  style?: BlockStyle;
-  locked?: boolean;
-  hidden?: boolean;
-  children: BlockNode[];
-}
-
 interface SectionNode {
   id: string;
   type: "section";
