@@ -10,6 +10,7 @@ import {
 
 let downloadToken: CancellationToken | null = null;
 let isDownloading = false;
+let downloadedVersion: string | null = null;
 // The version most recently confirmed as a valid upgrade by isChannelUpgrade.
 // Acts as a guard so a download can never install a build the channel rules
 // rejected (electron-updater may surface semver-older builds when
@@ -56,7 +57,7 @@ export function setupAutoUpdater(
   getSettings: () => GlobalSettings,
 ): void {
   autoUpdater.autoDownload = false;
-  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.autoInstallOnAppQuit = false;
   autoUpdater.logger = log;
 
   applyChannel(getSettings());
@@ -76,20 +77,24 @@ export function setupAutoUpdater(
     // a base downgrade surfaced because allowDowngrade was enabled). Re-gate.
     if (isChannelUpgrade(app.getVersion(), info.version)) {
       approvedVersion = info.version;
+      downloadedVersion = null;
       send({ status: "available", version: info.version });
     } else {
       approvedVersion = null;
+      downloadedVersion = null;
       send({ status: "not-available", version: app.getVersion() });
     }
   });
 
   autoUpdater.on("update-not-available", () => {
     approvedVersion = null;
+    downloadedVersion = null;
     send({ status: "not-available", version: app.getVersion() });
   });
 
   autoUpdater.on("error", (err) => {
     approvedVersion = null;
+    downloadedVersion = null;
     log.error("Auto-updater error:", err);
     send({ status: "error", error: err.message });
   });
@@ -99,6 +104,7 @@ export function setupAutoUpdater(
   });
 
   autoUpdater.on("update-downloaded", (info) => {
+    downloadedVersion = info.version;
     send({ status: "downloaded", version: info.version });
   });
 }
@@ -148,7 +154,10 @@ export async function downloadUpdate(): Promise<UpdaterStatus> {
     await autoUpdater.downloadUpdate(downloadToken);
     downloadToken = null;
     isDownloading = false;
-    return { status: "downloaded" };
+    return {
+      status: "downloaded",
+      version: downloadedVersion ?? approvedVersion,
+    };
   } catch (error) {
     downloadToken = null;
     isDownloading = false;
@@ -163,6 +172,7 @@ export function cancelDownload(getWindow: () => BrowserWindow | null): void {
     downloadToken.cancel();
     downloadToken = null;
     isDownloading = false;
+    downloadedVersion = null;
     const win = getWindow();
     if (win && !win.isDestroyed()) {
       win.webContents.send("updater-status", {
@@ -173,5 +183,8 @@ export function cancelDownload(getWindow: () => BrowserWindow | null): void {
 }
 
 export function installUpdate(): void {
+  if (!downloadedVersion) {
+    throw new Error("No downloaded update is ready to install.");
+  }
   autoUpdater.quitAndInstall(false, true);
 }

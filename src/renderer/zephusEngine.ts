@@ -50,6 +50,7 @@ import {
   BarChart,
   Tag,
   Megaphone,
+  X,
 } from "lucide";
 
 type Mode = "visual" | "code";
@@ -139,6 +140,7 @@ function refreshIcons(): void {
       BarChart,
       Tag,
       Megaphone,
+      X,
     },
   });
 }
@@ -392,6 +394,7 @@ let updaterSnapshot: {
   percent?: number;
   error?: string;
 } | null = null;
+let promptedDownloadedUpdateVersion: string | null = null;
 const modalController = createModalController(refreshIcons);
 const { closeModal, showModal, showModalNode } = modalController;
 
@@ -682,6 +685,47 @@ function renderHomeStatusPanels(): void {
   renderSidebarUpdateStatus();
 }
 
+function updateVersionLabel(version?: string): string {
+  return version ? `v${version}` : "the latest update";
+}
+
+async function restartToApplyUpdate(): Promise<void> {
+  setStatus("Restarting to apply update...");
+  const result = (await window.zephus.installUpdate()) as
+    | { ok?: boolean; error?: string }
+    | undefined;
+  if (result && result.ok === false) {
+    setStatus("Update install could not start.");
+    showModal(
+      "Could Not Restart",
+      friendlyError(result.error ?? "The downloaded update was not ready."),
+      [{ label: "OK", kind: "primary", onClick: closeModal }],
+    );
+  }
+}
+
+function promptDownloadedUpdate(force = false): void {
+  if (updaterSnapshot?.status !== "downloaded") return;
+  const version = updaterSnapshot.version ?? "downloaded";
+  if (!force) {
+    if (promptedDownloadedUpdateVersion === version) return;
+    if (modalController.isOpen()) return;
+  }
+  promptedDownloadedUpdateVersion = version;
+  showModal(
+    "Update Ready",
+    `Zephus ${updateVersionLabel(updaterSnapshot.version)} has been downloaded. Restart now to apply it; Zephus will relaunch after the update finishes.`,
+    [
+      { label: "Later", kind: "ghost", onClick: closeModal },
+      {
+        label: "Restart Now",
+        kind: "primary",
+        onClick: () => void restartToApplyUpdate(),
+      },
+    ],
+  );
+}
+
 function renderSidebarUpdateStatus(): void {
   const sidebarUpdate = $("sidebar-update-status");
   if (!sidebarUpdate) return;
@@ -712,8 +756,8 @@ function renderSidebarUpdateStatus(): void {
       <span>Downloading (${Math.round(updaterSnapshot.percent ?? 0)}%)</span>
     `;
   } else if (updaterSnapshot.status === "downloaded") {
-    sidebarUpdate.classList.remove("clickable");
-    sidebarUpdate.onclick = null;
+    sidebarUpdate.classList.add("clickable");
+    sidebarUpdate.onclick = () => promptDownloadedUpdate(true);
     sidebarUpdate.innerHTML = `
       <div class="update-status-dot active"></div>
       <span>Restart to install</span>
@@ -1365,6 +1409,19 @@ async function openSettingsModal(): Promise<void> {
   const checkRow = document.createElement("div");
   checkRow.className = "settings-row";
   const checkLeft = document.createElement("span");
+  if (updaterSnapshot?.status === "available") {
+    checkLeft.textContent = `${updateVersionLabel(updaterSnapshot.version)} is available.`;
+  } else if (updaterSnapshot?.status === "downloaded") {
+    checkLeft.textContent = `${updateVersionLabel(updaterSnapshot.version)} is downloaded and ready to install.`;
+  } else if (updaterSnapshot?.status === "downloading") {
+    checkLeft.textContent = `Downloading update (${Math.round(updaterSnapshot.percent ?? 0)}%).`;
+  } else if (updaterSnapshot?.status === "error") {
+    checkLeft.textContent = friendlyError(
+      updaterSnapshot.error ?? "Update check failed.",
+    );
+  } else {
+    checkLeft.textContent = "Check the selected update channel.";
+  }
   const checkNowBtn = document.createElement("button");
   checkNowBtn.className = "btn secondary mini-btn";
   checkNowBtn.textContent = "Check for Updates Now";
@@ -1379,7 +1436,43 @@ async function openSettingsModal(): Promise<void> {
     checkNowBtn.textContent = "Check for Updates Now";
     checkNowBtn.disabled = false;
   };
-  checkRow.append(checkLeft, checkNowBtn);
+  const updateActions = document.createElement("div");
+  updateActions.className = "settings-inline-actions";
+  updateActions.appendChild(checkNowBtn);
+
+  if (updaterSnapshot?.status === "available") {
+    const downloadBtn = document.createElement("button");
+    downloadBtn.className = "btn primary mini-btn";
+    downloadBtn.textContent = "Download Update";
+    downloadBtn.onclick = async () => {
+      downloadBtn.textContent = "Downloading...";
+      downloadBtn.disabled = true;
+      const result = (await window.zephus.downloadUpdate()) as {
+        status?: string;
+        error?: string;
+      };
+      if (result?.status === "error") {
+        showModal("Update Download Failed", friendlyError(result.error), [
+          { label: "OK", kind: "primary", onClick: closeModal },
+        ]);
+      }
+    };
+    updateActions.appendChild(downloadBtn);
+  } else if (updaterSnapshot?.status === "downloaded") {
+    const restartBtn = document.createElement("button");
+    restartBtn.className = "btn primary mini-btn";
+    restartBtn.textContent = "Restart Now";
+    restartBtn.onclick = () => void restartToApplyUpdate();
+    updateActions.appendChild(restartBtn);
+  } else if (updaterSnapshot?.status === "downloading") {
+    const cancelBtn = document.createElement("button");
+    cancelBtn.className = "btn ghost mini-btn";
+    cancelBtn.textContent = "Cancel Download";
+    cancelBtn.onclick = () => void window.zephus.cancelUpdateDownload();
+    updateActions.appendChild(cancelBtn);
+  }
+
+  checkRow.append(checkLeft, updateActions);
   updatesSec.appendChild(checkRow);
   form.appendChild(updatesSec);
 
@@ -6781,6 +6874,19 @@ async function renderSettingsInTab(): Promise<void> {
   const checkRow = document.createElement("div");
   checkRow.className = "settings-row";
   const checkLeft = document.createElement("span");
+  if (updaterSnapshot?.status === "available") {
+    checkLeft.textContent = `${updateVersionLabel(updaterSnapshot.version)} is available.`;
+  } else if (updaterSnapshot?.status === "downloaded") {
+    checkLeft.textContent = `${updateVersionLabel(updaterSnapshot.version)} is downloaded and ready to install.`;
+  } else if (updaterSnapshot?.status === "downloading") {
+    checkLeft.textContent = `Downloading update (${Math.round(updaterSnapshot.percent ?? 0)}%).`;
+  } else if (updaterSnapshot?.status === "error") {
+    checkLeft.textContent = friendlyError(
+      updaterSnapshot.error ?? "Update check failed.",
+    );
+  } else {
+    checkLeft.textContent = "Check the selected update channel.";
+  }
   const checkNowBtn = document.createElement("button");
   checkNowBtn.className = "btn secondary mini-btn";
   checkNowBtn.textContent = "Check for Updates Now";
@@ -6795,7 +6901,43 @@ async function renderSettingsInTab(): Promise<void> {
     checkNowBtn.textContent = "Check for Updates Now";
     checkNowBtn.disabled = false;
   };
-  checkRow.append(checkLeft, checkNowBtn);
+  const updateActions = document.createElement("div");
+  updateActions.className = "settings-inline-actions";
+  updateActions.appendChild(checkNowBtn);
+
+  if (updaterSnapshot?.status === "available") {
+    const downloadBtn = document.createElement("button");
+    downloadBtn.className = "btn primary mini-btn";
+    downloadBtn.textContent = "Download Update";
+    downloadBtn.onclick = async () => {
+      downloadBtn.textContent = "Downloading...";
+      downloadBtn.disabled = true;
+      const result = (await window.zephus.downloadUpdate()) as {
+        status?: string;
+        error?: string;
+      };
+      if (result?.status === "error") {
+        showModal("Update Download Failed", friendlyError(result.error), [
+          { label: "OK", kind: "primary", onClick: closeModal },
+        ]);
+      }
+    };
+    updateActions.appendChild(downloadBtn);
+  } else if (updaterSnapshot?.status === "downloaded") {
+    const restartBtn = document.createElement("button");
+    restartBtn.className = "btn primary mini-btn";
+    restartBtn.textContent = "Restart Now";
+    restartBtn.onclick = () => void restartToApplyUpdate();
+    updateActions.appendChild(restartBtn);
+  } else if (updaterSnapshot?.status === "downloading") {
+    const cancelBtn = document.createElement("button");
+    cancelBtn.className = "btn ghost mini-btn";
+    cancelBtn.textContent = "Cancel Download";
+    cancelBtn.onclick = () => void window.zephus.cancelUpdateDownload();
+    updateActions.appendChild(cancelBtn);
+  }
+
+  checkRow.append(checkLeft, updateActions);
   updatesSec.appendChild(checkRow);
   form.appendChild(updatesSec);
 
@@ -7197,6 +7339,12 @@ async function bootstrap(): Promise<void> {
   window.zephus.onUpdaterStatus((data) => {
     updaterSnapshot = data;
     renderHomeStatusPanels();
+    if (data.status === "downloaded") {
+      setStatus(
+        `Update ${updateVersionLabel(data.version)} downloaded. Restart Zephus to apply it.`,
+      );
+      promptDownloadedUpdate();
+    }
   });
   refreshIcons();
 

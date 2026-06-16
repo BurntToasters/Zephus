@@ -23,6 +23,9 @@
 
 ---
 
+## Changes in `v0.1.0-db.4:`
+* **Updater:** Downloaded updates now ask users to restart instead of installing silently on quit.
+
 ## Changes in `v0.1.0-db.3:`
 * **Windows:** Fixed and npm/nodejs spawner error.
 * **Recent Sites:** Users can now remove sites from the recent sites list.
