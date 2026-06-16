@@ -10,6 +10,7 @@ import {
   cloneSiteDocument,
   createEditorSession,
   effectiveSiteDocument,
+  EditorSnapshot,
   isGlobalDirty,
   markPageDirty,
   markSiteDirty,
@@ -572,8 +573,11 @@ function getCode(): string {
   return cm ? cm.getValue() : state.rawCode;
 }
 
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 function currentPageLabel(): string {
@@ -2593,6 +2597,7 @@ async function writeSiteDocumentFromRenderer(
     setStatus("No site-level changes to keep.");
     return;
   }
+  pushUndo(); // capture pre-change design/shell so the edit is undoable
   state.pendingSiteDocument = cloneSiteDocument(nextSite);
   state.pendingSiteEditorKind = editorKind;
   trackSiteChange(state, changeLabel);
@@ -3760,6 +3765,9 @@ function styleAttr(
   addCssValue(css, "margin", style.margin);
   addCssValue(css, "border-radius", style.radius);
   addCssValue(css, "gap", style.gap);
+  addCssValue(css, "aspect-ratio", style.aspectRatio);
+  addCssValue(css, "object-fit", style.objectFit);
+  addCssValue(css, "object-position", style.objectPosition);
   if (style.columns && (block.type === "columns" || block.type === "gallery")) {
     css.push(
       `grid-template-columns:repeat(${Math.max(1, Number(style.columns) || 1)}, minmax(0, 1fr))`,
@@ -3957,10 +3965,16 @@ function blockToHtml(
         .split(/\r?\n|,/)
         .map((item) => item.trim())
         .filter(Boolean);
+      const galleryCommon = structuralCommon(
+        block,
+        "zephus-gallery",
+        viewport,
+        forCanvas,
+      );
       if (images.length === 0 && forCanvas) {
-        return `<section${common}><div class="canvas-empty">No gallery images yet.</div></section>`;
+        return `<section${galleryCommon}><div class="canvas-empty">No gallery images yet.</div></section>`;
       }
-      return `<section${common}>${images
+      return `<section${galleryCommon}>${images
         .map((src, index) => {
           const isProjectAsset = forCanvas && src.startsWith("/");
           const srcAttr = isProjectAsset
@@ -4123,11 +4137,51 @@ function currentManagedSource(): string {
 let dropIndex = -1;
 let indicator: HTMLElement | null = null;
 let dropSectionId: string | null = null;
+let draggingSectionId: string | null = null;
+let sectionDropIndex = -1;
+
+function captureSnapshot(): EditorSnapshot {
+  return {
+    sections: cloneSections(state.sections),
+    site: cloneSiteDocument(effectiveSiteDocument(state)),
+  };
+}
 
 function pushUndo(): void {
-  state.undo.push(cloneSections(state.sections));
+  state.undo.push(captureSnapshot());
   if (state.undo.length > 50) state.undo.shift();
   state.redo = [];
+}
+
+/**
+ * Restores sections + (if changed) the site design/shell from a snapshot.
+ * Page sections and the site document are restored together so a single
+ * undo/redo reverts visual edits AND design/theme/shell changes.
+ */
+function restoreSnapshot(snap: EditorSnapshot): void {
+  state.sections = cloneSections(snap.sections);
+  syncBlocksFromSections();
+  syncSelectionState();
+
+  const currentSite = effectiveSiteDocument(state);
+  if (JSON.stringify(snap.site) !== JSON.stringify(currentSite)) {
+    if (
+      snap.site &&
+      state.siteDocument &&
+      JSON.stringify(snap.site) === JSON.stringify(state.siteDocument)
+    ) {
+      // Snapshot matches the last-saved site: drop the pending change.
+      state.pendingSiteDocument = null;
+      state.pendingSiteEditorKind = null;
+      markSiteDirty(state, false);
+    } else if (snap.site) {
+      state.pendingSiteDocument = cloneSiteDocument(snap.site);
+      trackSiteChange(state, "Reverted a design change");
+      markSiteDirty(state, true);
+    }
+    applyDesignPreview();
+    renderDirtyIndicators();
+  }
 }
 
 function blockLabel(block: Block): string {
@@ -4516,6 +4570,254 @@ function hydrateCanvasAssets(root: HTMLElement): void {
   });
 }
 
+/** Loads a preview image, hydrating project-relative (`/…`) paths to data URLs. */
+function setPreviewImage(img: HTMLImageElement, src: string): void {
+  if (!src) return;
+  if (src.startsWith("/")) {
+    void fetchAssetDataUrl(src).then((url) => {
+      if (url) img.src = url;
+    });
+  } else {
+    img.src = src;
+  }
+}
+
+function parseObjectPosition(value: string): { x: number; y: number } {
+  const parts = (value || "50% 50%").trim().split(/\s+/);
+  const x = parseFloat(parts[0] ?? "50");
+  const y = parseFloat(parts[1] ?? "50");
+  return {
+    x: Number.isFinite(x) ? Math.min(100, Math.max(0, x)) : 50,
+    y: Number.isFinite(y) ? Math.min(100, Math.max(0, y)) : 50,
+  };
+}
+
+const ASPECT_OPTIONS: Array<[string, string]> = [
+  ["", "Original"],
+  ["1/1", "Square (1:1)"],
+  ["4/3", "Standard (4:3)"],
+  ["3/2", "Photo (3:2)"],
+  ["16/9", "Widescreen (16:9)"],
+  ["21/9", "Cinematic (21:9)"],
+  ["4/5", "Portrait (4:5)"],
+];
+
+/**
+ * Non-destructive image framing: aspect-ratio + object-fit + a draggable focal
+ * point (object-position). Edits block.style and commits via the supplied
+ * helpers so it round-trips through the schema like any other style.
+ */
+function appendImageFramingControls(
+  group: HTMLElement,
+  block: Block,
+  commitStyle: (key: keyof BlockStyle, value: string) => void,
+): void {
+  // Aspect ratio
+  const aspectWrap = document.createElement("label");
+  aspectWrap.className = "meta-field";
+  const aspectLabel = document.createElement("span");
+  aspectLabel.textContent = "Shape";
+  const aspectSelect = document.createElement("select");
+  wireInspectorControl(aspectSelect);
+  for (const [value, text] of ASPECT_OPTIONS) {
+    const opt = document.createElement("option");
+    opt.value = value;
+    opt.textContent = text;
+    if (value === (block.style?.aspectRatio ?? "")) opt.selected = true;
+    aspectSelect.appendChild(opt);
+  }
+  aspectSelect.onchange = () => commitStyle("aspectRatio", aspectSelect.value);
+  aspectWrap.append(aspectLabel, aspectSelect);
+  group.appendChild(aspectWrap);
+
+  // Fit
+  const fitWrap = document.createElement("label");
+  fitWrap.className = "meta-field";
+  const fitLabel = document.createElement("span");
+  fitLabel.textContent = "Fit";
+  const fitSelect = document.createElement("select");
+  wireInspectorControl(fitSelect);
+  for (const [value, text] of [
+    ["cover", "Fill frame (crop)"],
+    ["contain", "Fit inside"],
+    ["fill", "Stretch"],
+  ] as Array<[string, string]>) {
+    const opt = document.createElement("option");
+    opt.value = value;
+    opt.textContent = text;
+    if (value === (block.style?.objectFit ?? "cover")) opt.selected = true;
+    fitSelect.appendChild(opt);
+  }
+  fitSelect.onchange = () => commitStyle("objectFit", fitSelect.value);
+  fitWrap.append(fitLabel, fitSelect);
+  group.appendChild(fitWrap);
+
+  // Focal point picker
+  const focalWrap = document.createElement("div");
+  focalWrap.className = "meta-field";
+  const focalLabel = document.createElement("span");
+  focalLabel.textContent = "Focus point (drag)";
+  const box = document.createElement("div");
+  box.className = "focal-box";
+  const previewImg = document.createElement("img");
+  previewImg.className = "focal-img";
+  previewImg.alt = "";
+  setPreviewImage(previewImg, block.props["src"] ?? "");
+  const dot = document.createElement("div");
+  dot.className = "focal-dot";
+  const initial = parseObjectPosition(block.style?.objectPosition ?? "50% 50%");
+  dot.style.left = `${initial.x}%`;
+  dot.style.top = `${initial.y}%`;
+  box.append(previewImg, dot);
+  focalWrap.append(focalLabel, box);
+  group.appendChild(focalWrap);
+
+  let dragging = false;
+  const apply = (e: PointerEvent, commit: boolean): void => {
+    const rect = box.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
+    const x = Math.round(
+      Math.min(100, Math.max(0, ((e.clientX - rect.left) / rect.width) * 100)),
+    );
+    const y = Math.round(
+      Math.min(100, Math.max(0, ((e.clientY - rect.top) / rect.height) * 100)),
+    );
+    dot.style.left = `${x}%`;
+    dot.style.top = `${y}%`;
+    if (commit) commitStyle("objectPosition", `${x}% ${y}%`);
+  };
+  box.addEventListener("pointerdown", (e) => {
+    dragging = true;
+    beginInspectorEdit();
+    box.setPointerCapture(e.pointerId);
+    apply(e, false);
+  });
+  box.addEventListener("pointermove", (e) => {
+    if (dragging) apply(e, false);
+  });
+  box.addEventListener("pointerup", (e) => {
+    if (!dragging) return;
+    dragging = false;
+    apply(e, true);
+    endInspectorEdit();
+  });
+}
+
+function galleryImages(block: Block): string[] {
+  return (block.props["images"] ?? "")
+    .split(/\r?\n|,/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/** Rewrites the gallery's image list + position-indexed alt props together. */
+function writeGallery(block: Block, images: string[], alts: string[]): void {
+  for (const key of Object.keys(block.props)) {
+    if (/^alt\d+$/.test(key)) delete block.props[key];
+  }
+  block.props["images"] = images.join("\n");
+  alts.forEach((alt, i) => {
+    if (alt) block.props[`alt${i + 1}`] = alt;
+  });
+}
+
+/**
+ * Visual gallery manager: thumbnail grid with per-image alt text, reordering,
+ * and removal. Stores the same `images` + `altN` props the renderer reads.
+ */
+function appendGalleryManager(
+  group: HTMLElement,
+  block: Block,
+  addFromAssets: () => void,
+): void {
+  const addRow = document.createElement("div");
+  addRow.className = "prop-actions";
+  const addImg = document.createElement("button");
+  addImg.className = "btn";
+  addImg.textContent = "Add Image from Assets";
+  addImg.onclick = addFromAssets;
+  addRow.appendChild(addImg);
+  group.appendChild(addRow);
+
+  const images = galleryImages(block);
+  const alts = images.map((_, i) => block.props[`alt${i + 1}`] ?? "");
+
+  if (images.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "muted";
+    empty.textContent = "No images yet. Add one from your assets.";
+    group.appendChild(empty);
+    return;
+  }
+
+  const reorder = (from: number, to: number): void => {
+    if (to < 0 || to >= images.length) return;
+    pushUndo();
+    const [img] = images.splice(from, 1);
+    const [alt] = alts.splice(from, 1);
+    images.splice(to, 0, img ?? "");
+    alts.splice(to, 0, alt ?? "");
+    writeGallery(block, images, alts);
+    commitBlockChange("Reordered gallery image");
+  };
+  const removeAt = (index: number): void => {
+    pushUndo();
+    images.splice(index, 1);
+    alts.splice(index, 1);
+    writeGallery(block, images, alts);
+    commitBlockChange("Removed gallery image");
+  };
+
+  const list = document.createElement("div");
+  list.className = "gallery-manager";
+  images.forEach((src, index) => {
+    const item = document.createElement("div");
+    item.className = "gallery-item";
+
+    const thumb = document.createElement("img");
+    thumb.className = "gallery-thumb";
+    thumb.alt = "";
+    setPreviewImage(thumb, src);
+
+    const main = document.createElement("div");
+    main.className = "gallery-item-main";
+    main.appendChild(
+      labeledInput(`Alt text ${index + 1}`, alts[index] ?? "", (v) => {
+        block.props[`alt${index + 1}`] = v;
+        commitInspectorChange("Updated gallery alt text");
+      }),
+    );
+
+    const actions = document.createElement("div");
+    actions.className = "gallery-item-actions";
+    const up = document.createElement("button");
+    up.className = "btn ghost";
+    up.title = "Move up";
+    up.setAttribute("aria-label", `Move image ${index + 1} up`);
+    up.textContent = "↑";
+    up.disabled = index === 0;
+    up.onclick = () => reorder(index, index - 1);
+    const down = document.createElement("button");
+    down.className = "btn ghost";
+    down.title = "Move down";
+    down.setAttribute("aria-label", `Move image ${index + 1} down`);
+    down.textContent = "↓";
+    down.disabled = index === images.length - 1;
+    down.onclick = () => reorder(index, index + 1);
+    const del = document.createElement("button");
+    del.className = "btn ghost";
+    del.title = "Remove";
+    del.setAttribute("aria-label", `Remove image ${index + 1}`);
+    del.textContent = "✕";
+    del.onclick = () => removeAt(index);
+    actions.append(up, down, del);
+
+    item.append(thumb, main, actions);
+    list.appendChild(item);
+  });
+  group.appendChild(list);
+}
+
 type ResizeCorner = "nw" | "ne" | "sw" | "se";
 type ResizeTarget =
   | { kind: "block"; node: Block }
@@ -4758,6 +5060,27 @@ function renderCanvas(): void {
     const sectionChrome = document.createElement("div");
     sectionChrome.className = "section-chrome";
 
+    const grip = document.createElement("span");
+    grip.className = "section-grip";
+    grip.textContent = "⠿";
+    grip.title = "Drag to reorder section";
+    grip.setAttribute("aria-hidden", "true");
+    grip.draggable = !section.locked;
+    grip.addEventListener("dragstart", (event) => {
+      if (section.locked) {
+        event.preventDefault();
+        return;
+      }
+      draggingSectionId = section.id;
+      event.dataTransfer?.setData("text/zephus-move-section", section.id);
+      if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+    });
+    grip.addEventListener("dragend", () => {
+      draggingSectionId = null;
+      sectionDropIndex = -1;
+      indicator?.remove();
+    });
+
     const chip = document.createElement("span");
     chip.className = "block-chip";
     chip.textContent = `${sectionIndex + 1}. ${section.label}`;
@@ -4791,7 +5114,17 @@ function renderCanvas(): void {
       actions.appendChild(btn);
     }
     sectionChrome.append(chip, crumbs, actions);
+    sectionShell.insertBefore(grip, sectionShell.firstChild);
     sectionShell.appendChild(sectionChrome);
+    sectionShell.addEventListener("dragover", (event) => {
+      if (!draggingSectionId) return;
+      event.preventDefault();
+      const rect = sectionShell.getBoundingClientRect();
+      const after = event.clientY > rect.top + rect.height / 2;
+      sectionDropIndex = after ? sectionIndex + 1 : sectionIndex;
+      showIndicator(canvas, sectionShell, after);
+    });
+    sectionShell.addEventListener("drop", (event) => handleDrop(event));
 
     const sectionBody = document.createElement("div");
     sectionBody.className = "section-body";
@@ -4915,6 +5248,7 @@ function renderCanvas(): void {
         event.dataTransfer?.setData("text/zephus-move-block", block.id);
       });
       shell.addEventListener("dragover", (event) => {
+        if (draggingSectionId) return; // a section is being reordered
         event.preventDefault();
         dropSectionId = section.id;
         const rect = shell.getBoundingClientRect();
@@ -4980,6 +5314,7 @@ function handleDrop(e: DragEvent): void {
   const newType = e.dataTransfer?.getData("text/zephus-new");
   const moveBlockId = e.dataTransfer?.getData("text/zephus-move-block");
   const templateId = e.dataTransfer?.getData("text/zephus-template");
+  const moveSectionId = e.dataTransfer?.getData("text/zephus-move-section");
   const targetSection =
     findSection(dropSectionId ?? activeSectionId()) ??
     state.sections[0] ??
@@ -4987,7 +5322,23 @@ function handleDrop(e: DragEvent): void {
   const target =
     dropIndex < 0 ? (targetSection?.children.length ?? 0) : dropIndex;
 
-  if (templateId) {
+  if (moveSectionId) {
+    const from = state.sections.findIndex((s) => s.id === moveSectionId);
+    if (from >= 0 && sectionDropIndex >= 0) {
+      let to = sectionDropIndex;
+      if (from < to) to -= 1;
+      if (to !== from) {
+        pushUndo();
+        const [sec] = state.sections.splice(from, 1);
+        if (sec) {
+          state.sections.splice(to, 0, sec);
+          state.selectedSectionId = sec.id;
+          state.selectedId = null;
+          commitBlockChange("Moved section");
+        }
+      }
+    }
+  } else if (templateId) {
     const tpl =
       TEMPLATES.find((t) => t.id === templateId) ??
       resolveSavedSectionTemplate(templateId);
@@ -5018,6 +5369,8 @@ function handleDrop(e: DragEvent): void {
   }
   dropIndex = -1;
   dropSectionId = null;
+  draggingSectionId = null;
+  sectionDropIndex = -1;
 }
 
 interface InlineEditTarget {
@@ -6326,15 +6679,13 @@ function renderProperties(): void {
     imageRow.append(browse, remove);
     contentGroup.appendChild(imageRow);
     contentGroup.appendChild(
-      labeledInput("Image path", block.props["src"] ?? "", (v) =>
-        commit("src", v),
-      ),
-    );
-    contentGroup.appendChild(
       labeledInput("Alt text", block.props["alt"] ?? "", (v) =>
         commit("alt", v),
       ),
     );
+    if (block.props["src"]) {
+      appendImageFramingControls(contentGroup, block, commitStyle);
+    }
   } else if (block.type === "columns") {
     const count = document.createElement("label");
     count.className = "meta-field";
@@ -6382,12 +6733,7 @@ function renderProperties(): void {
       ),
     );
   } else if (block.type === "gallery") {
-    const galleryRow = document.createElement("div");
-    galleryRow.className = "prop-actions";
-    const addImg = document.createElement("button");
-    addImg.className = "btn";
-    addImg.textContent = "Add Image from Assets";
-    addImg.onclick = () =>
+    appendGalleryManager(contentGroup, block, () =>
       openAssetBrowser({
         filter: "images",
         title: "Add Gallery Image",
@@ -6398,14 +6744,9 @@ function renderProperties(): void {
             ? `${existing}\n${webPath}`
             : webPath;
           commitBlockChange("Added gallery image");
+          renderProperties();
         },
-      });
-    galleryRow.appendChild(addImg);
-    contentGroup.appendChild(galleryRow);
-    contentGroup.appendChild(
-      labeledTextarea("Image paths", block.props["images"] ?? "", (v) =>
-        commit("images", v),
-      ),
+      }),
     );
   } else if (block.type === "list") {
     contentGroup.appendChild(
@@ -7226,32 +7567,34 @@ async function closeProject(): Promise<void> {
 
 function doUndo(): void {
   const prev = state.undo.pop();
-  if (prev) {
-    state.redo.push(cloneSections(state.sections));
-    state.sections = cloneSections(prev);
-    syncBlocksFromSections();
-    syncSelectionState();
-    trackChange("Undid a visual change");
+  if (!prev) return;
+  const sectionsChanged =
+    JSON.stringify(prev.sections) !== JSON.stringify(state.sections);
+  state.redo.push(captureSnapshot());
+  restoreSnapshot(prev);
+  if (sectionsChanged) {
+    trackChange("Undid a change");
     markDirty(true);
-    renderLayers();
-    renderCanvas();
-    renderProperties();
   }
+  renderLayers();
+  renderCanvas();
+  renderProperties();
 }
 
 function doRedo(): void {
   const next = state.redo.pop();
-  if (next) {
-    state.undo.push(cloneSections(state.sections));
-    state.sections = cloneSections(next);
-    syncBlocksFromSections();
-    syncSelectionState();
-    trackChange("Redid a visual change");
+  if (!next) return;
+  const sectionsChanged =
+    JSON.stringify(next.sections) !== JSON.stringify(state.sections);
+  state.undo.push(captureSnapshot());
+  restoreSnapshot(next);
+  if (sectionsChanged) {
+    trackChange("Redid a change");
     markDirty(true);
-    renderLayers();
-    renderCanvas();
-    renderProperties();
   }
+  renderLayers();
+  renderCanvas();
+  renderProperties();
 }
 
 function onKeydown(e: KeyboardEvent): void {

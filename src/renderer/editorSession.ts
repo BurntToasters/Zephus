@@ -1,5 +1,11 @@
 export type SiteEditorKind = "shell" | "design" | null;
 
+/** A unified undo entry: page sections + the site design/shell at capture time. */
+export interface EditorSnapshot {
+  sections: SectionNode[];
+  site: SiteDocument | null;
+}
+
 export interface EditorSessionState {
   project: ProjectOpenResult | null;
   siteDocument: SiteDocument | null;
@@ -29,8 +35,8 @@ export interface EditorSessionState {
   previewUrl: string | null;
   unsubLog: null | (() => void);
   unsubExternal: null | (() => void);
-  undo: SectionNode[][];
-  redo: SectionNode[][];
+  undo: EditorSnapshot[];
+  redo: EditorSnapshot[];
   draftTimer: number | null;
   recoveredPageDraft: DraftData | null;
   recoveredSiteDraft: DraftData | null;

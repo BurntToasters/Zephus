@@ -2336,6 +2336,17 @@ body {
   background: var(--zephus-surface, var(--bg-alt));
   border-radius: var(--radius-md);
 }
+.canvas .zephus-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 0.75rem;
+}
+.canvas .zephus-gallery img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: var(--zephus-radius, var(--radius-md));
+}
 
 /* Visible keyboard focus for all interactive elements. */
 :focus-visible {
@@ -2949,4 +2960,106 @@ body {
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* Image focal-point picker (property panel) */
+.focal-box {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--bg-app);
+  cursor: crosshair;
+  touch-action: none;
+}
+.focal-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  pointer-events: none;
+  user-select: none;
+}
+.focal-dot {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+
+/* Gallery manager (property panel) */
+.gallery-manager {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.gallery-item {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--panel-card);
+}
+.gallery-thumb {
+  width: 48px;
+  height: 48px;
+  flex: 0 0 auto;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  background: var(--bg-app);
+}
+.gallery-item-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.gallery-item-actions {
+  display: flex;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+.gallery-item-actions button {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Section drag-reorder grip */
+.section-grip {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  z-index: 3;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--muted);
+  background: var(--panel-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: grab;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.canvas-section:hover > .section-grip,
+.canvas-section.selected > .section-grip {
+  opacity: 1;
+}
+.section-grip:active {
+  cursor: grabbing;
 }

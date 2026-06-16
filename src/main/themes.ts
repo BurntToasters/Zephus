@@ -130,6 +130,8 @@ a { color: var(--accent); }
 .zephus-price-amount { font-size: 2rem; font-weight: 800; }
 .zephus-price-period { color: var(--muted); }
 .zephus-cta { text-align: center; padding: 2.5rem 1.5rem; background: var(--surface); border-radius: var(--zephus-radius, 12px); }
+.zephus-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 0.75rem; }
+.zephus-gallery img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--zephus-radius, 12px); }
 /* Auto-grid sibling feature/pricing blocks so repeated cards lay out in
    columns instead of full-width stacked rows. Headings/intro span all columns. */
 section:has(> .zephus-feature),

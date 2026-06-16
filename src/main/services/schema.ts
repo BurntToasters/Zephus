@@ -1047,6 +1047,9 @@ function styleAttr(block: BlockNode): string {
   addCssValue(css, "margin", style.margin);
   addCssValue(css, "border-radius", style.radius);
   addCssValue(css, "gap", style.gap);
+  addCssValue(css, "aspect-ratio", style.aspectRatio);
+  addCssValue(css, "object-fit", style.objectFit);
+  addCssValue(css, "object-position", style.objectPosition);
   if (style.columns && (block.type === "columns" || block.type === "gallery")) {
     css.push(
       `grid-template-columns:repeat(${Math.max(1, Number(style.columns) || 1)}, minmax(0, 1fr))`,
@@ -1189,7 +1192,7 @@ export function renderBlockNode(block: BlockNode): string {
         .split(/\r?\n|,/)
         .map((item) => item.trim())
         .filter(Boolean);
-      return `<section${common}>${images
+      return `<section${structuralCommon(block, "zephus-gallery")}>${images
         .map(
           (src, index) =>
             `<img src="${escapeAttr(src)}" alt="${escapeAttr(

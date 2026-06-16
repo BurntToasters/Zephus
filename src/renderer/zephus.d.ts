@@ -106,6 +106,10 @@ interface BlockStyle {
   shadow?: "none" | "sm" | "md" | "lg";
   columns?: string;
   gap?: string;
+  /** Image framing (non-destructive crop). */
+  aspectRatio?: string;
+  objectFit?: "cover" | "contain" | "fill";
+  objectPosition?: string;
   stackOnMobile?: boolean;
   hideOn?: ViewportKey[];
   responsive?: Partial<
