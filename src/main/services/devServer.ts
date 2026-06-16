@@ -5,8 +5,8 @@ import log from "electron-log";
 import { DevServerStartResult } from "../types";
 import { readGlobalSettings } from "./settings";
 import { buildSpawnEnv } from "./nodeCheck";
+import { npmCommand } from "./npmCommand";
 
-const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
 const URL_PATTERN =
   /(https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\]):\d+\/?[^\s]*)/i;
 const STARTUP_TIMEOUT_MS = 60_000;
@@ -115,7 +115,8 @@ async function startDevServerProcess(
       clearTimeout(timeout);
       resolve(r);
     };
-    const child = spawn(npmCmd, ["run", "dev"], {
+    const npm = npmCommand(["run", "dev"]);
+    const child = spawn(npm.command, npm.args, {
       cwd: projectPath,
       windowsHide: true,
       env: { ...spawnEnv, FORCE_COLOR: "0" },
