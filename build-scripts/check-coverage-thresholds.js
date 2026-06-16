@@ -11,11 +11,11 @@ if (!fs.existsSync(summaryPath)) {
 const summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
 
 const thresholds = {
-  'src/main/main.ts': { lines: 12, statements: 12 },
-  'src/main/preload.ts': { lines: 80, statements: 80 },
-  'src/main/processKill.ts': { lines: 80, statements: 80 },
-  'src/utils/validation.ts': { lines: 85, statements: 85 },
-  'src/utils/downloadLifecycle.ts': { lines: 90, statements: 90 },
+  'src/main/updater.ts': { lines: 45, statements: 45 },
+  'src/main/services/assets.ts': { lines: 80, statements: 80 },
+  'src/main/services/files.ts': { lines: 90, statements: 90 },
+  'src/main/services/schema.ts': { lines: 75, statements: 70 },
+  'src/main/services/updateChannel.ts': { lines: 95, statements: 95 },
 };
 
 function findCoverageEntry(suffix) {

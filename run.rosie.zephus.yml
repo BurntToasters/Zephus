@@ -24,7 +24,7 @@ modules:
   - name: zephus
     buildsystem: simple
     build-commands:
-      - cp -a release/linux-unpacked /app/zephus
+      - cp -a "${ZEPHUS_LINUX_UNPACKED_DIR:-release/linux-unpacked}" /app/zephus
       - install -Dm755 zephus.sh /app/bin/zephus
       - install -Dm644 run.rosie.zephus.desktop /app/share/applications/run.rosie.zephus.desktop
       - install -Dm644 run.rosie.zephus.metainfo.xml /app/share/metainfo/run.rosie.zephus.metainfo.xml

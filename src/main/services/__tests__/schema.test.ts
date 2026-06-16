@@ -131,8 +131,11 @@ describe("schema service", () => {
       ],
     });
     expect(updated.ok).toBe(true);
-    expect(fs.readFileSync(path.join(tmpDir, aboutPath), "utf8")).toContain(
-      '<section class="team-shell" style="width:80%;height:420px;max-width:840px;background:#eef2ff;padding:3rem;margin:2rem 0;border-radius:20px">',
+    const savedAstro = fs.readFileSync(path.join(tmpDir, aboutPath), "utf8");
+    expect(savedAstro).toContain('data-zephus-block="section"');
+    expect(savedAstro).toContain('class="team-shell"');
+    expect(savedAstro).toContain(
+      'style="width:80%;height:420px;max-width:840px;background:#eef2ff;padding:3rem;margin:2rem 0;border-radius:20px"',
     );
 
     const detached = detachPageDocument(
@@ -186,6 +189,30 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
     expect(astro).toContain("height:80px");
     expect(astro).not.toContain("width:100px;color:red");
     expect(astro).not.toContain("position:fixed");
+  });
+
+  it("does not overwrite out-of-sync managed Astro pages", () => {
+    ensureVisualSchema(tmpDir, pagesDir);
+    const created = createSchemaPage(tmpDir, pagesDir, "manual-edit");
+    expect(created.ok).toBe(true);
+    const page = pagePathFromSlug(pagesDir, "manual-edit");
+    const pageFile = path.join(tmpDir, page);
+    const manualSource = `---
+import BaseLayout from '../layouts/BaseLayout.astro';
+---
+<BaseLayout title="Manual">
+  <h1>Manual edit stays</h1>
+</BaseLayout>
+`;
+    fs.writeFileSync(pageFile, manualSource, "utf8");
+
+    const ensured = ensureVisualSchema(tmpDir, pagesDir);
+    expect(ensured.ok).toBe(true);
+    expect(fs.readFileSync(pageFile, "utf8")).toBe(manualSource);
+
+    const reread = readPageDocument(tmpDir, page, pagesDir);
+    expect(reread.ok).toBe(true);
+    expect(reread.pageDocument?.managedFileStatus).toBe("out-of-sync");
   });
 
   it("writes managed shell and design artifacts when site settings change", () => {

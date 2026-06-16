@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, shell, session } from "electron";
+import { pathToFileURL } from "url";
 import * as path from "path";
 import log from "electron-log";
 import { registerIpcHandlers } from "./ipc";
@@ -258,7 +259,12 @@ function createMainWindow(): void {
 
   // Security: block in-app navigation and new windows. External links open in
   // the OS browser; everything else is denied.
-  const isInternal = (target: string): boolean => target.startsWith("file://");
+  const rendererRoot = pathToFileURL(rendererPath("")).toString();
+  const rendererRootUrl = rendererRoot.endsWith("/")
+    ? rendererRoot
+    : `${rendererRoot}/`;
+  const isInternal = (target: string): boolean =>
+    target.startsWith(rendererRootUrl);
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
     return { action: "deny" };

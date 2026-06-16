@@ -185,6 +185,12 @@ describe("schema round-trip", () => {
     const astro = fs.readFileSync(path.join(tmpDir, rel), "utf8");
     // Raw angle brackets from user text must be entity-escaped in the body.
     expect(astro).toContain("&lt;bold&gt;");
+    expect(astro).toContain('data-zephus-id="section-main"');
+    expect(astro).toContain('data-zephus-id="h"');
+    expect(astro).toContain("@media (max-width: 720px)");
+    expect(astro).toContain(
+      '[data-zephus-id="section-main"]{width:320px;height:240px}',
+    );
     // The data payload attribute must not contain a literal apostrophe.
     const propMatch = astro.match(/data-zephus-props="([^"]*)"/);
     expect(propMatch).toBeTruthy();

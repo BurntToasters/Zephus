@@ -448,6 +448,16 @@ function friendlyError(raw: string | undefined): string {
   return firstLine.length > 240 ? firstLine.slice(0, 240) + "…" : firstLine;
 }
 
+function nodeStatusMessage(res: NodeCheckResult): string {
+  if (res.status === "missing") {
+    return "Node.js was not found. Install Node.js 22.12 or newer, or set a custom Node.js location in Settings.";
+  }
+  if (res.status === "outdated") {
+    return `Node.js ${res.version ?? "?"} was found, but Zephus needs Node.js 22.12 or newer.`;
+  }
+  return res.message || "Node.js status could not be determined.";
+}
+
 function uid(): string {
   return "b" + Math.random().toString(36).slice(2, 9);
 }
@@ -700,6 +710,22 @@ function updateVersionLabel(version?: string): string {
   return version ? `v${version}` : "the latest update";
 }
 
+function updaterStatusMessage(): string {
+  if (updaterSnapshot?.status === "available") {
+    return `${updateVersionLabel(updaterSnapshot.version)} is available.`;
+  }
+  if (updaterSnapshot?.status === "downloaded") {
+    return `${updateVersionLabel(updaterSnapshot.version)} is downloaded and ready to install.`;
+  }
+  if (updaterSnapshot?.status === "downloading") {
+    return `Downloading update (${Math.round(updaterSnapshot.percent ?? 0)}%).`;
+  }
+  if (updaterSnapshot?.status === "error") {
+    return friendlyError(updaterSnapshot.error ?? "Update check failed.");
+  }
+  return "Check the selected update channel.";
+}
+
 async function restartToApplyUpdate(): Promise<void> {
   setStatus("Restarting to apply update...");
   const result = (await window.zephus.installUpdate()) as
@@ -713,6 +739,70 @@ async function restartToApplyUpdate(): Promise<void> {
       [{ label: "OK", kind: "primary", onClick: closeModal }],
     );
   }
+}
+
+function renderUpdaterActions(container: HTMLElement): void {
+  container.innerHTML = "";
+
+  const checkNowBtn = document.createElement("button");
+  checkNowBtn.className = "btn secondary mini-btn";
+  checkNowBtn.textContent = "Check for Updates Now";
+  checkNowBtn.onclick = async () => {
+    checkNowBtn.textContent = "Checking...";
+    checkNowBtn.disabled = true;
+    try {
+      await window.zephus.checkForUpdates();
+    } catch {
+      // Ignored: status is surfaced via updater-status listener
+    }
+    checkNowBtn.textContent = "Check for Updates Now";
+    checkNowBtn.disabled = false;
+  };
+  container.appendChild(checkNowBtn);
+
+  if (updaterSnapshot?.status === "available") {
+    const downloadBtn = document.createElement("button");
+    downloadBtn.className = "btn primary mini-btn";
+    downloadBtn.textContent = "Download Update";
+    downloadBtn.onclick = async () => {
+      downloadBtn.textContent = "Downloading...";
+      downloadBtn.disabled = true;
+      const result = (await window.zephus.downloadUpdate()) as {
+        status?: string;
+        error?: string;
+      };
+      if (result?.status === "error") {
+        showModal("Update Download Failed", friendlyError(result.error), [
+          { label: "OK", kind: "primary", onClick: closeModal },
+        ]);
+      }
+    };
+    container.appendChild(downloadBtn);
+  } else if (updaterSnapshot?.status === "downloaded") {
+    const restartBtn = document.createElement("button");
+    restartBtn.className = "btn primary mini-btn";
+    restartBtn.textContent = "Restart Now";
+    restartBtn.onclick = () => void restartToApplyUpdate();
+    container.appendChild(restartBtn);
+  } else if (updaterSnapshot?.status === "downloading") {
+    const cancelBtn = document.createElement("button");
+    cancelBtn.className = "btn ghost mini-btn";
+    cancelBtn.textContent = "Cancel Download";
+    cancelBtn.onclick = () => void window.zephus.cancelUpdateDownload();
+    container.appendChild(cancelBtn);
+  }
+  refreshIcons();
+}
+
+function refreshUpdaterControls(): void {
+  document
+    .querySelectorAll<HTMLElement>("[data-updater-status-text]")
+    .forEach((el) => {
+      el.textContent = updaterStatusMessage();
+    });
+  document
+    .querySelectorAll<HTMLElement>("[data-updater-actions]")
+    .forEach((el) => renderUpdaterActions(el));
 }
 
 function promptDownloadedUpdate(force = false): void {
@@ -1420,68 +1510,12 @@ async function openSettingsModal(): Promise<void> {
   const checkRow = document.createElement("div");
   checkRow.className = "settings-row";
   const checkLeft = document.createElement("span");
-  if (updaterSnapshot?.status === "available") {
-    checkLeft.textContent = `${updateVersionLabel(updaterSnapshot.version)} is available.`;
-  } else if (updaterSnapshot?.status === "downloaded") {
-    checkLeft.textContent = `${updateVersionLabel(updaterSnapshot.version)} is downloaded and ready to install.`;
-  } else if (updaterSnapshot?.status === "downloading") {
-    checkLeft.textContent = `Downloading update (${Math.round(updaterSnapshot.percent ?? 0)}%).`;
-  } else if (updaterSnapshot?.status === "error") {
-    checkLeft.textContent = friendlyError(
-      updaterSnapshot.error ?? "Update check failed.",
-    );
-  } else {
-    checkLeft.textContent = "Check the selected update channel.";
-  }
-  const checkNowBtn = document.createElement("button");
-  checkNowBtn.className = "btn secondary mini-btn";
-  checkNowBtn.textContent = "Check for Updates Now";
-  checkNowBtn.onclick = async () => {
-    checkNowBtn.textContent = "Checking…";
-    checkNowBtn.disabled = true;
-    try {
-      await window.zephus.checkForUpdates();
-    } catch {
-      // Ignored: status is surfaced via updater-status listener
-    }
-    checkNowBtn.textContent = "Check for Updates Now";
-    checkNowBtn.disabled = false;
-  };
+  checkLeft.dataset.updaterStatusText = "true";
+  checkLeft.textContent = updaterStatusMessage();
   const updateActions = document.createElement("div");
   updateActions.className = "settings-inline-actions";
-  updateActions.appendChild(checkNowBtn);
-
-  if (updaterSnapshot?.status === "available") {
-    const downloadBtn = document.createElement("button");
-    downloadBtn.className = "btn primary mini-btn";
-    downloadBtn.textContent = "Download Update";
-    downloadBtn.onclick = async () => {
-      downloadBtn.textContent = "Downloading...";
-      downloadBtn.disabled = true;
-      const result = (await window.zephus.downloadUpdate()) as {
-        status?: string;
-        error?: string;
-      };
-      if (result?.status === "error") {
-        showModal("Update Download Failed", friendlyError(result.error), [
-          { label: "OK", kind: "primary", onClick: closeModal },
-        ]);
-      }
-    };
-    updateActions.appendChild(downloadBtn);
-  } else if (updaterSnapshot?.status === "downloaded") {
-    const restartBtn = document.createElement("button");
-    restartBtn.className = "btn primary mini-btn";
-    restartBtn.textContent = "Restart Now";
-    restartBtn.onclick = () => void restartToApplyUpdate();
-    updateActions.appendChild(restartBtn);
-  } else if (updaterSnapshot?.status === "downloading") {
-    const cancelBtn = document.createElement("button");
-    cancelBtn.className = "btn ghost mini-btn";
-    cancelBtn.textContent = "Cancel Download";
-    cancelBtn.onclick = () => void window.zephus.cancelUpdateDownload();
-    updateActions.appendChild(cancelBtn);
-  }
+  updateActions.dataset.updaterActions = "true";
+  renderUpdaterActions(updateActions);
 
   checkRow.append(checkLeft, updateActions);
   updatesSec.appendChild(checkRow);
@@ -4421,9 +4455,48 @@ function addResizeHandles(
       event.stopPropagation();
       beginCanvasResize(event, corner, target, getSubject(), handle);
     });
+    handle.addEventListener("keydown", (event) => {
+      if (
+        !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)
+      )
+        return;
+      event.preventDefault();
+      event.stopPropagation();
+      resizeCanvasTargetByKeyboard(event.key, corner, target, getSubject());
+    });
     handleWrap.appendChild(handle);
   }
   shell.appendChild(handleWrap);
+}
+
+function resizeCanvasTargetByKeyboard(
+  key: string,
+  corner: ResizeCorner,
+  target: ResizeTarget,
+  subject: HTMLElement,
+): void {
+  const rect = subject.getBoundingClientRect();
+  const fromLeft = corner === "nw" || corner === "sw";
+  const fromTop = corner === "nw" || corner === "ne";
+  let width = rect.width;
+  let height = rect.height;
+  const step = 10;
+
+  if (key === "ArrowRight") width += fromLeft ? -step : step;
+  if (key === "ArrowLeft") width += fromLeft ? step : -step;
+  if (key === "ArrowDown") height += fromTop ? -step : step;
+  if (key === "ArrowUp") height += fromTop ? step : -step;
+
+  const style = resizeStyleTarget(target);
+  style.width = `${Math.max(MIN_RESIZE_WIDTH, Math.round(width))}px`;
+  style.height = `${Math.max(MIN_RESIZE_HEIGHT, Math.round(height))}px`;
+  subject.style.width = style.width;
+  subject.style.height = style.height;
+  pushUndo();
+  commitInspectorChange(
+    `Resized ${target.kind === "block" ? target.node.type : target.node.label}`,
+    true,
+  );
 }
 
 function beginCanvasResize(
@@ -7229,7 +7302,13 @@ function buildThemeCard(
 
   const body = document.createElement("div");
   body.className = "theme-card-body";
-  body.innerHTML = `<span class="t-name">${theme.name}</span><span class="t-desc">${theme.description}</span>`;
+  const name = document.createElement("span");
+  name.className = "t-name";
+  name.textContent = theme.name;
+  const desc = document.createElement("span");
+  desc.className = "t-desc";
+  desc.textContent = theme.description;
+  body.append(name, desc);
 
   const actions = document.createElement("div");
   actions.className = "theme-card-actions";
@@ -7306,7 +7385,7 @@ async function renderThemesInTab(): Promise<void> {
     syncCreateButtonState();
     refreshIcons();
   } catch (err) {
-    container.innerHTML = `<p class="muted">Could not load themes: ${err}</p>`;
+    container.innerHTML = `<p class="muted">Could not load themes: ${escapeHtml(String(err))}</p>`;
   }
 }
 
@@ -7357,68 +7436,12 @@ async function renderSettingsInTab(): Promise<void> {
   const checkRow = document.createElement("div");
   checkRow.className = "settings-row";
   const checkLeft = document.createElement("span");
-  if (updaterSnapshot?.status === "available") {
-    checkLeft.textContent = `${updateVersionLabel(updaterSnapshot.version)} is available.`;
-  } else if (updaterSnapshot?.status === "downloaded") {
-    checkLeft.textContent = `${updateVersionLabel(updaterSnapshot.version)} is downloaded and ready to install.`;
-  } else if (updaterSnapshot?.status === "downloading") {
-    checkLeft.textContent = `Downloading update (${Math.round(updaterSnapshot.percent ?? 0)}%).`;
-  } else if (updaterSnapshot?.status === "error") {
-    checkLeft.textContent = friendlyError(
-      updaterSnapshot.error ?? "Update check failed.",
-    );
-  } else {
-    checkLeft.textContent = "Check the selected update channel.";
-  }
-  const checkNowBtn = document.createElement("button");
-  checkNowBtn.className = "btn secondary mini-btn";
-  checkNowBtn.textContent = "Check for Updates Now";
-  checkNowBtn.onclick = async () => {
-    checkNowBtn.textContent = "Checking…";
-    checkNowBtn.disabled = true;
-    try {
-      await window.zephus.checkForUpdates();
-    } catch {
-      // Ignored: status is surfaced via updater-status listener
-    }
-    checkNowBtn.textContent = "Check for Updates Now";
-    checkNowBtn.disabled = false;
-  };
+  checkLeft.dataset.updaterStatusText = "true";
+  checkLeft.textContent = updaterStatusMessage();
   const updateActions = document.createElement("div");
   updateActions.className = "settings-inline-actions";
-  updateActions.appendChild(checkNowBtn);
-
-  if (updaterSnapshot?.status === "available") {
-    const downloadBtn = document.createElement("button");
-    downloadBtn.className = "btn primary mini-btn";
-    downloadBtn.textContent = "Download Update";
-    downloadBtn.onclick = async () => {
-      downloadBtn.textContent = "Downloading...";
-      downloadBtn.disabled = true;
-      const result = (await window.zephus.downloadUpdate()) as {
-        status?: string;
-        error?: string;
-      };
-      if (result?.status === "error") {
-        showModal("Update Download Failed", friendlyError(result.error), [
-          { label: "OK", kind: "primary", onClick: closeModal },
-        ]);
-      }
-    };
-    updateActions.appendChild(downloadBtn);
-  } else if (updaterSnapshot?.status === "downloaded") {
-    const restartBtn = document.createElement("button");
-    restartBtn.className = "btn primary mini-btn";
-    restartBtn.textContent = "Restart Now";
-    restartBtn.onclick = () => void restartToApplyUpdate();
-    updateActions.appendChild(restartBtn);
-  } else if (updaterSnapshot?.status === "downloading") {
-    const cancelBtn = document.createElement("button");
-    cancelBtn.className = "btn ghost mini-btn";
-    cancelBtn.textContent = "Cancel Download";
-    cancelBtn.onclick = () => void window.zephus.cancelUpdateDownload();
-    updateActions.appendChild(cancelBtn);
-  }
+  updateActions.dataset.updaterActions = "true";
+  renderUpdaterActions(updateActions);
 
   checkRow.append(checkLeft, updateActions);
   updatesSec.appendChild(checkRow);
@@ -7716,6 +7739,14 @@ async function createSiteFromTabFlow(): Promise<void> {
   const theme = selectedTabTheme;
   const folder = await window.zephus.chooseNewSiteFolder();
   if (!folder) return;
+  const node = await window.zephus.getNodeStatus();
+  if (node.status !== "ok") {
+    showModal("Node.js Required", nodeStatusMessage(node), [
+      { label: "Open Settings", kind: "primary", onClick: openSettingsModal },
+      { label: "Cancel", kind: "ghost", onClick: closeModal },
+    ]);
+    return;
+  }
   setStatus("Creating site from theme…");
   const r = await window.zephus.createSite(folder, theme);
   if (!r.ok) {
@@ -7949,6 +7980,7 @@ async function bootstrap(): Promise<void> {
   window.zephus.onUpdaterStatus((data) => {
     updaterSnapshot = data;
     renderHomeStatusPanels();
+    refreshUpdaterControls();
     if (data.status === "downloaded") {
       setStatus(
         `Update ${updateVersionLabel(data.version)} downloaded. Restart Zephus to apply it.`,

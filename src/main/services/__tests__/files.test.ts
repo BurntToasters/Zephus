@@ -32,6 +32,20 @@ describe("readProjectFile", () => {
     const result = readProjectFile(tmpDir, "nope.txt");
     expect(result.ok).toBe(false);
   });
+
+  it("rejects symlink escapes", () => {
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "zephus-outside-"));
+    try {
+      fs.writeFileSync(path.join(outside, "secret.txt"), "secret");
+      fs.symlinkSync(outside, path.join(tmpDir, "linked"), "dir");
+
+      const result = readProjectFile(tmpDir, "linked/secret.txt");
+      expect(result.ok).toBe(false);
+      expect(result.error).toContain("escapes");
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("writeProjectFile", () => {
@@ -47,5 +61,19 @@ describe("writeProjectFile", () => {
     const result = writeProjectFile(tmpDir, "../../bad.txt", "x");
     expect(result.ok).toBe(false);
     expect(result.error).toContain("escapes");
+  });
+
+  it("rejects writes through symlink escapes", () => {
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "zephus-outside-"));
+    try {
+      fs.symlinkSync(outside, path.join(tmpDir, "linked"), "dir");
+
+      const result = writeProjectFile(tmpDir, "linked/created.txt", "x");
+      expect(result.ok).toBe(false);
+      expect(result.error).toContain("escapes");
+      expect(fs.existsSync(path.join(outside, "created.txt"))).toBe(false);
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
   });
 });

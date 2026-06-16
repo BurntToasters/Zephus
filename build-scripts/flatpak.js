@@ -27,6 +27,11 @@ const BUNDLE_NAMES = {
   aarch64: 'Zephus-Linux-aarch64.flatpak',
 };
 
+const UNPACKED_DIRS = {
+  x86_64: 'release/linux-unpacked',
+  aarch64: 'release/linux-arm64-unpacked',
+};
+
 function getSanitizedEnv() {
   const env = { ...process.env };
 
@@ -67,6 +72,19 @@ function getSanitizedEnv() {
 function run(cmd, opts = {}) {
   console.log(`\n> ${cmd}`);
   execSync(cmd, { stdio: 'inherit', cwd: ROOT, env: getSanitizedEnv(), ...opts });
+}
+
+function flatpakEnv(arch) {
+  const unpackedDir = UNPACKED_DIRS[arch];
+  if (!unpackedDir) {
+    throw new Error(`Unsupported Flatpak arch: ${arch}`);
+  }
+  if (!fs.existsSync(path.join(ROOT, unpackedDir))) {
+    throw new Error(
+      `Missing ${unpackedDir}. Run the matching electron-builder Linux build before Flatpak ${arch}.`
+    );
+  }
+  return { ...getSanitizedEnv(), ZEPHUS_LINUX_UNPACKED_DIR: unpackedDir };
 }
 
 function getHostArch() {
@@ -124,7 +142,9 @@ function buildArch(arch) {
   );
 
   try {
-    run(`flatpak-builder --arch=${arch} --repo=${REPO_DIR} --force-clean ${buildDir} ${MANIFEST}`);
+    run(`flatpak-builder --arch=${arch} --repo=${REPO_DIR} --force-clean ${buildDir} ${MANIFEST}`, {
+      env: flatpakEnv(arch),
+    });
   } catch (error) {
     const buildFilesPath = path.join(ROOT, buildDir, 'files');
     const buildMetadataPath = path.join(ROOT, buildDir, 'metadata');
@@ -137,7 +157,9 @@ function buildArch(arch) {
     console.log(
       '\nflatpak-builder export failed. Retrying export with --disable-sandbox (icon validator workaround)...\n'
     );
-    run(`flatpak build-export --disable-sandbox --arch=${arch} ${REPO_DIR} ${buildDir}`);
+    run(`flatpak build-export --disable-sandbox --arch=${arch} ${REPO_DIR} ${buildDir}`, {
+      env: flatpakEnv(arch),
+    });
   }
 }
 
@@ -159,7 +181,9 @@ function installArch(arch) {
 
   console.log(`\n=== Installing Flatpak for ${arch} ===\n`);
 
-  run(`flatpak-builder --user --install --arch=${arch} --force-clean ${buildDir} ${MANIFEST}`);
+  run(`flatpak-builder --user --install --arch=${arch} --force-clean ${buildDir} ${MANIFEST}`, {
+    env: flatpakEnv(arch),
+  });
 }
 
 function main() {

@@ -2,45 +2,33 @@
 
 const fs = require('fs');
 const path = require('path');
-const { dumpLicenses } = require('npm-license-crawler');
+const checker = require('license-checker-rseidelsohn');
 
 const ROOT = path.join(__dirname, '..');
 const OUTPUT = path.join(ROOT, 'licenses.json');
 
-// Directories we never want crawled (each may or may not exist locally).
-const CANDIDATE_EXCLUDES = ['.site_examples', 'template-previews'];
-
-function resolveExisting(relPaths) {
-  const resolved = [];
-  for (const rel of relPaths) {
-    const abs = path.resolve(ROOT, rel);
-    try {
-      if (fs.statSync(abs).isDirectory()) {
-        resolved.push(abs);
-      } else {
-        console.log(`   licenses: skipping exclude (not a directory): ${rel}`);
-      }
-    } catch {
-      console.log(`   licenses: skipping exclude (absent): ${rel}`);
-    }
-  }
-  return resolved;
-}
-
 function main() {
   const args = {
-    start: [ROOT],
-    exclude: resolveExisting(CANDIDATE_EXCLUDES),
+    start: ROOT,
     production: true,
-    dependencies: true,
-    json: OUTPUT,
+    excludePrivatePackages: true,
   };
 
-  dumpLicenses(args, (error) => {
+  checker.init(args, (error, packages) => {
     if (error) {
       console.error('✗ License crawl failed:', error.message || error);
       process.exit(1);
     }
+    const normalized = {};
+    for (const [packageId, data] of Object.entries(packages || {})) {
+      normalized[packageId] = {
+        licenses: data.licenses || 'Unknown',
+        repository: data.repository || '',
+        licenseUrl: data.licenseUrl || data.licenseFile || '',
+        parents: Array.isArray(data.parents) ? data.parents.join(', ') : data.parents || 'zephus',
+      };
+    }
+    fs.writeFileSync(OUTPUT, JSON.stringify(normalized, null, 2) + '\n');
     console.log('✓ licenses.json generated');
   });
 }

@@ -74,6 +74,26 @@ function uniqueName(dir: string, base: string): string {
   return candidate;
 }
 
+function assertRealChild(root: string, target: string, error: string): void {
+  if (target !== root && !target.startsWith(root + path.sep)) {
+    throw new Error(error);
+  }
+}
+
+function resolveRealPublicRoot(
+  projectPath: string,
+  publicRoot: string,
+): string {
+  const realProjectRoot = fs.realpathSync.native(projectPath);
+  const realPublicRoot = fs.realpathSync.native(publicRoot);
+  assertRealChild(
+    realProjectRoot,
+    realPublicRoot,
+    "Public directory escapes the project directory.",
+  );
+  return realPublicRoot;
+}
+
 /**
  * Copies a single source file into the categorized assets directory
  * (public/assets/<category>/) and returns its web-root-relative path.
@@ -92,6 +112,13 @@ function copyIntoAssets(
   ).absolute;
   const targetDir = path.join(publicRoot, ASSETS_ROOT, category);
   fs.mkdirSync(targetDir, { recursive: true });
+  const realPublicRoot = resolveRealPublicRoot(projectPath, publicRoot);
+  const realTargetDir = fs.realpathSync.native(targetDir);
+  assertRealChild(
+    realPublicRoot,
+    realTargetDir,
+    "Asset directory escapes the public directory.",
+  );
   const name = uniqueName(targetDir, path.basename(sourcePath));
   fs.copyFileSync(sourcePath, path.join(targetDir, name));
   return { webPath: `/${ASSETS_ROOT}/${category}/${name}`, category };
@@ -278,6 +305,13 @@ export function readAssetDataUrl(
     ) {
       return { ok: false, error: "Path escapes the public directory." };
     }
+    const realPublicRoot = resolveRealPublicRoot(projectPath, publicRoot);
+    const realResolved = fs.realpathSync.native(resolved);
+    assertRealChild(
+      realPublicRoot,
+      realResolved,
+      "Path escapes the public directory.",
+    );
     const ext = path.extname(resolved).slice(1).toLowerCase();
     const mime = MIME_BY_EXTENSION[ext];
     if (!mime) return { ok: false, error: "Unsupported image type." };
@@ -313,6 +347,10 @@ export function listProjectAssets(
       publicDir,
       "public",
     ).absolute;
+    if (!fs.existsSync(publicRoot)) {
+      return { ok: true, assets };
+    }
+    resolveRealPublicRoot(projectPath, publicRoot);
     const assetsRoot = path.join(publicRoot, ASSETS_ROOT);
     if (fs.existsSync(assetsRoot)) {
       collectAssets(assetsRoot, `/${ASSETS_ROOT}`, null, assets);

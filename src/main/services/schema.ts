@@ -121,6 +121,10 @@ export function pagePathFromSlug(
 }
 
 function pageSchemaRelativePath(slug: string): string {
+  const normalized = normalizePageSlug(slug);
+  if (normalized !== slug) {
+    throw new Error("Invalid page schema slug.");
+  }
   return path.join(
     ".zephus",
     "pages",
@@ -129,7 +133,17 @@ function pageSchemaRelativePath(slug: string): string {
 }
 
 function pageSchemaFile(projectPath: string, slug: string): string {
-  return path.join(projectPath, pageSchemaRelativePath(slug));
+  const normalized = normalizePageSlug(slug);
+  if (normalized !== slug) {
+    throw new Error("Invalid page schema slug.");
+  }
+  const root = path.resolve(projectPath, ".zephus", "pages");
+  const relative = slug === "index" ? "index.json" : `${slug}.json`;
+  const resolved = path.resolve(root, relative);
+  if (resolved !== root && !resolved.startsWith(root + path.sep)) {
+    throw new Error("Page schema path escapes .zephus/pages.");
+  }
+  return resolved;
 }
 
 function splitFrontmatter(content: string): {
@@ -836,6 +850,49 @@ function parseBlocksFromSource(raw: string): BlockNode[] {
   return parseBlocksFromInner(inner);
 }
 
+function parseSectionsFromSource(raw: string): SectionNode[] {
+  const inner = extractManagedInner(raw);
+  const segments = splitTopLevelNodes(inner).filter((segment) => {
+    const tag = openingTag(segment);
+    return !/^<style\b/i.test(tag);
+  });
+  const sections: SectionNode[] = [];
+  const looseBlocks: BlockNode[] = [];
+
+  for (const segment of segments) {
+    const tag = openingTag(segment);
+    const tagName = tag.match(/^<([A-Za-z][\w:-]*)/)?.[1]?.toLowerCase();
+    const stored = parseStoredBlock(segment);
+    if (tagName === "section" && stored?.type === "section") {
+      if (looseBlocks.length > 0) {
+        sections.push(defaultSectionNode(looseBlocks.splice(0)));
+      }
+      const childInner = segment
+        .replace(/^<section\b[^>]*>/i, "")
+        .replace(/<\/section>\s*$/i, "");
+      sections.push({
+        id: stored.id,
+        type: "section",
+        label: stored.props["label"] || "Section",
+        props: {
+          wrapper: stored.props["wrapper"] ?? "box",
+          cls: stored.props["cls"] ?? "",
+        },
+        style: stored.style,
+        children: parseBlocksFromInner(childInner),
+        locked: stored.locked,
+      });
+      continue;
+    }
+    looseBlocks.push(...parseBlocksFromInner(segment));
+  }
+
+  if (looseBlocks.length > 0 || sections.length === 0) {
+    sections.push(defaultSectionNode(looseBlocks));
+  }
+  return sections;
+}
+
 function parseBlocksFromInner(inner: string): BlockNode[] {
   const segments = splitTopLevelNodes(inner);
   if (segments.length === 0 && inner.trim()) {
@@ -877,6 +934,16 @@ function hashText(value: string): string {
   return crypto.createHash("sha1").update(value).digest("hex");
 }
 
+function defaultSectionNode(blocks: BlockNode[]): SectionNode {
+  return {
+    id: "section-main",
+    type: "section",
+    label: "Main Content",
+    props: { wrapper: "none" },
+    children: blocks,
+  };
+}
+
 /**
  * Encodes a value as a URI-encoded JSON payload for a data-* attribute.
  * encodeURIComponent leaves apostrophes literal, so we encode them too to
@@ -888,6 +955,7 @@ function encodeDataPayload(value: unknown): string {
 
 function blockMetadataAttrs(block: BlockNode): string {
   const attrs = [
+    `data-zephus-id="${escapeAttr(block.id)}"`,
     `data-zephus-block="${escapeAttr(block.type)}"`,
     `data-zephus-props="${escapeAttr(encodeDataPayload(block.props))}"`,
   ];
@@ -977,6 +1045,64 @@ function styleAttr(block: BlockNode): string {
     addCssValue(css, "height", block.props["height"] || "48px");
   }
   return css.length ? ` style="${escapeAttr(css.join(";"))}"` : "";
+}
+
+function responsiveCssDeclarations(
+  style: BlockStyle | undefined,
+): string | null {
+  if (!style) return null;
+  const css: string[] = [];
+  if (["left", "center", "right"].includes(String(style.align))) {
+    css.push(`text-align:${style.align}`);
+  }
+  addCssValue(css, "width", style.width);
+  addCssValue(css, "height", style.height);
+  addCssValue(css, "max-width", style.maxWidth);
+  addCssValue(css, "padding", style.padding);
+  addCssValue(css, "margin", style.margin);
+  addCssValue(css, "gap", style.gap);
+  if (style.columns) {
+    css.push(
+      `grid-template-columns:repeat(${Math.max(1, Number(style.columns) || 1)}, minmax(0, 1fr))`,
+    );
+  }
+  return css.length ? css.join(";") : null;
+}
+
+function collectResponsiveCss(sections: SectionNode[]): string {
+  const tabletRules: string[] = [];
+  const mobileRules: string[] = [];
+
+  const addRules = (
+    id: string,
+    style: BlockStyle | undefined,
+    includeStackRule = false,
+  ): void => {
+    const tablet = responsiveCssDeclarations(style?.responsive?.tablet);
+    const mobile = responsiveCssDeclarations(style?.responsive?.mobile);
+    const selector = `[data-zephus-id="${escapeAttr(id)}"]`;
+    if (tablet) tabletRules.push(`${selector}{${tablet}}`);
+    if (mobile) mobileRules.push(`${selector}{${mobile}}`);
+    if (includeStackRule && style?.stackOnMobile) {
+      mobileRules.push(`${selector}{grid-template-columns:1fr}`);
+    }
+  };
+
+  for (const section of sections) {
+    addRules(section.id, section.style);
+    for (const block of section.children) {
+      addRules(block.id, block.style, block.type === "columns");
+    }
+  }
+
+  const chunks: string[] = [];
+  if (tabletRules.length > 0) {
+    chunks.push(`@media (max-width: 1024px){${tabletRules.join("")}}`);
+  }
+  if (mobileRules.length > 0) {
+    chunks.push(`@media (max-width: 720px){${mobileRules.join("")}}`);
+  }
+  return chunks.join("\n");
 }
 
 function classAttr(block: BlockNode): string {
@@ -1162,7 +1288,8 @@ function renderBlockNode(block: BlockNode): string {
 }
 
 function renderSections(sections: SectionNode[]): string {
-  return sections
+  const responsiveCss = collectResponsiveCss(sections);
+  const body = sections
     .map((section) => {
       const body = section.children
         .map((child) => renderBlockNode(child))
@@ -1177,10 +1304,18 @@ function renderSections(sections: SectionNode[]): string {
         props: section.props,
         style: section.style,
       } as BlockNode);
-      return `<section${cls}${style}>\n${body}\n</section>`;
+      const metadata = blockMetadataAttrs({
+        id: section.id,
+        type: "section",
+        props: { ...section.props, label: section.label },
+        style: section.style,
+        locked: section.locked,
+      } as BlockNode);
+      return `<section${metadata}${cls}${style}>\n${body}\n</section>`;
     })
     .filter(Boolean)
     .join("\n");
+  return responsiveCss ? `<style>${responsiveCss}</style>\n${body}` : body;
 }
 
 function pageImportPath(
@@ -1361,20 +1496,26 @@ function buildPageDocument(
   blocks: BlockNode[],
   frontmatter: Record<string, string | boolean>,
 ): PageDocument {
+  return buildPageDocumentWithSections(
+    page,
+    pagesDir,
+    [defaultSectionNode(blocks)],
+    frontmatter,
+  );
+}
+
+function buildPageDocumentWithSections(
+  page: string,
+  pagesDir: string,
+  sections: SectionNode[],
+  frontmatter: Record<string, string | boolean>,
+): PageDocument {
   const meta = pageMetaFromFrontmatter(page, pagesDir, frontmatter);
   return {
     ...meta,
     schemaVersion: ZEPHUS_SCHEMA_VERSION,
     templateId: null,
-    sections: [
-      {
-        id: "section-main",
-        type: "section",
-        label: "Main Content",
-        props: { wrapper: "none" },
-        children: blocks,
-      },
-    ],
+    sections,
     detached: false,
     detachedAt: null,
     generatedHash: null,
@@ -1390,8 +1531,12 @@ function migratePageToDocument(
   const raw = fs.readFileSync(safeResolve(projectPath, page), "utf8");
   const { frontmatter } = splitFrontmatter(raw);
   const parsedFrontmatter = parseFrontmatter(frontmatter);
-  const blocks = parseBlocksFromSource(raw);
-  return buildPageDocument(page, pagesDir, blocks, parsedFrontmatter);
+  return buildPageDocumentWithSections(
+    page,
+    pagesDir,
+    parseSectionsFromSource(raw),
+    parsedFrontmatter,
+  );
 }
 
 export function getVisualSchemaStatus(
@@ -1499,20 +1644,28 @@ export function ensureVisualSchema(
     for (const doc of pageDocs) {
       if (doc.detached) continue;
       const generatedSource = renderAstroPage(projectPath, doc.page, site, doc);
+      const pageFile = safeResolve(projectPath, doc.page);
+      const actualSource = fs.existsSync(pageFile)
+        ? fs.readFileSync(pageFile, "utf8")
+        : null;
+      const managedFileStatus = resolveManagedStatus(
+        doc,
+        actualSource,
+        generatedSource,
+      );
       const nextDoc = {
         ...doc,
         generatedHash: hashText(generatedSource),
-        managedFileStatus: "managed" as const,
+        managedFileStatus:
+          managedFileStatus === "missing"
+            ? ("managed" as const)
+            : managedFileStatus,
       };
       writePageDocumentFile(projectPath, nextDoc);
-      fs.mkdirSync(path.dirname(safeResolve(projectPath, doc.page)), {
-        recursive: true,
-      });
-      fs.writeFileSync(
-        safeResolve(projectPath, doc.page),
-        generatedSource,
-        "utf8",
-      );
+      if (managedFileStatus !== "out-of-sync") {
+        fs.mkdirSync(path.dirname(pageFile), { recursive: true });
+        fs.writeFileSync(pageFile, generatedSource, "utf8");
+      }
     }
     updateAssetsIndex(projectPath, astro.publicDir);
 
@@ -1608,7 +1761,11 @@ function resolveManagedStatus(
 ): ManagedFileStatus {
   if (doc.detached) return "detached";
   if (actualSource === null) return "missing";
-  return actualSource === generatedSource ? "managed" : "out-of-sync";
+  if (actualSource === generatedSource) return "managed";
+  if (!doc.generatedHash) return "managed";
+  return hashText(actualSource) === doc.generatedHash
+    ? "managed"
+    : "out-of-sync";
 }
 
 export function readPageDocument(
@@ -1730,6 +1887,7 @@ export function writePageDocument(
     }
     const nextDoc: PageDocument = {
       ...doc,
+      slug: slugFromPage(doc.page, pagesDir),
       schemaVersion: ZEPHUS_SCHEMA_VERSION,
       detached: false,
       detachedAt: null,
@@ -1840,10 +1998,10 @@ export function reattachPageDocument(
 
     const source = fs.readFileSync(safeResolve(projectPath, page), "utf8");
     const { frontmatter } = splitFrontmatter(source);
-    const nextDoc = buildPageDocument(
+    const nextDoc = buildPageDocumentWithSections(
       page,
       pagesDir,
-      parseBlocksFromSource(source),
+      parseSectionsFromSource(source),
       parseFrontmatter(frontmatter),
     );
     return writePageDocument(projectPath, pagesDir, nextDoc);

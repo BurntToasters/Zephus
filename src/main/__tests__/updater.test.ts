@@ -55,7 +55,13 @@ vi.mock("electron-log", () => ({
   },
 }));
 
-function settings() {
+function settings(
+  override: Partial<ReturnType<typeof settingsBase>> = {},
+): ReturnType<typeof settingsBase> {
+  return { ...settingsBase(), ...override };
+}
+
+function settingsBase() {
   return {
     recentProjects: [],
     theme: "system" as const,
@@ -80,6 +86,23 @@ describe("updater install lifecycle", () => {
 
     expect(updaterMock.autoUpdater.autoDownload).toBe(false);
     expect(updaterMock.autoUpdater.autoInstallOnAppQuit).toBe(false);
+  });
+
+  it("applies developer channel feed settings", async () => {
+    vi.resetModules();
+    updaterMock.autoUpdater.reset();
+    electronMock.app.getVersion.mockReturnValue("0.1.0-db.3");
+    const { setupAutoUpdater } = await import("../updater");
+
+    setupAutoUpdater(
+      () => null,
+      () => settings({ updateChannel: "developer" }),
+    );
+
+    expect(updaterMock.autoUpdater.channel).toBe("db");
+    expect(updaterMock.autoUpdater.allowPrerelease).toBe(true);
+    expect(updaterMock.autoUpdater.allowDowngrade).toBe(false);
+    electronMock.app.getVersion.mockReturnValue("0.1.0");
   });
 
   it("restarts and relaunches only after an update is downloaded", async () => {
@@ -107,6 +130,31 @@ describe("updater install lifecycle", () => {
       false,
       true,
     );
+  });
+
+  it("rejects install when settings channel changed after download", async () => {
+    vi.resetModules();
+    updaterMock.autoUpdater.reset();
+    electronMock.app.getVersion.mockReturnValue("0.1.0-db.3");
+    const { setupAutoUpdater, installUpdate } = await import("../updater");
+    let updateChannel: ReturnType<typeof settings>["updateChannel"] =
+      "developer";
+
+    setupAutoUpdater(
+      () => null,
+      () => settings({ updateChannel }),
+    );
+    updaterMock.autoUpdater.emit("update-available", { version: "0.1.0-db.4" });
+    updaterMock.autoUpdater.emit("update-downloaded", {
+      version: "0.1.0-db.4",
+    });
+    updateChannel = "stable";
+
+    expect(() => installUpdate(() => settings({ updateChannel }))).toThrow(
+      "Update channel changed",
+    );
+    expect(updaterMock.autoUpdater.quitAndInstall).not.toHaveBeenCalled();
+    electronMock.app.getVersion.mockReturnValue("0.1.0");
   });
 
   it("rejects a downloaded update that was not the approved version", async () => {
