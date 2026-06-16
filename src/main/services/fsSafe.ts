@@ -23,6 +23,42 @@ export function writeFileAtomic(file: string, content: string): void {
   }
 }
 
+/** Resolves a project-relative path, rejecting traversal outside the root. */
+export function safeResolve(projectPath: string, relativePath: string): string {
+  const root = path.resolve(projectPath);
+  const resolved = path.resolve(root, relativePath);
+  if (resolved !== root && !resolved.startsWith(root + path.sep)) {
+    throw new Error("Path escapes the project directory.");
+  }
+  return resolved;
+}
+
+/**
+ * Symlink-aware containment: walks up to the nearest existing ancestor, then
+ * compares real paths so an in-project symlink cannot resolve outside the root.
+ * Returns the real root + real target so callers can re-check the *resolved*
+ * path (e.g. a secret-file denylist) after symlinks are followed.
+ */
+export function assertRealpathInside(
+  projectPath: string,
+  targetPath: string,
+): { realRoot: string; realTarget: string } {
+  const realRoot = fs.realpathSync.native(path.resolve(projectPath));
+  let existing = targetPath;
+  while (!fs.existsSync(existing)) {
+    const parent = path.dirname(existing);
+    if (parent === existing) {
+      throw new Error("Path escapes the project directory.");
+    }
+    existing = parent;
+  }
+  const realTarget = fs.realpathSync.native(existing);
+  if (realTarget !== realRoot && !realTarget.startsWith(realRoot + path.sep)) {
+    throw new Error("Path escapes the project directory.");
+  }
+  return { realRoot, realTarget };
+}
+
 export interface SafeJsonResult<T> {
   data: T | null;
   /** True when the file existed but could not be parsed (and was backed up). */

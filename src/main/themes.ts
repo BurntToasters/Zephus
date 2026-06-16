@@ -88,6 +88,11 @@ const GLOBAL_CSS = `:root {
   --muted: #64748b;
   --border: #e2e8f0;
   --font: var(--zephus-font-family, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif);
+  /* Per-block shadow scale (matches the editor canvas) so style.shadow renders
+     identically in the built site. */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
 }
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
@@ -125,6 +130,21 @@ a { color: var(--accent); }
 .zephus-price-amount { font-size: 2rem; font-weight: 800; }
 .zephus-price-period { color: var(--muted); }
 .zephus-cta { text-align: center; padding: 2.5rem 1.5rem; background: var(--surface); border-radius: var(--zephus-radius, 12px); }
+.zephus-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 0.75rem; }
+.zephus-gallery img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--zephus-radius, 12px); }
+/* Auto-grid sibling feature/pricing blocks so repeated cards lay out in
+   columns instead of full-width stacked rows. Headings/intro span all columns. */
+section:has(> .zephus-feature),
+section:has(> .zephus-pricing) {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.75rem;
+  align-items: start;
+}
+section:has(> .zephus-feature) > :is(h1, h2, h3, h4, p, .lead),
+section:has(> .zephus-pricing) > :is(h1, h2, h3, h4, p, .lead) {
+  grid-column: 1 / -1;
+}
 @media (max-width: 640px) {
   .zephus-shell-nav { flex-wrap: wrap; }
 }
@@ -1401,16 +1421,12 @@ function storeDef(): ThemeDef {
           band("Shop", [
             heading("The collection", 1),
             paragraph("Everything we make, in one place.", "lead"),
-            columns(3, [
-              "<h3>The Tote</h3><p>$89</p>",
-              "<h3>The Bottle</h3><p>$34</p>",
-              "<h3>The Notebook</h3><p>$18</p>",
-            ]),
-            columns(3, [
-              "<h3>The Wallet</h3><p>$48</p>",
-              "<h3>The Cap</h3><p>$28</p>",
-              "<h3>The Mug</h3><p>$22</p>",
-            ]),
+            feature("👜", "The Tote", "Waxed canvas · $89"),
+            feature("🍶", "The Bottle", "Insulated steel · $34"),
+            feature("📓", "The Notebook", "Lay-flat binding · $18"),
+            feature("👛", "The Wallet", "Full-grain leather · $48"),
+            feature("🧢", "The Cap", "Brushed cotton · $28"),
+            feature("☕", "The Mug", "Stoneware · $22"),
           ]),
         ],
       },
@@ -1422,7 +1438,7 @@ export const THEME_META: ThemeMeta[] = [
   {
     id: "documentation",
     name: "Documentation",
-    description: "Sidebar navigation and content pages.",
+    description: "Clean, focused documentation pages.",
     previewPath: themePreviewPath("documentation"),
   },
   {

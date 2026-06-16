@@ -119,7 +119,9 @@ export function registerIpcHandlers(
   options?: IpcRegistrationOptions,
 ): void {
   const assertUpdaterSender = (senderId?: number): boolean => {
-    if (!options?.assertUpdaterSender) return true;
+    // Fail closed: if no asserter was provided, deny updater IPC rather than
+    // allowing any sender.
+    if (!options?.assertUpdaterSender) return false;
     return options.assertUpdaterSender(senderId);
   };
 
@@ -372,8 +374,19 @@ export function registerIpcHandlers(
     if (!selected) {
       return checkNodeVersion(readGlobalSettings().customNodePath);
     }
+    // Validate the path shape before probing/persisting (mirrors nodeSetPath).
+    const validation = validateNodePath(selected);
+    if (!validation.ok || !validation.path) {
+      const current = await checkNodeVersion(
+        readGlobalSettings().customNodePath,
+      );
+      return {
+        ...current,
+        message: validation.error ?? "The selected file is not valid.",
+      };
+    }
     // Validate the selection before persisting it.
-    const status = await checkNodeVersion(selected);
+    const status = await checkNodeVersion(validation.path);
     if (status.status === "missing" || status.status === "unknown") {
       // The chosen file isn't a working Node binary; report without saving.
       return {
@@ -383,7 +396,7 @@ export function registerIpcHandlers(
     }
 
     const settings = readGlobalSettings();
-    settings.customNodePath = selected;
+    settings.customNodePath = validation.path;
     writeGlobalSettings(settings);
     return status;
   });

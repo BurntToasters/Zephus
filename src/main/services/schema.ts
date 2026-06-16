@@ -25,6 +25,10 @@ import { listProjectImages } from "./assets";
 import { detectAstro, listPages } from "./project";
 import { readRepoSettings } from "./settings";
 import { readJsonSafe, writeFileAtomic } from "./fsSafe";
+import {
+  assertRealpathInside,
+  safeResolve as safeResolveString,
+} from "./fsSafe";
 
 const FRONTMATTER_PATTERN = /^(---\r?\n[\s\S]*?\r?\n---\r?\n?)/;
 const ZEPHUS_SCHEMA_VERSION = 1;
@@ -45,12 +49,9 @@ const VOID_TAGS = new Set([
 ]);
 
 function safeResolve(projectPath: string, relativePath: string): string {
-  const resolved = path.resolve(projectPath, relativePath);
-  const root = path.resolve(projectPath);
-  if (resolved !== root && !resolved.startsWith(root + path.sep)) {
-    throw new Error("Path escapes the project directory.");
-  }
-  return resolved;
+  const full = safeResolveString(projectPath, relativePath);
+  assertRealpathInside(projectPath, full); // reject symlink escapes
+  return full;
 }
 
 function zephusDir(projectPath: string): string {
@@ -204,13 +205,15 @@ function defaultDesignTokens(): DesignTokenSet {
   return {
     accent: "#4f46e5",
     background: "#ffffff",
-    foreground: "#111827",
+    foreground: "#0f172a",
     surface: "#f8fafc",
-    fontFamily: "system-ui, sans-serif",
-    headingFontFamily: "system-ui, sans-serif",
-    radius: "12px",
+    fontFamily:
+      'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+    headingFontFamily:
+      'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+    radius: "14px",
     shadow: "sm",
-    containerWidth: "960px",
+    containerWidth: "1080px",
   };
 }
 
@@ -1044,6 +1047,9 @@ function styleAttr(block: BlockNode): string {
   addCssValue(css, "margin", style.margin);
   addCssValue(css, "border-radius", style.radius);
   addCssValue(css, "gap", style.gap);
+  addCssValue(css, "aspect-ratio", style.aspectRatio);
+  addCssValue(css, "object-fit", style.objectFit);
+  addCssValue(css, "object-position", style.objectPosition);
   if (style.columns && (block.type === "columns" || block.type === "gallery")) {
     css.push(
       `grid-template-columns:repeat(${Math.max(1, Number(style.columns) || 1)}, minmax(0, 1fr))`,
@@ -1143,7 +1149,7 @@ function splitPair(line: string, sep = "::"): [string, string] {
   return [line.slice(0, i).trim(), line.slice(i + sep.length).trim()];
 }
 
-function renderBlockNode(block: BlockNode): string {
+export function renderBlockNode(block: BlockNode): string {
   const common = `${blockMetadataAttrs(block)}${classAttr(block)}${styleAttr(block)}`;
   switch (block.type) {
     case "heading": {
@@ -1186,7 +1192,7 @@ function renderBlockNode(block: BlockNode): string {
         .split(/\r?\n|,/)
         .map((item) => item.trim())
         .filter(Boolean);
-      return `<section${common}>${images
+      return `<section${structuralCommon(block, "zephus-gallery")}>${images
         .map(
           (src, index) =>
             `<img src="${escapeAttr(src)}" alt="${escapeAttr(
@@ -1624,25 +1630,25 @@ export function ensureVisualSchema(
     fs.mkdirSync(pagesSchemaDir(projectPath), { recursive: true });
     fs.mkdirSync(templatesDir(projectPath), { recursive: true });
 
-    let site = readJsonFile<SiteDocument>(siteDocumentFile(projectPath));
-    if (!site) {
-      // Distinguish genuinely-absent (first run) from corrupt-on-disk.
-      // A corrupt site.json is backed up by readJsonSafe; do NOT regenerate
-      // defaults over it — that would destroy the user's saved design/shell.
-      const checked = readJsonFileChecked<SiteDocument>(
-        siteDocumentFile(projectPath),
-      );
-      if (checked.corrupt) {
-        return {
-          ok: false,
-          status: null,
-          error:
-            "Zephus site config (.zephus/site.json) is corrupt. A backup was " +
-            "saved next to it. Restore it from version control to continue.",
-        };
-      }
-      site = defaultSiteDocument(projectPath, layoutPath, nextThemeId);
+    // Single read that distinguishes genuinely-absent (first run) from
+    // corrupt-on-disk. A corrupt site.json is backed up by readJsonSafe; do
+    // NOT regenerate defaults over it — that would destroy the user's saved
+    // design/shell.
+    const siteCheck = readJsonFileChecked<SiteDocument>(
+      siteDocumentFile(projectPath),
+    );
+    if (siteCheck.corrupt) {
+      return {
+        ok: false,
+        status: null,
+        error:
+          "Zephus site config (.zephus/site.json) is corrupt. A backup was " +
+          "saved next to it. Restore it from version control to continue.",
+      };
     }
+    const site =
+      siteCheck.data ??
+      defaultSiteDocument(projectPath, layoutPath, nextThemeId);
 
     const pages = listPages(projectPath, pagesDir);
     const pageDocs = pages.map((page) => {

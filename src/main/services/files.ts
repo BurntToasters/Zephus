@@ -1,6 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import { OperationResult } from "../types";
+import { assertRealpathInside, safeResolve } from "./fsSafe";
 
 /**
  * Rejects reads/writes of sensitive project files that the visual editor never
@@ -22,30 +23,27 @@ function assertEditablePath(relativePath: string): void {
   }
 }
 
-/** Resolves a project-relative path, rejecting traversal outside the project root. */
-function safeResolve(projectPath: string, relativePath: string): string {
-  const resolved = path.resolve(projectPath, relativePath);
-  const root = path.resolve(projectPath);
-  const rootWithSep = root + path.sep;
-  if (resolved !== root && !resolved.startsWith(rootWithSep)) {
-    throw new Error("Path escapes the project directory.");
-  }
-  return resolved;
-}
+// Files that get executed by the project's npm scripts (dev/build/install).
+// The generic write bridge must not be able to rewrite them — a compromised
+// renderer could otherwise inject a malicious script that main later spawns.
+const PROTECTED_WRITE_TARGETS = new Set([
+  "package.json",
+  "package-lock.json",
+  "npm-shrinkwrap.json",
+  "yarn.lock",
+  "pnpm-lock.yaml",
+]);
 
-function realpathInsideProject(projectPath: string, targetPath: string): void {
-  const root = fs.realpathSync.native(projectPath);
-  let existingPath = targetPath;
-  while (!fs.existsSync(existingPath)) {
-    const parent = path.dirname(existingPath);
-    if (parent === existingPath) {
-      throw new Error("Path escapes the project directory.");
-    }
-    existingPath = parent;
-  }
-  const realTarget = fs.realpathSync.native(existingPath);
-  if (realTarget !== root && !realTarget.startsWith(root + path.sep)) {
-    throw new Error("Path escapes the project directory.");
+function assertWritablePath(relativePath: string): void {
+  const normalized = relativePath.replace(/\\/g, "/").toLowerCase();
+  const base = normalized.split("/").pop() ?? "";
+  if (
+    PROTECTED_WRITE_TARGETS.has(base) ||
+    /^astro\.config\.[mc]?[jt]s$/.test(base)
+  ) {
+    throw new Error(
+      "This file is managed by the project and cannot be edited here.",
+    );
   }
 }
 
@@ -56,7 +54,10 @@ export function readProjectFile(
   try {
     const full = safeResolve(projectPath, relativePath);
     assertEditablePath(relativePath);
-    realpathInsideProject(projectPath, full);
+    const { realRoot, realTarget } = assertRealpathInside(projectPath, full);
+    // Re-check the denylist against the symlink-resolved path so an in-project
+    // symlink (e.g. notes.txt -> .env) cannot bypass the name-based check.
+    assertEditablePath(path.relative(realRoot, realTarget));
     return { ok: true, content: fs.readFileSync(full, "utf8") };
   } catch (error) {
     return {
@@ -74,7 +75,11 @@ export function writeProjectFile(
   try {
     const full = safeResolve(projectPath, relativePath);
     assertEditablePath(relativePath);
-    realpathInsideProject(projectPath, full);
+    assertWritablePath(relativePath);
+    const { realRoot, realTarget } = assertRealpathInside(projectPath, full);
+    const resolvedRel = path.relative(realRoot, realTarget);
+    assertEditablePath(resolvedRel);
+    assertWritablePath(resolvedRel);
     fs.mkdirSync(path.dirname(full), { recursive: true });
     fs.writeFileSync(full, content, "utf8");
     return { ok: true };

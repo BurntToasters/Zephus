@@ -111,6 +111,10 @@ export interface BlockStyle {
   shadow?: "none" | "sm" | "md" | "lg";
   columns?: string;
   gap?: string;
+  /** Image framing (non-destructive crop). */
+  aspectRatio?: string;
+  objectFit?: "cover" | "contain" | "fill";
+  objectPosition?: string;
   stackOnMobile?: boolean;
   hideOn?: ViewportKey[];
   responsive?: Partial<
@@ -203,16 +207,6 @@ export interface BlockNode extends EditorBlock {
   asset?: AssetRef;
   link?: LinkRef;
   form?: FormDefinition;
-}
-
-export interface ContainerNode {
-  id: string;
-  type: "container";
-  label: string;
-  style?: BlockStyle;
-  locked?: boolean;
-  hidden?: boolean;
-  children: BlockNode[];
 }
 
 export interface SectionNode {

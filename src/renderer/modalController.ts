@@ -67,8 +67,19 @@ export function createModalController(refreshIcons: () => void) {
     }
   }
 
+  /** While a modal is open, make the background views inert to AT + tabbing. */
+  function setBackgroundInert(on: boolean): void {
+    for (const id of ["view-start", "view-editor"]) {
+      const el = document.getElementById(id);
+      if (!el) continue;
+      if (on) el.setAttribute("inert", "");
+      else el.removeAttribute("inert");
+    }
+  }
+
   function activateFocusTrap(): void {
     lastFocused = document.activeElement as HTMLElement | null;
+    setBackgroundInert(true);
     if (!keyHandler) {
       keyHandler = onModalKeydown;
       document.addEventListener("keydown", keyHandler, true);
@@ -134,6 +145,7 @@ export function createModalController(refreshIcons: () => void) {
   function closeModal(): void {
     applyModalOptions();
     modalElement("modal-overlay").classList.add("hidden");
+    setBackgroundInert(false);
     if (keyHandler) {
       document.removeEventListener("keydown", keyHandler, true);
       keyHandler = null;
@@ -187,6 +199,55 @@ export function createModalController(refreshIcons: () => void) {
     });
   }
 
+  /** Accessible text-input modal replacing the native prompt(). */
+  function promptText(
+    title: string,
+    opts: {
+      label?: string;
+      placeholder?: string;
+      value?: string;
+      confirmLabel?: string;
+    } = {},
+  ): Promise<string | null> {
+    return new Promise((resolve) => {
+      const wrap = document.createElement("label");
+      wrap.className = "meta-field";
+      if (opts.label) {
+        const span = document.createElement("span");
+        span.textContent = opts.label;
+        wrap.appendChild(span);
+      }
+      const input = document.createElement("input");
+      input.type = "text";
+      input.className = "text";
+      if (opts.placeholder) input.placeholder = opts.placeholder;
+      if (opts.value) input.value = opts.value;
+      wrap.appendChild(input);
+
+      let settled = false;
+      const finish = (value: string | null): void => {
+        if (settled) return;
+        settled = true;
+        closeModal();
+        resolve(value);
+      };
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          finish(input.value.trim() || null);
+        }
+      });
+      showModalNode(title, wrap, [
+        { label: "Cancel", kind: "ghost", onClick: () => finish(null) },
+        {
+          label: opts.confirmLabel ?? "OK",
+          kind: "primary",
+          onClick: () => finish(input.value.trim() || null),
+        },
+      ]);
+    });
+  }
+
   async function confirmDestructive(
     title: string,
     body: string | HTMLElement,
@@ -236,6 +297,7 @@ export function createModalController(refreshIcons: () => void) {
     closeModal,
     isOpen: isModalOpen,
     choose,
+    promptText,
     confirmDestructive,
     confirmRestoreDraft,
     confirmUnsavedWork,

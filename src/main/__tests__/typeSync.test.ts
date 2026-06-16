@@ -68,3 +68,71 @@ describe("EditorBlockType sync", () => {
     );
   });
 });
+
+/**
+ * The shared data interfaces (BlockNode, SiteDocument, PageDocument, etc.) are
+ * hand-duplicated across types.ts and zephus.d.ts. Only the EditorBlockType
+ * union was previously guarded, so adding/renaming a field on one side drifted
+ * silently. This compares the top-level field names of every interface that
+ * appears in BOTH files and fails on any divergence.
+ */
+function interfaceNames(source: string): Set<string> {
+  const names = new Set<string>();
+  const re = /\binterface\s+([A-Za-z_]\w*)\b/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(source))) names.add(m[1]!);
+  return names;
+}
+
+function interfaceFields(source: string, name: string): string[] {
+  const head = new RegExp(`\\binterface\\s+${name}\\b[^{]*\\{`).exec(source);
+  if (!head) throw new Error(`Interface ${name} not found`);
+  let i = head.index + head[0].length;
+  let depth = 1;
+  let body = "";
+  while (i < source.length && depth > 0) {
+    const c = source[i]!;
+    if (c === "{") depth += 1;
+    else if (c === "}") {
+      depth -= 1;
+      if (depth === 0) break;
+    }
+    body += c;
+    i += 1;
+  }
+  // Collapse nested object types ({...}) so only top-level fields remain.
+  let prev = "";
+  while (prev !== body) {
+    prev = body;
+    body = body.replace(/\{[^{}]*\}/g, " ");
+  }
+  const fields = new Set<string>();
+  const fre = /(?:^|[;\n])\s*(\w+)\s*\??\s*:/g;
+  let fm: RegExpExecArray | null;
+  while ((fm = fre.exec(body))) fields.add(fm[1]!);
+  return [...fields].sort();
+}
+
+describe("shared interface sync", () => {
+  const mainSrc = fs.readFileSync(
+    path.join(__dirname, "..", "types.ts"),
+    "utf8",
+  );
+  const rendererSrc = fs.readFileSync(
+    path.join(__dirname, "..", "..", "renderer", "zephus.d.ts"),
+    "utf8",
+  );
+  const shared = [...interfaceNames(mainSrc)].filter((n) =>
+    interfaceNames(rendererSrc).has(n),
+  );
+
+  it("shares a meaningful set of interfaces", () => {
+    expect(shared.length).toBeGreaterThan(20);
+  });
+
+  it.each(shared)("interface %s has matching fields in both files", (name) => {
+    expect(interfaceFields(rendererSrc, name)).toEqual(
+      interfaceFields(mainSrc, name),
+    );
+  });
+});
