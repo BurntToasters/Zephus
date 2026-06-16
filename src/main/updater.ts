@@ -104,6 +104,18 @@ export function setupAutoUpdater(
   });
 
   autoUpdater.on("update-downloaded", (info) => {
+    if (
+      !approvedVersion ||
+      info.version !== approvedVersion ||
+      !isChannelUpgrade(app.getVersion(), info.version)
+    ) {
+      approvedVersion = null;
+      downloadedVersion = null;
+      const error = `Downloaded update ${info.version} was not approved for this channel.`;
+      log.warn(error);
+      send({ status: "error", error });
+      return;
+    }
     downloadedVersion = info.version;
     send({ status: "downloaded", version: info.version });
   });
@@ -154,9 +166,16 @@ export async function downloadUpdate(): Promise<UpdaterStatus> {
     await autoUpdater.downloadUpdate(downloadToken);
     downloadToken = null;
     isDownloading = false;
+    if (!downloadedVersion || downloadedVersion !== approvedVersion) {
+      downloadedVersion = null;
+      return {
+        status: "error",
+        error: "Downloaded update was not confirmed for this channel.",
+      };
+    }
     return {
       status: "downloaded",
-      version: downloadedVersion ?? approvedVersion,
+      version: downloadedVersion,
     };
   } catch (error) {
     downloadToken = null;

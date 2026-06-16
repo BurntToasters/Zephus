@@ -6,6 +6,7 @@ import {
   ReusableSection,
   ReusableSectionsResult,
 } from "../types";
+import { readJsonSafe, writeFileAtomic } from "./fsSafe";
 
 function sectionsPath(): string {
   return path.join(app.getPath("userData"), "reusable-sections.json");
@@ -14,20 +15,13 @@ function sectionsPath(): string {
 function readStoredSections(): ReusableSection[] {
   const file = sectionsPath();
   if (!fs.existsSync(file)) return [];
-  try {
-    const parsed = JSON.parse(
-      fs.readFileSync(file, "utf8"),
-    ) as ReusableSection[];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
+  const { data } = readJsonSafe<ReusableSection[]>(file);
+  return Array.isArray(data) ? data : [];
 }
 
 function writeStoredSections(sections: ReusableSection[]): void {
   const file = sectionsPath();
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, JSON.stringify(sections, null, 2) + "\n", "utf8");
+  writeFileAtomic(file, JSON.stringify(sections, null, 2) + "\n");
 }
 
 export function listReusableSections(): ReusableSectionsResult {

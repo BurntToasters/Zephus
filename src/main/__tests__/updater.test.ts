@@ -95,6 +95,7 @@ describe("updater install lifecycle", () => {
     setupAutoUpdater(() => win as never, settings);
     expect(() => installUpdate()).toThrow("No downloaded update");
 
+    updaterMock.autoUpdater.emit("update-available", { version: "0.2.0" });
     updaterMock.autoUpdater.emit("update-downloaded", { version: "0.2.0" });
     installUpdate();
 
@@ -106,5 +107,27 @@ describe("updater install lifecycle", () => {
       false,
       true,
     );
+  });
+
+  it("rejects a downloaded update that was not the approved version", async () => {
+    vi.resetModules();
+    updaterMock.autoUpdater.reset();
+    const { setupAutoUpdater, installUpdate } = await import("../updater");
+    const send = vi.fn();
+    const win = {
+      isDestroyed: () => false,
+      webContents: { send },
+    };
+
+    setupAutoUpdater(() => win as never, settings);
+    updaterMock.autoUpdater.emit("update-available", { version: "0.2.0" });
+    updaterMock.autoUpdater.emit("update-downloaded", { version: "0.3.0" });
+
+    expect(() => installUpdate()).toThrow("No downloaded update");
+    expect(send).toHaveBeenCalledWith("updater-status", {
+      status: "error",
+      error: "Downloaded update 0.3.0 was not approved for this channel.",
+    });
+    expect(updaterMock.autoUpdater.quitAndInstall).not.toHaveBeenCalled();
   });
 });

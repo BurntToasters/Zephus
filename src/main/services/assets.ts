@@ -3,6 +3,7 @@ import * as fs from "fs";
 import * as path from "path";
 import log from "electron-log";
 import { AssetCategory, AssetEntry, AssetListResult } from "../types";
+import { resolveProjectRelativeDir } from "./projectPaths";
 
 export interface ImportImageResult {
   ok: boolean;
@@ -84,7 +85,12 @@ function copyIntoAssets(
 ): { webPath: string; category: AssetCategory } {
   const ext = path.extname(sourcePath).slice(1);
   const category = categoryForExtension(ext);
-  const targetDir = path.join(projectPath, publicDir, ASSETS_ROOT, category);
+  const publicRoot = resolveProjectRelativeDir(
+    projectPath,
+    publicDir,
+    "public",
+  ).absolute;
+  const targetDir = path.join(publicRoot, ASSETS_ROOT, category);
   fs.mkdirSync(targetDir, { recursive: true });
   const name = uniqueName(targetDir, path.basename(sourcePath));
   fs.copyFileSync(sourcePath, path.join(targetDir, name));
@@ -260,7 +266,11 @@ export function readAssetDataUrl(
 ): AssetDataUrlResult {
   try {
     const relative = webPath.replace(/^\/+/, "");
-    const publicRoot = path.resolve(projectPath, publicDir);
+    const publicRoot = resolveProjectRelativeDir(
+      projectPath,
+      publicDir,
+      "public",
+    ).absolute;
     const resolved = path.resolve(publicRoot, relative);
     if (
       resolved !== publicRoot &&
@@ -298,13 +308,18 @@ export function listProjectAssets(
 ): AssetListResult {
   const assets: AssetEntry[] = [];
   try {
-    const assetsRoot = path.join(projectPath, publicDir, ASSETS_ROOT);
+    const publicRoot = resolveProjectRelativeDir(
+      projectPath,
+      publicDir,
+      "public",
+    ).absolute;
+    const assetsRoot = path.join(publicRoot, ASSETS_ROOT);
     if (fs.existsSync(assetsRoot)) {
       collectAssets(assetsRoot, `/${ASSETS_ROOT}`, null, assets);
     }
 
     // Legacy location from earlier Zephus versions.
-    const legacyImages = path.join(projectPath, publicDir, "images");
+    const legacyImages = path.join(publicRoot, "images");
     if (fs.existsSync(legacyImages)) {
       collectAssets(legacyImages, "/images", "images", assets);
     }

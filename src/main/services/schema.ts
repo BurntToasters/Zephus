@@ -597,6 +597,10 @@ function parseInlineStyle(styleText: string): BlockStyle | undefined {
     if (!value) continue;
     if (key === "text-align" && /^(left|center|right)$/.test(value)) {
       style.align = value as BlockStyle["align"];
+    } else if (key === "width") {
+      style.width = value;
+    } else if (key === "height") {
+      style.height = value;
     } else if (key === "max-width") {
       style.maxWidth = value;
     } else if (key === "background") {
@@ -921,6 +925,18 @@ function cssValue(value: string): string {
     .slice(0, 200);
 }
 
+function blockCssValue(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed || /[;{}<>\r\n]/.test(trimmed)) return null;
+  return trimmed.slice(0, 240);
+}
+
+function addCssValue(css: string[], property: string, value: unknown): void {
+  const safe = blockCssValue(value);
+  if (safe) css.push(`${property}:${safe}`);
+}
+
 function plainTextToHtml(text: string): string {
   return escapeHtml(text).replace(/\n/g, "<br />");
 }
@@ -937,14 +953,18 @@ function renderListItems(items: string): string {
 function styleAttr(block: BlockNode): string {
   const style = block.style ?? {};
   const css: string[] = [];
-  if (style.align) css.push(`text-align:${style.align}`);
-  if (style.maxWidth) css.push(`max-width:${style.maxWidth}`);
-  if (style.background) css.push(`background:${style.background}`);
-  if (style.color) css.push(`color:${style.color}`);
-  if (style.padding) css.push(`padding:${style.padding}`);
-  if (style.margin) css.push(`margin:${style.margin}`);
-  if (style.radius) css.push(`border-radius:${style.radius}`);
-  if (style.gap) css.push(`gap:${style.gap}`);
+  if (["left", "center", "right"].includes(String(style.align))) {
+    css.push(`text-align:${style.align}`);
+  }
+  addCssValue(css, "width", style.width);
+  addCssValue(css, "height", style.height);
+  addCssValue(css, "max-width", style.maxWidth);
+  addCssValue(css, "background", style.background);
+  addCssValue(css, "color", style.color);
+  addCssValue(css, "padding", style.padding);
+  addCssValue(css, "margin", style.margin);
+  addCssValue(css, "border-radius", style.radius);
+  addCssValue(css, "gap", style.gap);
   if (style.columns && (block.type === "columns" || block.type === "gallery")) {
     css.push(
       `grid-template-columns:repeat(${Math.max(1, Number(style.columns) || 1)}, minmax(0, 1fr))`,
@@ -953,8 +973,8 @@ function styleAttr(block: BlockNode): string {
   if (style.shadow === "sm") css.push(`box-shadow:var(--shadow-sm)`);
   if (style.shadow === "md") css.push(`box-shadow:var(--shadow-md)`);
   if (style.shadow === "lg") css.push(`box-shadow:var(--shadow-lg)`);
-  if (block.type === "spacer") {
-    css.push(`height:${block.props["height"] || "48px"}`);
+  if (block.type === "spacer" && !style.height) {
+    addCssValue(css, "height", block.props["height"] || "48px");
   }
   return css.length ? ` style="${escapeAttr(css.join(";"))}"` : "";
 }

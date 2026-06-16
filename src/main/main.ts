@@ -133,12 +133,8 @@ async function runRendererSmokeChecks(
         assert(!!document.getElementById("view-start"), "Missing #view-start.");
         assert(!!document.getElementById("btn-open"), "Missing #btn-open.");
         assert(
-          !!document.getElementById("btn-settings"),
-          "Missing #btn-settings."
-        );
-        assert(
-          !!document.getElementById("btn-home-create"),
-          "Missing #btn-home-create."
+          !!document.getElementById("tab-settings"),
+          "Missing #tab-settings."
         );
         assert(
           !!document.getElementById("tab-recent"),
@@ -153,8 +149,8 @@ async function runRendererSmokeChecks(
           "Missing #recent-list."
         );
         assert(
-          !!document.getElementById("home-project-status"),
-          "Missing #home-project-status."
+          !!document.getElementById("sidebar-update-status"),
+          "Missing #sidebar-update-status."
         );
         assert(
           !!document.getElementById("theme-list-container"),
@@ -164,19 +160,14 @@ async function runRendererSmokeChecks(
         await wait(400);
         await closeModalIfOpen();
 
-        const settingsBtn = document.getElementById("btn-settings");
+        const settingsBtn = document.getElementById("tab-settings");
         const overlay = document.getElementById("modal-overlay");
         if (settingsBtn instanceof HTMLElement && overlay instanceof HTMLElement) {
           settingsBtn.click();
           await wait(280);
           assert(
-            !overlay.classList.contains("hidden"),
-            "Settings modal did not open."
-          );
-          await closeModalIfOpen();
-          assert(
-            overlay.classList.contains("hidden"),
-            "Settings modal did not close."
+            document.getElementById("pane-settings")?.classList.contains("active"),
+            "Settings pane did not open."
           );
         }
 
@@ -197,6 +188,13 @@ async function runRendererSmokeChecks(
         const createBtn = document.getElementById("btn-create");
         if (createBtn instanceof HTMLButtonElement) {
           assert(createBtn.disabled, "Create button should stay disabled until a theme is selected.");
+        }
+
+        if (typeof window.__zephusRunEditorSmoke === "function") {
+          const editorFailures = window.__zephusRunEditorSmoke();
+          for (const failure of editorFailures) failures.push(failure);
+        } else {
+          failures.push("Editor smoke hook is missing.");
         }
       } catch (error) {
         failures.push(
@@ -254,7 +252,9 @@ function createMainWindow(): void {
     },
   });
 
-  void mainWindow.loadFile(rendererPath("index.html"));
+  void mainWindow.loadFile(rendererPath("index.html"), {
+    query: isSmoke ? { smoke: "1" } : undefined,
+  });
 
   // Security: block in-app navigation and new windows. External links open in
   // the OS browser; everything else is denied.

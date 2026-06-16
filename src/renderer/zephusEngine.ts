@@ -1,5 +1,8 @@
 // Zephus renderer logic. Talks to the main process exclusively through
 // window.zephus (the preload bridge). No Node APIs are used here.
+
+// TODO: Split UI rendering from state management.
+
 import { createCodeEditor, CodeEditor } from "./codeEditor";
 import {
   clearPageChanges,
@@ -150,8 +153,16 @@ const TEXT_EDITABLE: BlockType[] = [
   "text",
   "button",
   "section",
+  "columns",
   "card",
   "quote",
+  "list",
+  "feature",
+  "testimonial",
+  "accordion",
+  "stats",
+  "pricing",
+  "cta",
 ];
 
 interface SectionTemplate {
@@ -3587,6 +3598,8 @@ function styleFromLegacyProps(el: HTMLElement): BlockStyle | undefined {
     background: el.style.background || undefined,
     padding: el.style.padding || undefined,
     margin: el.style.margin || undefined,
+    width: el.style.width || undefined,
+    height: el.style.height || undefined,
     maxWidth: el.style.maxWidth || undefined,
     radius: el.style.borderRadius || undefined,
     gap: el.style.gap || undefined,
@@ -3617,9 +3630,22 @@ function effectiveStyle(
   viewport = state.currentViewport,
 ): BlockStyle {
   const base = block.style ? JSON.parse(JSON.stringify(block.style)) : {};
-  const responsive = block.style?.responsive?.[viewport];
+  const responsive =
+    viewport === "desktop" ? undefined : block.style?.responsive?.[viewport];
   if (responsive) Object.assign(base, responsive);
   return base;
+}
+
+function blockCssValue(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed || /[;{}<>\r\n]/.test(trimmed)) return null;
+  return trimmed.slice(0, 240);
+}
+
+function addCssValue(css: string[], property: string, value: unknown): void {
+  const safe = blockCssValue(value);
+  if (safe) css.push(`${property}:${safe}`);
 }
 
 function styleAttr(
@@ -3629,14 +3655,18 @@ function styleAttr(
 ): string {
   const style = effectiveStyle(block, viewport);
   const css: string[] = [];
-  if (style.align) css.push(`text-align:${style.align}`);
-  if (style.maxWidth) css.push(`max-width:${style.maxWidth}`);
-  if (style.background) css.push(`background:${style.background}`);
-  if (style.color) css.push(`color:${style.color}`);
-  if (style.padding) css.push(`padding:${style.padding}`);
-  if (style.margin) css.push(`margin:${style.margin}`);
-  if (style.radius) css.push(`border-radius:${style.radius}`);
-  if (style.gap) css.push(`gap:${style.gap}`);
+  if (["left", "center", "right"].includes(String(style.align))) {
+    css.push(`text-align:${style.align}`);
+  }
+  addCssValue(css, "width", style.width);
+  addCssValue(css, "height", style.height);
+  addCssValue(css, "max-width", style.maxWidth);
+  addCssValue(css, "background", style.background);
+  addCssValue(css, "color", style.color);
+  addCssValue(css, "padding", style.padding);
+  addCssValue(css, "margin", style.margin);
+  addCssValue(css, "border-radius", style.radius);
+  addCssValue(css, "gap", style.gap);
   if (style.columns && (block.type === "columns" || block.type === "gallery")) {
     css.push(
       `grid-template-columns:repeat(${Math.max(1, Number(style.columns) || 1)}, minmax(0, 1fr))`,
@@ -3655,8 +3685,8 @@ function styleAttr(
   if (style.hideOn?.includes(viewport) && forCanvas) {
     css.push(`display:none`);
   }
-  if (block.type === "spacer") {
-    css.push(`height:${block.props["height"] || "48px"}`);
+  if (block.type === "spacer" && !style.height) {
+    addCssValue(css, "height", block.props["height"] || "48px");
   }
   return css.length ? ` style="${escapeAttr(css.join(";"))}"` : "";
 }
@@ -3944,6 +3974,41 @@ function commitBlockChange(summary: string): void {
   renderLayers();
   renderCanvas();
   renderProperties();
+}
+
+let inspectorUndoActive = false;
+
+function beginInspectorEdit(): void {
+  if (inspectorUndoActive) return;
+  pushUndo();
+  inspectorUndoActive = true;
+}
+
+function endInspectorEdit(): void {
+  inspectorUndoActive = false;
+}
+
+function commitInspectorChange(
+  summary: string,
+  rerenderProperties = false,
+): void {
+  beginInspectorEdit();
+  syncBlocksFromSections();
+  syncSelectionState();
+  trackChange(summary);
+  markDirty(true);
+  renderLayers();
+  renderCanvas();
+  if (rerenderProperties) {
+    endInspectorEdit();
+    renderProperties();
+  }
+}
+
+function wireInspectorControl<T extends HTMLElement>(control: T): T {
+  control.addEventListener("focus", beginInspectorEdit);
+  control.addEventListener("blur", endInspectorEdit);
+  return control;
 }
 
 function addSectionAt(index: number, template?: SectionTemplate): void {
@@ -4282,6 +4347,153 @@ function hydrateCanvasAssets(root: HTMLElement): void {
   });
 }
 
+type ResizeCorner = "nw" | "ne" | "sw" | "se";
+type ResizeTarget =
+  | { kind: "block"; node: Block }
+  | { kind: "section"; node: SectionNode };
+
+const MIN_RESIZE_WIDTH = 40;
+const MIN_RESIZE_HEIGHT = 24;
+
+function resizeStyleTarget(target: ResizeTarget): BlockStyle {
+  target.node.style = target.node.style ?? {};
+  if (state.currentViewport === "desktop") return target.node.style;
+  target.node.style.responsive = target.node.style.responsive ?? {};
+  target.node.style.responsive[state.currentViewport] =
+    target.node.style.responsive[state.currentViewport] ?? {};
+  return target.node.style.responsive[state.currentViewport]!;
+}
+
+function effectiveNodeStyle(node: { style?: BlockStyle }): BlockStyle {
+  const base = node.style ? JSON.parse(JSON.stringify(node.style)) : {};
+  const responsive =
+    state.currentViewport === "desktop"
+      ? undefined
+      : node.style?.responsive?.[state.currentViewport];
+  if (responsive) Object.assign(base, responsive);
+  return base;
+}
+
+function makeCanvasLinksInert(root: HTMLElement): void {
+  root.addEventListener(
+    "click",
+    (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (target.closest("a[href]")) event.preventDefault();
+    },
+    true,
+  );
+}
+
+function applyCanvasBoxStyle(
+  element: HTMLElement,
+  node: { style?: BlockStyle },
+): void {
+  const style = effectiveNodeStyle(node);
+  if (style.width) element.style.width = style.width;
+  if (style.height) element.style.height = style.height;
+  if (style.maxWidth) element.style.maxWidth = style.maxWidth;
+  if (style.background) element.style.background = style.background;
+  if (style.color) element.style.color = style.color;
+  if (style.padding) element.style.padding = style.padding;
+  if (style.margin) element.style.margin = style.margin;
+  if (style.radius) element.style.borderRadius = style.radius;
+  if (style.shadow === "sm") element.style.boxShadow = "var(--shadow-sm)";
+  if (style.shadow === "md") element.style.boxShadow = "var(--shadow-md)";
+  if (style.shadow === "lg") element.style.boxShadow = "var(--shadow-lg)";
+}
+
+function addResizeHandles(
+  shell: HTMLElement,
+  target: ResizeTarget,
+  getSubject: () => HTMLElement,
+): void {
+  const handleWrap = document.createElement("div");
+  handleWrap.className = "resize-handles";
+  for (const corner of ["nw", "ne", "sw", "se"] as ResizeCorner[]) {
+    const handle = document.createElement("button");
+    handle.type = "button";
+    handle.className = `resize-handle ${corner}`;
+    handle.setAttribute("aria-label", `Resize ${corner}`);
+    handle.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      beginCanvasResize(event, corner, target, getSubject(), handle);
+    });
+    handleWrap.appendChild(handle);
+  }
+  shell.appendChild(handleWrap);
+}
+
+function beginCanvasResize(
+  event: PointerEvent,
+  corner: ResizeCorner,
+  target: ResizeTarget,
+  subject: HTMLElement,
+  handle: HTMLElement,
+): void {
+  pushUndo();
+  inspectorUndoActive = true;
+  const startX = event.clientX;
+  const startY = event.clientY;
+  const rect = subject.getBoundingClientRect();
+  const startWidth = rect.width;
+  const startHeight = rect.height;
+  const fromLeft = corner === "nw" || corner === "sw";
+  const fromTop = corner === "nw" || corner === "ne";
+  try {
+    handle.setPointerCapture(event.pointerId);
+  } catch {
+    /* pointer capture is best effort */
+  }
+
+  const onMove = (moveEvent: PointerEvent): void => {
+    const dx = moveEvent.clientX - startX;
+    const dy = moveEvent.clientY - startY;
+    const width = Math.max(
+      MIN_RESIZE_WIDTH,
+      Math.round(startWidth + (fromLeft ? -dx : dx)),
+    );
+    const height = Math.max(
+      MIN_RESIZE_HEIGHT,
+      Math.round(startHeight + (fromTop ? -dy : dy)),
+    );
+    const style = resizeStyleTarget(target);
+    style.width = `${width}px`;
+    style.height = `${height}px`;
+    subject.style.width = style.width;
+    subject.style.height = style.height;
+  };
+
+  let finished = false;
+  const finish = (): void => {
+    if (finished) return;
+    finished = true;
+    document.removeEventListener("pointermove", onMove);
+    document.removeEventListener("pointerup", onUp);
+    document.removeEventListener("pointercancel", onCancel);
+    window.removeEventListener("blur", onCancel);
+    try {
+      handle.releasePointerCapture(event.pointerId);
+    } catch {
+      /* pointer capture is best effort */
+    }
+    commitInspectorChange(
+      `Resized ${target.kind === "block" ? target.node.type : target.node.label}`,
+      true,
+    );
+    endInspectorEdit();
+  };
+  const onUp = (): void => finish();
+  const onCancel = (): void => finish();
+
+  document.addEventListener("pointermove", onMove);
+  document.addEventListener("pointerup", onUp, { once: true });
+  document.addEventListener("pointercancel", onCancel, { once: true });
+  window.addEventListener("blur", onCancel, { once: true });
+}
+
 function renderCanvas(): void {
   const canvas = $("canvas");
   canvas.innerHTML = "";
@@ -4322,6 +4534,18 @@ function renderCanvas(): void {
         ? " selected"
         : "") +
       (section.locked ? " locked" : "");
+    applyCanvasBoxStyle(sectionShell, section);
+    if (
+      section.id === state.selectedSectionId &&
+      !state.selectedId &&
+      !section.locked
+    ) {
+      addResizeHandles(
+        sectionShell,
+        { kind: "section", node: section },
+        () => sectionShell,
+      );
+    }
 
     const sectionChrome = document.createElement("div");
     sectionChrome.className = "section-chrome";
@@ -4411,7 +4635,7 @@ function renderCanvas(): void {
             TEXT_EDITABLE.includes(block.type) &&
             !block.locked
           ) {
-            startInlineEdit(preview, block);
+            startFirstInlineEdit(preview, block);
             return;
           }
           state.selectedId = block.id;
@@ -4459,6 +4683,7 @@ function renderCanvas(): void {
       const preview = document.createElement("div");
       preview.className = "block-preview";
       preview.innerHTML = blockToHtml(block, state.currentViewport, true);
+      makeCanvasLinksInert(preview);
 
       shell.onclick = (event) => {
         event.stopPropagation();
@@ -4471,11 +4696,7 @@ function renderCanvas(): void {
 
       if (TEXT_EDITABLE.includes(block.type) && !block.locked) {
         preview.classList.add("editable-text");
-        preview.title = "Double-click to edit text";
-        preview.ondblclick = (event) => {
-          event.stopPropagation();
-          startInlineEdit(preview, block);
-        };
+        attachInlineEditors(preview, block);
       }
 
       shell.addEventListener("dragstart", (event) => {
@@ -4495,6 +4716,11 @@ function renderCanvas(): void {
       });
       shell.addEventListener("drop", (event) => handleDrop(event));
       shell.append(chrome, preview);
+      if (block.id === state.selectedId && !block.locked) {
+        addResizeHandles(shell, { kind: "block", node: block }, () => {
+          return (preview.firstElementChild as HTMLElement | null) ?? preview;
+        });
+      }
       sectionBody.appendChild(shell);
     });
 
@@ -4580,27 +4806,241 @@ function handleDrop(e: DragEvent): void {
   dropSectionId = null;
 }
 
-function startInlineEdit(el: HTMLElement, block: Block): void {
+interface InlineEditTarget {
+  prop: string;
+  multiline?: boolean;
+  lineIndex?: number;
+  pairSide?: "left" | "right";
+}
+
+function updateLineValue(
+  raw: string,
+  index: number,
+  value: string,
+  pairSide?: "left" | "right",
+): string {
+  const lines = splitLines(raw);
+  while (lines.length <= index) lines.push("");
+  if (!pairSide) {
+    lines[index] = value;
+  } else {
+    const [left, right] = splitPair(lines[index] ?? "");
+    lines[index] =
+      pairSide === "left" ? `${value} :: ${right}` : `${left} :: ${value}`;
+  }
+  return lines.join("\n");
+}
+
+function targetCurrentValue(block: Block, target: InlineEditTarget): string {
+  const raw = block.props[target.prop] ?? "";
+  if (target.lineIndex === undefined) return raw;
+  const line = splitLines(raw)[target.lineIndex] ?? "";
+  if (!target.pairSide) return line;
+  const [left, right] = splitPair(line);
+  return target.pairSide === "left" ? left : right;
+}
+
+function applyInlineValue(
+  block: Block,
+  target: InlineEditTarget,
+  value: string,
+): void {
+  if (target.lineIndex === undefined) {
+    block.props[target.prop] = value;
+    return;
+  }
+  block.props[target.prop] = updateLineValue(
+    block.props[target.prop] ?? "",
+    target.lineIndex,
+    value,
+    target.pairSide,
+  );
+}
+
+function attachInlineTarget(
+  root: HTMLElement,
+  selector: string,
+  block: Block,
+  target: InlineEditTarget,
+): HTMLElement | null {
+  const el = root.querySelector<HTMLElement>(selector);
+  if (!el) return null;
+  el.classList.add("editable-text-target");
+  el.title = "Double-click to edit text";
+  el.ondblclick = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    startInlineEdit(el, block, target);
+  };
+  return el;
+}
+
+function attachInlineEditors(root: HTMLElement, block: Block): HTMLElement[] {
+  const targets: HTMLElement[] = [];
+  const add = (selector: string, target: InlineEditTarget) => {
+    const el = attachInlineTarget(root, selector, block, target);
+    if (el) targets.push(el);
+  };
+  switch (block.type) {
+    case "heading":
+    case "text":
+    case "button":
+    case "section":
+      add(":scope > *", { prop: "text", multiline: block.type !== "button" });
+      break;
+    case "columns":
+      root.querySelectorAll<HTMLElement>(".zephus-column").forEach((_, i) =>
+        add(`.zephus-column:nth-of-type(${i + 1})`, {
+          prop: `col${i + 1}`,
+          multiline: true,
+        }),
+      );
+      break;
+    case "card":
+      add("h3", { prop: "title" });
+      add("p", { prop: "text", multiline: true });
+      break;
+    case "quote":
+      add("p", { prop: "text", multiline: true });
+      add("cite", { prop: "cite" });
+      break;
+    case "list":
+      root.querySelectorAll<HTMLElement>("li").forEach((_, i) =>
+        add(`li:nth-of-type(${i + 1})`, {
+          prop: "items",
+          lineIndex: i,
+        }),
+      );
+      break;
+    case "feature":
+      add(".zephus-feature-icon", { prop: "icon" });
+      add("h3", { prop: "title" });
+      add("p", { prop: "text", multiline: true });
+      break;
+    case "testimonial":
+      add("blockquote", { prop: "quote", multiline: true });
+      add("figcaption strong", { prop: "author" });
+      add("figcaption span", { prop: "role" });
+      break;
+    case "accordion":
+      root.querySelectorAll<HTMLElement>("details").forEach((_, i) => {
+        add(`details:nth-of-type(${i + 1}) summary`, {
+          prop: "items",
+          lineIndex: i,
+          pairSide: "left",
+        });
+        add(`details:nth-of-type(${i + 1}) p`, {
+          prop: "items",
+          lineIndex: i,
+          pairSide: "right",
+          multiline: true,
+        });
+      });
+      break;
+    case "stats":
+      root.querySelectorAll<HTMLElement>(".zephus-stat").forEach((_, i) => {
+        add(`.zephus-stat:nth-of-type(${i + 1}) .zephus-stat-num`, {
+          prop: "items",
+          lineIndex: i,
+          pairSide: "left",
+        });
+        add(`.zephus-stat:nth-of-type(${i + 1}) .zephus-stat-label`, {
+          prop: "items",
+          lineIndex: i,
+          pairSide: "right",
+        });
+      });
+      break;
+    case "pricing":
+      add("h3", { prop: "plan" });
+      add(".zephus-price-amount", { prop: "price" });
+      add(".zephus-price-period", { prop: "period" });
+      root.querySelectorAll<HTMLElement>("li").forEach((_, i) =>
+        add(`li:nth-of-type(${i + 1})`, {
+          prop: "features",
+          lineIndex: i,
+        }),
+      );
+      add("a.button", { prop: "ctaText" });
+      break;
+    case "cta":
+      add("h2", { prop: "heading" });
+      add("p", { prop: "text", multiline: true });
+      add("a.button", { prop: "buttonText" });
+      break;
+  }
+  return targets;
+}
+
+function startFirstInlineEdit(root: HTMLElement, block: Block): void {
+  const first = attachInlineEditors(root, block)[0];
+  if (!first) return;
+  first.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+}
+
+function startInlineEdit(
+  el: HTMLElement,
+  block: Block,
+  target: InlineEditTarget = { prop: "text" },
+): void {
+  const original = targetCurrentValue(block, target);
+  let finished = false;
   el.setAttribute("contenteditable", "true");
   el.setAttribute("role", "textbox");
   el.setAttribute("aria-label", "Edit text");
+  el.classList.add("inline-editing");
   el.focus();
-  const finish = () => {
+  const selection = window.getSelection();
+  if (selection) {
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    range.collapse(false);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+  const cleanup = (): void => {
     el.removeAttribute("contenteditable");
     el.removeAttribute("role");
     el.removeAttribute("aria-label");
+    el.classList.remove("inline-editing");
+    el.removeEventListener("blur", finish);
+    el.removeEventListener("keydown", onKeydown);
+  };
+  const finish = () => {
+    if (finished) return;
+    finished = true;
     const newText = el.innerText.trim();
-    if (newText !== (block.props["text"] ?? "")) {
+    cleanup();
+    if (newText !== original) {
       pushUndo();
-      block.props["text"] = newText;
+      applyInlineValue(block, target, newText);
       commitBlockChange(`Edited ${block.type} content`);
     } else {
       renderCanvas();
       renderProperties();
     }
-    el.removeEventListener("blur", finish);
+  };
+  const cancel = (): void => {
+    if (finished) return;
+    finished = true;
+    el.innerText = original;
+    cleanup();
+    renderCanvas();
+    renderProperties();
+  };
+  const onKeydown = (event: KeyboardEvent): void => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      cancel();
+      return;
+    }
+    if (event.key === "Enter" && (!target.multiline || !event.shiftKey)) {
+      event.preventDefault();
+      finish();
+    }
   };
   el.addEventListener("blur", finish);
+  el.addEventListener("keydown", onKeydown);
 }
 
 function defaultProps(type: BlockType): Record<string, string> {
@@ -4714,6 +5154,7 @@ function labeledInput(
   const input = document.createElement("input");
   input.className = "text";
   input.value = value;
+  wireInspectorControl(input);
   input.oninput = () => onChange(input.value);
   wrap.append(label, input);
   return wrap;
@@ -4732,6 +5173,7 @@ function labeledTextarea(
   const input = document.createElement("textarea");
   input.rows = rows;
   input.value = value;
+  wireInspectorControl(input);
   input.oninput = () => onChange(input.value);
   wrap.append(label, input);
   return wrap;
@@ -4776,10 +5218,12 @@ function labeledLength(
   num.type = "number";
   num.className = "text length-num";
   num.setAttribute("aria-label", `${key} value`);
+  wireInspectorControl(num);
 
   const unit = document.createElement("select");
   unit.className = "length-unit";
   unit.setAttribute("aria-label", `${key} unit`);
+  wireInspectorControl(unit);
   for (const u of LENGTH_UNITS) {
     const o = document.createElement("option");
     o.value = u;
@@ -4792,6 +5236,7 @@ function labeledLength(
   raw.className = "text length-raw";
   raw.placeholder = "e.g. 2rem 0";
   raw.setAttribute("aria-label", `${key} custom value`);
+  wireInspectorControl(raw);
 
   const parsed = parseLength(value);
   num.value = parsed.num;
@@ -4858,12 +5303,14 @@ function createColorControl(
   swatch.type = "color";
   swatch.className = "color-swatch";
   swatch.value = isHexColor(value) ? expandHex(value) : "#000000";
+  wireInspectorControl(swatch);
 
   const text = document.createElement("input");
   text.type = "text";
   text.className = "text color-text";
   text.value = value;
   text.placeholder = "#3b82f6, rgb(), var(--accent)…";
+  wireInspectorControl(text);
 
   const clear = document.createElement("button");
   clear.type = "button";
@@ -5051,6 +5498,7 @@ function labeledLink(
   input.className = "text";
   input.value = value;
   input.setAttribute("aria-label", key);
+  wireInspectorControl(input);
   input.oninput = () => onChange(input.value);
   const pick = document.createElement("button");
   pick.type = "button";
@@ -5409,28 +5857,25 @@ function renderProperties(): void {
     panel.appendChild(header);
 
     const commitSection = (key: string, value: string) => {
-      pushUndo();
       section.props[key] = value;
       if (key === "label") section.label = value || section.label;
-      commitBlockChange(`Updated ${section.label}`);
+      commitInspectorChange(`Updated ${section.label}`);
     };
 
     const commitSectionStyle = (
       key: keyof BlockStyle,
       value: string | boolean | string[],
     ) => {
-      pushUndo();
       section.style = section.style ?? {};
       (section.style as Record<string, unknown>)[key] = value;
-      commitBlockChange(`Updated ${section.label} style`);
+      commitInspectorChange(`Updated ${section.label} style`);
     };
 
     const contentGroup = propertyGroup("Content");
     contentGroup.appendChild(
       labeledInput("Section label", section.label, (value) => {
-        pushUndo();
         section.label = value.trim() || "Section";
-        commitBlockChange("Renamed section");
+        commitInspectorChange("Renamed section");
       }),
     );
     const wrapper = document.createElement("label");
@@ -5438,6 +5883,7 @@ function renderProperties(): void {
     const wrapperLabel = document.createElement("span");
     wrapperLabel.textContent = "Wrapper";
     const wrapperSelect = document.createElement("select");
+    wireInspectorControl(wrapperSelect);
     for (const value of ["none", "box"]) {
       const option = document.createElement("option");
       option.value = value;
@@ -5457,6 +5903,16 @@ function renderProperties(): void {
     panel.appendChild(contentGroup);
 
     const layoutGroup = propertyGroup("Layout");
+    layoutGroup.appendChild(
+      labeledLength("Width", section.style?.width ?? "", (value) =>
+        commitSectionStyle("width", value),
+      ),
+    );
+    layoutGroup.appendChild(
+      labeledLength("Height", section.style?.height ?? "", (value) =>
+        commitSectionStyle("height", value),
+      ),
+    );
     layoutGroup.appendChild(
       labeledLength("Padding", section.style?.padding ?? "", (value) =>
         commitSectionStyle("padding", value),
@@ -5533,19 +5989,17 @@ function renderProperties(): void {
   panel.appendChild(header);
 
   const commit = (key: string, value: string) => {
-    pushUndo();
     block.props[key] = value;
-    commitBlockChange(`Updated ${block.type} ${key}`);
+    commitInspectorChange(`Updated ${block.type} ${key}`);
   };
 
   const commitStyle = (
     key: keyof BlockStyle,
     value: string | boolean | string[],
   ) => {
-    pushUndo();
     block.style = block.style ?? {};
     (block.style as Record<string, unknown>)[key] = value;
-    commitBlockChange(`Updated ${block.type} style`);
+    commitInspectorChange(`Updated ${block.type} style`);
   };
 
   const contentGroup = propertyGroup("Content");
@@ -5564,6 +6018,7 @@ function renderProperties(): void {
     const label = document.createElement("span");
     label.textContent = "Heading level";
     const select = document.createElement("select");
+    wireInspectorControl(select);
     for (let i = 1; i <= editorRules.maxHeadingLevel; i++) {
       const opt = document.createElement("option");
       opt.value = String(i);
@@ -5605,6 +6060,7 @@ function renderProperties(): void {
     const variantLabel = document.createElement("span");
     variantLabel.textContent = "Button style";
     const variantSelect = document.createElement("select");
+    wireInspectorControl(variantSelect);
     const currentVariant = /\bsecondary\b/.test(block.props["cls"] ?? "")
       ? "secondary"
       : "primary";
@@ -5658,6 +6114,7 @@ function renderProperties(): void {
     const countLabel = document.createElement("span");
     countLabel.textContent = "Columns";
     const select = document.createElement("select");
+    wireInspectorControl(select);
     for (const value of ["2", "3", "4"]) {
       const opt = document.createElement("option");
       opt.value = value;
@@ -5668,8 +6125,10 @@ function renderProperties(): void {
       select.appendChild(opt);
     }
     select.onchange = () => {
-      commit("count", select.value);
-      commitStyle("columns", select.value);
+      block.props["count"] = select.value;
+      block.style = block.style ?? {};
+      block.style.columns = select.value;
+      commitInspectorChange(`Updated ${block.type} columns`, true);
     };
     count.append(countLabel, select);
     contentGroup.appendChild(count);
@@ -5733,6 +6192,7 @@ function renderProperties(): void {
     orderedSpan.textContent = "Ordered list";
     const orderedInput = document.createElement("input");
     orderedInput.type = "checkbox";
+    wireInspectorControl(orderedInput);
     orderedInput.checked = block.props["ordered"] === "true";
     orderedInput.onchange = () =>
       commit("ordered", orderedInput.checked ? "true" : "false");
@@ -5868,6 +6328,7 @@ function renderProperties(): void {
   const alignLabel = document.createElement("span");
   alignLabel.textContent = "Alignment";
   const alignSelect = document.createElement("select");
+  wireInspectorControl(alignSelect);
   for (const value of ["left", "center", "right"] as const) {
     const opt = document.createElement("option");
     opt.value = value;
@@ -5878,6 +6339,16 @@ function renderProperties(): void {
   alignSelect.onchange = () => commitStyle("align", alignSelect.value);
   align.append(alignLabel, alignSelect);
   layoutGroup.appendChild(align);
+  layoutGroup.appendChild(
+    labeledLength("Width", block.style?.width ?? "", (v) =>
+      commitStyle("width", v),
+    ),
+  );
+  layoutGroup.appendChild(
+    labeledLength("Height", block.style?.height ?? "", (v) =>
+      commitStyle("height", v),
+    ),
+  );
   layoutGroup.appendChild(
     labeledLength("Max width", block.style?.maxWidth ?? "", (v) =>
       commitStyle("maxWidth", v),
@@ -5899,6 +6370,7 @@ function renderProperties(): void {
   stackLabel.textContent = "Stack on mobile";
   const stackInput = document.createElement("input");
   stackInput.type = "checkbox";
+  wireInspectorControl(stackInput);
   stackInput.checked = block.style?.stackOnMobile ?? false;
   stackInput.onchange = () => commitStyle("stackOnMobile", stackInput.checked);
   stack.append(stackLabel, stackInput);
@@ -5936,6 +6408,7 @@ function renderProperties(): void {
   const shadowLabel = document.createElement("span");
   shadowLabel.textContent = "Shadow";
   const shadowSelect = document.createElement("select");
+  wireInspectorControl(shadowSelect);
   for (const value of ["none", "sm", "md", "lg"] as const) {
     const opt = document.createElement("option");
     opt.value = value;
@@ -5954,36 +6427,46 @@ function renderProperties(): void {
       commit("cls", v),
     ),
   );
-  const responsive = document.createElement("div");
-  responsive.className = "responsive-note";
-  responsive.innerHTML = `<strong>${state.currentViewport}</strong> override`;
-  advancedGroup.appendChild(responsive);
-  const currentResponsive =
-    block.style?.responsive?.[state.currentViewport] ?? {};
-  advancedGroup.appendChild(
-    labeledLength("Viewport padding", currentResponsive.padding ?? "", (v) => {
-      pushUndo();
+  if (state.currentViewport !== "desktop") {
+    const responsive = document.createElement("div");
+    responsive.className = "responsive-note";
+    responsive.innerHTML = `<strong>${state.currentViewport}</strong> override`;
+    advancedGroup.appendChild(responsive);
+    const currentResponsive =
+      block.style?.responsive?.[state.currentViewport] ?? {};
+    const commitResponsiveStyle = (
+      key: "width" | "height" | "padding" | "margin",
+      value: string,
+    ): void => {
       block.style = block.style ?? {};
       block.style.responsive = block.style.responsive ?? {};
       block.style.responsive[state.currentViewport] = {
         ...block.style.responsive[state.currentViewport],
-        padding: v,
+        [key]: value,
       };
-      commitBlockChange(`Updated ${state.currentViewport} override`);
-    }),
-  );
-  advancedGroup.appendChild(
-    labeledLength("Viewport margin", currentResponsive.margin ?? "", (v) => {
-      pushUndo();
-      block.style = block.style ?? {};
-      block.style.responsive = block.style.responsive ?? {};
-      block.style.responsive[state.currentViewport] = {
-        ...block.style.responsive[state.currentViewport],
-        margin: v,
-      };
-      commitBlockChange(`Updated ${state.currentViewport} override`);
-    }),
-  );
+      commitInspectorChange(`Updated ${state.currentViewport} override`);
+    };
+    advancedGroup.appendChild(
+      labeledLength("Viewport width", currentResponsive.width ?? "", (v) =>
+        commitResponsiveStyle("width", v),
+      ),
+    );
+    advancedGroup.appendChild(
+      labeledLength("Viewport height", currentResponsive.height ?? "", (v) =>
+        commitResponsiveStyle("height", v),
+      ),
+    );
+    advancedGroup.appendChild(
+      labeledLength("Viewport padding", currentResponsive.padding ?? "", (v) =>
+        commitResponsiveStyle("padding", v),
+      ),
+    );
+    advancedGroup.appendChild(
+      labeledLength("Viewport margin", currentResponsive.margin ?? "", (v) =>
+        commitResponsiveStyle("margin", v),
+      ),
+    );
+  }
   if (
     block.type === "section" ||
     block.type === "card" ||
@@ -7246,9 +7729,136 @@ async function createSiteFromTabFlow(): Promise<void> {
   await runInstallFlow(folder);
 }
 
+function installEditorSmokeHook(): void {
+  window.__zephusRunEditorSmoke = () => {
+    const failures: string[] = [];
+    const assert = (condition: unknown, message: string): void => {
+      if (!condition) failures.push(message);
+    };
+
+    const section: SectionNode = {
+      id: "smoke-section",
+      type: "section",
+      label: "Smoke Section",
+      props: { wrapper: "none", cls: "" },
+      children: [
+        {
+          id: "smoke-heading",
+          type: "heading",
+          props: { text: "Smoke Title", level: "2" },
+          style: {},
+        },
+        {
+          id: "smoke-button",
+          type: "button",
+          props: {
+            text: "Smoke Link",
+            href: "https://example.com",
+            cls: "",
+          },
+          style: {},
+        },
+      ],
+    };
+    state.sections = [section];
+    state.selectedSectionId = section.id;
+    state.selectedId = "smoke-heading";
+    state.page = "src/pages/index.astro";
+    state.currentMeta = {
+      page: state.page,
+      route: "/",
+      slug: "index",
+      title: "Smoke",
+      navLabel: "Smoke",
+      metaDescription: "",
+      navVisible: true,
+      isHome: true,
+    };
+    state.pageMeta = state.currentMeta ? [state.currentMeta] : [];
+    state.currentViewport = "desktop";
+    state.undo = [];
+    state.redo = [];
+    markPageDirty(state, false);
+    syncBlocksFromSections();
+
+    $("view-start").classList.add("hidden");
+    $("view-editor").classList.remove("hidden");
+    $("project-name").textContent = "Smoke Project";
+    setMode("visual");
+    renderLayers();
+    renderCanvas();
+    renderProperties();
+
+    assert(
+      !!document.querySelector(".block.selected"),
+      "Editor smoke: selected block did not render.",
+    );
+    assert(
+      document.querySelectorAll(".resize-handle").length === 4,
+      "Editor smoke: selected block resize handles missing.",
+    );
+
+    const textInput = document.querySelector<HTMLInputElement>(
+      "#properties input.text",
+    );
+    assert(!!textInput, "Editor smoke: inspector text input missing.");
+    if (textInput) {
+      textInput.focus();
+      textInput.value = "";
+      for (const char of "Smoke Typed") {
+        textInput.value += char;
+        textInput.dispatchEvent(new Event("input", { bubbles: true }));
+        assert(
+          document.activeElement === textInput,
+          "Editor smoke: inspector input lost focus while typing.",
+        );
+      }
+      assert(
+        section.children[0]?.props["text"] === "Smoke Typed",
+        "Editor smoke: inspector input did not update block props.",
+      );
+      textInput.blur();
+    }
+
+    const target = document.querySelector<HTMLElement>(
+      ".block-preview .editable-text-target",
+    );
+    assert(!!target, "Editor smoke: inline editable target missing.");
+    if (target) {
+      target.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+      assert(
+        target.isContentEditable,
+        "Editor smoke: double-click did not start inline editing.",
+      );
+      target.textContent = "Inline Edited";
+      target.dispatchEvent(
+        new KeyboardEvent("keydown", { bubbles: true, key: "Enter" }),
+      );
+      assert(
+        section.children[0]?.props["text"] === "Inline Edited",
+        "Editor smoke: inline edit did not update block props.",
+      );
+    }
+
+    const canvasLink = document.querySelector<HTMLAnchorElement>(
+      '.block-preview a[href="https://example.com"]',
+    );
+    assert(!!canvasLink, "Editor smoke: canvas link missing.");
+    if (canvasLink) {
+      const allowed = canvasLink.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      );
+      assert(!allowed, "Editor smoke: canvas link was not inert.");
+    }
+
+    return failures;
+  };
+}
+
 /* ---------- Wire up ---------- */
 
 function init(): void {
+  if (window.location.search.includes("smoke=1")) installEditorSmokeHook();
   initStartTabs();
 
   // Prevent stray file drops from navigating the window away from the app.

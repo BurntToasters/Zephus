@@ -100,6 +100,8 @@ export type ViewportKey = "desktop" | "tablet" | "mobile";
 
 export interface BlockStyle {
   align?: "left" | "center" | "right";
+  width?: string;
+  height?: string;
   maxWidth?: string;
   background?: string;
   color?: string;
@@ -116,6 +118,8 @@ export interface BlockStyle {
       ViewportKey,
       {
         align?: "left" | "center" | "right";
+        width?: string;
+        height?: string;
         maxWidth?: string;
         padding?: string;
         margin?: string;

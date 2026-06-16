@@ -112,6 +112,8 @@ describe("schema service", () => {
             margin: "2rem 0",
             radius: "20px",
             maxWidth: "840px",
+            width: "80%",
+            height: "420px",
           },
           children: [
             {
@@ -130,7 +132,7 @@ describe("schema service", () => {
     });
     expect(updated.ok).toBe(true);
     expect(fs.readFileSync(path.join(tmpDir, aboutPath), "utf8")).toContain(
-      '<section class="team-shell" style="max-width:840px;background:#eef2ff;padding:3rem;margin:2rem 0;border-radius:20px">',
+      '<section class="team-shell" style="width:80%;height:420px;max-width:840px;background:#eef2ff;padding:3rem;margin:2rem 0;border-radius:20px">',
     );
 
     const detached = detachPageDocument(
@@ -152,6 +154,38 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
     expect(reattached.ok).toBe(true);
     expect(reattached.pageDocument?.detached).toBe(false);
     expect(reattached.pageDocument?.managedFileStatus).toBe("managed");
+  });
+
+  it("drops block style values that can break CSS declarations", () => {
+    ensureVisualSchema(tmpDir, pagesDir);
+    const created = createSchemaPage(tmpDir, pagesDir, "style-hardening");
+    expect(created.ok).toBe(true);
+    const page = pagePathFromSlug(pagesDir, "style-hardening");
+    const current = readPageDocument(tmpDir, page, pagesDir);
+    expect(current.ok).toBe(true);
+
+    const saved = writePageDocument(tmpDir, pagesDir, {
+      ...current.pageDocument!,
+      sections: [
+        {
+          id: "unsafe-section",
+          type: "section",
+          props: { wrapper: "box", cls: "" },
+          style: {
+            width: "100px;color:red",
+            height: "80px",
+            background: "red;position:fixed",
+          },
+          children: [],
+        },
+      ],
+    });
+    expect(saved.ok).toBe(true);
+
+    const astro = fs.readFileSync(path.join(tmpDir, page), "utf8");
+    expect(astro).toContain("height:80px");
+    expect(astro).not.toContain("width:100px;color:red");
+    expect(astro).not.toContain("position:fixed");
   });
 
   it("writes managed shell and design artifacts when site settings change", () => {

@@ -7,6 +7,7 @@ import { OperationResult } from "../types";
 import { readGlobalSettings } from "./settings";
 import { buildSpawnEnv } from "./nodeCheck";
 import { npmCommand } from "./npmCommand";
+import { resolveProjectRelativeDir } from "./projectPaths";
 
 const execFileAsync = promisify(execFile);
 
@@ -34,7 +35,11 @@ export async function buildAndReveal(
       maxBuffer: 20 * 1024 * 1024,
       env: { ...env, FORCE_COLOR: "0" },
     });
-    const output = path.join(projectPath, outDir);
+    const output = resolveProjectRelativeDir(
+      projectPath,
+      outDir,
+      "dist",
+    ).absolute;
     shell.openPath(output).catch(() => {
       /* best-effort */
     });

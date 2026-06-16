@@ -32,6 +32,8 @@ export function createSite(
   }
 
   const written: string[] = [];
+  const zephusDir = path.join(targetPath, ".zephus");
+  const hadZephusDir = fs.existsSync(zephusDir);
   try {
     fs.mkdirSync(targetPath, { recursive: true });
 
@@ -42,17 +44,6 @@ export function createSite(
       written.push(full);
     }
 
-    // .zephus marker written last so the project only counts as a Zephus_Project
-    // once everything else succeeded.
-    const zephusDir = path.join(targetPath, ".zephus");
-    fs.mkdirSync(zephusDir, { recursive: true });
-    fs.writeFileSync(
-      path.join(zephusDir, "settings.json"),
-      JSON.stringify({ ...DEFAULT_REPO_SETTINGS, theme: themeId }, null, 2) +
-        "\n",
-      "utf8",
-    );
-
     const ensured = ensureVisualSchema(
       targetPath,
       path.join("src", "pages"),
@@ -62,12 +53,27 @@ export function createSite(
       throw new Error(ensured.error ?? "Could not initialize Zephus schema.");
     }
 
+    fs.mkdirSync(zephusDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(zephusDir, "settings.json"),
+      JSON.stringify({ ...DEFAULT_REPO_SETTINGS, theme: themeId }, null, 2) +
+        "\n",
+      "utf8",
+    );
+
     return { ok: true };
   } catch (error) {
     log.error("Site creation failed; rolling back written files.", error);
     for (const file of written) {
       try {
         fs.rmSync(file, { force: true });
+      } catch {
+        /* best-effort cleanup */
+      }
+    }
+    if (!hadZephusDir) {
+      try {
+        fs.rmSync(zephusDir, { recursive: true, force: true });
       } catch {
         /* best-effort cleanup */
       }
