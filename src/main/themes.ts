@@ -42,6 +42,30 @@ const ASTRO_CONFIG = `import { defineConfig } from 'astro/config';
 export default defineConfig({});
 `;
 
+// Standard Astro ignores, plus an explicit note that .zephus MUST be committed:
+// it holds the Zephus project save state (site.json, page schemas, templates).
+// Ignoring it would corrupt the project when opened on another machine.
+const GITIGNORE = `# build output
+dist/
+# dependencies
+node_modules/
+# generated types
+.astro/
+# environment variables
+.env
+.env.production
+# macOS
+.DS_Store
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Zephus: DO NOT ignore .zephus/ — it is this project's save state
+# (site config, page schemas, templates) and must be committed so the
+# project opens correctly on other machines.
+`;
+
 function previewAstroConfig(themeId: string): string {
   const base = themePreviewPath(themeId).replace(/\/$/, "");
   return `import { defineConfig } from 'astro/config';
@@ -340,6 +364,7 @@ export function buildTheme(themeId: string, siteName: string): Theme | null {
   const files: Record<string, string> = {
     "package.json": packageJson(siteName),
     "astro.config.mjs": ASTRO_CONFIG,
+    ".gitignore": GITIGNORE,
     ...builder(),
   };
   return { ...meta, files, baseLayout: "src/layouts/BaseLayout.astro" };

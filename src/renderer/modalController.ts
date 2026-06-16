@@ -15,6 +15,71 @@ function modalElement<T extends HTMLElement>(id: string): T {
 }
 
 export function createModalController(refreshIcons: () => void) {
+  let lastFocused: HTMLElement | null = null;
+  let keyHandler: ((e: KeyboardEvent) => void) | null = null;
+
+  function isModalOpen(): boolean {
+    return !modalElement("modal-overlay").classList.contains("hidden");
+  }
+
+  function focusableInModal(): HTMLElement[] {
+    const shell = modalElement("modal-shell");
+    return Array.from(
+      shell.querySelectorAll<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      ),
+    ).filter((el) => !el.hasAttribute("disabled") && el.offsetParent !== null);
+  }
+
+  /** Esc activates a Cancel/Close button if present, else just closes. */
+  function escapeClose(): void {
+    const buttons = Array.from(
+      modalElement("modal-actions").querySelectorAll<HTMLButtonElement>(
+        "button",
+      ),
+    );
+    const cancel =
+      buttons.find((b) => /cancel|close|done/i.test(b.textContent ?? "")) ??
+      buttons.find((b) => b.classList.contains("ghost"));
+    if (cancel) cancel.click();
+    else closeModal();
+  }
+
+  function onModalKeydown(e: KeyboardEvent): void {
+    if (!isModalOpen()) return;
+    if (e.key === "Escape") {
+      e.preventDefault();
+      escapeClose();
+      return;
+    }
+    if (e.key !== "Tab") return;
+    const focusable = focusableInModal();
+    if (focusable.length === 0) return;
+    const first = focusable[0]!;
+    const last = focusable[focusable.length - 1]!;
+    const activeEl = document.activeElement as HTMLElement | null;
+    if (e.shiftKey && activeEl === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && activeEl === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  }
+
+  function activateFocusTrap(): void {
+    lastFocused = document.activeElement as HTMLElement | null;
+    if (!keyHandler) {
+      keyHandler = onModalKeydown;
+      document.addEventListener("keydown", keyHandler, true);
+    }
+    // Focus the first interactive element (defer to allow render).
+    setTimeout(() => {
+      const f = focusableInModal();
+      (f[0] ?? modalElement("modal-shell")).focus();
+    }, 0);
+  }
+
   function applyModalOptions(options?: ModalOptions): void {
     modalElement("modal-shell").classList.toggle(
       "modal-wide",
@@ -46,6 +111,7 @@ export function createModalController(refreshIcons: () => void) {
     buildActions(actions);
     modalElement("modal-overlay").classList.remove("hidden");
     refreshIcons();
+    activateFocusTrap();
   }
 
   function showModalNode(
@@ -62,11 +128,20 @@ export function createModalController(refreshIcons: () => void) {
     buildActions(actions);
     modalElement("modal-overlay").classList.remove("hidden");
     refreshIcons();
+    activateFocusTrap();
   }
 
   function closeModal(): void {
     applyModalOptions();
     modalElement("modal-overlay").classList.add("hidden");
+    if (keyHandler) {
+      document.removeEventListener("keydown", keyHandler, true);
+      keyHandler = null;
+    }
+    if (lastFocused && document.contains(lastFocused)) {
+      lastFocused.focus();
+    }
+    lastFocused = null;
   }
 
   function choose<T>(

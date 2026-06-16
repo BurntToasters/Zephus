@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog } from "electron";
+import { app, BrowserWindow, dialog, shell, session } from "electron";
 import * as path from "path";
 import log from "electron-log";
 import { registerIpcHandlers } from "./ipc";
@@ -254,6 +254,20 @@ function createMainWindow(): void {
 
   void mainWindow.loadFile(rendererPath("index.html"));
 
+  // Security: block in-app navigation and new windows. External links open in
+  // the OS browser; everything else is denied.
+  const isInternal = (target: string): boolean => target.startsWith("file://");
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
+    return { action: "deny" };
+  });
+  mainWindow.webContents.on("will-navigate", (event, url) => {
+    if (!isInternal(url)) {
+      event.preventDefault();
+      if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
+    }
+  });
+
   mainWindow.once("ready-to-show", () => {
     if (splashWindow) {
       splashWindow.close();
@@ -295,6 +309,30 @@ function initAutoUpdater(): void {
  * with an option to locate a custom Node.js binary. Runs in the background so
  * it never blocks startup.
  */
+/**
+ * Enforces a Content-Security-Policy from the main process for our own
+ * file:// renderer responses (defense beyond the renderer meta tag). Skips
+ * localhost responses so the dev-server preview iframe is unaffected.
+ */
+function setupSecurityHeaders(): void {
+  const CSP =
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
+    "img-src 'self' data:; connect-src 'self'; " +
+    "frame-src 'self' http://localhost:* http://127.0.0.1:*";
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    if (!details.url.startsWith("file://")) {
+      callback({ responseHeaders: details.responseHeaders });
+      return;
+    }
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        "Content-Security-Policy": [CSP],
+      },
+    });
+  });
+}
+
 function initNodeVersionCheck(): void {
   if (isSmoke) return;
   void runNodeVersionCheck();
@@ -389,6 +427,7 @@ if (!isPrimaryInstance) {
   });
 
   app.whenReady().then(() => {
+    setupSecurityHeaders();
     registerIpcHandlers(getMainWindow, {
       assertUpdaterSender: (senderId) =>
         Boolean(

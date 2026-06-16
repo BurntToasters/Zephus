@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 import { IPC } from "./ipcChannels";
 import type {
   AssetListResult,
@@ -203,11 +203,40 @@ const api = {
     error?: string;
   }> => ipcRenderer.invoke(IPC.importImage, projectPath, publicDir),
 
+  importAssets: (
+    projectPath: string,
+    publicDir: string,
+  ): Promise<{
+    ok: boolean;
+    imported: { webPath: string; category: string }[];
+    errors: string[];
+  }> => ipcRenderer.invoke(IPC.importAssets, projectPath, publicDir),
+
+  importAssetPaths: (
+    projectPath: string,
+    publicDir: string,
+    paths: string[],
+  ): Promise<{
+    ok: boolean;
+    imported: { webPath: string; category: string }[];
+    errors: string[];
+  }> => ipcRenderer.invoke(IPC.importAssetPaths, projectPath, publicDir, paths),
+
+  /** Resolves the absolute filesystem path of a drag-and-dropped File. */
+  getDroppedFilePath: (file: File): string => webUtils.getPathForFile(file),
+
   listAssets: (
     projectPath: string,
     publicDir: string,
   ): Promise<AssetListResult> =>
     ipcRenderer.invoke(IPC.listAssets, projectPath, publicDir),
+
+  readAssetDataUrl: (
+    projectPath: string,
+    publicDir: string,
+    webPath: string,
+  ): Promise<{ ok: boolean; dataUrl?: string; error?: string }> =>
+    ipcRenderer.invoke(IPC.assetDataUrl, projectPath, publicDir, webPath),
 
   listReusableSections: (): Promise<ReusableSectionsResult> =>
     ipcRenderer.invoke(IPC.listReusableSections),
@@ -274,6 +303,20 @@ const api = {
     outDir: string,
   ): Promise<{ ok: boolean; outputDir?: string; error?: string }> =>
     ipcRenderer.invoke(IPC.publish, projectPath, outDir),
+
+  dependenciesInstalled: (projectPath: string): Promise<boolean> =>
+    ipcRenderer.invoke(IPC.depsInstalled, projectPath),
+
+  installDependencies: (
+    projectPath: string,
+  ): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke(IPC.depsInstall, projectPath),
+
+  onInstallLog: (callback: (chunk: string) => void): (() => void) => {
+    const listener = (_e: unknown, chunk: string) => callback(chunk);
+    ipcRenderer.on(IPC.depsLog, listener);
+    return () => ipcRenderer.removeListener(IPC.depsLog, listener);
+  },
 
   onPreviewLog: (callback: (chunk: string) => void): (() => void) => {
     const listener = (_e: unknown, chunk: string) => callback(chunk);

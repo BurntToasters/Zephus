@@ -43,6 +43,7 @@ import {
   FileCode,
   Link,
   GitBranch,
+  AlertTriangle,
 } from "lucide";
 
 type Mode = "visual" | "code";
@@ -85,6 +86,7 @@ const PALETTE_ICONS: Record<BlockType, string> = {
 
 function refreshIcons(): void {
   createIcons({
+    attrs: { "aria-hidden": "true", focusable: "false" },
     icons: {
       Settings,
       Clock,
@@ -112,6 +114,7 @@ function refreshIcons(): void {
       FileCode,
       Link,
       GitBranch,
+      AlertTriangle,
     },
   });
 }
@@ -244,6 +247,41 @@ const { closeModal, showModal, showModalNode } = modalController;
 
 function setStatus(message: string): void {
   $("status-bar").textContent = message;
+}
+
+const TOOLBAR_TIPS: Record<string, string> = {
+  Up: "Move up",
+  Down: "Move down",
+  Dup: "Duplicate",
+  Wrap: "Wrap in a section",
+  Lock: "Lock (prevent edits)",
+  Unlock: "Unlock",
+  Delete: "Delete",
+  "Add Block": "Add a block inside",
+};
+
+/**
+ * Maps raw build/preview/install errors to plain-language guidance for
+ * non-technical users. Falls back to the shortest meaningful line.
+ */
+function friendlyError(raw: string | undefined): string {
+  const e = (raw ?? "").toString();
+  if (!e.trim()) return "Something went wrong. Please try again.";
+  if (/not installed|run npm install/i.test(e))
+    return "Your site's dependencies aren't installed yet. Zephus will install them — try again.";
+  if (/node(\.js)?\s*\/?\s*npm not found|ENOENT|not recognized/i.test(e))
+    return "Node.js was not found. Install it from nodejs.org, or set a custom Node.js location in Settings.";
+  if (/did not report a URL|timeout/i.test(e))
+    return "The preview took too long to start. Check the Dev Server Log panel for details.";
+  if (/EADDRINUSE|address already in use|port/i.test(e))
+    return "The preview port is already in use. Close any other running dev servers and try again.";
+  if (/EACCES|permission denied/i.test(e))
+    return "Permission denied writing to the project folder. Check the folder's permissions.";
+  if (/ENOSPC|no space/i.test(e))
+    return "Your disk is full. Free up space and try again.";
+  // Fallback: first non-empty line, trimmed to something readable.
+  const firstLine = e.split("\n").find((l) => l.trim()) ?? e;
+  return firstLine.length > 240 ? firstLine.slice(0, 240) + "…" : firstLine;
 }
 
 function uid(): string {
@@ -456,7 +494,7 @@ function renderHomeStatusPanels(): void {
       recoveryHost.classList.add("hidden");
     } else {
       recoveryHost.classList.remove("hidden");
-      
+
       const alertHeader = document.createElement("div");
       alertHeader.className = "pane-header-title";
       alertHeader.style.marginBottom = "12px";
@@ -468,7 +506,7 @@ function renderHomeStatusPanels(): void {
 
       const alertList = document.createElement("div");
       alertList.className = "home-status-stack";
-      
+
       for (const draft of drafts) {
         alertList.appendChild(
           buildHomeStatusCard(
@@ -489,7 +527,7 @@ function renderHomeStatusPanels(): void {
       recoveryHost.appendChild(alertList);
     }
   }
-  
+
   // Render sidebar status badge
   renderSidebarUpdateStatus();
 }
@@ -498,7 +536,7 @@ function renderSidebarUpdateStatus(): void {
   const sidebarUpdate = $("sidebar-update-status");
   if (!sidebarUpdate) return;
   sidebarUpdate.innerHTML = "";
-  
+
   if (!updaterSnapshot) {
     sidebarUpdate.classList.remove("clickable");
     sidebarUpdate.onclick = null;
@@ -508,7 +546,7 @@ function renderSidebarUpdateStatus(): void {
     `;
     return;
   }
-  
+
   if (updaterSnapshot.status === "available") {
     sidebarUpdate.classList.add("clickable");
     sidebarUpdate.onclick = () => void switchStartTab("settings");
@@ -547,7 +585,9 @@ function renderSidebarUpdateStatus(): void {
   } else {
     sidebarUpdate.classList.remove("clickable");
     sidebarUpdate.onclick = null;
-    const versionStr = updaterSnapshot.version ? `v${updaterSnapshot.version}` : "";
+    const versionStr = updaterSnapshot.version
+      ? `v${updaterSnapshot.version}`
+      : "";
     sidebarUpdate.innerHTML = `
       <div class="update-status-dot"></div>
       <span>Up to date${versionStr ? " · " + versionStr : ""}</span>
@@ -1003,12 +1043,16 @@ async function renderRecent(): Promise<void> {
         </button>
       </div>
     `;
-    
+
     // Wire up buttons
-    const openBtn = welcome.querySelector("#btn-welcome-open") as HTMLButtonElement;
+    const openBtn = welcome.querySelector(
+      "#btn-welcome-open",
+    ) as HTMLButtonElement;
     if (openBtn) openBtn.onclick = () => void chooseFolder();
-    
-    const createBtn = welcome.querySelector("#btn-welcome-create") as HTMLButtonElement;
+
+    const createBtn = welcome.querySelector(
+      "#btn-welcome-create",
+    ) as HTMLButtonElement;
     if (createBtn) createBtn.onclick = () => void switchStartTab("create");
 
     list.appendChild(welcome);
@@ -1423,6 +1467,31 @@ function applyCodeFontSize(size: number): void {
   document.documentElement.style.setProperty("--code-font-size", `${size}px`);
 }
 
+/**
+ * Mirrors the project's design tokens onto the canvas so users see live
+ * font/color changes while editing, without needing to save and reload.
+ * Note: Google Fonts won't load in the renderer (CSP), so custom webfonts
+ * fall back to their stack here. Real font visible in dev-server preview.
+ */
+function applyDesignPreview(): void {
+  const canvas = document.getElementById("canvas");
+  if (!canvas) return;
+  const design = effectiveSiteDocument(state)?.design;
+  const props: Array<[string, string | undefined]> = [
+    ["--zephus-accent", design?.accent],
+    ["--zephus-foreground", design?.foreground],
+    ["--zephus-background", design?.background],
+    ["--zephus-surface", design?.surface],
+    ["--zephus-font-family", design?.fontFamily],
+    ["--zephus-heading-font", design?.headingFontFamily],
+    ["--zephus-radius", design?.radius],
+  ];
+  for (const [name, value] of props) {
+    if (value && value.trim()) canvas.style.setProperty(name, value);
+    else canvas.style.removeProperty(name);
+  }
+}
+
 function renderLicenseValue(value: string | null): string {
   return value ? escapeHtml(value) : "—";
 }
@@ -1558,6 +1627,7 @@ async function openProjectByPath(folder: string): Promise<void> {
   }
 
   state.project = result;
+  clearAssetCache();
   await renderRecent();
 
   if (!result.pkg.ready) {
@@ -1689,8 +1759,17 @@ async function refreshGit(): Promise<void> {
     refreshIcons();
     return;
   }
+  if (git.zephusIgnored) {
+    const warn = document.createElement("div");
+    warn.className = "g-warning";
+    warn.innerHTML = `<i data-lucide="alert-triangle"></i> <span><strong>.zephus is git-ignored.</strong> Commit it — it stores this project's Zephus save state and is required to open the site on other machines.</span>`;
+    panel.appendChild(warn);
+  }
   if (total === 0) {
-    panel.innerHTML = '<p class="muted">No changes.</p>';
+    const none = document.createElement("p");
+    none.className = "muted";
+    none.textContent = "No changes.";
+    panel.appendChild(none);
     refreshIcons();
     return;
   }
@@ -1716,6 +1795,22 @@ function renderPalette(): void {
     li.innerHTML = `<i data-lucide="${iconName}"></i> <span>${item.label}</span>`;
     li.draggable = true;
     li.dataset["type"] = item.type;
+    li.tabIndex = 0;
+    li.setAttribute("role", "button");
+    li.setAttribute("aria-label", `Add ${item.label} block`);
+    li.title = `Add ${item.label} (or drag onto the canvas)`;
+    const insert = () => {
+      const sectionId = activeSectionId();
+      const section = findSection(sectionId) ?? state.sections[0];
+      addBlockAt(item.type, section ? section.children.length : 0, sectionId);
+    };
+    li.onclick = insert;
+    li.onkeydown = (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        insert();
+      }
+    };
     li.addEventListener("dragstart", (e) => {
       e.dataTransfer?.setData("text/zephus-new", item.type);
     });
@@ -2196,6 +2291,17 @@ async function openSiteShellModal(): Promise<void> {
   const ctaHref = document.createElement("input");
   ctaHref.className = "text";
   ctaHref.value = nextSite.shell.navCtaHref;
+  const ctaHrefField = document.createElement("div");
+  ctaHrefField.className = "link-field";
+  const ctaHrefPick = document.createElement("button");
+  ctaHrefPick.type = "button";
+  ctaHrefPick.className = "btn ghost mini-btn";
+  ctaHrefPick.textContent = "Choose…";
+  ctaHrefPick.onclick = () =>
+    openLinkPicker(ctaHref.value, (href) => {
+      ctaHref.value = href;
+    });
+  ctaHrefField.append(ctaHref, ctaHrefPick);
   const footerHtml = document.createElement("textarea");
   footerHtml.rows = 4;
   footerHtml.value = nextSite.shell.footerHtml;
@@ -2209,7 +2315,7 @@ async function openSiteShellModal(): Promise<void> {
     ["Announcement text", announcementText],
     ["Show announcement", announcementVisible],
     ["CTA label", ctaLabel],
-    ["CTA link", ctaHref],
+    ["CTA link", ctaHrefField],
     ["Footer HTML", footerHtml],
     ["Custom head HTML", customHeadHtml],
   ] as [string, HTMLElement][]) {
@@ -2230,6 +2336,22 @@ async function openSiteShellModal(): Promise<void> {
         label: "Stage Shell",
         kind: "primary",
         onClick: async () => {
+          const newFooter = footerHtml.value.trim();
+          const newHead = customHeadHtml.value.trim();
+          const hadFooter = Boolean(nextSite.shell.footerHtml.trim());
+          const hadHead = Boolean(nextSite.shell.customHeadHtml.trim());
+          // Gate: warn user when they first add raw HTML (they might not
+          // understand it injects unescaped content into their site).
+          if ((newFooter && !hadFooter) || (newHead && !hadHead)) {
+            const proceed = await modalController.confirmDestructive(
+              "Custom HTML Warning",
+              "Footer HTML and Custom head HTML are injected directly into " +
+                "your site without escaping. Only add content you trust " +
+                "(analytics, fonts, embeds). Proceed?",
+              "I understand, save it",
+            );
+            if (!proceed) return;
+          }
           nextSite.shell.layoutMode = "managed";
           nextSite.shell.siteTitle =
             siteTitle.value.trim() || nextSite.siteName;
@@ -2264,12 +2386,6 @@ async function openDesignSystemModal(): Promise<void> {
   wrap.className = "meta-form";
 
   const inputs = {
-    accent: document.createElement("input"),
-    background: document.createElement("input"),
-    foreground: document.createElement("input"),
-    surface: document.createElement("input"),
-    fontFamily: document.createElement("input"),
-    headingFontFamily: document.createElement("input"),
     radius: document.createElement("input"),
     containerWidth: document.createElement("input"),
   };
@@ -2278,12 +2394,16 @@ async function openDesignSystemModal(): Promise<void> {
     input.className = "text";
   }
 
-  inputs.accent.value = nextSite.design.accent;
-  inputs.background.value = nextSite.design.background;
-  inputs.foreground.value = nextSite.design.foreground;
-  inputs.surface.value = nextSite.design.surface;
-  inputs.fontFamily.value = nextSite.design.fontFamily;
-  inputs.headingFontFamily.value = nextSite.design.headingFontFamily;
+  const colorControls = {
+    accent: createColorControl(nextSite.design.accent),
+    background: createColorControl(nextSite.design.background),
+    foreground: createColorControl(nextSite.design.foreground),
+    surface: createColorControl(nextSite.design.surface),
+  };
+
+  const bodyFont = createFontControl(nextSite.design.fontFamily);
+  const headingFont = createFontControl(nextSite.design.headingFontFamily);
+
   inputs.radius.value = nextSite.design.radius;
   inputs.containerWidth.value = nextSite.design.containerWidth;
 
@@ -2297,12 +2417,12 @@ async function openDesignSystemModal(): Promise<void> {
   }
 
   for (const [labelText, field] of [
-    ["Accent color", inputs.accent],
-    ["Background", inputs.background],
-    ["Foreground", inputs.foreground],
-    ["Surface", inputs.surface],
-    ["Body font", inputs.fontFamily],
-    ["Heading font", inputs.headingFontFamily],
+    ["Accent color", colorControls.accent.element],
+    ["Background", colorControls.background.element],
+    ["Foreground", colorControls.foreground.element],
+    ["Surface", colorControls.surface.element],
+    ["Body font", bodyFont.element],
+    ["Heading font", headingFont.element],
     ["Radius", inputs.radius],
     ["Container width", inputs.containerWidth],
     ["Shadow depth", shadow],
@@ -2322,13 +2442,16 @@ async function openDesignSystemModal(): Promise<void> {
       kind: "primary",
       onClick: async () => {
         nextSite.shell.layoutMode = "managed";
-        nextSite.design.accent = inputs.accent.value.trim();
-        nextSite.design.background = inputs.background.value.trim();
-        nextSite.design.foreground = inputs.foreground.value.trim();
-        nextSite.design.surface = inputs.surface.value.trim();
-        nextSite.design.fontFamily = inputs.fontFamily.value.trim();
-        nextSite.design.headingFontFamily =
-          inputs.headingFontFamily.value.trim();
+        nextSite.design.accent = colorControls.accent.getValue().trim();
+        nextSite.design.background = colorControls.background.getValue().trim();
+        nextSite.design.foreground = colorControls.foreground.getValue().trim();
+        nextSite.design.surface = colorControls.surface.getValue().trim();
+        nextSite.design.fontFamily = bodyFont.getStack();
+        nextSite.design.headingFontFamily = headingFont.getStack();
+        nextSite.design.fontImportUrl = buildFontImportUrl([
+          bodyFont.getGoogle(),
+          headingFont.getGoogle(),
+        ]);
         nextSite.design.radius = inputs.radius.value.trim();
         nextSite.design.containerWidth = inputs.containerWidth.value.trim();
         nextSite.design.shadow = shadow.value as DesignTokenSet["shadow"];
@@ -2968,6 +3091,23 @@ async function loadPage(
 
 async function onExternalChange(): Promise<void> {
   if (!state.project || !state.page) return;
+
+  // Ignore change events caused by Zephus's own writes: if the on-disk content
+  // matches what we last generated/loaded, there is nothing external to merge.
+  try {
+    const onDisk = await window.zephus.readFile(state.project.path, state.page);
+    if (
+      onDisk.ok &&
+      typeof onDisk.content === "string" &&
+      (onDisk.content === state.rawCode ||
+        onDisk.content === state.generatedCode)
+    ) {
+      return;
+    }
+  } catch {
+    // If we cannot read the file, fall through to the prompt.
+  }
+
   const choice = await modalController.choose<"keep" | "reload">(
     "File Changed on Disk",
     "The current page was modified outside Zephus. Reload it from disk or keep your in-app version?",
@@ -3302,11 +3442,17 @@ function blockToHtml(
     }
     case "text":
       return `<p${common}>${plainTextToHtml(block.props["text"] ?? "")}</p>`;
-    case "image":
-      if (!block.props["src"] && forCanvas) {
+    case "image": {
+      const src = block.props["src"] ?? "";
+      if (!src && forCanvas) {
         return `<figure${common}><div class="canvas-empty">Missing image. Choose one in Properties.</div></figure>`;
       }
-      return `<img${common} src="${escapeAttr(block.props["src"] ?? "")}" alt="${escapeAttr(block.props["alt"] ?? "")}" />`;
+      const isProjectAsset = forCanvas && src.startsWith("/");
+      const srcAttr = isProjectAsset
+        ? ` src="" data-asset-src="${escapeAttr(src)}"`
+        : ` src="${escapeAttr(src)}"`;
+      return `<img${common}${srcAttr} alt="${escapeAttr(block.props["alt"] ?? "")}" />`;
+    }
     case "button":
       return `<a${common} href="${escapeAttr(block.props["href"] ?? "#")}">${plainTextToHtml(block.props["text"] ?? "")}</a>`;
     case "section":
@@ -3341,12 +3487,15 @@ function blockToHtml(
         return `<section${common}><div class="canvas-empty">No gallery images yet.</div></section>`;
       }
       return `<section${common}>${images
-        .map(
-          (src, index) =>
-            `<img src="${escapeAttr(src)}" alt="${escapeAttr(
-              block.props[`alt${index + 1}`] ?? `Gallery image ${index + 1}`,
-            )}" />`,
-        )
+        .map((src, index) => {
+          const isProjectAsset = forCanvas && src.startsWith("/");
+          const srcAttr = isProjectAsset
+            ? ` src="" data-asset-src="${escapeAttr(src)}"`
+            : ` src="${escapeAttr(src)}"`;
+          return `<img${srcAttr} alt="${escapeAttr(
+            block.props[`alt${index + 1}`] ?? `Gallery image ${index + 1}`,
+          )}" />`;
+        })
         .join("")}</section>`;
     }
     case "quote":
@@ -3370,6 +3519,10 @@ function blockToHtml(
       return `<iframe${common} src="${escapeAttr(block.props["src"] ?? "")}" title="${escapeAttr(block.props["title"] ?? "Embed")}" loading="lazy"></iframe>`;
     case "html":
       return block.raw ?? "";
+    default:
+      // Unknown block type — render a placeholder so it's visible in the canvas
+      // and not silently dropped.
+      return `<div${common} class="canvas-unknown-block">Unknown block: ${escapeHtml((block as { type: string }).type)}</div>`;
   }
 }
 
@@ -3716,6 +3869,37 @@ function openSectionInsertModal(index: number): void {
   ]);
 }
 
+/** Cache of webPath → data URL for canvas image hydration. */
+const assetDataUrlCache = new Map<string, Promise<string | null>>();
+
+function clearAssetCache(): void {
+  assetDataUrlCache.clear();
+}
+
+function fetchAssetDataUrl(webPath: string): Promise<string | null> {
+  if (!state.project) return Promise.resolve(null);
+  const cached = assetDataUrlCache.get(webPath);
+  if (cached) return cached;
+  const project = state.project;
+  const promise = window.zephus
+    .readAssetDataUrl(project.path, project.astro.publicDir, webPath)
+    .then((res) => (res.ok && res.dataUrl ? res.dataUrl : null))
+    .catch(() => null);
+  assetDataUrlCache.set(webPath, promise);
+  return promise;
+}
+
+function hydrateCanvasAssets(root: HTMLElement): void {
+  const imgs = root.querySelectorAll<HTMLImageElement>("img[data-asset-src]");
+  imgs.forEach((img) => {
+    const webPath = img.getAttribute("data-asset-src");
+    if (!webPath) return;
+    void fetchAssetDataUrl(webPath).then((dataUrl) => {
+      if (dataUrl) img.src = dataUrl;
+    });
+  });
+}
+
 function renderCanvas(): void {
   const canvas = $("canvas");
   canvas.innerHTML = "";
@@ -3785,6 +3969,7 @@ function renderCanvas(): void {
       const btn = document.createElement("button");
       btn.className = "mini-btn";
       btn.textContent = label;
+      btn.title = TOOLBAR_TIPS[label] ?? label;
       btn.onclick = (event) => {
         event.stopPropagation();
         handler();
@@ -3830,6 +4015,30 @@ function renderCanvas(): void {
         (block.locked ? " locked" : "");
       shell.draggable = !block.locked;
       shell.title = blockLabel(block);
+      shell.tabIndex = 0;
+      shell.setAttribute("role", "button");
+      shell.setAttribute(
+        "aria-label",
+        `${blockLabel(block)} block${block.id === state.selectedId ? ", selected" : ""}`,
+      );
+      shell.onkeydown = (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          if (
+            block.id === state.selectedId &&
+            TEXT_EDITABLE.includes(block.type) &&
+            !block.locked
+          ) {
+            startInlineEdit(preview, block);
+            return;
+          }
+          state.selectedId = block.id;
+          state.selectedSectionId = section.id;
+          renderLayers();
+          renderCanvas();
+          renderProperties();
+        }
+      };
 
       const chrome = document.createElement("div");
       chrome.className = "block-chrome";
@@ -3856,6 +4065,7 @@ function renderCanvas(): void {
         const btn = document.createElement("button");
         btn.className = "mini-btn";
         btn.textContent = label;
+        btn.title = TOOLBAR_TIPS[label] ?? label;
         btn.onclick = (event) => {
           event.stopPropagation();
           handler();
@@ -3878,6 +4088,8 @@ function renderCanvas(): void {
       };
 
       if (TEXT_EDITABLE.includes(block.type) && !block.locked) {
+        preview.classList.add("editable-text");
+        preview.title = "Double-click to edit text";
         preview.ondblclick = (event) => {
           event.stopPropagation();
           startInlineEdit(preview, block);
@@ -3912,6 +4124,9 @@ function renderCanvas(): void {
   });
 
   canvas.appendChild(buildSectionInsertButton(state.sections.length));
+
+  hydrateCanvasAssets(canvas);
+  applyDesignPreview();
 
   canvas.ondragover = (e) => {
     e.preventDefault();
@@ -3983,9 +4198,13 @@ function handleDrop(e: DragEvent): void {
 
 function startInlineEdit(el: HTMLElement, block: Block): void {
   el.setAttribute("contenteditable", "true");
+  el.setAttribute("role", "textbox");
+  el.setAttribute("aria-label", "Edit text");
   el.focus();
   const finish = () => {
     el.removeAttribute("contenteditable");
+    el.removeAttribute("role");
+    el.removeAttribute("aria-label");
     const newText = el.innerText.trim();
     if (newText !== (block.props["text"] ?? "")) {
       pushUndo();
@@ -4087,6 +4306,464 @@ function labeledTextarea(
   return wrap;
 }
 
+const LENGTH_UNITS = ["px", "rem", "em", "%", "vh", "vw", "auto", "custom"];
+
+interface ParsedLength {
+  num: string;
+  unit: string;
+  raw?: string;
+}
+
+function parseLength(value: string): ParsedLength {
+  const t = (value ?? "").trim();
+  if (!t) return { num: "", unit: "px" };
+  if (t === "auto") return { num: "", unit: "auto" };
+  const m = /^(-?\d*\.?\d+)(px|rem|em|%|vh|vw)?$/.exec(t);
+  if (m) return { num: m[1] ?? "", unit: m[2] ?? "px" };
+  return { num: "", unit: "custom", raw: t };
+}
+
+/**
+ * Length input: number + unit dropdown (px/rem/%/…), so novices never type raw
+ * CSS. Falls back to a free-text "custom" field for compound values like
+ * "2rem 0" or calc().
+ */
+function labeledLength(
+  key: string,
+  value: string,
+  onChange: (v: string) => void,
+): HTMLElement {
+  const wrap = document.createElement("label");
+  wrap.className = "meta-field";
+  const label = document.createElement("span");
+  label.textContent = key;
+
+  const control = document.createElement("div");
+  control.className = "length-control";
+
+  const num = document.createElement("input");
+  num.type = "number";
+  num.className = "text length-num";
+  num.setAttribute("aria-label", `${key} value`);
+
+  const unit = document.createElement("select");
+  unit.className = "length-unit";
+  unit.setAttribute("aria-label", `${key} unit`);
+  for (const u of LENGTH_UNITS) {
+    const o = document.createElement("option");
+    o.value = u;
+    o.textContent = u;
+    unit.appendChild(o);
+  }
+
+  const raw = document.createElement("input");
+  raw.type = "text";
+  raw.className = "text length-raw";
+  raw.placeholder = "e.g. 2rem 0";
+  raw.setAttribute("aria-label", `${key} custom value`);
+
+  const parsed = parseLength(value);
+  num.value = parsed.num;
+  unit.value = parsed.unit;
+  if (parsed.unit === "custom") raw.value = parsed.raw ?? value;
+
+  const emit = (): void => {
+    if (unit.value === "auto") onChange("auto");
+    else if (unit.value === "custom") onChange(raw.value.trim());
+    else onChange(num.value ? `${num.value}${unit.value}` : "");
+  };
+
+  const sync = (): void => {
+    num.style.display =
+      unit.value === "auto" || unit.value === "custom" ? "none" : "";
+    raw.style.display = unit.value === "custom" ? "" : "none";
+  };
+
+  num.oninput = emit;
+  raw.oninput = emit;
+  unit.onchange = () => {
+    sync();
+    emit();
+  };
+  sync();
+
+  control.append(num, unit, raw);
+  wrap.append(label, control);
+  return wrap;
+}
+
+function isHexColor(value: string): boolean {
+  return /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(value.trim());
+}
+
+/** Expands shorthand #abc to #aabbcc so <input type=color> accepts it. */
+function expandHex(value: string): string {
+  const v = value.trim();
+  if (/^#[0-9a-fA-F]{3}$/.test(v)) {
+    return (
+      "#" +
+      v
+        .slice(1)
+        .split("")
+        .map((c) => c + c)
+        .join("")
+    );
+  }
+  return v;
+}
+
+/**
+ * A color control combining a native swatch picker with a free-text field so
+ * users can also enter rgb()/rgba(), CSS variables, named colors, or clear it.
+ */
+function createColorControl(
+  value: string,
+  onChange: (v: string) => void = () => {},
+): { element: HTMLElement; getValue: () => string } {
+  const control = document.createElement("div");
+  control.className = "color-control";
+
+  const swatch = document.createElement("input");
+  swatch.type = "color";
+  swatch.className = "color-swatch";
+  swatch.value = isHexColor(value) ? expandHex(value) : "#000000";
+
+  const text = document.createElement("input");
+  text.type = "text";
+  text.className = "text color-text";
+  text.value = value;
+  text.placeholder = "#3b82f6, rgb(), var(--accent)…";
+
+  const clear = document.createElement("button");
+  clear.type = "button";
+  clear.className = "color-clear";
+  clear.title = "Clear color";
+  clear.setAttribute("aria-label", "Clear color");
+  clear.textContent = "✕";
+
+  swatch.oninput = () => {
+    text.value = swatch.value;
+    onChange(swatch.value);
+  };
+  text.oninput = () => {
+    if (isHexColor(text.value)) swatch.value = expandHex(text.value);
+    onChange(text.value);
+  };
+  clear.onclick = () => {
+    text.value = "";
+    onChange("");
+  };
+
+  control.append(swatch, text, clear);
+  return { element: control, getValue: () => text.value };
+}
+
+function labeledColor(
+  key: string,
+  value: string,
+  onChange: (v: string) => void,
+): HTMLElement {
+  const wrap = document.createElement("label");
+  wrap.className = "meta-field";
+  const label = document.createElement("span");
+  label.textContent = key;
+  const { element } = createColorControl(value, onChange);
+  element.querySelector(".color-text")?.setAttribute("aria-label", key);
+  element
+    .querySelector(".color-swatch")
+    ?.setAttribute("aria-label", `${key} color picker`);
+  wrap.append(label, element);
+  return wrap;
+}
+
+type LinkKind = "page" | "url" | "email" | "phone" | "anchor";
+
+function detectLinkKind(value: string): LinkKind {
+  const t = value.trim();
+  if (t.startsWith("mailto:")) return "email";
+  if (t.startsWith("tel:")) return "phone";
+  if (t.startsWith("#")) return "anchor";
+  if (/^(https?:)?\/\//i.test(t)) return "url";
+  if (state.pageMeta.some((p) => p.route === t)) return "page";
+  return t ? "url" : "page";
+}
+
+/**
+ * Opens a modal to build a link as a project page, external URL, email,
+ * phone, or on-page anchor, returning the resulting href string.
+ */
+function openLinkPicker(current: string, onPick: (href: string) => void): void {
+  const wrap = document.createElement("div");
+  wrap.className = "meta-form";
+
+  const typeField = document.createElement("label");
+  typeField.className = "meta-field";
+  const typeSpan = document.createElement("span");
+  typeSpan.textContent = "Link type";
+  const typeSelect = document.createElement("select");
+  const kinds: [LinkKind, string][] = [
+    ["page", "Page in this site"],
+    ["url", "External URL"],
+    ["email", "Email address"],
+    ["phone", "Phone number"],
+    ["anchor", "Anchor on this page"],
+  ];
+  for (const [value, lbl] of kinds) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = lbl;
+    typeSelect.appendChild(option);
+  }
+  typeField.append(typeSpan, typeSelect);
+
+  const pageSelect = document.createElement("select");
+  pageSelect.className = "text";
+  for (const meta of state.pageMeta) {
+    const option = document.createElement("option");
+    option.value = meta.route;
+    option.textContent = `${meta.title} (${meta.route})`;
+    pageSelect.appendChild(option);
+  }
+
+  const valueInput = document.createElement("input");
+  valueInput.className = "text";
+
+  const valueField = document.createElement("div");
+
+  let kind = detectLinkKind(current);
+  typeSelect.value = kind;
+
+  const prefillFor = (k: LinkKind, v: string): string => {
+    const t = v.trim();
+    if (k === "email") return t.startsWith("mailto:") ? t.slice(7) : "";
+    if (k === "phone") return t.startsWith("tel:") ? t.slice(4) : "";
+    if (k === "anchor") return t.startsWith("#") ? t.slice(1) : "";
+    if (k === "url") return /^(https?:)?\/\//i.test(t) ? t : "";
+    return "";
+  };
+
+  const renderValue = (): void => {
+    valueField.innerHTML = "";
+    const row = document.createElement("label");
+    row.className = "meta-field";
+    const span = document.createElement("span");
+    if (kind === "page") {
+      span.textContent = "Target page";
+      if (state.pageMeta.some((p) => p.route === current)) {
+        pageSelect.value = current;
+      }
+      row.append(span, pageSelect);
+    } else {
+      span.textContent =
+        kind === "url"
+          ? "URL"
+          : kind === "email"
+            ? "Email address"
+            : kind === "phone"
+              ? "Phone number"
+              : "Anchor id";
+      valueInput.placeholder =
+        kind === "url"
+          ? "https://example.com"
+          : kind === "email"
+            ? "name@example.com"
+            : kind === "phone"
+              ? "+1 555 123 4567"
+              : "section-id";
+      valueInput.value = prefillFor(kind, current);
+      row.append(span, valueInput);
+    }
+    valueField.appendChild(row);
+  };
+
+  typeSelect.onchange = () => {
+    kind = typeSelect.value as LinkKind;
+    renderValue();
+  };
+  renderValue();
+
+  wrap.append(typeField, valueField);
+
+  showModalNode("Choose Link", wrap, [
+    { label: "Cancel", kind: "ghost", onClick: closeModal },
+    {
+      label: "Use Link",
+      kind: "primary",
+      onClick: () => {
+        let href: string;
+        const raw = valueInput.value.trim();
+        if (kind === "page") href = pageSelect.value || "/";
+        else if (kind === "email") href = raw ? `mailto:${raw}` : "";
+        else if (kind === "phone") href = raw ? `tel:${raw}` : "";
+        else if (kind === "anchor")
+          href = raw ? `#${raw.replace(/^#/, "")}` : "";
+        else href = raw;
+        closeModal();
+        onPick(href);
+      },
+    },
+  ]);
+}
+
+function labeledLink(
+  key: string,
+  value: string,
+  onChange: (v: string) => void,
+): HTMLElement {
+  const wrap = document.createElement("label");
+  wrap.className = "meta-field";
+  const label = document.createElement("span");
+  label.textContent = key;
+  const row = document.createElement("div");
+  row.className = "link-field";
+  const input = document.createElement("input");
+  input.className = "text";
+  input.value = value;
+  input.setAttribute("aria-label", key);
+  input.oninput = () => onChange(input.value);
+  const pick = document.createElement("button");
+  pick.type = "button";
+  pick.className = "btn ghost mini-btn";
+  pick.textContent = "Choose…";
+  pick.onclick = () =>
+    openLinkPicker(input.value, (href) => {
+      input.value = href;
+      onChange(href);
+    });
+  row.append(input, pick);
+  wrap.append(label, row);
+  return wrap;
+}
+
+interface FontOption {
+  label: string;
+  stack: string;
+  /** Google Fonts family spec (e.g. "Inter:wght@400;600"), if applicable. */
+  google?: string;
+}
+
+const FONT_OPTIONS: FontOption[] = [
+  { label: "System UI", stack: "system-ui, sans-serif" },
+  {
+    label: "Inter",
+    stack: "'Inter', sans-serif",
+    google: "Inter:wght@400;500;600;700",
+  },
+  {
+    label: "Roboto",
+    stack: "'Roboto', sans-serif",
+    google: "Roboto:wght@400;500;700",
+  },
+  {
+    label: "Open Sans",
+    stack: "'Open Sans', sans-serif",
+    google: "Open+Sans:wght@400;600;700",
+  },
+  { label: "Lato", stack: "'Lato', sans-serif", google: "Lato:wght@400;700" },
+  {
+    label: "Montserrat",
+    stack: "'Montserrat', sans-serif",
+    google: "Montserrat:wght@400;600;700",
+  },
+  {
+    label: "Poppins",
+    stack: "'Poppins', sans-serif",
+    google: "Poppins:wght@400;500;600;700",
+  },
+  {
+    label: "Playfair Display",
+    stack: "'Playfair Display', serif",
+    google: "Playfair+Display:wght@400;600;700",
+  },
+  {
+    label: "Merriweather",
+    stack: "'Merriweather', serif",
+    google: "Merriweather:wght@400;700",
+  },
+  { label: "Georgia (serif)", stack: "Georgia, 'Times New Roman', serif" },
+  { label: "Monospace", stack: "ui-monospace, 'SF Mono', Menlo, monospace" },
+];
+
+interface FontControl {
+  element: HTMLElement;
+  getStack: () => string;
+  getGoogle: () => string | null;
+}
+
+/**
+ * A font selector: a curated dropdown (system + popular Google Fonts) plus a
+ * custom CSS font-family option, with a preview line. Google selections also
+ * return a family spec so the layout can load the webfont.
+ */
+function createFontControl(value: string): FontControl {
+  const wrap = document.createElement("div");
+  wrap.className = "font-control";
+
+  const select = document.createElement("select");
+  select.className = "text";
+  FONT_OPTIONS.forEach((opt, index) => {
+    const option = document.createElement("option");
+    option.value = String(index);
+    option.textContent = opt.label;
+    select.appendChild(option);
+  });
+  const customOption = document.createElement("option");
+  customOption.value = "custom";
+  customOption.textContent = "Custom…";
+  select.appendChild(customOption);
+
+  const customInput = document.createElement("input");
+  customInput.className = "text font-custom";
+  customInput.placeholder = "'Brand Sans', system-ui, sans-serif";
+
+  const preview = document.createElement("div");
+  preview.className = "font-preview";
+  preview.textContent = "The quick brown fox jumps over the lazy dog";
+
+  const matchIndex = FONT_OPTIONS.findIndex((o) => o.stack === value.trim());
+  if (matchIndex >= 0) {
+    select.value = String(matchIndex);
+  } else if (value.trim()) {
+    select.value = "custom";
+    customInput.value = value;
+  } else {
+    select.value = "0";
+  }
+
+  const currentStack = (): string =>
+    select.value === "custom"
+      ? customInput.value.trim()
+      : (FONT_OPTIONS[Number(select.value)]?.stack ?? "");
+
+  const sync = (): void => {
+    customInput.style.display = select.value === "custom" ? "" : "none";
+    preview.style.fontFamily = currentStack() || "inherit";
+  };
+  select.onchange = sync;
+  customInput.oninput = () => {
+    preview.style.fontFamily = currentStack() || "inherit";
+  };
+  sync();
+
+  wrap.append(select, customInput, preview);
+  return {
+    element: wrap,
+    getStack: currentStack,
+    getGoogle: () =>
+      select.value === "custom"
+        ? null
+        : (FONT_OPTIONS[Number(select.value)]?.google ?? null),
+  };
+}
+
+/** Builds a Google Fonts css2 URL from family specs, or "" if none. */
+function buildFontImportUrl(googleSpecs: (string | null)[]): string {
+  const unique = [...new Set(googleSpecs.filter((g): g is string => !!g))];
+  if (unique.length === 0) return "";
+  const families = unique.map((g) => `family=${g}`).join("&");
+  return `https://fonts.googleapis.com/css2?${families}&display=swap`;
+}
+
 function propertyGroup(title: string): HTMLElement {
   const wrap = document.createElement("section");
   wrap.className = "prop-group";
@@ -4097,50 +4774,174 @@ function propertyGroup(title: string): HTMLElement {
 }
 
 async function chooseAssetForImage(block: Block): Promise<void> {
+  openAssetBrowser({
+    filter: "images",
+    title: "Image Browser",
+    onSelect: (webPath) => {
+      pushUndo();
+      block.props["src"] = webPath;
+      commitBlockChange(`Updated image asset for ${block.type}`);
+    },
+  });
+}
+
+interface AssetBrowserOptions {
+  filter?: AssetEntry["category"] | "all";
+  title?: string;
+  onSelect: (webPath: string) => void;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+const CATEGORY_ICONS: Record<AssetEntry["category"], string> = {
+  images: "image",
+  media: "play",
+  documents: "file-code",
+  other: "file-code",
+};
+
+function openAssetBrowser(options: AssetBrowserOptions): void {
   if (!state.project) return;
-  const result = await window.zephus.listAssets(
-    state.project.path,
-    state.project.astro.publicDir,
-  );
+  const project = state.project;
+  const filter = options.filter ?? "all";
+
   const wrap = document.createElement("div");
   wrap.className = "asset-browser";
-  if (result.ok && result.assets.length > 0) {
-    for (const asset of result.assets) {
-      const row = document.createElement("button");
-      row.className = "asset-row";
-      row.textContent = asset.fileName;
-      row.onclick = () => {
-        closeModal();
-        pushUndo();
-        block.props["src"] = asset.webPath;
-        commitBlockChange(`Updated image asset for ${block.type}`);
-      };
-      wrap.appendChild(row);
+
+  const dropzone = document.createElement("div");
+  dropzone.className = "asset-dropzone";
+  dropzone.setAttribute("tabindex", "0");
+  dropzone.setAttribute("role", "region");
+  dropzone.setAttribute("aria-label", "Drop files here to import");
+  dropzone.innerHTML =
+    "<span>Drag & drop files here, or use Import below</span>";
+
+  const grid = document.createElement("div");
+  grid.className = "asset-grid";
+
+  wrap.append(dropzone, grid);
+
+  const renderThumb = async (
+    tile: HTMLElement,
+    asset: AssetEntry,
+  ): Promise<void> => {
+    if (asset.category !== "images") return;
+    try {
+      const res = await window.zephus.readAssetDataUrl(
+        project.path,
+        project.astro.publicDir,
+        asset.webPath,
+      );
+      if (res.ok && res.dataUrl) {
+        const img = document.createElement("img");
+        img.src = res.dataUrl;
+        img.alt = asset.fileName;
+        tile.querySelector(".asset-thumb")?.replaceChildren(img);
+      }
+    } catch {
+      /* leave icon fallback */
     }
-  } else {
-    const empty = document.createElement("p");
-    empty.className = "muted";
-    empty.textContent = "No imported images yet.";
-    wrap.appendChild(empty);
-  }
-  showModalNode("Asset Browser", wrap, [
+  };
+
+  const refresh = async (): Promise<void> => {
+    grid.innerHTML = "";
+    const result = await window.zephus.listAssets(
+      project.path,
+      project.astro.publicDir,
+    );
+    const assets = (result.ok ? result.assets : []).filter(
+      (a) => filter === "all" || a.category === filter,
+    );
+    if (assets.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "muted";
+      empty.textContent = "No assets yet. Import or drop files to get started.";
+      grid.appendChild(empty);
+      return;
+    }
+    for (const asset of assets) {
+      const tile = document.createElement("button");
+      tile.className = "asset-tile";
+      tile.title = `${asset.fileName} · ${formatBytes(asset.size)}`;
+      const thumb = document.createElement("div");
+      thumb.className = "asset-thumb";
+      const icon = document.createElement("i");
+      icon.setAttribute("data-lucide", CATEGORY_ICONS[asset.category]);
+      thumb.appendChild(icon);
+      const name = document.createElement("span");
+      name.className = "asset-name";
+      name.textContent = asset.fileName.split("/").pop() ?? asset.fileName;
+      tile.append(thumb, name);
+      tile.onclick = () => {
+        closeModal();
+        options.onSelect(asset.webPath);
+      };
+      grid.appendChild(tile);
+      void renderThumb(tile, asset);
+    }
+    refreshIcons();
+  };
+
+  const handleDropPaths = async (paths: string[]): Promise<void> => {
+    if (paths.length === 0) return;
+    const res = await window.zephus.importAssetPaths(
+      project.path,
+      project.astro.publicDir,
+      paths,
+    );
+    if (res.errors.length > 0) {
+      setStatus(`Some files failed to import: ${res.errors.join("; ")}`);
+    } else {
+      setStatus(`Imported ${res.imported.length} file(s).`);
+    }
+    await refresh();
+  };
+
+  dropzone.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    dropzone.classList.add("dragover");
+  });
+  dropzone.addEventListener("dragleave", () => {
+    dropzone.classList.remove("dragover");
+  });
+  dropzone.addEventListener("drop", (event) => {
+    event.preventDefault();
+    dropzone.classList.remove("dragover");
+    const files = Array.from(event.dataTransfer?.files ?? []);
+    const paths = files
+      .map((file) => {
+        try {
+          return window.zephus.getDroppedFilePath(file);
+        } catch {
+          return "";
+        }
+      })
+      .filter(Boolean);
+    void handleDropPaths(paths);
+  });
+
+  void refresh();
+
+  showModalNode(options.title ?? "Asset Browser", wrap, [
     {
-      label: "Import New Image",
+      label: "Import Files",
       kind: "primary",
       onClick: async () => {
         if (!state.project) return;
-        const imported = await window.zephus.importImage(
-          state.project.path,
-          state.project.astro.publicDir,
+        const res = await window.zephus.importAssets(
+          project.path,
+          project.astro.publicDir,
         );
-        if (imported.ok && imported.webPath) {
-          closeModal();
-          pushUndo();
-          block.props["src"] = imported.webPath;
-          commitBlockChange("Imported image asset");
-        } else if (!imported.canceled) {
-          setStatus("Image import failed: " + (imported.error ?? "unknown"));
+        if (res.errors.length > 0) {
+          setStatus(`Some files failed: ${res.errors.join("; ")}`);
+        } else if (res.imported.length > 0) {
+          setStatus(`Imported ${res.imported.length} file(s).`);
         }
+        await refresh();
       },
     },
     { label: "Close", kind: "ghost", onClick: closeModal },
@@ -4226,22 +5027,22 @@ function renderProperties(): void {
 
     const layoutGroup = propertyGroup("Layout");
     layoutGroup.appendChild(
-      labeledInput("Padding", section.style?.padding ?? "", (value) =>
+      labeledLength("Padding", section.style?.padding ?? "", (value) =>
         commitSectionStyle("padding", value),
       ),
     );
     layoutGroup.appendChild(
-      labeledInput("Margin", section.style?.margin ?? "", (value) =>
+      labeledLength("Margin", section.style?.margin ?? "", (value) =>
         commitSectionStyle("margin", value),
       ),
     );
     layoutGroup.appendChild(
-      labeledInput("Max width", section.style?.maxWidth ?? "", (value) =>
+      labeledLength("Max width", section.style?.maxWidth ?? "", (value) =>
         commitSectionStyle("maxWidth", value),
       ),
     );
     layoutGroup.appendChild(
-      labeledInput("Gap", section.style?.gap ?? "", (value) =>
+      labeledLength("Gap", section.style?.gap ?? "", (value) =>
         commitSectionStyle("gap", value),
       ),
     );
@@ -4249,17 +5050,17 @@ function renderProperties(): void {
 
     const styleGroup = propertyGroup("Style");
     styleGroup.appendChild(
-      labeledInput("Background", section.style?.background ?? "", (value) =>
+      labeledColor("Background", section.style?.background ?? "", (value) =>
         commitSectionStyle("background", value),
       ),
     );
     styleGroup.appendChild(
-      labeledInput("Text color", section.style?.color ?? "", (value) =>
+      labeledColor("Text color", section.style?.color ?? "", (value) =>
         commitSectionStyle("color", value),
       ),
     );
     styleGroup.appendChild(
-      labeledInput("Radius", section.style?.radius ?? "", (value) =>
+      labeledLength("Radius", section.style?.radius ?? "", (value) =>
         commitSectionStyle("radius", value),
       ),
     );
@@ -4366,7 +5167,7 @@ function renderProperties(): void {
       ),
     );
     contentGroup.appendChild(
-      labeledInput("Link", block.props["href"] ?? "", (v) => commit("href", v)),
+      labeledLink("Link", block.props["href"] ?? "", (v) => commit("href", v)),
     );
   } else if (block.type === "image") {
     const imageRow = document.createElement("div");
@@ -4494,12 +5295,12 @@ function renderProperties(): void {
   align.append(alignLabel, alignSelect);
   layoutGroup.appendChild(align);
   layoutGroup.appendChild(
-    labeledInput("Max width", block.style?.maxWidth ?? "", (v) =>
+    labeledLength("Max width", block.style?.maxWidth ?? "", (v) =>
       commitStyle("maxWidth", v),
     ),
   );
   layoutGroup.appendChild(
-    labeledInput("Gap", block.style?.gap ?? "", (v) => commitStyle("gap", v)),
+    labeledLength("Gap", block.style?.gap ?? "", (v) => commitStyle("gap", v)),
   );
   if (block.type === "columns" || block.type === "gallery") {
     layoutGroup.appendChild(
@@ -4522,27 +5323,27 @@ function renderProperties(): void {
 
   const styleGroup = propertyGroup("Style");
   styleGroup.appendChild(
-    labeledInput("Background", block.style?.background ?? "", (v) =>
+    labeledColor("Background", block.style?.background ?? "", (v) =>
       commitStyle("background", v),
     ),
   );
   styleGroup.appendChild(
-    labeledInput("Text color", block.style?.color ?? "", (v) =>
+    labeledColor("Text color", block.style?.color ?? "", (v) =>
       commitStyle("color", v),
     ),
   );
   styleGroup.appendChild(
-    labeledInput("Padding", block.style?.padding ?? "", (v) =>
+    labeledLength("Padding", block.style?.padding ?? "", (v) =>
       commitStyle("padding", v),
     ),
   );
   styleGroup.appendChild(
-    labeledInput("Margin", block.style?.margin ?? "", (v) =>
+    labeledLength("Margin", block.style?.margin ?? "", (v) =>
       commitStyle("margin", v),
     ),
   );
   styleGroup.appendChild(
-    labeledInput("Radius", block.style?.radius ?? "", (v) =>
+    labeledLength("Radius", block.style?.radius ?? "", (v) =>
       commitStyle("radius", v),
     ),
   );
@@ -4576,7 +5377,7 @@ function renderProperties(): void {
   const currentResponsive =
     block.style?.responsive?.[state.currentViewport] ?? {};
   advancedGroup.appendChild(
-    labeledInput("Viewport padding", currentResponsive.padding ?? "", (v) => {
+    labeledLength("Viewport padding", currentResponsive.padding ?? "", (v) => {
       pushUndo();
       block.style = block.style ?? {};
       block.style.responsive = block.style.responsive ?? {};
@@ -4588,7 +5389,7 @@ function renderProperties(): void {
     }),
   );
   advancedGroup.appendChild(
-    labeledInput("Viewport margin", currentResponsive.margin ?? "", (v) => {
+    labeledLength("Viewport margin", currentResponsive.margin ?? "", (v) => {
       pushUndo();
       block.style = block.style ?? {};
       block.style.responsive = block.style.responsive ?? {};
@@ -4876,6 +5677,76 @@ function setViewport(vp: "desktop" | "tablet" | "mobile"): void {
   }
 }
 
+/**
+ * Runs `npm install` for a project with a live-log modal. Resolves true on
+ * success. Used after scaffolding and before preview/publish when node_modules
+ * is missing — so a novice never has to touch a terminal.
+ */
+async function runInstallFlow(projectPath: string): Promise<boolean> {
+  const wrap = document.createElement("div");
+  wrap.className = "install-flow";
+  const status = document.createElement("p");
+  status.className = "muted";
+  status.textContent =
+    "Installing dependencies… This can take a minute on first run.";
+  const logEl = document.createElement("pre");
+  logEl.className = "dev-log install-log";
+  wrap.append(status, logEl);
+
+  const unsub = window.zephus.onInstallLog((chunk) => {
+    logEl.textContent += chunk;
+    logEl.scrollTop = logEl.scrollHeight;
+  });
+
+  return new Promise<boolean>((resolve) => {
+    let done = false;
+    showModalNode("Setting Up Your Site", wrap, [
+      {
+        label: "Run in Background",
+        kind: "ghost",
+        onClick: () => {
+          if (!done) {
+            closeModal();
+            resolve(false);
+          }
+        },
+      },
+    ]);
+
+    void window.zephus
+      .installDependencies(projectPath)
+      .then((result) => {
+        done = true;
+        unsub();
+        if (result.ok) {
+          status.textContent = "Dependencies installed. You're ready to go.";
+          setStatus("Dependencies installed.");
+          closeModal();
+          resolve(true);
+        } else {
+          status.textContent = "Install failed: " + friendlyError(result.error);
+          setStatus("Dependency install failed.");
+          resolve(false);
+        }
+      })
+      .catch(() => {
+        done = true;
+        unsub();
+        resolve(false);
+      });
+  });
+}
+
+/** Ensures deps are installed; offers to install if not. Returns true if ready. */
+async function ensureDependencies(): Promise<boolean> {
+  if (!state.project) return false;
+  const installed = await window.zephus.dependenciesInstalled(
+    state.project.path,
+  );
+  if (installed) return true;
+  return runInstallFlow(state.project.path);
+}
+
 async function togglePreview(): Promise<void> {
   if (!state.project) return;
   const frame = $("preview-frame") as HTMLIFrameElement;
@@ -4899,6 +5770,7 @@ async function togglePreview(): Promise<void> {
     });
     if (!resolved) return;
   }
+  if (!(await ensureDependencies())) return;
   setStatus("Starting dev server (npm run dev)…");
   state.unsubLog = window.zephus.onPreviewLog((chunk) => {
     const logEl = $("dev-log");
@@ -4907,7 +5779,7 @@ async function togglePreview(): Promise<void> {
   });
   const result = await window.zephus.startPreview(state.project.path);
   if (!result.ok || !result.url) {
-    setStatus("Preview failed: " + (result.error ?? "unknown error"));
+    setStatus("Preview failed: " + friendlyError(result.error));
     state.unsubLog?.();
     state.unsubLog = null;
     return;
@@ -4927,13 +5799,14 @@ async function togglePreview(): Promise<void> {
 
 async function publishSite(): Promise<void> {
   if (!state.project) return;
+  if (!(await ensureDependencies())) return;
   setStatus("Building site for production (npm run build)…");
   const r = await window.zephus.publish(
     state.project.path,
     state.project.astro.outDir,
   );
   if (!r.ok) {
-    showModal("Build Failed", r.error ?? "Unknown error during build.", [
+    showModal("Build Failed", friendlyError(r.error), [
       { label: "OK", kind: "primary", onClick: closeModal },
     ]);
     setStatus("Build failed.");
@@ -4942,12 +5815,32 @@ async function publishSite(): Promise<void> {
   setStatus(
     "Build complete. Output: " + (r.outputDir ?? state.project.astro.outDir),
   );
-  showModal(
-    "Site Published",
-    "Your production build is ready. The output folder has been opened in " +
-      "your file manager. Deploy its contents to any static hosting provider.",
-    [{ label: "OK", kind: "primary", onClick: closeModal }],
-  );
+  const pubWrap = document.createElement("div");
+  pubWrap.className = "publish-done";
+  pubWrap.innerHTML = `
+    <p>Your site was built into the <strong>${escapeHtml(r.outputDir ?? state.project.astro.outDir)}</strong> folder (now open in your file manager).</p>
+    <p>To put it online, upload that folder to a free static host:</p>
+    <ul class="publish-hosts">
+      <li><a href="https://app.netlify.com/drop">Netlify Drop</a> — drag the folder onto the page, done.</li>
+      <li><a href="https://pages.cloudflare.com">Cloudflare Pages</a> — connect or upload.</li>
+      <li><a href="https://pages.github.com">GitHub Pages</a> — if your project is on GitHub.</li>
+    </ul>
+    <p class="muted">Tip: Netlify Drop is the easiest — no account needed to start.</p>
+  `;
+  showModalNode("Site Built — Ready to Go Online", pubWrap, [
+    {
+      label: "Open Output Folder",
+      kind: "ghost",
+      onClick: () => {
+        if (state.project)
+          void window.zephus.publish(
+            state.project.path,
+            state.project.astro.outDir,
+          );
+      },
+    },
+    { label: "Done", kind: "primary", onClick: closeModal },
+  ]);
 }
 
 /* ---------- Close ---------- */
@@ -4965,6 +5858,7 @@ async function closeProject(): Promise<void> {
   state.unsubExternal?.();
   state.unsubExternal = null;
   state.project = null;
+  clearAssetCache();
   state.siteDocument = null;
   state.pendingSiteDocument = null;
   state.pendingSiteEditorKind = null;
@@ -5173,32 +6067,35 @@ function openThemePreviewModal(theme: ThemeMeta): void {
   );
 }
 
-function getThemeHeaderDetails(themeId: string): { gradient: string; icon: string } {
+function getThemeHeaderDetails(themeId: string): {
+  gradient: string;
+  icon: string;
+} {
   const id = themeId.toLowerCase();
   if (id.includes("doc")) {
     return {
       gradient: "linear-gradient(135deg, #312e81, #1e3a8a)",
-      icon: "book-open"
+      icon: "book-open",
     };
   } else if (id.includes("blog")) {
     return {
       gradient: "linear-gradient(135deg, #7c2d12, #451a03)",
-      icon: "edit-3"
+      icon: "edit-3",
     };
   } else if (id.includes("port")) {
     return {
       gradient: "linear-gradient(135deg, #164e63, #155e75)",
-      icon: "image"
+      icon: "image",
     };
   } else if (id.includes("min") || id.includes("blank")) {
     return {
       gradient: "linear-gradient(135deg, #374151, #111827)",
-      icon: "terminal"
+      icon: "terminal",
     };
   } else {
     return {
       gradient: "linear-gradient(135deg, #064e3b, #022c22)",
-      icon: "rocket"
+      icon: "rocket",
     };
   }
 }
@@ -5539,7 +6436,8 @@ async function renderSettingsInTab(): Promise<void> {
   saveBtn.textContent = "Save Settings";
   saveBtn.onclick = async () => {
     settings.autoCheckUpdates = autoUpd.input.checked;
-    settings.updateChannel = chan.select.value as GlobalSettings["updateChannel"];
+    settings.updateChannel = chan.select
+      .value as GlobalSettings["updateChannel"];
     settings.theme = theme.select.value as GlobalSettings["theme"];
     settings.codeFontSize = Number(fontSize.select.value);
     settings.restoreLastProject = restore.input.checked;
@@ -5593,16 +6491,16 @@ async function renderAboutAndLicensesInTab(): Promise<void> {
       loadLicensesBtn.textContent = "Loading Licenses…";
       licensesListContainer.classList.remove("hidden");
       licensesListContainer.innerHTML = `<p class="muted" style="padding: 16px;">Loading bundled production license data…</p>`;
-      
+
       const result = await window.zephus.readProductionLicenses();
       loadLicensesBtn.disabled = false;
       loadLicensesBtn.textContent = "Reload Dependency Licenses";
-      
+
       if (!result.ok) {
         licensesListContainer.innerHTML = `<p class="muted" style="padding: 16px; color: var(--danger);">${result.error ?? "Could not load production license data."}</p>`;
         return;
       }
-      
+
       licensesListContainer.innerHTML = "";
       const tableWrap = document.createElement("div");
       tableWrap.className = "licenses-table-wrap";
@@ -5626,7 +6524,8 @@ async function renderAboutAndLicensesInTab(): Promise<void> {
                   <td class="licenses-package-cell">
                     <div class="licenses-package-name">${escapeHtml(entry.packageId)}</div>
                     <div class="licenses-package-parents">${escapeHtml(
-                      entry.parents.slice(0, 4).join(" > ") || "Direct dependency",
+                      entry.parents.slice(0, 4).join(" > ") ||
+                        "Direct dependency",
                     )}</div>
                   </td>
                   <td>${escapeHtml(entry.licenses)}</td>
@@ -5651,18 +6550,48 @@ async function createSiteFromTabFlow(): Promise<void> {
   setStatus("Creating site from theme…");
   const r = await window.zephus.createSite(folder, theme);
   if (!r.ok) {
-    showModal("Could Not Create Site", r.error ?? "Unknown error.", [
+    showModal("Could Not Create Site", friendlyError(r.error), [
       { label: "OK", kind: "primary", onClick: closeModal },
     ]);
     return;
   }
   await openProjectByPath(folder);
+  // First-run convenience: install deps now so preview/publish just work.
+  await runInstallFlow(folder);
 }
 
 /* ---------- Wire up ---------- */
 
 function init(): void {
   initStartTabs();
+
+  // Prevent stray file drops from navigating the window away from the app.
+  // Specific dropzones call preventDefault + stopPropagation to handle drops.
+  window.addEventListener("dragover", (event) => event.preventDefault());
+  window.addEventListener("drop", (event) => event.preventDefault());
+
+  // Warn before closing/reloading with unsaved work. Drafts also auto-save,
+  // but this is an explicit last-chance rail.
+  window.addEventListener("beforeunload", (event) => {
+    if (state.project && isGlobalDirty(state)) {
+      event.preventDefault();
+      event.returnValue = "";
+    }
+  });
+
+  // Populate sidebar version label.
+  const sidebarVersion = $("sidebar-app-version");
+  if (sidebarVersion) {
+    window.zephus
+      .getAppVersion()
+      .then((v) => {
+        sidebarVersion.textContent = `v${v}`;
+      })
+      .catch(() => {
+        sidebarVersion.textContent = "";
+      });
+  }
+
   const btnCreate = $("btn-create");
   if (btnCreate) btnCreate.onclick = () => void createSiteFromTabFlow();
   const btnSettings = $("btn-settings");
@@ -5670,10 +6599,12 @@ function init(): void {
   const btnHomeSettings = $("btn-home-settings");
   if (btnHomeSettings) btnHomeSettings.onclick = () => void openSettingsModal();
   const btnHomeLicenses = $("btn-home-licenses");
-  if (btnHomeLicenses) btnHomeLicenses.onclick = () => void openProductionLicensesModal();
+  if (btnHomeLicenses)
+    btnHomeLicenses.onclick = () => void openProductionLicensesModal();
   const btnHomeCreate = $("btn-home-create");
-  if (btnHomeCreate) btnHomeCreate.onclick = () => void activateHomeSection("create");
-  
+  if (btnHomeCreate)
+    btnHomeCreate.onclick = () => void activateHomeSection("create");
+
   const btnResumeLast = $("btn-resume-last");
   if (btnResumeLast) {
     btnResumeLast.onclick = () => {
@@ -5683,7 +6614,7 @@ function init(): void {
       }
     };
   }
-  
+
   const btnOpen = $("btn-open");
   if (btnOpen) btnOpen.onclick = () => void chooseFolder();
 
@@ -5738,9 +6669,11 @@ async function showOnboardingIfNew(): Promise<void> {
   if (settings.recentProjects.length > 0) return;
   showModal(
     "Welcome to Zephus",
-    "Zephus is a local WYSIWYG website editor for Astro sites. " +
-      "Create a new site from one of the bundled themes, or open an existing Zephus project. " +
-      "Your sites live on your machine and are backed by Git — no account needed.",
+    "Zephus builds real websites visually — no coding needed. " +
+      "Pick a starter template and Zephus sets everything up for you, " +
+      "including installing what the site needs to run. " +
+      "Then drag blocks, edit text, and click Preview to see it live. " +
+      "Note: Zephus needs Node.js installed on your computer to preview and build sites.",
     [
       {
         label: "Create My First Site",

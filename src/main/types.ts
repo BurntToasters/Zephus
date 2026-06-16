@@ -42,6 +42,8 @@ export interface GitStatus {
   modified: string[];
   added: string[];
   deleted: string[];
+  /** True if .zephus/ is git-ignored (a misconfiguration). */
+  zephusIgnored?: boolean;
   error?: string;
 }
 
@@ -224,6 +226,8 @@ export interface DesignTokenSet {
   radius: string;
   shadow: "none" | "sm" | "md" | "lg";
   containerWidth: string;
+  /** Optional Google Fonts stylesheet URL injected into the managed layout. */
+  fontImportUrl?: string;
 }
 
 export interface NavItem {
@@ -306,7 +310,10 @@ export interface AssetEntry {
   webPath: string;
   fileName: string;
   size: number;
+  category: AssetCategory;
 }
+
+export type AssetCategory = "images" | "media" | "documents" | "other";
 
 export interface AssetListResult {
   ok: boolean;

@@ -55,6 +55,7 @@ export async function getGitStatus(projectPath: string): Promise<GitStatus> {
       modified,
       added,
       deleted,
+      zephusIgnored: await isZephusIgnored(projectPath),
     };
   } catch (error) {
     log.warn("Git status unavailable for project", projectPath, error);
@@ -67,4 +68,19 @@ export async function getGitStatus(projectPath: string): Promise<GitStatus> {
 
 export async function initGitRepo(projectPath: string): Promise<void> {
   await git(projectPath, ["init"]);
+}
+
+/**
+ * Returns true if `.zephus/` is excluded by git in this project. That would be
+ * a misconfiguration: the .zephus directory is the Zephus project save state
+ * and must be committed so the project opens correctly on other machines.
+ */
+export async function isZephusIgnored(projectPath: string): Promise<boolean> {
+  try {
+    // `git check-ignore` exits 0 when the path IS ignored, 1 when it is not.
+    await git(projectPath, ["check-ignore", "-q", ".zephus"]);
+    return true;
+  } catch {
+    return false;
+  }
 }

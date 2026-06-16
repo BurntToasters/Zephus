@@ -24,6 +24,7 @@ import {
 import { listProjectImages } from "./assets";
 import { detectAstro, listPages } from "./project";
 import { readRepoSettings } from "./settings";
+import { readJsonSafe, writeFileAtomic } from "./fsSafe";
 
 const FRONTMATTER_PATTERN = /^(---\r?\n[\s\S]*?\r?\n---\r?\n?)/;
 const ZEPHUS_SCHEMA_VERSION = 1;
@@ -272,16 +273,17 @@ function managedShadowValue(shadow: DesignTokenSet["shadow"]): string {
 }
 
 function renderManagedStyles(site: SiteDocument): string {
+  const c = cssValue;
   return `:root {
-  --zephus-accent: ${site.design.accent};
-  --zephus-background: ${site.design.background};
-  --zephus-foreground: ${site.design.foreground};
-  --zephus-surface: ${site.design.surface};
-  --zephus-radius: ${site.design.radius};
+  --zephus-accent: ${c(site.design.accent)};
+  --zephus-background: ${c(site.design.background)};
+  --zephus-foreground: ${c(site.design.foreground)};
+  --zephus-surface: ${c(site.design.surface)};
+  --zephus-radius: ${c(site.design.radius)};
   --zephus-shadow: ${managedShadowValue(site.design.shadow)};
-  --zephus-container-width: ${site.design.containerWidth};
-  --zephus-font-family: ${site.design.fontFamily};
-  --zephus-heading-font: ${site.design.headingFontFamily};
+  --zephus-container-width: ${c(site.design.containerWidth)};
+  --zephus-font-family: ${c(site.design.fontFamily)};
+  --zephus-heading-font: ${c(site.design.headingFontFamily)};
 }
 
 html, body {
@@ -473,6 +475,13 @@ function renderManagedLayout(
   const customScriptTag = customScriptHref
     ? `\n    <script type="module" src="${escapeAttr(customScriptHref)}"></script>`
     : "";
+  const fontLinks = /^https:\/\/fonts\.googleapis\.com\//.test(
+    site.design.fontImportUrl ?? "",
+  )
+    ? `    <link rel="preconnect" href="https://fonts.googleapis.com" />\n    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />\n    <link rel="stylesheet" href="${escapeAttr(
+        site.design.fontImportUrl as string,
+      )}" />\n`
+    : "";
 
   return `---
 interface Props {
@@ -489,7 +498,7 @@ const footerHtml = ${JSON.stringify(site.shell.footerHtml)};
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title}</title>
-    <link rel="stylesheet" href="/styles/global.css" />
+${fontLinks}    <link rel="stylesheet" href="/styles/global.css" />
 ${customCssLink}
     <link rel="stylesheet" href="/styles/zephus-managed.css" />
     {customHeadHtml ? <Fragment set:html={customHeadHtml} /> : null}
@@ -513,16 +522,19 @@ ${navLinks}${cta}
 }
 
 function readJsonFile<T>(file: string): T | null {
-  try {
-    return JSON.parse(fs.readFileSync(file, "utf8")) as T;
-  } catch {
-    return null;
-  }
+  return readJsonSafe<T>(file).data;
+}
+
+/** Reads JSON, distinguishing "absent" from "present but corrupt". */
+function readJsonFileChecked<T>(file: string): {
+  data: T | null;
+  corrupt: boolean;
+} {
+  return readJsonSafe<T>(file);
 }
 
 function writeJsonFile(file: string, value: unknown): void {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, JSON.stringify(value, null, 2) + "\n", "utf8");
+  writeFileAtomic(file, JSON.stringify(value, null, 2) + "\n");
 }
 
 function pageMetaFromFrontmatter(
@@ -574,6 +586,17 @@ function attrValue(html: string, attr: string): string {
   return match?.[1] ?? "";
 }
 
+/**
+ * Reads a double-quoted attribute value, allowing single quotes inside it.
+ * Used for the data-zephus-* attributes, whose URI-encoded JSON payloads can
+ * contain literal apostrophes (encodeURIComponent does not encode them), which
+ * would truncate the generic attrValue regex.
+ */
+function dataAttrValue(html: string, attr: string): string {
+  const match = html.match(new RegExp(`${attr}\\s*=\\s*"([^"]*)"`, "i"));
+  return match?.[1] ?? "";
+}
+
 function parseInlineStyle(styleText: string): BlockStyle | undefined {
   if (!styleText.trim()) return undefined;
   const style: BlockStyle = {};
@@ -604,9 +627,17 @@ function parseInlineStyle(styleText: string): BlockStyle | undefined {
   return Object.keys(style).length ? style : undefined;
 }
 
+/** Returns the opening tag of a segment (e.g. "<h1 ...>"), or the whole string. */
+function openingTag(segment: string): string {
+  return segment.match(/^<[A-Za-z][\w:-]*\b[^>]*>/)?.[0] ?? segment;
+}
+
 function parseStoredBlock(segment: string): BlockNode | null {
-  const encodedType = attrValue(segment, "data-zephus-block");
-  const encodedProps = attrValue(segment, "data-zephus-props");
+  // Only inspect the outer opening tag so a wrapper element does not pick up a
+  // descendant block's data-zephus-* attributes.
+  const tag = openingTag(segment);
+  const encodedType = dataAttrValue(tag, "data-zephus-block");
+  const encodedProps = dataAttrValue(tag, "data-zephus-props");
   if (!encodedType || !encodedProps) return null;
   try {
     const type = decodeURIComponent(encodedType) as EditorBlockType;
@@ -614,7 +645,7 @@ function parseStoredBlock(segment: string): BlockNode | null {
       string,
       string
     >;
-    const encodedStyle = attrValue(segment, "data-zephus-style");
+    const encodedStyle = dataAttrValue(tag, "data-zephus-style");
     const style = encodedStyle
       ? (JSON.parse(decodeURIComponent(encodedStyle)) as BlockStyle)
       : undefined;
@@ -623,7 +654,7 @@ function parseStoredBlock(segment: string): BlockNode | null {
       type,
       props,
       style,
-      locked: attrValue(segment, "data-zephus-locked") === "true",
+      locked: dataAttrValue(tag, "data-zephus-locked") === "true",
       raw: type === "html" ? segment : undefined,
     };
   } catch {
@@ -809,6 +840,10 @@ function extractManagedInner(raw: string): string {
 
 function parseBlocksFromSource(raw: string): BlockNode[] {
   const inner = extractManagedInner(raw);
+  return parseBlocksFromInner(inner);
+}
+
+function parseBlocksFromInner(inner: string): BlockNode[] {
   const segments = splitTopLevelNodes(inner);
   if (segments.length === 0 && inner.trim()) {
     return [
@@ -820,25 +855,52 @@ function parseBlocksFromSource(raw: string): BlockNode[] {
       },
     ];
   }
-  return segments.map((segment) => parseBlockSegment(segment));
+
+  const blocks: BlockNode[] = [];
+  for (const segment of segments) {
+    const tag = openingTag(segment);
+    const tagName = tag.match(/^<([A-Za-z][\w:-]*)/)?.[1]?.toLowerCase();
+    const isStoredBlock = Boolean(dataAttrValue(tag, "data-zephus-block"));
+    // A wrapper <section> (no block marker of its own) that contains stored
+    // blocks: recurse so all children are preserved with their types/styles
+    // rather than collapsing to the first child or an opaque HTML blob.
+    if (
+      !isStoredBlock &&
+      tagName === "section" &&
+      /data-zephus-block=/.test(segment)
+    ) {
+      const childInner = segment
+        .replace(/^<section\b[^>]*>/i, "")
+        .replace(/<\/section>\s*$/i, "");
+      blocks.push(...parseBlocksFromInner(childInner));
+      continue;
+    }
+    blocks.push(parseBlockSegment(segment));
+  }
+  return blocks;
 }
 
 function hashText(value: string): string {
   return crypto.createHash("sha1").update(value).digest("hex");
 }
 
+/**
+ * Encodes a value as a URI-encoded JSON payload for a data-* attribute.
+ * encodeURIComponent leaves apostrophes literal, so we encode them too to
+ * guarantee the attribute value contains no quote characters.
+ */
+function encodeDataPayload(value: unknown): string {
+  return encodeURIComponent(JSON.stringify(value)).replace(/'/g, "%27");
+}
+
 function blockMetadataAttrs(block: BlockNode): string {
   const attrs = [
     `data-zephus-block="${escapeAttr(block.type)}"`,
-    `data-zephus-props="${escapeAttr(
-      encodeURIComponent(JSON.stringify(block.props)),
-    )}"`,
+    `data-zephus-props="${escapeAttr(encodeDataPayload(block.props))}"`,
   ];
   if (block.style) {
     attrs.push(
-      `data-zephus-style="${escapeAttr(
-        encodeURIComponent(JSON.stringify(block.style)),
-      )}"`,
+      `data-zephus-style="${escapeAttr(encodeDataPayload(block.style))}"`,
     );
   }
   if (block.locked) attrs.push(`data-zephus-locked="true"`);
@@ -854,6 +916,20 @@ function escapeHtml(value: string): string {
 
 function escapeAttr(value: string): string {
   return escapeHtml(value).replace(/"/g, "&quot;");
+}
+
+/**
+ * Sanitizes a value destined for a CSS declaration. Strips characters that
+ * could break out of the declaration/rule (`;{}<>` and newlines) to prevent
+ * CSS injection from design-token values in site.json. Caps length.
+ */
+function cssValue(value: string): string {
+  return (value ?? "")
+    .replace(/[;{}<>:@*\\]/g, "")
+    .replace(/\//g, "")
+    .replace(/[\r\n]+/g, " ")
+    .trim()
+    .slice(0, 200);
 }
 
 function plainTextToHtml(text: string): string {
@@ -969,6 +1045,17 @@ function renderBlockNode(block: BlockNode): string {
       return `<iframe${common} src="${escapeAttr(block.props["src"] ?? "")}" title="${escapeAttr(block.props["title"] ?? "Embed")}" loading="lazy"></iframe>`;
     case "html":
       return block.raw ?? "";
+    default: {
+      // Unknown block type (forward-compatible: a sidecar from a newer Zephus
+      // version, or hand-edited JSON). Preserve it as a data-annotated div so
+      // its content is not silently lost and it round-trips on next save.
+      const unknownType = (block as { type: string }).type;
+      log.warn(
+        `renderBlockNode: unknown block type "${unknownType}", preserving as HTML`,
+      );
+      const payload = encodeDataPayload(block.props);
+      return `<div data-zephus-block="${escapeAttr(unknownType)}" data-zephus-props="${escapeAttr(payload)}" class="zephus-unknown-block"><!-- Unknown block type: ${escapeHtml(unknownType)} --></div>`;
+    }
   }
 }
 
@@ -1197,7 +1284,7 @@ function migratePageToDocument(
   page: string,
   pagesDir: string,
 ): PageDocument {
-  const raw = fs.readFileSync(path.join(projectPath, page), "utf8");
+  const raw = fs.readFileSync(safeResolve(projectPath, page), "utf8");
   const { frontmatter } = splitFrontmatter(raw);
   const parsedFrontmatter = parseFrontmatter(frontmatter);
   const blocks = parseBlocksFromSource(raw);
@@ -1274,6 +1361,21 @@ export function ensureVisualSchema(
 
     let site = readJsonFile<SiteDocument>(siteDocumentFile(projectPath));
     if (!site) {
+      // Distinguish genuinely-absent (first run) from corrupt-on-disk.
+      // A corrupt site.json is backed up by readJsonSafe; do NOT regenerate
+      // defaults over it — that would destroy the user's saved design/shell.
+      const checked = readJsonFileChecked<SiteDocument>(
+        siteDocumentFile(projectPath),
+      );
+      if (checked.corrupt) {
+        return {
+          ok: false,
+          status: null,
+          error:
+            "Zephus site config (.zephus/site.json) is corrupt. A backup was " +
+            "saved next to it. Restore it from version control to continue.",
+        };
+      }
       site = defaultSiteDocument(projectPath, layoutPath, nextThemeId);
     }
 
@@ -1300,11 +1402,11 @@ export function ensureVisualSchema(
         managedFileStatus: "managed" as const,
       };
       writePageDocumentFile(projectPath, nextDoc);
-      fs.mkdirSync(path.dirname(path.join(projectPath, doc.page)), {
+      fs.mkdirSync(path.dirname(safeResolve(projectPath, doc.page)), {
         recursive: true,
       });
       fs.writeFileSync(
-        path.join(projectPath, doc.page),
+        safeResolve(projectPath, doc.page),
         generatedSource,
         "utf8",
       );
@@ -1446,7 +1548,20 @@ export function readPageDocument(
         error: `Page schema missing for ${page}.`,
       };
     }
-    const actualPath = path.join(projectPath, page);
+    if (doc.schemaVersion > ZEPHUS_SCHEMA_VERSION) {
+      return {
+        ok: false,
+        site,
+        pageDocument: null,
+        source: null,
+        generatedSource: null,
+        error:
+          `Page "${page}" was saved by a newer version of Zephus ` +
+          `(schema v${doc.schemaVersion}, this version supports v${ZEPHUS_SCHEMA_VERSION}). ` +
+          `Please update Zephus to open this project.`,
+      };
+    }
+    const actualPath = safeResolve(projectPath, page);
     const actualSource = fs.existsSync(actualPath)
       ? fs.readFileSync(actualPath, "utf8")
       : null;
@@ -1525,11 +1640,11 @@ export function writePageDocument(
     );
     nextDoc.generatedHash = hashText(generatedSource);
     writePageDocumentFile(projectPath, nextDoc);
-    fs.mkdirSync(path.dirname(path.join(projectPath, nextDoc.page)), {
+    fs.mkdirSync(path.dirname(safeResolve(projectPath, nextDoc.page)), {
       recursive: true,
     });
     fs.writeFileSync(
-      path.join(projectPath, nextDoc.page),
+      safeResolve(projectPath, nextDoc.page),
       generatedSource,
       "utf8",
     );
@@ -1576,7 +1691,7 @@ export function detachPageDocument(
       managedFileStatus: "detached",
     };
     writePageDocumentFile(projectPath, nextDoc);
-    fs.writeFileSync(path.join(projectPath, page), source, "utf8");
+    fs.writeFileSync(safeResolve(projectPath, page), source, "utf8");
     return {
       ok: true,
       site: current.site,
@@ -1602,7 +1717,25 @@ export function reattachPageDocument(
   pagesDir: string,
 ): PageDocumentResult {
   try {
-    const source = fs.readFileSync(path.join(projectPath, page), "utf8");
+    const slug = slugFromPage(page, pagesDir);
+    const existing = readPageDocumentFile(projectPath, slug);
+    if (existing && !existing.detached) {
+      // Already managed — nothing to reattach. Return the current state.
+      const site = readJsonFile<SiteDocument>(siteDocumentFile(projectPath));
+      const actualSource = fs.readFileSync(
+        safeResolve(projectPath, page),
+        "utf8",
+      );
+      return {
+        ok: true,
+        site: site ?? null,
+        pageDocument: existing,
+        source: actualSource,
+        generatedSource: actualSource,
+      };
+    }
+
+    const source = fs.readFileSync(safeResolve(projectPath, page), "utf8");
     const { frontmatter } = splitFrontmatter(source);
     const nextDoc = buildPageDocument(
       page,

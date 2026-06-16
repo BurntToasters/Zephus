@@ -26,7 +26,14 @@ import {
   stopThemePreviewServer,
 } from "./services/themePreviewServer";
 import { buildAndReveal } from "./services/publish";
-import { importImage, listProjectImages } from "./services/assets";
+import { installDependencies, dependenciesInstalled } from "./services/install";
+import {
+  importImage,
+  importAssets,
+  importAssetsFromPaths,
+  listProjectAssets,
+  readAssetDataUrl,
+} from "./services/assets";
 import {
   deletePage,
   duplicatePage,
@@ -350,8 +357,26 @@ export function registerIpcHandlers(
       importImage(getWindow(), projectPath, publicDir),
   );
 
+  ipcMain.handle(
+    IPC.importAssets,
+    (_e, projectPath: string, publicDir: string) =>
+      importAssets(getWindow(), projectPath, publicDir),
+  );
+
+  ipcMain.handle(
+    IPC.importAssetPaths,
+    (_e, projectPath: string, publicDir: string, paths: string[]) =>
+      importAssetsFromPaths(projectPath, publicDir, paths),
+  );
+
   ipcMain.handle(IPC.listAssets, (_e, projectPath: string, publicDir: string) =>
-    listProjectImages(projectPath, publicDir),
+    listProjectAssets(projectPath, publicDir),
+  );
+
+  ipcMain.handle(
+    IPC.assetDataUrl,
+    (_e, projectPath: string, publicDir: string, webPath: string) =>
+      readAssetDataUrl(projectPath, publicDir, webPath),
   );
 
   ipcMain.handle(IPC.listReusableSections, () => listReusableSections());
@@ -424,6 +449,16 @@ export function registerIpcHandlers(
 
   ipcMain.handle(IPC.publish, (_e, projectPath: string, outDir: string) =>
     buildAndReveal(projectPath, outDir),
+  );
+
+  ipcMain.handle(IPC.depsInstalled, (_e, projectPath: string): boolean =>
+    dependenciesInstalled(projectPath),
+  );
+
+  ipcMain.handle(IPC.depsInstall, (event, projectPath: string) =>
+    installDependencies(projectPath, (chunk) => {
+      if (!event.sender.isDestroyed()) event.sender.send(IPC.depsLog, chunk);
+    }),
   );
 
   ipcMain.handle(IPC.updaterCheck, (event) => {

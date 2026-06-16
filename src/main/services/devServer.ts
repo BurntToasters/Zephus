@@ -18,6 +18,7 @@ interface RunningServer {
 }
 
 let current: RunningServer | null = null;
+let starting = false;
 
 export type DevServerLogListener = (chunk: string) => void;
 
@@ -45,11 +46,30 @@ export function startDevServer(
   projectPath: string,
   onLog: DevServerLogListener,
 ): Promise<DevServerStartResult> {
+  if (typeof projectPath !== "string" || !projectPath) {
+    return Promise.resolve({
+      ok: false,
+      url: null,
+      alreadyRunning: false,
+      error: "Invalid project path.",
+    });
+  }
   if (current && current.projectPath === projectPath && current.url) {
     return Promise.resolve({
       ok: true,
       url: current.url,
       alreadyRunning: true,
+    });
+  }
+
+  // Guard against a second start racing before the first resolves (would
+  // orphan the first child process).
+  if (starting) {
+    return Promise.resolve({
+      ok: false,
+      url: null,
+      alreadyRunning: true,
+      error: "A preview is already starting. Please wait.",
     });
   }
 
@@ -84,9 +104,17 @@ async function startDevServerProcess(
   onLog: DevServerLogListener,
 ): Promise<DevServerStartResult> {
   const spawnEnv = await buildSpawnEnv(readGlobalSettings().customNodePath);
+  starting = true;
 
   return new Promise<DevServerStartResult>((resolve) => {
     let settled = false;
+    const finish = (r: DevServerStartResult): void => {
+      if (settled) return;
+      settled = true;
+      starting = false;
+      clearTimeout(timeout);
+      resolve(r);
+    };
     const child = spawn(npmCmd, ["run", "dev"], {
       cwd: projectPath,
       windowsHide: true,
@@ -96,10 +124,8 @@ async function startDevServerProcess(
     current = { projectPath, child, url: null };
 
     const timeout = setTimeout(() => {
-      if (settled) return;
-      settled = true;
       stopDevServer();
-      resolve({
+      finish({
         ok: false,
         url: null,
         alreadyRunning: false,
@@ -114,11 +140,7 @@ async function startDevServerProcess(
       const url = match?.[1];
       if (url && current && !current.url) {
         current.url = url;
-        if (!settled) {
-          settled = true;
-          clearTimeout(timeout);
-          resolve({ ok: true, url, alreadyRunning: false });
-        }
+        finish({ ok: true, url, alreadyRunning: false });
       }
     };
 
@@ -127,11 +149,8 @@ async function startDevServerProcess(
 
     child.on("error", (error) => {
       log.error("Dev server failed to start", error);
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
       current = null;
-      resolve({
+      finish({
         ok: false,
         url: null,
         alreadyRunning: false,
@@ -142,21 +161,18 @@ async function startDevServerProcess(
     child.on("exit", (code) => {
       onLog(`\n[dev server exited with code ${code ?? "null"}]\n`);
       if (current && current.child === child) current = null;
-      if (!settled) {
-        settled = true;
-        clearTimeout(timeout);
-        resolve({
-          ok: false,
-          url: null,
-          alreadyRunning: false,
-          error: `Dev server exited before serving (code ${code ?? "null"}).`,
-        });
-      }
+      finish({
+        ok: false,
+        url: null,
+        alreadyRunning: false,
+        error: `Dev server exited before serving (code ${code ?? "null"}).`,
+      });
     });
   });
 }
 
 export function stopDevServer(): void {
+  starting = false;
   if (!current) return;
   const { child } = current;
   current = null;
@@ -167,6 +183,16 @@ export function stopDevServer(): void {
       });
     } else {
       child.kill("SIGTERM");
+      // Escalate if it ignores SIGTERM.
+      const pid = child.pid;
+      setTimeout(() => {
+        try {
+          if (pid) process.kill(pid, 0); // throws if already dead
+          child.kill("SIGKILL");
+        } catch {
+          /* already exited */
+        }
+      }, 4000);
     }
   } catch (error) {
     log.warn("Failed to stop dev server cleanly", error);

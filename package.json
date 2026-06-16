@@ -1,6 +1,6 @@
 {
   "name": "zephus",
-  "version": "0.1.0-db.1",
+  "version": "0.1.0-db.2",
   "private": true,
   "description": "Local WYSIWYG website editor for Astro sites",
   "desktopName": "run.rosie.zephus.desktop",

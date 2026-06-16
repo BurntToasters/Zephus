@@ -41,6 +41,7 @@ interface GitStatus {
   modified: string[];
   added: string[];
   deleted: string[];
+  zephusIgnored?: boolean;
   error?: string;
 }
 
@@ -216,6 +217,7 @@ interface DesignTokenSet {
   radius: string;
   shadow: "none" | "sm" | "md" | "lg";
   containerWidth: string;
+  fontImportUrl?: string;
 }
 
 interface NavItem {
@@ -298,6 +300,7 @@ interface AssetEntry {
   webPath: string;
   fileName: string;
   size: number;
+  category: "images" | "media" | "documents" | "other";
 }
 
 interface AssetListResult {
@@ -488,7 +491,30 @@ interface ZephusApi {
     canceled?: boolean;
     error?: string;
   }>;
+  importAssets(
+    projectPath: string,
+    publicDir: string,
+  ): Promise<{
+    ok: boolean;
+    imported: { webPath: string; category: string }[];
+    errors: string[];
+  }>;
+  importAssetPaths(
+    projectPath: string,
+    publicDir: string,
+    paths: string[],
+  ): Promise<{
+    ok: boolean;
+    imported: { webPath: string; category: string }[];
+    errors: string[];
+  }>;
+  getDroppedFilePath(file: File): string;
   listAssets(projectPath: string, publicDir: string): Promise<AssetListResult>;
+  readAssetDataUrl(
+    projectPath: string,
+    publicDir: string,
+    webPath: string,
+  ): Promise<{ ok: boolean; dataUrl?: string; error?: string }>;
   listReusableSections(): Promise<ReusableSectionsResult>;
   saveReusableSection(
     label: string,
@@ -523,6 +549,11 @@ interface ZephusApi {
     projectPath: string,
     outDir: string,
   ): Promise<{ ok: boolean; outputDir?: string; error?: string }>;
+  dependenciesInstalled(projectPath: string): Promise<boolean>;
+  installDependencies(
+    projectPath: string,
+  ): Promise<{ ok: boolean; error?: string }>;
+  onInstallLog(callback: (chunk: string) => void): () => void;
   onPreviewLog(callback: (chunk: string) => void): () => void;
   checkForUpdates(): Promise<unknown>;
   downloadUpdate(): Promise<unknown>;

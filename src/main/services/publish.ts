@@ -22,6 +22,9 @@ export async function buildAndReveal(
   projectPath: string,
   outDir: string,
 ): Promise<PublishResult> {
+  if (typeof projectPath !== "string" || !projectPath) {
+    return { ok: false, error: "Invalid project path." };
+  }
   try {
     const env = await buildSpawnEnv(readGlobalSettings().customNodePath);
     await execFileAsync(npmCmd, ["run", "build"], {

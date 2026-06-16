@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { buildPreviewTheme, listThemes, themePreviewPath } from "../../themes";
+import {
+  buildPreviewTheme,
+  buildTheme,
+  listThemes,
+  themePreviewPath,
+} from "../../themes";
 
 describe("theme previews", () => {
   it("exposes preview metadata for every bundled theme", () => {
@@ -11,6 +16,21 @@ describe("theme previews", () => {
     }
 
     expect(new Set(themes.map((theme) => theme.id)).size).toBe(themes.length);
+  });
+
+  it("scaffolds a .gitignore that keeps .zephus committed", () => {
+    for (const meta of listThemes()) {
+      const theme = buildTheme(meta.id, "demo-site");
+      expect(theme).not.toBeNull();
+      const gitignore = theme!.files[".gitignore"];
+      expect(gitignore).toBeTruthy();
+      // Standard Astro ignores present.
+      expect(gitignore).toContain("node_modules/");
+      expect(gitignore).toContain("dist/");
+      // .zephus must NOT be ignored (it is the project save state).
+      expect(/^\.zephus\/?$/m.test(gitignore!)).toBe(false);
+      expect(gitignore).toContain(".zephus");
+    }
   });
 
   it("rewrites root-absolute links for preview builds", () => {

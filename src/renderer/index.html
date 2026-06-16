@@ -24,7 +24,7 @@
               <p class="brand-subtitle">Visual Astro Builder</p>
             </div>
           </div>
-          <nav class="start-nav">
+          <nav class="start-nav" aria-label="Sections">
             <button id="tab-recent" class="start-nav-item active">
               <i data-lucide="clock"></i>
               <span>Recent Sites</span>
@@ -43,6 +43,7 @@
             </button>
           </nav>
           <div class="start-sidebar-footer">
+            <span id="sidebar-app-version" class="sidebar-version-text"></span>
             <div id="sidebar-update-status" class="update-status-pill"></div>
           </div>
         </aside>
@@ -52,8 +53,11 @@
           <!-- Pane 1: Recent Sites -->
           <section id="pane-recent" class="start-pane active">
             <!-- Unsaved draft recovery alert shows up here if any exist -->
-            <div id="home-recovery-list" class="recovery-alert-container hidden"></div>
-            
+            <div
+              id="home-recovery-list"
+              class="recovery-alert-container hidden"
+            ></div>
+
             <header class="pane-header">
               <div class="pane-header-title">
                 <p class="pane-kicker">Resume Work</p>
@@ -68,7 +72,7 @@
                 </button>
               </div>
             </header>
-            
+
             <div class="pane-content">
               <ul id="recent-list" class="recent-grid"></ul>
             </div>
@@ -87,7 +91,7 @@
                 </button>
               </div>
             </header>
-            
+
             <div class="pane-content">
               <div id="theme-list-container" class="theme-grid">
                 <!-- Populated dynamically by zephusEngine.ts -->
@@ -103,7 +107,7 @@
                 <h2 class="pane-title">App Settings</h2>
               </div>
             </header>
-            
+
             <div class="pane-content">
               <div id="settings-tab-container" class="settings-container">
                 <!-- Populated dynamically by zephusEngine.ts -->
@@ -119,16 +123,20 @@
                 <h2 class="pane-title">About & Licenses</h2>
               </div>
             </header>
-            
+
             <div class="pane-content">
               <div class="about-container">
                 <div class="about-hero">
                   <div class="about-brand-logo"></div>
                   <h3 class="about-app-name">Zephus</h3>
-                  <p id="about-app-version" class="about-app-version">v0.1.0-db.1</p>
+                  <p id="about-app-version" class="about-app-version">
+                    v0.1.0-db.1
+                  </p>
                   <p class="about-lead">
-                    Zephus is a local-first, schema-backed visual editor for Astro websites.
-                    Your sites live on your machine and are backed by Git — no external accounts or cloud databases required.
+                    Zephus is a local-first, schema-backed visual editor for
+                    Astro websites. Your sites live on your machine and are
+                    backed by Git — no external accounts or cloud databases
+                    required.
                   </p>
                   <div class="about-actions">
                     <button id="btn-about-config" class="btn">
@@ -139,7 +147,8 @@
                 <div class="about-licenses-section">
                   <h4>Third-Party Licenses</h4>
                   <p class="licenses-intro-text">
-                    Zephus is built using open source software. Click below to inspect dependency licenses.
+                    Zephus is built using open source software. Click below to
+                    inspect dependency licenses.
                   </p>
                   <div class="licenses-trigger-row">
                     <button id="btn-load-licenses" class="btn primary">
@@ -149,7 +158,10 @@
                       Open raw licenses.json
                     </button>
                   </div>
-                  <div id="about-licenses-list" class="about-licenses-list-container">
+                  <div
+                    id="about-licenses-list"
+                    class="about-licenses-list-container"
+                  >
                     <!-- Populated dynamically when requested -->
                   </div>
                 </div>
@@ -178,13 +190,28 @@
             </button>
           </div>
           <div class="vp-toggle">
-            <button id="vp-desktop" class="vp-btn active" title="Desktop">
+            <button
+              id="vp-desktop"
+              class="vp-btn active"
+              title="Desktop"
+              aria-label="Desktop view"
+            >
               <i data-lucide="monitor"></i>
             </button>
-            <button id="vp-tablet" class="vp-btn" title="Tablet">
+            <button
+              id="vp-tablet"
+              class="vp-btn"
+              title="Tablet"
+              aria-label="Tablet view"
+            >
               <i data-lucide="tablet"></i>
             </button>
-            <button id="vp-mobile" class="vp-btn" title="Mobile">
+            <button
+              id="vp-mobile"
+              class="vp-btn"
+              title="Mobile"
+              aria-label="Mobile view"
+            >
               <i data-lucide="smartphone"></i>
             </button>
           </div>
@@ -216,11 +243,16 @@
       </header>
 
       <div class="editor-body">
-        <aside class="panel left">
+        <aside class="panel left" aria-label="Pages, blocks and site tools">
           <div class="panel-section">
             <h3>
               Pages
-              <button id="btn-new-page" class="mini-btn" title="New page">
+              <button
+                id="btn-new-page"
+                class="mini-btn"
+                title="New page"
+                aria-label="New page"
+              >
                 <i data-lucide="plus"></i>
               </button>
             </h3>
@@ -274,7 +306,7 @@
           ></iframe>
         </main>
 
-        <aside class="panel right">
+        <aside class="panel right" aria-label="Properties and project status">
           <div class="panel-section">
             <h3>Project Overview</h3>
             <div id="project-overview" class="properties">
@@ -309,12 +341,24 @@
           </div>
         </aside>
       </div>
-      <div id="status-bar" class="status-bar"></div>
+      <div
+        id="status-bar"
+        class="status-bar"
+        role="status"
+        aria-live="polite"
+      ></div>
     </section>
 
     <!-- Modal -->
     <div id="modal-overlay" class="modal-overlay hidden">
-      <div id="modal-shell" class="modal">
+      <div
+        id="modal-shell"
+        class="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modal-title"
+        tabindex="-1"
+      >
         <h2 id="modal-title"></h2>
         <div id="modal-body" class="modal-body"></div>
         <div id="modal-actions" class="modal-actions"></div>
