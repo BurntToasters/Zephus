@@ -3964,7 +3964,11 @@ function sectionToHtml(
     ? ` class="${escapeAttr(section.props["cls"])}"`
     : "";
   const wrapper = section.props["wrapper"] ?? "none";
-  if (wrapper === "none") return body;
+  const hasSectionSurface =
+    Boolean(section.style && Object.keys(section.style).length > 0) ||
+    Boolean(section.locked) ||
+    Boolean(section.props["cls"]);
+  if (wrapper === "none" && !hasSectionSurface) return body;
   const styleBlock = {
     id: section.id,
     type: "section",
