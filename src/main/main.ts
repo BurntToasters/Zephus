@@ -90,6 +90,7 @@ function createSplash(): void {
       nodeIntegration: false,
       sandbox: true,
       webSecurity: true,
+      devTools: isDev,
     },
   });
   void splashWindow.loadFile(rendererPath("splash.html"));
@@ -249,6 +250,7 @@ function createMainWindow(): void {
       nodeIntegration: false,
       sandbox: true,
       webSecurity: true,
+      devTools: isDev,
     },
   });
 
