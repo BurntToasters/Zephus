@@ -140,7 +140,13 @@ export type EditorBlockType =
   | "gallery"
   | "quote"
   | "list"
-  | "embed";
+  | "embed"
+  | "feature"
+  | "testimonial"
+  | "accordion"
+  | "stats"
+  | "pricing"
+  | "cta";
 
 export interface EditorBlock {
   id: string;

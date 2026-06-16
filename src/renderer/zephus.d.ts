@@ -135,7 +135,13 @@ type EditorBlockType =
   | "gallery"
   | "quote"
   | "list"
-  | "embed";
+  | "embed"
+  | "feature"
+  | "testimonial"
+  | "accordion"
+  | "stats"
+  | "pricing"
+  | "cta";
 
 interface EditorBlock {
   id: string;

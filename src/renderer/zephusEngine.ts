@@ -44,6 +44,12 @@ import {
   Link,
   GitBranch,
   AlertTriangle,
+  Star,
+  Quote,
+  ChevronDown,
+  BarChart,
+  Tag,
+  Megaphone,
 } from "lucide";
 
 type Mode = "visual" | "code";
@@ -64,6 +70,12 @@ const PALETTE: { type: BlockType; label: string }[] = [
   { type: "quote", label: "Quote" },
   { type: "list", label: "List" },
   { type: "embed", label: "Embed" },
+  { type: "feature", label: "Feature" },
+  { type: "testimonial", label: "Testimonial" },
+  { type: "accordion", label: "FAQ / Accordion" },
+  { type: "stats", label: "Stats" },
+  { type: "pricing", label: "Pricing" },
+  { type: "cta", label: "Call to Action" },
   { type: "html", label: "HTML" },
 ];
 
@@ -81,6 +93,12 @@ const PALETTE_ICONS: Record<BlockType, string> = {
   quote: "align-left",
   list: "align-left",
   embed: "link",
+  feature: "star",
+  testimonial: "quote",
+  accordion: "chevron-down",
+  stats: "bar-chart",
+  pricing: "tag",
+  cta: "megaphone",
   html: "code-xml",
 };
 
@@ -115,6 +133,12 @@ function refreshIcons(): void {
       Link,
       GitBranch,
       AlertTriangle,
+      Star,
+      Quote,
+      ChevronDown,
+      BarChart,
+      Tag,
+      Megaphone,
     },
   });
 }
@@ -131,88 +155,206 @@ const TEXT_EDITABLE: BlockType[] = [
 interface SectionTemplate {
   id: string;
   label: string;
-  html: string;
+  /** Schema block factory — produces fresh editable blocks per insert. */
+  blocks?: () => BlockNode[];
+  /** Legacy/saved sections inserted as a single preserved HTML block. */
+  html?: string;
 }
 
-// Prebuilt section clusters inserted as a single preserved HTML block.
+/** Build a fresh editable block node with merged default props. */
+function mk(
+  type: BlockType,
+  props: Record<string, string> = {},
+  style?: BlockStyle,
+): BlockNode {
+  const node: BlockNode = {
+    id: uid(),
+    type,
+    props: { ...defaultProps(type), ...props },
+  };
+  if (style) node.style = style;
+  return node;
+}
+
+// Prebuilt section clusters inserted as fully editable schema blocks.
 const TEMPLATES: SectionTemplate[] = [
   {
     id: "hero",
     label: "Hero",
-    html: `<section class="hero">
-      <h1>Your headline here</h1>
-      <p>A short supporting sentence about your product or site.</p>
-      <a class="button" href="#">Get started</a>
-    </section>`,
+    blocks: () => [
+      mk(
+        "heading",
+        { text: "Your headline goes here", level: "1" },
+        { align: "center" },
+      ),
+      mk(
+        "text",
+        {
+          text: "A short supporting sentence about your product or site.",
+          cls: "lead",
+        },
+        { align: "center" },
+      ),
+      mk("button", { text: "Get started", href: "#" }, { align: "center" }),
+    ],
   },
   {
     id: "features",
     label: "Features",
-    html: `<section class="features">
-      <div class="feature"><h3>Fast</h3><p>Describe a benefit.</p></div>
-      <div class="feature"><h3>Simple</h3><p>Describe a benefit.</p></div>
-      <div class="feature"><h3>Flexible</h3><p>Describe a benefit.</p></div>
-    </section>`,
+    blocks: () => [
+      mk("heading", { text: "Why choose us", level: "2" }, { align: "center" }),
+      mk("feature", {
+        icon: "⚡",
+        title: "Fast",
+        text: "Describe a key benefit in one short sentence.",
+      }),
+      mk("feature", {
+        icon: "🎯",
+        title: "Simple",
+        text: "Describe a key benefit in one short sentence.",
+      }),
+      mk("feature", {
+        icon: "🧩",
+        title: "Flexible",
+        text: "Describe a key benefit in one short sentence.",
+      }),
+    ],
+  },
+  {
+    id: "stats",
+    label: "Stats",
+    blocks: () => [
+      mk(
+        "heading",
+        { text: "By the numbers", level: "2" },
+        { align: "center" },
+      ),
+      mk("stats", {
+        items:
+          "10k+ :: Happy customers\n99.9% :: Uptime\n4.9/5 :: Average rating",
+      }),
+    ],
   },
   {
     id: "pricing",
     label: "Pricing",
-    html: `<section class="pricing-grid">
-      <article class="price-card"><h3>Starter</h3><p>$9/mo</p><ul><li>One site</li><li>Email support</li></ul></article>
-      <article class="price-card"><h3>Pro</h3><p>$29/mo</p><ul><li>Unlimited pages</li><li>Priority support</li></ul></article>
-      <article class="price-card"><h3>Studio</h3><p>$99/mo</p><ul><li>Team seats</li><li>Custom onboarding</li></ul></article>
-    </section>`,
+    blocks: () => [
+      mk(
+        "heading",
+        { text: "Simple, honest pricing", level: "2" },
+        { align: "center" },
+      ),
+      mk(
+        "text",
+        { text: "Choose the plan that fits your needs.", cls: "lead" },
+        { align: "center" },
+      ),
+      mk("pricing", {
+        plan: "Starter",
+        price: "$9",
+        period: "/mo",
+        features: "One site\nEmail support",
+        ctaText: "Choose Starter",
+      }),
+      mk("pricing", {
+        plan: "Pro",
+        price: "$29",
+        period: "/mo",
+        features: "Unlimited pages\nPriority support",
+        ctaText: "Choose Pro",
+      }),
+      mk("pricing", {
+        plan: "Studio",
+        price: "$99",
+        period: "/mo",
+        features: "Team seats\nCustom onboarding",
+        ctaText: "Choose Studio",
+      }),
+    ],
   },
   {
     id: "faq",
     label: "FAQ",
-    html: `<section class="faq-list">
-      <details open><summary>What is this for?</summary><p>Answer the most common buyer question.</p></details>
-      <details><summary>How long does setup take?</summary><p>Share the expected time-to-value.</p></details>
-      <details><summary>Can I customize it?</summary><p>Explain the limits and flexibility.</p></details>
-    </section>`,
+    blocks: () => [
+      mk(
+        "heading",
+        { text: "Frequently asked questions", level: "2" },
+        { align: "center" },
+      ),
+      mk("accordion", {
+        items:
+          "What is this for? :: Answer the most common buyer question.\nHow long does setup take? :: Share the expected time-to-value.\nCan I customize it? :: Explain the limits and flexibility.",
+      }),
+    ],
   },
   {
     id: "testimonials",
     label: "Testimonials",
-    html: `<section class="testimonials">
-      <blockquote><p>"A short customer quote."</p><cite>Customer Name</cite></blockquote>
-      <blockquote><p>"Another proof point from a happy client."</p><cite>Founder, Studio</cite></blockquote>
-    </section>`,
+    blocks: () => [
+      mk(
+        "heading",
+        { text: "Loved by teams everywhere", level: "2" },
+        { align: "center" },
+      ),
+      mk("testimonial", {
+        quote: "A short customer quote that builds trust.",
+        author: "Customer Name",
+        role: "Founder, Studio",
+      }),
+      mk("testimonial", {
+        quote: "Another proof point from a happy client.",
+        author: "Happy Client",
+        role: "CEO, Company",
+      }),
+    ],
   },
   {
     id: "cta",
     label: "Call to action",
-    html: `<section class="cta">
-      <h2>Ready to begin?</h2>
-      <a class="button" href="#">Contact us</a>
-    </section>`,
+    blocks: () => [
+      mk("cta", {
+        heading: "Ready to begin?",
+        text: "Join thousands already building with us.",
+        buttonText: "Contact us",
+        buttonHref: "#",
+      }),
+    ],
   },
   {
     id: "logo-wall",
     label: "Logo Wall",
-    html: `<section class="logo-wall">
-      <span>Client One</span>
-      <span>Client Two</span>
-      <span>Client Three</span>
-      <span>Client Four</span>
-    </section>`,
+    blocks: () => [
+      mk("heading", { text: "Trusted by", level: "3" }, { align: "center" }),
+      mk(
+        "text",
+        {
+          text: "Client One · Client Two · Client Three · Client Four",
+          cls: "lead",
+        },
+        { align: "center" },
+      ),
+    ],
   },
   {
     id: "contact",
     label: "Contact",
-    html: `<section class="contact-card">
-      <h2>Say hello</h2>
-      <p>Drop in your email, address, or scheduling link.</p>
-      <a class="button" href="mailto:hello@example.com">Email us</a>
-    </section>`,
+    blocks: () => [
+      mk("heading", { text: "Say hello", level: "2" }),
+      mk("text", { text: "Drop in your email, address, or scheduling link." }),
+      mk("button", { text: "Email us", href: "mailto:hello@example.com" }),
+    ],
   },
   {
     id: "footer",
     label: "Footer",
-    html: `<footer class="site-footer">
-      <p>&copy; Your Site. Built with Zephus.</p>
-    </footer>`,
+    blocks: () => [
+      mk("divider"),
+      mk(
+        "text",
+        { text: "© Your Site. Built with Zephus." },
+        { align: "center" },
+      ),
+    ],
   },
 ];
 
@@ -221,12 +363,20 @@ const editorRules = {
   maxHeadingLevel: 6,
 };
 
+/** Cache of saved reusable sections, refreshed by renderTemplates(). */
+let reusableSectionsCache: ReusableSection[] = [];
+
 const state = createEditorSession();
 
 function $(id: string): HTMLElement {
   const el = document.getElementById(id);
   if (!el) throw new Error(`Missing element #${id}`);
   return el;
+}
+
+/** Like $ but returns null if element absent (for optional UI elements). */
+function $maybe(id: string): HTMLElement | null {
+  return document.getElementById(id);
 }
 
 // Cached app settings, loaded at startup and refreshed on save.
@@ -486,7 +636,7 @@ function syncHomeActionState(): void {
 }
 
 function renderHomeStatusPanels(): void {
-  const recoveryHost = $("home-recovery-list");
+  const recoveryHost = $maybe("home-recovery-list");
   if (recoveryHost) {
     recoveryHost.innerHTML = "";
     const drafts = homeDraftSummaries.slice(0, 4);
@@ -1822,20 +1972,20 @@ function renderPalette(): void {
 async function renderTemplates(): Promise<void> {
   const palette = $("template-palette");
   palette.innerHTML = "";
-  // Templates are HTML blocks; hide them if HTML blocks are disallowed.
   const allowed = editorRules.allowedBlocks;
-  if (allowed && !allowed.includes("html")) {
-    palette.innerHTML = '<li class="muted">Disabled by project rules.</li>';
-    return;
-  }
+  const htmlAllowed = !allowed || allowed.includes("html");
   const saved = await window.zephus.listReusableSections().catch(() => null);
-  const merged = [
+  // Built-in templates insert editable schema blocks; saved sections are
+  // preserved HTML and only shown when HTML blocks are permitted.
+  const savedSections = htmlAllowed && saved?.ok ? saved.sections : [];
+  reusableSectionsCache = savedSections;
+  const merged: SectionTemplate[] = [
     ...TEMPLATES,
-    ...((saved?.ok ? saved.sections : []).map((section) => ({
+    ...savedSections.map((section) => ({
       id: section.id,
       label: `${section.label} (Saved)`,
       html: section.html,
-    })) as SectionTemplate[]),
+    })),
   ];
   for (const tpl of merged) {
     const li = document.createElement("li");
@@ -3404,6 +3554,31 @@ function classAttr(block: Block): string {
   return cls ? ` class="${escapeAttr(cls)}"` : "";
 }
 
+function structuralCommon(
+  block: Block,
+  fixedClass: string,
+  viewport = state.currentViewport,
+  forCanvas = false,
+): string {
+  const userCls = block.props["cls"]
+    ? " " + escapeAttr(block.props["cls"])
+    : "";
+  return `${metadataAttrs(block)} class="${fixedClass}${userCls}"${styleAttr(block, viewport, forCanvas)}`;
+}
+
+function splitLines(raw: string): string[] {
+  return (raw ?? "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function splitPair(line: string, sep = "::"): [string, string] {
+  const i = line.indexOf(sep);
+  if (i < 0) return [line.trim(), ""];
+  return [line.slice(0, i).trim(), line.slice(i + sep.length).trim()];
+}
+
 function plainTextToHtml(text: string): string {
   return escapeHtml(text).replace(/\n/g, "<br />");
 }
@@ -3519,6 +3694,77 @@ function blockToHtml(
       return `<iframe${common} src="${escapeAttr(block.props["src"] ?? "")}" title="${escapeAttr(block.props["title"] ?? "Embed")}" loading="lazy"></iframe>`;
     case "html":
       return block.raw ?? "";
+    case "feature":
+      return `<div${structuralCommon(block, "zephus-feature", viewport, forCanvas)}><div class="zephus-feature-icon">${plainTextToHtml(
+        block.props["icon"] ?? "★",
+      )}</div><h3>${plainTextToHtml(
+        block.props["title"] ?? "Feature",
+      )}</h3><p>${plainTextToHtml(block.props["text"] ?? "")}</p></div>`;
+    case "testimonial":
+      return `<figure${structuralCommon(block, "zephus-testimonial", viewport, forCanvas)}><blockquote>${plainTextToHtml(
+        block.props["quote"] ?? "",
+      )}</blockquote><figcaption><strong>${plainTextToHtml(
+        block.props["author"] ?? "",
+      )}</strong>${
+        block.props["role"]
+          ? ` <span>${plainTextToHtml(block.props["role"])}</span>`
+          : ""
+      }</figcaption></figure>`;
+    case "accordion": {
+      const items = splitLines(block.props["items"] ?? "")
+        .map((line) => splitPair(line))
+        .map(
+          ([q, a]) =>
+            `<details><summary>${plainTextToHtml(q)}</summary><p>${plainTextToHtml(a)}</p></details>`,
+        )
+        .join("");
+      return `<div${structuralCommon(block, "zephus-accordion", viewport, forCanvas)}>${items}</div>`;
+    }
+    case "stats": {
+      const items = splitLines(block.props["items"] ?? "")
+        .map((line) => splitPair(line))
+        .map(
+          ([n, l]) =>
+            `<div class="zephus-stat"><span class="zephus-stat-num">${plainTextToHtml(
+              n,
+            )}</span><span class="zephus-stat-label">${plainTextToHtml(l)}</span></div>`,
+        )
+        .join("");
+      return `<div${structuralCommon(block, "zephus-stats", viewport, forCanvas)}>${items}</div>`;
+    }
+    case "pricing": {
+      const features = splitLines(block.props["features"] ?? "")
+        .map((f) => `<li>${plainTextToHtml(f)}</li>`)
+        .join("");
+      const cta = block.props["ctaText"]
+        ? `<a class="button" href="${escapeAttr(block.props["ctaHref"] ?? "#")}">${plainTextToHtml(
+            block.props["ctaText"],
+          )}</a>`
+        : "";
+      return `<div${structuralCommon(block, "zephus-pricing", viewport, forCanvas)}><h3>${plainTextToHtml(
+        block.props["plan"] ?? "Plan",
+      )}</h3><div class="zephus-price"><span class="zephus-price-amount">${plainTextToHtml(
+        block.props["price"] ?? "",
+      )}</span>${
+        block.props["period"]
+          ? `<span class="zephus-price-period">${plainTextToHtml(block.props["period"])}</span>`
+          : ""
+      }</div><ul>${features}</ul>${cta}</div>`;
+    }
+    case "cta": {
+      const cta = block.props["buttonText"]
+        ? `<a class="button" href="${escapeAttr(block.props["buttonHref"] ?? "#")}">${plainTextToHtml(
+            block.props["buttonText"],
+          )}</a>`
+        : "";
+      return `<div${structuralCommon(block, "zephus-cta", viewport, forCanvas)}><h2>${plainTextToHtml(
+        block.props["heading"] ?? "",
+      )}</h2>${
+        block.props["text"]
+          ? `<p>${plainTextToHtml(block.props["text"])}</p>`
+          : ""
+      }${cta}</div>`;
+    }
     default:
       // Unknown block type — render a placeholder so it's visible in the canvas
       // and not silently dropped.
@@ -3590,14 +3836,18 @@ function commitBlockChange(summary: string): void {
 
 function addSectionAt(index: number, template?: SectionTemplate): void {
   pushUndo();
+  let children: BlockNode[] = [];
+  if (template?.blocks) {
+    children = template.blocks();
+  } else if (template?.html) {
+    children = [{ id: uid(), type: "html", props: {}, raw: template.html }];
+  }
   const section: SectionNode = {
     id: uid(),
     type: "section",
     label: template ? template.label : `Section ${state.sections.length + 1}`,
     props: { wrapper: "box", cls: "" },
-    children: template
-      ? [{ id: uid(), type: "html", props: {}, raw: template.html }]
-      : [],
+    children,
   };
   state.sections.splice(index, 0, section);
   state.selectedId = null;
@@ -3864,9 +4114,29 @@ function openSectionInsertModal(index: number): void {
     wrap.appendChild(btn);
   }
 
+  for (const saved of reusableSectionsCache) {
+    const tpl = resolveSavedSectionTemplate(saved.id);
+    if (!tpl) continue;
+    const btn = document.createElement("button");
+    btn.className = "btn";
+    btn.textContent = `${saved.label} (Saved)`;
+    btn.onclick = () => {
+      closeModal();
+      addSectionAt(index, tpl);
+    };
+    wrap.appendChild(btn);
+  }
+
   showModalNode("Add Section", wrap, [
     { label: "Close", kind: "ghost", onClick: closeModal },
   ]);
+}
+
+/** Build an insertable template from a cached saved (HTML) reusable section. */
+function resolveSavedSectionTemplate(id: string): SectionTemplate | null {
+  const saved = reusableSectionsCache.find((s) => s.id === id);
+  if (!saved) return null;
+  return { id: saved.id, label: saved.label, html: saved.html };
 }
 
 /** Cache of webPath → data URL for canvas image hydration. */
@@ -4172,7 +4442,9 @@ function handleDrop(e: DragEvent): void {
     dropIndex < 0 ? (targetSection?.children.length ?? 0) : dropIndex;
 
   if (templateId) {
-    const tpl = TEMPLATES.find((t) => t.id === templateId);
+    const tpl =
+      TEMPLATES.find((t) => t.id === templateId) ??
+      resolveSavedSectionTemplate(templateId);
     if (!tpl) return;
     addSectionAt(state.sections.length, tpl);
   } else if (newType) {
@@ -4226,7 +4498,11 @@ function defaultProps(type: BlockType): Record<string, string> {
     case "text":
       return { text: "New paragraph of text.", cls: "" };
     case "image":
-      return { src: "", alt: "", cls: "" };
+      return {
+        src: "/assets/images/placeholder-landscape.svg",
+        alt: "",
+        cls: "",
+      };
     case "button":
       return { text: "Click me", href: "#", cls: "" };
     case "section":
@@ -4247,7 +4523,7 @@ function defaultProps(type: BlockType): Record<string, string> {
     case "gallery":
       return {
         images:
-          "/images/example-1.png\n/images/example-2.png\n/images/example-3.png",
+          "/assets/images/placeholder-square.svg\n/assets/images/placeholder-square.svg\n/assets/images/placeholder-square.svg",
         cls: "",
       };
     case "quote":
@@ -4264,6 +4540,49 @@ function defaultProps(type: BlockType): Record<string, string> {
       };
     case "embed":
       return { src: "", title: "Embed", cls: "" };
+    case "feature":
+      return {
+        icon: "★",
+        title: "Feature title",
+        text: "A short sentence describing this feature or benefit.",
+        cls: "",
+      };
+    case "testimonial":
+      return {
+        quote: "This product changed how our whole team works.",
+        author: "Customer Name",
+        role: "Title, Company",
+        cls: "",
+      };
+    case "accordion":
+      return {
+        items:
+          "What is your refund policy? :: We offer a 30-day money-back guarantee.\nDo you offer support? :: Yes, by email within one business day.",
+        cls: "",
+      };
+    case "stats":
+      return {
+        items: "10k+ :: Happy customers\n99.9% :: Uptime\n24/7 :: Support",
+        cls: "",
+      };
+    case "pricing":
+      return {
+        plan: "Pro",
+        price: "$12",
+        period: "/mo",
+        features: "Everything in Free\nUnlimited projects\nPriority support",
+        ctaText: "Choose Pro",
+        ctaHref: "#",
+        cls: "",
+      };
+    case "cta":
+      return {
+        heading: "Ready to get started?",
+        text: "Join thousands of happy customers today.",
+        buttonText: "Get started",
+        buttonHref: "#",
+        cls: "",
+      };
     case "html":
       return {};
   }
@@ -5169,6 +5488,35 @@ function renderProperties(): void {
     contentGroup.appendChild(
       labeledLink("Link", block.props["href"] ?? "", (v) => commit("href", v)),
     );
+    const variant = document.createElement("label");
+    variant.className = "meta-field";
+    const variantLabel = document.createElement("span");
+    variantLabel.textContent = "Button style";
+    const variantSelect = document.createElement("select");
+    const currentVariant = /\bsecondary\b/.test(block.props["cls"] ?? "")
+      ? "secondary"
+      : "primary";
+    for (const [value, text] of [
+      ["primary", "Primary (filled)"],
+      ["secondary", "Secondary (outline)"],
+    ] as const) {
+      const opt = document.createElement("option");
+      opt.value = value;
+      opt.textContent = text;
+      if (value === currentVariant) opt.selected = true;
+      variantSelect.appendChild(opt);
+    }
+    variantSelect.onchange = () => {
+      const rest = (block.props["cls"] ?? "")
+        .split(/\s+/)
+        .filter((c) => c && c !== "secondary")
+        .join(" ");
+      const next =
+        variantSelect.value === "secondary" ? `${rest} secondary`.trim() : rest;
+      commit("cls", next);
+    };
+    variant.append(variantLabel, variantSelect);
+    contentGroup.appendChild(variant);
   } else if (block.type === "image") {
     const imageRow = document.createElement("div");
     imageRow.className = "prop-actions";
@@ -5236,6 +5584,26 @@ function renderProperties(): void {
       ),
     );
   } else if (block.type === "gallery") {
+    const galleryRow = document.createElement("div");
+    galleryRow.className = "prop-actions";
+    const addImg = document.createElement("button");
+    addImg.className = "btn";
+    addImg.textContent = "Add Image from Assets";
+    addImg.onclick = () =>
+      openAssetBrowser({
+        filter: "images",
+        title: "Add Gallery Image",
+        onSelect: (webPath) => {
+          pushUndo();
+          const existing = (block.props["images"] ?? "").trim();
+          block.props["images"] = existing
+            ? `${existing}\n${webPath}`
+            : webPath;
+          commitBlockChange("Added gallery image");
+        },
+      });
+    galleryRow.appendChild(addImg);
+    contentGroup.appendChild(galleryRow);
     contentGroup.appendChild(
       labeledTextarea("Image paths", block.props["images"] ?? "", (v) =>
         commit("images", v),
@@ -5273,6 +5641,110 @@ function renderProperties(): void {
     contentGroup.appendChild(
       labeledInput("Height", block.props["height"] ?? "48px", (v) =>
         commit("height", v),
+      ),
+    );
+  } else if (block.type === "feature") {
+    contentGroup.appendChild(
+      labeledInput("Icon (emoji or text)", block.props["icon"] ?? "", (v) =>
+        commit("icon", v),
+      ),
+    );
+    contentGroup.appendChild(
+      labeledInput("Title", block.props["title"] ?? "", (v) =>
+        commit("title", v),
+      ),
+    );
+    contentGroup.appendChild(
+      labeledTextarea("Description", block.props["text"] ?? "", (v) =>
+        commit("text", v),
+      ),
+    );
+  } else if (block.type === "testimonial") {
+    contentGroup.appendChild(
+      labeledTextarea("Quote", block.props["quote"] ?? "", (v) =>
+        commit("quote", v),
+      ),
+    );
+    contentGroup.appendChild(
+      labeledInput("Author", block.props["author"] ?? "", (v) =>
+        commit("author", v),
+      ),
+    );
+    contentGroup.appendChild(
+      labeledInput("Role / company", block.props["role"] ?? "", (v) =>
+        commit("role", v),
+      ),
+    );
+  } else if (block.type === "accordion") {
+    contentGroup.appendChild(
+      labeledTextarea(
+        "Items (one per line: Question :: Answer)",
+        block.props["items"] ?? "",
+        (v) => commit("items", v),
+        6,
+      ),
+    );
+  } else if (block.type === "stats") {
+    contentGroup.appendChild(
+      labeledTextarea(
+        "Stats (one per line: Number :: Label)",
+        block.props["items"] ?? "",
+        (v) => commit("items", v),
+        5,
+      ),
+    );
+  } else if (block.type === "pricing") {
+    contentGroup.appendChild(
+      labeledInput("Plan name", block.props["plan"] ?? "", (v) =>
+        commit("plan", v),
+      ),
+    );
+    contentGroup.appendChild(
+      labeledInput("Price", block.props["price"] ?? "", (v) =>
+        commit("price", v),
+      ),
+    );
+    contentGroup.appendChild(
+      labeledInput("Period (e.g. /mo)", block.props["period"] ?? "", (v) =>
+        commit("period", v),
+      ),
+    );
+    contentGroup.appendChild(
+      labeledTextarea(
+        "Features (one per line)",
+        block.props["features"] ?? "",
+        (v) => commit("features", v),
+      ),
+    );
+    contentGroup.appendChild(
+      labeledInput("Button label", block.props["ctaText"] ?? "", (v) =>
+        commit("ctaText", v),
+      ),
+    );
+    contentGroup.appendChild(
+      labeledLink("Button link", block.props["ctaHref"] ?? "", (v) =>
+        commit("ctaHref", v),
+      ),
+    );
+  } else if (block.type === "cta") {
+    contentGroup.appendChild(
+      labeledInput("Heading", block.props["heading"] ?? "", (v) =>
+        commit("heading", v),
+      ),
+    );
+    contentGroup.appendChild(
+      labeledTextarea("Text", block.props["text"] ?? "", (v) =>
+        commit("text", v),
+      ),
+    );
+    contentGroup.appendChild(
+      labeledInput("Button label", block.props["buttonText"] ?? "", (v) =>
+        commit("buttonText", v),
+      ),
+    );
+    contentGroup.appendChild(
+      labeledLink("Button link", block.props["buttonHref"] ?? "", (v) =>
+        commit("buttonHref", v),
       ),
     );
   }
@@ -5755,6 +6227,8 @@ async function togglePreview(): Promise<void> {
     await window.zephus.stopPreview();
     state.previewUrl = null;
     state.unsubLog?.();
+    frame.removeAttribute("sandbox");
+    frame.removeAttribute("src");
     frame.classList.add("hidden");
     $("btn-preview").innerHTML = `<i data-lucide="play"></i> Start Preview`;
     refreshIcons();
@@ -5785,6 +6259,7 @@ async function togglePreview(): Promise<void> {
     return;
   }
   state.previewUrl = result.url;
+  frame.setAttribute("sandbox", "allow-scripts allow-same-origin");
   frame.src = result.url;
   frame.classList.remove("hidden");
   $("canvas").classList.add("hidden");
@@ -5939,6 +6414,27 @@ function onKeydown(e: KeyboardEvent): void {
   } else if (mod && (e.key === "y" || (e.key === "z" && e.shiftKey))) {
     doRedo();
     e.preventDefault();
+  } else if (mod && (e.key === "d" || e.key === "D")) {
+    const block = findSelectedBlock();
+    if (block) {
+      duplicateSelectedBlock(block);
+      e.preventDefault();
+    }
+  } else if (e.key === "Delete" || e.key === "Backspace") {
+    // Only when not editing text in an input/textarea/contenteditable.
+    const active = document.activeElement as HTMLElement | null;
+    const editing =
+      active &&
+      (active.isContentEditable ||
+        active.tagName === "INPUT" ||
+        active.tagName === "TEXTAREA" ||
+        active.tagName === "SELECT");
+    if (editing) return;
+    const block = findSelectedBlock();
+    if (block && !block.locked) {
+      void deleteBlock(block);
+      e.preventDefault();
+    }
   }
 }
 
@@ -6100,7 +6596,10 @@ function getThemeHeaderDetails(themeId: string): {
   }
 }
 
-function buildThemeCard(theme: ThemeMeta): HTMLElement {
+function buildThemeCard(
+  theme: ThemeMeta,
+  previewBase: string | null,
+): HTMLElement {
   const card = document.createElement("article");
   card.className = "theme-card";
   card.dataset.themeId = theme.id;
@@ -6112,12 +6611,26 @@ function buildThemeCard(theme: ThemeMeta): HTMLElement {
   const details = getThemeHeaderDetails(theme.id);
   const header = document.createElement("div");
   header.className = "theme-card-icon-header";
-  header.style.background = details.gradient;
-  header.innerHTML = `
-    <div class="theme-card-icon-pill">
-      <i data-lucide="${details.icon}"></i>
-    </div>
-  `;
+
+  if (previewBase) {
+    const previewUrl = new URL(theme.previewPath, previewBase).toString();
+    header.classList.add("has-preview");
+    const frame = document.createElement("iframe");
+    frame.className = "theme-card-preview-frame";
+    frame.setAttribute("sandbox", "allow-scripts allow-same-origin");
+    frame.setAttribute("title", `${theme.name} preview`);
+    frame.setAttribute("aria-hidden", "true");
+    frame.setAttribute("tabindex", "-1");
+    frame.src = previewUrl;
+    header.appendChild(frame);
+  } else {
+    header.style.background = details.gradient;
+    header.innerHTML = `
+      <div class="theme-card-icon-pill">
+        <i data-lucide="${details.icon}"></i>
+      </div>
+    `;
+  }
 
   const body = document.createElement("div");
   body.className = "theme-card-body";
@@ -6181,7 +6694,19 @@ async function renderThemesInTab(): Promise<void> {
 
     container.innerHTML = "";
     for (const theme of startThemes) {
-      container.appendChild(buildThemeCard(theme));
+      const card = buildThemeCard(theme, themePreviewBaseUrl);
+      container.appendChild(card);
+      // Scale the live preview iframe to fit the card header.
+      const frame = card.querySelector<HTMLIFrameElement>(
+        ".theme-card-preview-frame",
+      );
+      const headerEl = card.querySelector<HTMLElement>(
+        ".theme-card-icon-header",
+      );
+      if (frame && headerEl) {
+        const scale = headerEl.offsetWidth / 1280;
+        frame.style.transform = `scale(${scale})`;
+      }
     }
     syncCreateButtonState();
     refreshIcons();
@@ -6467,7 +6992,7 @@ async function renderAboutAndLicensesInTab(): Promise<void> {
     }
   }
 
-  const configBtn = $("btn-about-config");
+  const configBtn = $maybe("btn-about-config");
   if (configBtn) {
     configBtn.onclick = () => void window.zephus.openConfigFolder();
   }
@@ -6594,14 +7119,14 @@ function init(): void {
 
   const btnCreate = $("btn-create");
   if (btnCreate) btnCreate.onclick = () => void createSiteFromTabFlow();
-  const btnSettings = $("btn-settings");
+  const btnSettings = $maybe("btn-settings");
   if (btnSettings) btnSettings.onclick = () => void openSettingsModal();
-  const btnHomeSettings = $("btn-home-settings");
+  const btnHomeSettings = $maybe("btn-home-settings");
   if (btnHomeSettings) btnHomeSettings.onclick = () => void openSettingsModal();
-  const btnHomeLicenses = $("btn-home-licenses");
+  const btnHomeLicenses = $maybe("btn-home-licenses");
   if (btnHomeLicenses)
     btnHomeLicenses.onclick = () => void openProductionLicensesModal();
-  const btnHomeCreate = $("btn-home-create");
+  const btnHomeCreate = $maybe("btn-home-create");
   if (btnHomeCreate)
     btnHomeCreate.onclick = () => void activateHomeSection("create");
 

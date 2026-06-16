@@ -178,17 +178,6 @@ function parseFrontmatter(
   return out;
 }
 
-function serializeScalar(value: string | boolean): string {
-  return typeof value === "boolean" ? String(value) : JSON.stringify(value);
-}
-
-function serializeFrontmatter(data: Record<string, string | boolean>): string {
-  const lines = Object.entries(data).map(
-    ([key, value]) => `${key}: ${serializeScalar(value)}`,
-  );
-  return `---\n${lines.join("\n")}\n---\n`;
-}
-
 function defaultTitleFromSlug(slug: string): string {
   const last = slug.split("/").filter(Boolean).pop() ?? "index";
   if (last === "index") return "Home";
@@ -975,6 +964,28 @@ function classAttr(block: BlockNode): string {
   return cls ? ` class="${escapeAttr(cls)}"` : "";
 }
 
+/** Metadata + style + a fixed structural class merged with the user's class. */
+function structuralCommon(block: BlockNode, fixedClass: string): string {
+  const userCls = block.props["cls"]
+    ? " " + escapeAttr(block.props["cls"])
+    : "";
+  return `${blockMetadataAttrs(block)} class="${fixedClass}${userCls}"${styleAttr(block)}`;
+}
+
+function splitLines(raw: string): string[] {
+  return (raw ?? "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+/** Splits "left :: right" into a tuple; right is "" when no separator. */
+function splitPair(line: string, sep = "::"): [string, string] {
+  const i = line.indexOf(sep);
+  if (i < 0) return [line.trim(), ""];
+  return [line.slice(0, i).trim(), line.slice(i + sep.length).trim()];
+}
+
 function renderBlockNode(block: BlockNode): string {
   const common = `${blockMetadataAttrs(block)}${classAttr(block)}${styleAttr(block)}`;
   switch (block.type) {
@@ -1045,6 +1056,77 @@ function renderBlockNode(block: BlockNode): string {
       return `<iframe${common} src="${escapeAttr(block.props["src"] ?? "")}" title="${escapeAttr(block.props["title"] ?? "Embed")}" loading="lazy"></iframe>`;
     case "html":
       return block.raw ?? "";
+    case "feature":
+      return `<div${structuralCommon(block, "zephus-feature")}><div class="zephus-feature-icon">${plainTextToHtml(
+        block.props["icon"] ?? "★",
+      )}</div><h3>${plainTextToHtml(
+        block.props["title"] ?? "Feature",
+      )}</h3><p>${plainTextToHtml(block.props["text"] ?? "")}</p></div>`;
+    case "testimonial":
+      return `<figure${structuralCommon(block, "zephus-testimonial")}><blockquote>${plainTextToHtml(
+        block.props["quote"] ?? "",
+      )}</blockquote><figcaption><strong>${plainTextToHtml(
+        block.props["author"] ?? "",
+      )}</strong>${
+        block.props["role"]
+          ? ` <span>${plainTextToHtml(block.props["role"])}</span>`
+          : ""
+      }</figcaption></figure>`;
+    case "accordion": {
+      const items = splitLines(block.props["items"] ?? "")
+        .map((line) => splitPair(line))
+        .map(
+          ([q, a]) =>
+            `<details><summary>${plainTextToHtml(q)}</summary><p>${plainTextToHtml(a)}</p></details>`,
+        )
+        .join("");
+      return `<div${structuralCommon(block, "zephus-accordion")}>${items}</div>`;
+    }
+    case "stats": {
+      const items = splitLines(block.props["items"] ?? "")
+        .map((line) => splitPair(line))
+        .map(
+          ([n, l]) =>
+            `<div class="zephus-stat"><span class="zephus-stat-num">${plainTextToHtml(
+              n,
+            )}</span><span class="zephus-stat-label">${plainTextToHtml(l)}</span></div>`,
+        )
+        .join("");
+      return `<div${structuralCommon(block, "zephus-stats")}>${items}</div>`;
+    }
+    case "pricing": {
+      const features = splitLines(block.props["features"] ?? "")
+        .map((f) => `<li>${plainTextToHtml(f)}</li>`)
+        .join("");
+      const cta = block.props["ctaText"]
+        ? `<a class="button" href="${escapeAttr(block.props["ctaHref"] ?? "#")}">${plainTextToHtml(
+            block.props["ctaText"],
+          )}</a>`
+        : "";
+      return `<div${structuralCommon(block, "zephus-pricing")}><h3>${plainTextToHtml(
+        block.props["plan"] ?? "Plan",
+      )}</h3><div class="zephus-price"><span class="zephus-price-amount">${plainTextToHtml(
+        block.props["price"] ?? "",
+      )}</span>${
+        block.props["period"]
+          ? `<span class="zephus-price-period">${plainTextToHtml(block.props["period"])}</span>`
+          : ""
+      }</div><ul>${features}</ul>${cta}</div>`;
+    }
+    case "cta": {
+      const cta = block.props["buttonText"]
+        ? `<a class="button" href="${escapeAttr(block.props["buttonHref"] ?? "#")}">${plainTextToHtml(
+            block.props["buttonText"],
+          )}</a>`
+        : "";
+      return `<div${structuralCommon(block, "zephus-cta")}><h2>${plainTextToHtml(
+        block.props["heading"] ?? "",
+      )}</h2>${
+        block.props["text"]
+          ? `<p>${plainTextToHtml(block.props["text"])}</p>`
+          : ""
+      }${cta}</div>`;
+    }
     default: {
       // Unknown block type (forward-compatible: a sidecar from a newer Zephus
       // version, or hand-edited JSON). Preserve it as a data-annotated div so
@@ -1157,18 +1239,19 @@ function renderAstroPage(
     .split("\n")
     .map((line) => (line ? `  ${line}` : line))
     .join("\n");
-  return `${serializeFrontmatter({
-    title,
-    navLabel: doc.navLabel,
-    metaDescription: doc.metaDescription,
-    navVisible: doc.navVisible,
-    zephusManaged: true,
-    zephusSchema: pageSchemaRelativePath(doc.slug).split(path.sep).join("/"),
-  })}import BaseLayout from '${pageImportPath(
+  const importPath = pageImportPath(
     projectPath,
     pageRel,
     site.shell.layoutPath,
-  )}';
+  );
+  const schemaRel = pageSchemaRelativePath(doc.slug).split(path.sep).join("/");
+  // The import MUST live inside the frontmatter fence (Astro component script);
+  // the schema marker is a JS comment so it is ignored by the frontmatter
+  // metadata parser. Page metadata lives authoritatively in the JSON sidecar.
+  return `---
+import BaseLayout from '${importPath}';
+// zephus:managed schema=${schemaRel}
+---
 
 <BaseLayout title="${escapeAttr(title)}">
 ${body}

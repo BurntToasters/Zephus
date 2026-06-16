@@ -2028,6 +2028,91 @@ body {
   cursor: text;
 }
 
+/* Rich block visuals on the canvas (mirror of theme global.css). */
+.canvas .button {
+  display: inline-block;
+  padding: 0.7rem 1.4rem;
+  background: var(--zephus-accent, var(--accent));
+  color: #ffffff;
+  border-radius: 999px;
+  text-decoration: none;
+  font-weight: 600;
+  border: 1.5px solid transparent;
+}
+.canvas .button.secondary {
+  background: transparent;
+  color: var(--zephus-accent, var(--accent));
+  border-color: var(--border);
+}
+.canvas .lead {
+  font-size: 1.2rem;
+  color: var(--muted);
+}
+.canvas a {
+  color: var(--zephus-accent, var(--accent));
+}
+.canvas .zephus-feature-icon {
+  font-size: 2rem;
+  line-height: 1;
+  margin-bottom: 0.5rem;
+}
+.canvas .zephus-testimonial {
+  padding: 1rem;
+  background: var(--zephus-surface, var(--bg-alt));
+  border-radius: var(--radius-md);
+}
+.canvas .zephus-testimonial blockquote {
+  margin: 0 0 0.5rem;
+  font-size: 1.1rem;
+}
+.canvas .zephus-testimonial figcaption {
+  color: var(--muted);
+}
+.canvas .zephus-accordion details {
+  border-bottom: 1px solid var(--border);
+  padding: 0.5rem 0;
+}
+.canvas .zephus-accordion summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.canvas .zephus-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+}
+.canvas .zephus-stat {
+  display: flex;
+  flex-direction: column;
+}
+.canvas .zephus-stat-num {
+  font-size: 1.75rem;
+  font-weight: 800;
+  color: var(--zephus-accent, var(--accent));
+}
+.canvas .zephus-stat-label {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.canvas .zephus-pricing {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 1.25rem;
+}
+.canvas .zephus-price-amount {
+  font-size: 1.75rem;
+  font-weight: 800;
+}
+.canvas .zephus-price-period {
+  color: var(--muted);
+}
+.canvas .zephus-cta {
+  text-align: center;
+  padding: 2rem 1rem;
+  background: var(--zephus-surface, var(--bg-alt));
+  border-radius: var(--radius-md);
+}
+
 /* Visible keyboard focus for all interactive elements. */
 :focus-visible {
   outline: 2px solid var(--accent);
@@ -2228,6 +2313,26 @@ body {
   justify-content: center;
   border-bottom: 1px solid rgba(255, 255, 255, 0.07);
   transition: background 0.3s ease;
+  background: var(--panel-card);
+}
+
+/* White backdrop so light starter themes (transparent body bg) read as a real
+   page screenshot instead of bleeding the dark card panel through. */
+.theme-card-icon-header.has-preview {
+  background: #ffffff;
+}
+
+/* Live preview miniature: render at full desktop width then scale to fit */
+.theme-card-preview-frame {
+  position: absolute;
+  inset: 0;
+  width: 1280px;
+  height: 900px;
+  border: none;
+  pointer-events: none;
+  transform-origin: top left;
+  background: #ffffff;
+  /* Scale set by JS: card-header-width / 1280 */
 }
 
 .theme-card-icon-pill {
