@@ -448,119 +448,111 @@ function syncHomeActionState(): void {
 }
 
 function renderHomeStatusPanels(): void {
-  const projectHost = $("home-project-status");
   const recoveryHost = $("home-recovery-list");
-  const updateHost = $("home-update-status");
-  projectHost.innerHTML = "";
-  recoveryHost.innerHTML = "";
-  updateHost.innerHTML = "";
+  if (recoveryHost) {
+    recoveryHost.innerHTML = "";
+    const drafts = homeDraftSummaries.slice(0, 4);
+    if (drafts.length === 0) {
+      recoveryHost.classList.add("hidden");
+    } else {
+      recoveryHost.classList.remove("hidden");
+      
+      const alertHeader = document.createElement("div");
+      alertHeader.className = "pane-header-title";
+      alertHeader.style.marginBottom = "12px";
+      alertHeader.innerHTML = `
+        <p class="pane-kicker" style="color: var(--warning);">Unsaved Work Recovery</p>
+        <strong style="font-size: 14px;">Zephus detected unsaved page or site drafts.</strong>
+      `;
+      recoveryHost.appendChild(alertHeader);
 
-  if (appSettings?.lastOpenedProject) {
-    const lastProject = appSettings.lastOpenedProject;
-    projectHost.appendChild(
-      buildHomeStatusCard(
-        `Last project: ${projectBaseName(lastProject)}`,
-        lastProject,
-        [
-          {
-            label: "Resume",
-            onClick: () => void openProjectByPath(lastProject),
-          },
-        ],
-      ),
-    );
-  } else {
-    projectHost.appendChild(
-      buildHomeStatusCard(
-        "No project resumed yet",
-        "Create a new Zephus site or open an existing one to keep a quick resume target here.",
-      ),
-    );
-  }
-
-  const drafts = homeDraftSummaries.slice(0, 4);
-  if (drafts.length === 0) {
-    recoveryHost.appendChild(
-      buildHomeStatusCard(
-        "No recovery drafts waiting",
-        "Unsaved page and site-shell drafts will appear here when Zephus has something recoverable.",
-      ),
-    );
-  } else {
-    for (const draft of drafts) {
-      recoveryHost.appendChild(
-        buildHomeStatusCard(
-          `${projectBaseName(draft.projectPath)} - ${formatRelativeTime(draft.savedAt)}`,
-          homeDraftLabel(draft),
-          [
-            {
-              label: "Resume Draft",
-              onClick: () => {
-                pendingHomeDraftResume = draft;
-                void openProjectByPath(draft.projectPath);
+      const alertList = document.createElement("div");
+      alertList.className = "home-status-stack";
+      
+      for (const draft of drafts) {
+        alertList.appendChild(
+          buildHomeStatusCard(
+            `${projectBaseName(draft.projectPath)} - ${formatRelativeTime(draft.savedAt)}`,
+            homeDraftLabel(draft),
+            [
+              {
+                label: "Resume Draft",
+                onClick: () => {
+                  pendingHomeDraftResume = draft;
+                  void openProjectByPath(draft.projectPath);
+                },
               },
-            },
-          ],
-        ),
-      );
+            ],
+          ),
+        );
+      }
+      recoveryHost.appendChild(alertList);
     }
   }
+  
+  // Render sidebar status badge
+  renderSidebarUpdateStatus();
+}
 
-  const updateCard = (() => {
-    if (!updaterSnapshot) {
-      return buildHomeStatusCard(
-        "Update status",
-        "Automatic update checks run from your settings. You can also trigger a manual check any time.",
-        [{ label: "Settings", onClick: () => void openSettingsModal() }],
-      );
-    }
-    if (updaterSnapshot.status === "available") {
-      return buildHomeStatusCard(
-        `Update available${updaterSnapshot.version ? `: v${updaterSnapshot.version}` : ""}`,
-        "A new Zephus build is ready to download from the updater flow.",
-        [{ label: "Settings", onClick: () => void openSettingsModal() }],
-      );
-    }
-    if (updaterSnapshot.status === "downloading") {
-      return buildHomeStatusCard(
-        "Downloading update",
-        `${Math.round(updaterSnapshot.percent ?? 0)}% complete.`,
-      );
-    }
-    if (updaterSnapshot.status === "downloaded") {
-      return buildHomeStatusCard(
-        `Update ready${updaterSnapshot.version ? `: v${updaterSnapshot.version}` : ""}`,
-        "The downloaded update can be installed from the current updater flow.",
-      );
-    }
-    if (updaterSnapshot.status === "checking") {
-      return buildHomeStatusCard(
-        "Checking for updates",
-        "Zephus is contacting the update feed right now.",
-      );
-    }
-    if (updaterSnapshot.status === "error") {
-      return buildHomeStatusCard(
-        "Update check had an issue",
-        updaterSnapshot.error ?? "The updater returned an unknown error.",
-        [{ label: "Settings", onClick: () => void openSettingsModal() }],
-      );
-    }
-    if (updaterSnapshot.status === "not-available") {
-      return buildHomeStatusCard(
-        "You are up to date",
-        updaterSnapshot.version
-          ? `Current version: v${updaterSnapshot.version}.`
-          : "No newer update is available right now.",
-      );
-    }
-    return buildHomeStatusCard(
-      "Update status",
-      `Current updater state: ${updaterSnapshot.status}.`,
-    );
-  })();
-
-  updateHost.appendChild(updateCard);
+function renderSidebarUpdateStatus(): void {
+  const sidebarUpdate = $("sidebar-update-status");
+  if (!sidebarUpdate) return;
+  sidebarUpdate.innerHTML = "";
+  
+  if (!updaterSnapshot) {
+    sidebarUpdate.classList.remove("clickable");
+    sidebarUpdate.onclick = null;
+    sidebarUpdate.innerHTML = `
+      <div class="update-status-dot"></div>
+      <span>Up to date</span>
+    `;
+    return;
+  }
+  
+  if (updaterSnapshot.status === "available") {
+    sidebarUpdate.classList.add("clickable");
+    sidebarUpdate.onclick = () => void switchStartTab("settings");
+    sidebarUpdate.innerHTML = `
+      <div class="update-status-dot active"></div>
+      <span style="color: #ffffff; font-weight: bold;">Update Available</span>
+    `;
+  } else if (updaterSnapshot.status === "downloading") {
+    sidebarUpdate.classList.remove("clickable");
+    sidebarUpdate.onclick = null;
+    sidebarUpdate.innerHTML = `
+      <div class="update-status-dot active"></div>
+      <span>Downloading (${Math.round(updaterSnapshot.percent ?? 0)}%)</span>
+    `;
+  } else if (updaterSnapshot.status === "downloaded") {
+    sidebarUpdate.classList.remove("clickable");
+    sidebarUpdate.onclick = null;
+    sidebarUpdate.innerHTML = `
+      <div class="update-status-dot active"></div>
+      <span>Restart to install</span>
+    `;
+  } else if (updaterSnapshot.status === "checking") {
+    sidebarUpdate.classList.remove("clickable");
+    sidebarUpdate.onclick = null;
+    sidebarUpdate.innerHTML = `
+      <div class="update-status-dot"></div>
+      <span>Checking updates…</span>
+    `;
+  } else if (updaterSnapshot.status === "error") {
+    sidebarUpdate.classList.add("clickable");
+    sidebarUpdate.onclick = () => void switchStartTab("settings");
+    sidebarUpdate.innerHTML = `
+      <div class="update-status-dot error"></div>
+      <span>Update Error</span>
+    `;
+  } else {
+    sidebarUpdate.classList.remove("clickable");
+    sidebarUpdate.onclick = null;
+    const versionStr = updaterSnapshot.version ? `v${updaterSnapshot.version}` : "";
+    sidebarUpdate.innerHTML = `
+      <div class="update-status-dot"></div>
+      <span>Up to date${versionStr ? " · " + versionStr : ""}</span>
+    `;
+  }
 }
 
 function renderProjectOverview(): void {
@@ -989,12 +981,38 @@ async function renderRecent(): Promise<void> {
   const settings = await window.zephus.readGlobalSettings();
   appSettings = settings;
   const list = $("recent-list");
+  if (!list) return;
   list.innerHTML = "";
   if (settings.recentProjects.length === 0) {
-    const li = document.createElement("li");
-    li.className = "recent-empty";
-    li.textContent = "No recent projects yet.";
-    list.appendChild(li);
+    const welcome = document.createElement("div");
+    welcome.className = "welcome-card";
+    welcome.innerHTML = `
+      <div class="welcome-icon-pill">
+        <i data-lucide="layout"></i>
+      </div>
+      <h3 class="welcome-title">Welcome to Zephus</h3>
+      <p class="welcome-copy">
+        Create a new Astro site from one of the starter templates, or open an existing Zephus project from your computer.
+      </p>
+      <div class="welcome-buttons">
+        <button id="btn-welcome-open" class="btn primary">
+          <i data-lucide="folder-open"></i> Open Folder
+        </button>
+        <button id="btn-welcome-create" class="btn">
+          <i data-lucide="compass"></i> Explore Templates
+        </button>
+      </div>
+    `;
+    
+    // Wire up buttons
+    const openBtn = welcome.querySelector("#btn-welcome-open") as HTMLButtonElement;
+    if (openBtn) openBtn.onclick = () => void chooseFolder();
+    
+    const createBtn = welcome.querySelector("#btn-welcome-create") as HTMLButtonElement;
+    if (createBtn) createBtn.onclick = () => void switchStartTab("create");
+
+    list.appendChild(welcome);
+    refreshIcons();
     renderHomeStatusPanels();
     syncHomeActionState();
     return;
@@ -5032,43 +5050,51 @@ function onKeydown(e: KeyboardEvent): void {
 
 /* ---------- Start view tabs and theme picker ---------- */
 
+/* ---------- Start view tabs and theme picker ---------- */
+
 function initStartTabs(): void {
   const tabRecent = $("tab-recent");
   const tabCreate = $("tab-create");
-  const paneRecent = $("pane-recent");
-  const paneCreate = $("pane-create");
+  const tabSettings = $("tab-settings");
+  const tabAbout = $("tab-about");
 
-  tabRecent.onclick = () => {
-    tabRecent.classList.add("active");
-    tabCreate.classList.remove("active");
-    paneRecent.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
+  if (tabRecent) tabRecent.onclick = () => void switchStartTab("recent");
+  if (tabCreate) tabCreate.onclick = () => void switchStartTab("create");
+  if (tabSettings) tabSettings.onclick = () => void switchStartTab("settings");
+  if (tabAbout) tabAbout.onclick = () => void switchStartTab("about");
+}
 
-  tabCreate.onclick = async () => {
-    tabCreate.classList.add("active");
-    tabRecent.classList.remove("active");
-    paneCreate.scrollIntoView({ behavior: "smooth", block: "start" });
+async function switchStartTab(
+  target: "recent" | "create" | "settings" | "about",
+): Promise<void> {
+  const tabs = ["recent", "create", "settings", "about"] as const;
+  for (const t of tabs) {
+    const tabBtn = $("tab-" + t);
+    const pane = $("pane-" + t);
+    if (tabBtn) tabBtn.classList.toggle("active", t === target);
+    if (pane) {
+      pane.classList.toggle("active", t === target);
+      pane.classList.toggle("hidden", t !== target);
+    }
+  }
+  if (target === "create") {
     await renderThemesInTab();
-  };
+  } else if (target === "settings") {
+    await renderSettingsInTab();
+  } else if (target === "about") {
+    await renderAboutAndLicensesInTab();
+  }
 }
 
 async function activateHomeSection(
-  section: "recent" | "create",
+  section: "recent" | "create" | "settings" | "about",
 ): Promise<void> {
-  const tabRecent = $("tab-recent");
-  const tabCreate = $("tab-create");
-  tabRecent.classList.toggle("active", section === "recent");
-  tabCreate.classList.toggle("active", section === "create");
-  if (section === "create") {
-    $("pane-create").scrollIntoView({ behavior: "smooth", block: "start" });
-    await renderThemesInTab();
-    return;
-  }
-  $("pane-recent").scrollIntoView({ behavior: "smooth", block: "start" });
+  await switchStartTab(section);
 }
 
 function syncCreateButtonState(): void {
   const btnCreate = $("btn-create") as HTMLButtonElement;
+  if (!btnCreate) return;
   const enabled = selectedTabTheme !== null;
   btnCreate.disabled = !enabled;
   btnCreate.classList.toggle("disabled", !enabled);
@@ -5081,14 +5107,17 @@ function previewUrlForTheme(theme: ThemeMeta): string | null {
 
 function selectThemeCard(themeId: string): void {
   selectedTabTheme = themeId;
-  for (const card of Array.from(
-    $("theme-list-container").querySelectorAll<HTMLElement>(".theme-card"),
-  )) {
-    const selected = card.dataset.themeId === themeId;
-    card.classList.toggle("selected", selected);
-    const label = card.querySelector<HTMLElement>(".theme-select-btn");
-    if (label) {
-      label.textContent = selected ? "Selected" : "Select";
+  const container = $("theme-list-container");
+  if (container) {
+    for (const card of Array.from(
+      container.querySelectorAll<HTMLElement>(".theme-card"),
+    )) {
+      const selected = card.dataset.themeId === themeId;
+      card.classList.toggle("selected", selected);
+      const label = card.querySelector<HTMLElement>(".theme-select-btn");
+      if (label) {
+        label.textContent = selected ? "Selected" : "Select";
+      }
     }
   }
   syncCreateButtonState();
@@ -5144,6 +5173,36 @@ function openThemePreviewModal(theme: ThemeMeta): void {
   );
 }
 
+function getThemeHeaderDetails(themeId: string): { gradient: string; icon: string } {
+  const id = themeId.toLowerCase();
+  if (id.includes("doc")) {
+    return {
+      gradient: "linear-gradient(135deg, #312e81, #1e3a8a)",
+      icon: "book-open"
+    };
+  } else if (id.includes("blog")) {
+    return {
+      gradient: "linear-gradient(135deg, #7c2d12, #451a03)",
+      icon: "edit-3"
+    };
+  } else if (id.includes("port")) {
+    return {
+      gradient: "linear-gradient(135deg, #164e63, #155e75)",
+      icon: "image"
+    };
+  } else if (id.includes("min") || id.includes("blank")) {
+    return {
+      gradient: "linear-gradient(135deg, #374151, #111827)",
+      icon: "terminal"
+    };
+  } else {
+    return {
+      gradient: "linear-gradient(135deg, #064e3b, #022c22)",
+      icon: "rocket"
+    };
+  }
+}
+
 function buildThemeCard(theme: ThemeMeta): HTMLElement {
   const card = document.createElement("article");
   card.className = "theme-card";
@@ -5153,20 +5212,15 @@ function buildThemeCard(theme: ThemeMeta): HTMLElement {
     card.classList.add("selected");
   }
 
-  const previewUrl = previewUrlForTheme(theme);
-  const preview = document.createElement("div");
-  preview.className = "theme-card-preview";
-  if (previewUrl) {
-    const frame = document.createElement("iframe");
-    frame.className = "theme-card-preview-frame";
-    frame.src = previewUrl;
-    frame.sandbox.add("allow-same-origin");
-    frame.sandbox.add("allow-scripts");
-    frame.title = `${theme.name} thumbnail preview`;
-    preview.appendChild(frame);
-  } else {
-    preview.innerHTML = `<div class="theme-card-preview-empty">Preview unavailable</div>`;
-  }
+  const details = getThemeHeaderDetails(theme.id);
+  const header = document.createElement("div");
+  header.className = "theme-card-icon-header";
+  header.style.background = details.gradient;
+  header.innerHTML = `
+    <div class="theme-card-icon-pill">
+      <i data-lucide="${details.icon}"></i>
+    </div>
+  `;
 
   const body = document.createElement("div");
   body.className = "theme-card-body";
@@ -5192,7 +5246,7 @@ function buildThemeCard(theme: ThemeMeta): HTMLElement {
   };
 
   actions.append(previewBtn, selectBtn);
-  card.append(preview, body, actions);
+  card.append(header, body, actions);
 
   card.onclick = () => selectThemeCard(theme.id);
   card.ondblclick = () => {
@@ -5211,6 +5265,7 @@ function buildThemeCard(theme: ThemeMeta): HTMLElement {
 
 async function renderThemesInTab(): Promise<void> {
   const container = $("theme-list-container");
+  if (!container) return;
   container.innerHTML = `<p class="muted">Loading theme previews…</p>`;
 
   try {
@@ -5232,8 +5287,359 @@ async function renderThemesInTab(): Promise<void> {
       container.appendChild(buildThemeCard(theme));
     }
     syncCreateButtonState();
+    refreshIcons();
   } catch (err) {
     container.innerHTML = `<p class="muted">Could not load themes: ${err}</p>`;
+  }
+}
+
+async function renderSettingsInTab(): Promise<void> {
+  const container = $("settings-tab-container");
+  if (!container) return;
+  container.innerHTML = "";
+
+  let settings: GlobalSettings;
+  try {
+    settings = await window.zephus.readGlobalSettings();
+  } catch {
+    setStatus("Could not load settings.");
+    return;
+  }
+
+  const form = document.createElement("div");
+  form.className = "settings-form";
+
+  // --- Updates Section ---
+  const updatesSec = document.createElement("div");
+  updatesSec.className = "settings-section";
+
+  const updHeader = document.createElement("h4");
+  updHeader.className = "settings-section-title";
+  updHeader.textContent = "Updates";
+  updatesSec.appendChild(updHeader);
+
+  const autoUpd = checkboxRow(
+    "set-auto-update",
+    "Startup check",
+    settings.autoCheckUpdates,
+  );
+  updatesSec.appendChild(autoUpd.row);
+
+  const chan = selectField(
+    "Update channel",
+    [
+      { value: "auto", label: "Auto (match install)" },
+      { value: "stable", label: "Stable" },
+      { value: "beta", label: "Beta" },
+      { value: "developer", label: "Developer (db)" },
+    ],
+    settings.updateChannel,
+  );
+  updatesSec.appendChild(chan.wrap);
+
+  const checkRow = document.createElement("div");
+  checkRow.className = "settings-row";
+  const checkLeft = document.createElement("span");
+  const checkNowBtn = document.createElement("button");
+  checkNowBtn.className = "btn secondary mini-btn";
+  checkNowBtn.textContent = "Check for Updates Now";
+  checkNowBtn.onclick = async () => {
+    checkNowBtn.textContent = "Checking…";
+    checkNowBtn.disabled = true;
+    try {
+      await window.zephus.checkForUpdates();
+    } catch {
+      // Ignored: status is surfaced via updater-status listener
+    }
+    checkNowBtn.textContent = "Check for Updates Now";
+    checkNowBtn.disabled = false;
+  };
+  checkRow.append(checkLeft, checkNowBtn);
+  updatesSec.appendChild(checkRow);
+  form.appendChild(updatesSec);
+
+  // --- Environment Section (Node.js) ---
+  const envSec = document.createElement("div");
+  envSec.className = "settings-section";
+
+  const envHeader = document.createElement("h4");
+  envHeader.className = "settings-section-title";
+  envHeader.textContent = "Environment";
+  envSec.appendChild(envHeader);
+
+  const nodeRow = document.createElement("div");
+  nodeRow.className = "settings-row";
+
+  const nodeCopy = document.createElement("div");
+  nodeCopy.className = "settings-inline-copy";
+  const nodeStatusText = document.createElement("span");
+  nodeStatusText.textContent = "Checking Node.js…";
+  const nodeStrong = document.createElement("strong");
+  nodeStrong.textContent = "Node.js (for build & preview)";
+  nodeCopy.append(nodeStrong, nodeStatusText);
+
+  const nodeBtns = document.createElement("div");
+  nodeBtns.className = "settings-inline-actions";
+  const nodeBrowseBtn = document.createElement("button");
+  nodeBrowseBtn.className = "btn secondary mini-btn";
+  nodeBrowseBtn.textContent = "Set Custom Location…";
+  const nodeAutoBtn = document.createElement("button");
+  nodeAutoBtn.className = "btn ghost mini-btn";
+  nodeAutoBtn.textContent = "Use Auto-detect";
+  nodeBtns.append(nodeBrowseBtn, nodeAutoBtn);
+
+  nodeRow.append(nodeCopy, nodeBtns);
+  envSec.appendChild(nodeRow);
+
+  const applyNodeStatus = (res: NodeCheckResult): void => {
+    const label =
+      res.status === "ok"
+        ? `Node.js ${res.version} detected ✓`
+        : res.status === "outdated"
+          ? `Node.js ${res.version ?? "?"} — version 22.12+ required`
+          : res.status === "missing"
+            ? "Node.js not found — set a custom location below"
+            : "Node.js status could not be determined";
+    const source = settings.customNodePath
+      ? `Custom: ${settings.customNodePath}`
+      : "Auto-detect (system PATH)";
+    nodeStatusText.textContent = `${label} · ${source}`;
+    nodeAutoBtn.disabled = !settings.customNodePath;
+  };
+
+  nodeBrowseBtn.onclick = async () => {
+    nodeBrowseBtn.disabled = true;
+    try {
+      const res = await window.zephus.pickNodePath();
+      if (
+        (res.status === "ok" || res.status === "outdated") &&
+        res.usedCustomPath &&
+        res.binaryPath
+      ) {
+        settings.customNodePath = res.binaryPath;
+      }
+      applyNodeStatus(res);
+    } catch {
+      nodeStatusText.textContent = "Could not set Node.js location.";
+    }
+    nodeBrowseBtn.disabled = false;
+  };
+
+  nodeAutoBtn.onclick = async () => {
+    nodeAutoBtn.disabled = true;
+    try {
+      const res = await window.zephus.setNodePath(null);
+      settings.customNodePath = null;
+      applyNodeStatus(res);
+    } catch {
+      nodeStatusText.textContent = "Could not reset Node.js location.";
+    }
+  };
+
+  window.zephus
+    .getNodeStatus()
+    .then(applyNodeStatus)
+    .catch(() => {
+      nodeStatusText.textContent = "Could not check Node.js.";
+    });
+
+  form.appendChild(envSec);
+
+  // --- Appearance Section ---
+  const apSec = document.createElement("div");
+  apSec.className = "settings-section";
+
+  const apHeader = document.createElement("h4");
+  apHeader.className = "settings-section-title";
+  apHeader.textContent = "Appearance";
+  apSec.appendChild(apHeader);
+
+  const theme = selectField(
+    "Theme",
+    [
+      { value: "system", label: "System" },
+      { value: "dark", label: "Dark" },
+      { value: "light", label: "Light" },
+    ],
+    settings.theme,
+  );
+  apSec.appendChild(theme.wrap);
+
+  const fontSize = selectField(
+    "Editor font size",
+    [12, 13, 14, 15, 16, 18].map((n) => ({
+      value: String(n),
+      label: `${n}px`,
+    })),
+    String(settings.codeFontSize),
+  );
+  apSec.appendChild(fontSize.wrap);
+  form.appendChild(apSec);
+
+  // --- Editor Section ---
+  const edSec = document.createElement("div");
+  edSec.className = "settings-section";
+
+  const edHeader = document.createElement("h4");
+  edHeader.className = "settings-section-title";
+  edHeader.textContent = "Editor";
+  edSec.appendChild(edHeader);
+
+  const restore = checkboxRow(
+    "set-restore",
+    "Reopen last project",
+    settings.restoreLastProject,
+  );
+  edSec.appendChild(restore.row);
+
+  const autosave = checkboxRow(
+    "set-autosave",
+    "Autosave changes",
+    settings.autosave,
+  );
+  edSec.appendChild(autosave.row);
+
+  const confirmDel = checkboxRow(
+    "set-confirm-del",
+    "Confirm delete block",
+    settings.confirmBlockDelete,
+  );
+  edSec.appendChild(confirmDel.row);
+  form.appendChild(edSec);
+
+  // --- Actions/Buttons Row ---
+  const actionsRow = document.createElement("div");
+  actionsRow.className = "settings-panel-buttons";
+
+  const resetBtn = document.createElement("button");
+  resetBtn.className = "btn danger";
+  resetBtn.textContent = "Reset to Defaults";
+  resetBtn.onclick = async () => {
+    if (!confirm("Reset all Zephus settings to defaults?")) return;
+    const defaults: GlobalSettings = {
+      ...settings,
+      theme: "system",
+      autoCheckUpdates: true,
+      updateChannel: "auto",
+      restoreLastProject: false,
+      confirmBlockDelete: true,
+      autosave: false,
+      codeFontSize: 13,
+      customNodePath: null,
+    };
+    await window.zephus.writeGlobalSettings(defaults);
+    document.documentElement.setAttribute("data-theme", "system");
+    applyCodeFontSize(13);
+    setStatus("Settings reset to defaults.");
+    await renderSettingsInTab();
+  };
+
+  const saveBtn = document.createElement("button");
+  saveBtn.className = "btn primary";
+  saveBtn.textContent = "Save Settings";
+  saveBtn.onclick = async () => {
+    settings.autoCheckUpdates = autoUpd.input.checked;
+    settings.updateChannel = chan.select.value as GlobalSettings["updateChannel"];
+    settings.theme = theme.select.value as GlobalSettings["theme"];
+    settings.codeFontSize = Number(fontSize.select.value);
+    settings.restoreLastProject = restore.input.checked;
+    settings.autosave = autosave.input.checked;
+    settings.confirmBlockDelete = confirmDel.input.checked;
+
+    await window.zephus.writeGlobalSettings(settings);
+    document.documentElement.setAttribute("data-theme", settings.theme);
+    applyCodeFontSize(settings.codeFontSize);
+    appSettings = settings;
+    setStatus("Settings saved.");
+  };
+
+  actionsRow.append(resetBtn, saveBtn);
+  form.appendChild(actionsRow);
+  container.appendChild(form);
+}
+
+async function renderAboutAndLicensesInTab(): Promise<void> {
+  const versionText = $("about-app-version");
+  if (versionText) {
+    try {
+      const v = await window.zephus.getAppVersion();
+      versionText.textContent = `v${v}`;
+    } catch {
+      versionText.textContent = "v0.1.0-db.1";
+    }
+  }
+
+  const configBtn = $("btn-about-config");
+  if (configBtn) {
+    configBtn.onclick = () => void window.zephus.openConfigFolder();
+  }
+
+  const loadLicensesBtn = $("btn-load-licenses") as HTMLButtonElement;
+  const openRawLicensesBtn = $("btn-open-raw-licenses");
+  const licensesListContainer = $("about-licenses-list");
+
+  if (openRawLicensesBtn) {
+    openRawLicensesBtn.onclick = async () => {
+      const opened = await window.zephus.openProductionLicensesFile();
+      if (!opened.ok) {
+        setStatus(opened.error ?? "Could not open licenses.json.");
+      }
+    };
+  }
+
+  if (loadLicensesBtn && licensesListContainer) {
+    loadLicensesBtn.onclick = async () => {
+      loadLicensesBtn.disabled = true;
+      loadLicensesBtn.textContent = "Loading Licenses…";
+      licensesListContainer.classList.remove("hidden");
+      licensesListContainer.innerHTML = `<p class="muted" style="padding: 16px;">Loading bundled production license data…</p>`;
+      
+      const result = await window.zephus.readProductionLicenses();
+      loadLicensesBtn.disabled = false;
+      loadLicensesBtn.textContent = "Reload Dependency Licenses";
+      
+      if (!result.ok) {
+        licensesListContainer.innerHTML = `<p class="muted" style="padding: 16px; color: var(--danger);">${result.error ?? "Could not load production license data."}</p>`;
+        return;
+      }
+      
+      licensesListContainer.innerHTML = "";
+      const tableWrap = document.createElement("div");
+      tableWrap.className = "licenses-table-wrap";
+
+      const table = document.createElement("table");
+      table.className = "licenses-table";
+      table.innerHTML = `
+        <thead>
+          <tr>
+            <th>Package</th>
+            <th>License</th>
+            <th>Repository</th>
+            <th>License URL</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${result.entries
+            .map(
+              (entry) => `
+                <tr>
+                  <td class="licenses-package-cell">
+                    <div class="licenses-package-name">${escapeHtml(entry.packageId)}</div>
+                    <div class="licenses-package-parents">${escapeHtml(
+                      entry.parents.slice(0, 4).join(" > ") || "Direct dependency",
+                    )}</div>
+                  </td>
+                  <td>${escapeHtml(entry.licenses)}</td>
+                  <td class="licenses-link-cell">${renderLicenseValue(entry.repository)}</td>
+                  <td class="licenses-link-cell">${renderLicenseValue(entry.licenseUrl)}</td>
+                </tr>`,
+            )
+            .join("")}
+        </tbody>
+      `;
+      tableWrap.appendChild(table);
+      licensesListContainer.appendChild(tableWrap);
+    };
   }
 }
 
@@ -5257,18 +5663,30 @@ async function createSiteFromTabFlow(): Promise<void> {
 
 function init(): void {
   initStartTabs();
-  $("btn-create").onclick = () => void createSiteFromTabFlow();
-  $("btn-settings").onclick = () => void openSettingsModal();
-  $("btn-home-settings").onclick = () => void openSettingsModal();
-  $("btn-home-licenses").onclick = () => void openProductionLicensesModal();
-  $("btn-home-create").onclick = () => void activateHomeSection("create");
-  $("btn-resume-last").onclick = () => {
-    const lastProject = appSettings?.lastOpenedProject;
-    if (lastProject) {
-      void openProjectByPath(lastProject);
-    }
-  };
-  $("btn-open").onclick = () => void chooseFolder();
+  const btnCreate = $("btn-create");
+  if (btnCreate) btnCreate.onclick = () => void createSiteFromTabFlow();
+  const btnSettings = $("btn-settings");
+  if (btnSettings) btnSettings.onclick = () => void openSettingsModal();
+  const btnHomeSettings = $("btn-home-settings");
+  if (btnHomeSettings) btnHomeSettings.onclick = () => void openSettingsModal();
+  const btnHomeLicenses = $("btn-home-licenses");
+  if (btnHomeLicenses) btnHomeLicenses.onclick = () => void openProductionLicensesModal();
+  const btnHomeCreate = $("btn-home-create");
+  if (btnHomeCreate) btnHomeCreate.onclick = () => void activateHomeSection("create");
+  
+  const btnResumeLast = $("btn-resume-last");
+  if (btnResumeLast) {
+    btnResumeLast.onclick = () => {
+      const lastProject = appSettings?.lastOpenedProject;
+      if (lastProject) {
+        void openProjectByPath(lastProject);
+      }
+    };
+  }
+  
+  const btnOpen = $("btn-open");
+  if (btnOpen) btnOpen.onclick = () => void chooseFolder();
+
   $("btn-new-page").onclick = () => void newPageFlow();
   $("btn-regen-nav").onclick = () => void regenerateNav();
   $("btn-site-shell").onclick = () => void openSiteShellModal();
