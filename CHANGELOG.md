@@ -7,10 +7,10 @@
 
 | <img height="20" src="https://raw.githubusercontent.com/BurntToasters/bcls/main/media/windows.png" /> Windows | <img height="20" src="https://raw.githubusercontent.com/BurntToasters/bcls/main/media/mac.png" /> macOS | <img height="20" src="https://raw.githubusercontent.com/BurntToasters/bcls/main/media/linux.png" /> Linux |
 | :--- | :--- | :--- |
-| **EXE:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.6/Zephus-Windows-x64.exe) / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.6/Zephus-Windows-arm64.exe) | **[Universal DMG](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.6/Zephus-MacOS-universal.dmg)** | **AppImage:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.6/Zephus-Linux-x86_64.AppImage) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.6/Zephus-Linux-arm64.AppImage) --> |
-| | **[Universal ZIP](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.6/Zephus-MacOS-universal.zip)** | **DEB:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.6/Zephus-Linux-amd64.deb) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.6/Zephus-Linux-arm64.deb) --> |
-| | | **RPM:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.6/Zephus-Linux-x86_64.rpm) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.6/Zephus-Linux-aarch64.rpm) --> |
-| | | **Flatpak:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.6/Zephus-Linux-x86_64.flatpak) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.6/Zephus-Linux-aarch64.flatpak) --> |
+| **EXE:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.7/Zephus-Windows-x64.exe) / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.7/Zephus-Windows-arm64.exe) | **[Universal DMG](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.7/Zephus-MacOS-universal.dmg)** | **AppImage:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.7/Zephus-Linux-x86_64.AppImage) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.7/Zephus-Linux-arm64.AppImage) --> |
+| | **[Universal ZIP](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.7/Zephus-MacOS-universal.zip)** | **DEB:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.7/Zephus-Linux-amd64.deb) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.7/Zephus-Linux-arm64.deb) --> |
+| | | **RPM:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.7/Zephus-Linux-x86_64.rpm) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.7/Zephus-Linux-aarch64.rpm) --> |
+| | | **Flatpak:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.7/Zephus-Linux-x86_64.flatpak) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.7/Zephus-Linux-aarch64.flatpak) --> |
 
 > [!IMPORTANT]
 > The `.sig` files in this repo are NOT normal GPG signatures — they are for Zephus's built-in updater to verify the integrity of updates before downloading and installing.
@@ -22,6 +22,12 @@
 ### ℹ️ Enjoying Zephus? Consider [❤️ Supporting Me! ❤️](https://rosie.run/support)
 
 ---
+
+## Changes in `v0.1.0-db.7:`
+* **Editor:** Fixed blocks rendering black/unreadable on the canvas — block background was incorrectly set to the app chrome color instead of transparent, making text invisible against themed backgrounds.
+* **Editor:** Fixed double-click inline text editing not working — clicking a block triggered a full canvas re-render, destroying the DOM node between the two clicks of a double-click so `dblclick` never fired. Blocks now stay stable in the DOM when re-clicked while already selected.
+* **Editor:** Fixed resize handles allowing blocks and sections to be dragged wider than the page boundary. Width is now clamped to the parent container's content width.
+* **Setup:** Fixed the "Setting Up Your Site" install modal showing a blank progress area. The log box now shows a ticking elapsed-time counter and live npm output so there is always visible activity during dependency installation.
 
 ## Changes in `v0.1.0-db.6:`
 * **License:** Updated to comply with bundled license items.
