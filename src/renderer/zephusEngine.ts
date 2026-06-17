@@ -4826,6 +4826,21 @@ type ResizeTarget =
 const MIN_RESIZE_WIDTH = 40;
 const MIN_RESIZE_HEIGHT = 24;
 
+/**
+ * Largest width a resized element may take without spilling outside the page:
+ * the content width of its containing element (section body for blocks, the
+ * canvas for sections). Returns Infinity when no sensible bound exists.
+ */
+function maxResizeWidthFor(subject: HTMLElement): number {
+  const parent = subject.parentElement;
+  if (!parent) return Number.POSITIVE_INFINITY;
+  const cs = getComputedStyle(parent);
+  const pad =
+    (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+  const inner = parent.clientWidth - pad;
+  return inner > MIN_RESIZE_WIDTH ? inner : Number.POSITIVE_INFINITY;
+}
+
 function resizeStyleTarget(target: ResizeTarget): BlockStyle {
   target.node.style = target.node.style ?? {};
   if (state.currentViewport === "desktop") return target.node.style;
@@ -4925,7 +4940,7 @@ function resizeCanvasTargetByKeyboard(
   if (key === "ArrowUp") height += fromTop ? step : -step;
 
   const style = resizeStyleTarget(target);
-  style.width = `${Math.max(MIN_RESIZE_WIDTH, Math.round(width))}px`;
+  style.width = `${Math.min(maxResizeWidthFor(subject), Math.max(MIN_RESIZE_WIDTH, Math.round(width)))}px`;
   style.height = `${Math.max(MIN_RESIZE_HEIGHT, Math.round(height))}px`;
   subject.style.width = style.width;
   subject.style.height = style.height;
@@ -4952,6 +4967,7 @@ function beginCanvasResize(
   const startHeight = rect.height;
   const fromLeft = corner === "nw" || corner === "sw";
   const fromTop = corner === "nw" || corner === "ne";
+  const maxWidth = maxResizeWidthFor(subject);
   try {
     handle.setPointerCapture(event.pointerId);
   } catch {
@@ -4961,9 +4977,12 @@ function beginCanvasResize(
   const onMove = (moveEvent: PointerEvent): void => {
     const dx = moveEvent.clientX - startX;
     const dy = moveEvent.clientY - startY;
-    const width = Math.max(
-      MIN_RESIZE_WIDTH,
-      Math.round(startWidth + (fromLeft ? -dx : dx)),
+    const width = Math.min(
+      maxWidth,
+      Math.max(
+        MIN_RESIZE_WIDTH,
+        Math.round(startWidth + (fromLeft ? -dx : dx)),
+      ),
     );
     const height = Math.max(
       MIN_RESIZE_HEIGHT,
@@ -5228,6 +5247,11 @@ function renderCanvas(): void {
 
       shell.onclick = (event) => {
         event.stopPropagation();
+        // Re-clicking the already-selected block must NOT rebuild the canvas:
+        // a full re-render swaps out this DOM node between the two clicks of a
+        // native double-click, so dblclick never fires and inline text editing
+        // can't start. Keep the node stable once selected.
+        if (state.selectedId === block.id) return;
         state.selectedId = block.id;
         state.selectedSectionId = section.id;
         renderLayers();
@@ -7363,14 +7387,26 @@ async function runInstallFlow(projectPath: string): Promise<boolean> {
     appendCappedLog(logEl, chunk);
   });
 
+  // npm can stay silent for long stretches on first run; a ticking elapsed
+  // timer guarantees the modal always shows live activity (never a blank box).
+  const startedAt = Date.now();
+  const baseStatus =
+    "Installing dependencies… This can take a minute on first run.";
+  const heartbeat = window.setInterval(() => {
+    const secs = Math.round((Date.now() - startedAt) / 1000);
+    status.textContent = `${baseStatus} (${secs}s)`;
+  }, 1000);
+
   return new Promise<boolean>((resolve) => {
     let done = false;
+    const stopHeartbeat = () => window.clearInterval(heartbeat);
     showModalNode("Setting Up Your Site", wrap, [
       {
         label: "Run in Background",
         kind: "ghost",
         onClick: () => {
           if (!done) {
+            stopHeartbeat();
             closeModal();
             resolve(false);
           }
@@ -7382,6 +7418,7 @@ async function runInstallFlow(projectPath: string): Promise<boolean> {
       .installDependencies(projectPath)
       .then((result) => {
         done = true;
+        stopHeartbeat();
         unsub();
         if (result.ok) {
           status.textContent = "Dependencies installed. You're ready to go.";
@@ -7396,6 +7433,7 @@ async function runInstallFlow(projectPath: string): Promise<boolean> {
       })
       .catch(() => {
         done = true;
+        stopHeartbeat();
         unsub();
         resolve(false);
       });

@@ -36,11 +36,14 @@ export async function installDependencies(
 
   installing = true;
   const env = await buildSpawnEnv(readGlobalSettings().customNodePath);
+  // Surface activity immediately: without a TTY npm is silent for most of the
+  // install, which left the progress box blank on first run.
+  onLog("Running npm install…\n");
 
   return new Promise<OperationResult>((resolve) => {
     let child;
     try {
-      const npm = npmCommand(["install"]);
+      const npm = npmCommand(["install", "--loglevel=http", "--no-fund"]);
       child = spawn(npm.command, npm.args, {
         cwd: projectPath,
         windowsHide: true,
