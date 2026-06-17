@@ -1,7 +1,5 @@
 > [!NOTE]
 > ⛔️ This is a Developer Beta build. These builds are extremely unstable and are meant for testing only.
-> 
-> Zephus currently uses the app icons from the ROSI app as a placeholder while I work on creating a custom icon :)
 
 # ⬇️ Downloads
 
