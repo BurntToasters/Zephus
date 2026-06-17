@@ -129,6 +129,12 @@ async function startDevServerProcess(
     const child = spawn(npm.command, npm.args, {
       cwd: projectPath,
       windowsHide: true,
+      // POSIX: detached makes the child its own process-group leader so we can
+      // signal the whole tree (npm → astro/vite) on stop. Without this, killing
+      // npm orphans the real dev server and leaves the port bound. Windows uses
+      // taskkill /t to walk the tree instead, so detached stays off there
+      // (detached on Windows would also pop a console window).
+      detached: process.platform !== "win32",
       env: { ...spawnEnv, FORCE_COLOR: "0", NO_COLOR: "1" },
     });
 
@@ -187,25 +193,55 @@ export function stopDevServer(): void {
   if (!current) return;
   const { child } = current;
   current = null;
-  try {
-    if (process.platform === "win32" && child.pid) {
-      spawn("taskkill", ["/pid", String(child.pid), "/t", "/f"], {
-        windowsHide: true,
-      });
-    } else {
-      child.kill("SIGTERM");
-      // Escalate if it ignores SIGTERM.
-      const pid = child.pid;
-      setTimeout(() => {
+  const pid = child.pid;
+
+  if (process.platform === "win32") {
+    // Walk and force-kill the whole process tree (npm.cmd → node → astro).
+    if (pid) {
+      try {
+        spawn("taskkill", ["/pid", String(pid), "/t", "/f"], {
+          windowsHide: true,
+        });
+      } catch (error) {
+        log.warn("taskkill failed, falling back to child.kill", error);
         try {
-          if (pid) process.kill(pid, 0); // throws if already dead
-          child.kill("SIGKILL");
+          child.kill();
         } catch {
-          /* already exited */
+          /* already gone */
         }
-      }, 4000);
+      }
     }
-  } catch (error) {
-    log.warn("Failed to stop dev server cleanly", error);
+    return;
   }
+
+  // POSIX: signal the process GROUP (negative pid) so the detached child and
+  // every grandchild (astro/vite) die together, then escalate to SIGKILL.
+  const signalGroup = (signal: NodeJS.Signals): boolean => {
+    if (!pid) return false;
+    try {
+      process.kill(-pid, signal);
+      return true;
+    } catch {
+      // Group kill can fail if the child isn't a group leader; fall back to
+      // signalling the direct child only.
+      try {
+        child.kill(signal);
+        return true;
+      } catch {
+        return false; // already exited
+      }
+    }
+  };
+
+  signalGroup("SIGTERM");
+  setTimeout(() => {
+    if (pid) {
+      try {
+        process.kill(-pid, 0); // throws if the whole group is already dead
+        signalGroup("SIGKILL");
+      } catch {
+        /* already exited */
+      }
+    }
+  }, 4000);
 }

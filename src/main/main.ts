@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, shell, session } from "electron";
+import { app, BrowserWindow, dialog, shell, session, ipcMain } from "electron";
 import { pathToFileURL } from "url";
 import * as path from "path";
 import log from "electron-log";
@@ -8,6 +8,7 @@ import { stopThemePreviewServer } from "./services/themePreviewServer";
 import { readGlobalSettings, writeGlobalSettings } from "./services/settings";
 import { setupAutoUpdater, checkForUpdates } from "./updater";
 import { checkNodeVersion } from "./services/nodeCheck";
+import { IPC } from "./ipcChannels";
 
 const isDev =
   process.argv.includes("--dev") || process.env.NODE_ENV === "development";
@@ -31,6 +32,7 @@ if (log.transports?.file) {
 process.setMaxListeners(48);
 
 function cleanupBackgroundServices(): void {
+  closePreviewWindow();
   stopDevServer();
   stopThemePreviewServer();
 }
@@ -58,6 +60,7 @@ process.on("unhandledRejection", (reason) => {
 });
 
 let mainWindow: BrowserWindow | null = null;
+let previewWindow: BrowserWindow | null = null;
 let splashWindow: BrowserWindow | null = null;
 let isInstallingUpdate = false;
 
@@ -263,7 +266,16 @@ function installNavigationGuards(contents: Electron.WebContents): void {
     return { action: "deny" };
   });
   contents.on("will-navigate", (event, url) => {
-    if (!isInternal(url)) {
+    // The dedicated preview window hosts the localhost dev server, so in-site
+    // navigation between its own pages must be allowed there (only there).
+    const isPreviewContents =
+      !!previewWindow &&
+      !previewWindow.isDestroyed() &&
+      contents === previewWindow.webContents;
+    const allow =
+      isInternal(url) ||
+      (isPreviewContents && isAllowedFrameUrl(url, rendererRootUrl));
+    if (!allow) {
       event.preventDefault();
       openExternal(url);
     }
@@ -289,6 +301,63 @@ function installGlobalNavigationGuards(): void {
   app.on("web-contents-created", (_event, contents) => {
     installNavigationGuards(contents);
   });
+}
+
+/** True for an http(s) localhost/127.0.0.1 URL (the dev-server preview). */
+function isLocalhostPreviewUrl(target: string): boolean {
+  return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i.test(target);
+}
+
+/**
+ * Opens (or refocuses) a dedicated preview window that loads the project's
+ * running dev server. The window deliberately has NO preload bridge — it hosts
+ * the user's own site, which must not see Zephus IPC. Closing the window stops
+ * the dev server and notifies the editor so its Preview button resets.
+ */
+function openPreviewWindow(url: string): { ok: boolean; error?: string } {
+  if (!isLocalhostPreviewUrl(url)) {
+    return { ok: false, error: "Refused to open a non-local preview URL." };
+  }
+  if (previewWindow && !previewWindow.isDestroyed()) {
+    void previewWindow.loadURL(url);
+    previewWindow.focus();
+    return { ok: true };
+  }
+  previewWindow = new BrowserWindow({
+    width: 1280,
+    height: 860,
+    minWidth: 480,
+    minHeight: 480,
+    show: false,
+    backgroundColor: "#ffffff",
+    title: "Zephus Preview",
+    autoHideMenuBar: true,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
+      devTools: isDev,
+    },
+  });
+  void previewWindow.loadURL(url);
+  previewWindow.once("ready-to-show", () => previewWindow?.show());
+  previewWindow.on("closed", () => {
+    previewWindow = null;
+    // Closing the preview always tears down the dev server it was showing.
+    stopDevServer();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(IPC.previewClosed);
+    }
+  });
+  return { ok: true };
+}
+
+function closePreviewWindow(): void {
+  if (previewWindow && !previewWindow.isDestroyed()) {
+    previewWindow.close();
+  }
+  previewWindow = null;
 }
 
 function createMainWindow(): void {
@@ -493,6 +562,27 @@ if (!isPrimaryInstance) {
       clearUpdateInstalling: () => {
         isInstallingUpdate = false;
       },
+    });
+    // Preview-window IPC lives here because it owns BrowserWindow lifecycle.
+    // Only the main editor window may drive it.
+    const isMainSender = (senderId?: number): boolean =>
+      Boolean(
+        mainWindow &&
+        !mainWindow.isDestroyed() &&
+        senderId === mainWindow.webContents.id,
+      );
+    ipcMain.handle(IPC.previewWindowOpen, (event, url: string) => {
+      if (!isMainSender(event.sender.id)) {
+        return { ok: false, error: "Unauthorized sender." };
+      }
+      return openPreviewWindow(url);
+    });
+    ipcMain.handle(IPC.previewWindowClose, (event) => {
+      if (!isMainSender(event.sender.id)) {
+        return { ok: false, error: "Unauthorized sender." };
+      }
+      closePreviewWindow();
+      return { ok: true };
     });
     createSplash();
     createMainWindow();
