@@ -22,7 +22,9 @@
 ---
 
 ## Changes in `v0.1.0-db.10:`
-* **Preview:** Moved the astro dev server preview from in the editor to it's own separate window.
+* **Preview:** The Astro dev-server preview now opens in its own dedicated window instead of inside the editor canvas — fixes the "half preview / half edit mode" state and keeps the editor fully usable while previewing.
+* **Preview:** Closing the preview window (or the editor's Stop Preview button) now force-stops the dev server. The teardown kills the whole process tree on every OS — process-group kill on macOS/Linux and `taskkill /t` on Windows — so the server port is never left bound by an orphaned process.
+* **Security:** The preview window loads the local dev server with no preload bridge, sandboxed and context-isolated, and only localhost URLs are allowed.
 
 ## Changes in `v0.1.0-db.9:`
 * **CI Runners:** Added `.gitattributes` to fix failing windows-latest runner.
