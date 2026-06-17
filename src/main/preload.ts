@@ -295,6 +295,18 @@ const api = {
   stopPreview: (): Promise<OperationResult> =>
     ipcRenderer.invoke(IPC.previewStop),
 
+  openPreviewWindow: (url: string): Promise<OperationResult> =>
+    ipcRenderer.invoke(IPC.previewWindowOpen, url),
+
+  closePreviewWindow: (): Promise<OperationResult> =>
+    ipcRenderer.invoke(IPC.previewWindowClose),
+
+  onPreviewClosed: (callback: () => void): (() => void) => {
+    const listener = () => callback();
+    ipcRenderer.on(IPC.previewClosed, listener);
+    return () => ipcRenderer.removeListener(IPC.previewClosed, listener);
+  },
+
   ensureThemePreviewServer: (): Promise<ThemePreviewServerResult> =>
     ipcRenderer.invoke(IPC.themePreviewEnsure),
 

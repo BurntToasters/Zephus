@@ -5,10 +5,10 @@
 
 | <img height="20" src="https://raw.githubusercontent.com/BurntToasters/bcls/main/media/windows.png" /> Windows | <img height="20" src="https://raw.githubusercontent.com/BurntToasters/bcls/main/media/mac.png" /> macOS | <img height="20" src="https://raw.githubusercontent.com/BurntToasters/bcls/main/media/linux.png" /> Linux |
 | :--- | :--- | :--- |
-| **EXE:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.9/Zephus-Windows-x64.exe) / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.9/Zephus-Windows-arm64.exe) | **[Universal DMG](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.9/Zephus-MacOS-universal.dmg)** | **AppImage:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.9/Zephus-Linux-x86_64.AppImage) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.9/Zephus-Linux-arm64.AppImage) --> |
-| | **[Universal ZIP](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.9/Zephus-MacOS-universal.zip)** | **DEB:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.9/Zephus-Linux-amd64.deb) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.9/Zephus-Linux-arm64.deb) --> |
-| | | **RPM:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.9/Zephus-Linux-x86_64.rpm) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.9/Zephus-Linux-aarch64.rpm) --> |
-| | | **Flatpak:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.9/Zephus-Linux-x86_64.flatpak) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.9/Zephus-Linux-aarch64.flatpak) --> |
+| **EXE:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.10/Zephus-Windows-x64.exe) / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.10/Zephus-Windows-arm64.exe) | **[Universal DMG](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.10/Zephus-MacOS-universal.dmg)** | **AppImage:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.10/Zephus-Linux-x86_64.AppImage) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.10/Zephus-Linux-arm64.AppImage) --> |
+| | **[Universal ZIP](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.10/Zephus-MacOS-universal.zip)** | **DEB:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.10/Zephus-Linux-amd64.deb) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.10/Zephus-Linux-arm64.deb) --> |
+| | | **RPM:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.10/Zephus-Linux-x86_64.rpm) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.10/Zephus-Linux-aarch64.rpm) --> |
+| | | **Flatpak:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.10/Zephus-Linux-x86_64.flatpak) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.10/Zephus-Linux-aarch64.flatpak) --> |
 
 > [!IMPORTANT]
 > The `.sig` files in this repo are NOT normal GPG signatures — they are for Zephus's built-in updater to verify the integrity of updates before downloading and installing.
@@ -20,6 +20,11 @@
 ### ℹ️ Enjoying Zephus? Consider [❤️ Supporting Me! ❤️](https://rosie.run/support)
 
 ---
+
+## Changes in `v0.1.0-db.10:`
+* **Preview:** The Astro dev-server preview now opens in its own dedicated window instead of inside the editor canvas — fixes the "half preview / half edit mode" state and keeps the editor fully usable while previewing.
+* **Preview:** Closing the preview window (or the editor's Stop Preview button) now force-stops the dev server. The teardown kills the whole process tree on every OS — process-group kill on macOS/Linux and `taskkill /t` on Windows — so the server port is never left bound by an orphaned process.
+* **Security:** The preview window loads the local dev server with no preload bridge, sandboxed and context-isolated, and only localhost URLs are allowed.
 
 ## Changes in `v0.1.0-db.9:`
 * **CI Runners:** Added `.gitattributes` to fix failing windows-latest runner.

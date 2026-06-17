@@ -7575,23 +7575,32 @@ async function ensureDependencies(): Promise<boolean> {
   return runInstallFlow(state.project.path);
 }
 
+function updatePreviewButton(running: boolean): void {
+  const btn = $maybe("btn-preview");
+  if (!btn) return;
+  btn.innerHTML = running
+    ? `<i data-lucide="square"></i> Stop Preview`
+    : `<i data-lucide="play"></i> Start Preview`;
+  refreshIcons();
+}
+
+function resetPreviewState(message?: string): void {
+  state.previewUrl = null;
+  state.unsubLog?.();
+  state.unsubLog = null;
+  updatePreviewButton(false);
+  refreshGuidancePanels();
+  if (message) setStatus(message);
+}
+
 async function togglePreview(): Promise<void> {
   if (!state.project) return;
-  const frame = $("preview-frame") as HTMLIFrameElement;
 
+  // Preview runs in a dedicated external window loading the dev server, so the
+  // editor stays fully in edit mode. Stopping closes that window + the server.
   if (state.previewUrl) {
-    await window.zephus.stopPreview();
-    state.previewUrl = null;
-    state.unsubLog?.();
-    state.unsubLog = null;
-    frame.removeAttribute("sandbox");
-    frame.removeAttribute("src");
-    frame.classList.add("hidden");
-    $("btn-preview").innerHTML = `<i data-lucide="play"></i> Start Preview`;
-    refreshIcons();
-    setMode(state.mode);
-    refreshGuidancePanels();
-    setStatus("Preview stopped.");
+    await window.zephus.closePreviewWindow();
+    resetPreviewState("Preview stopped.");
     return;
   }
 
@@ -7614,16 +7623,18 @@ async function togglePreview(): Promise<void> {
     state.unsubLog = null;
     return;
   }
+  const opened = await window.zephus.openPreviewWindow(result.url);
+  if (!opened.ok) {
+    setStatus("Preview failed: " + friendlyError(opened.error));
+    await window.zephus.stopPreview();
+    state.unsubLog?.();
+    state.unsubLog = null;
+    return;
+  }
   state.previewUrl = result.url;
-  frame.setAttribute("sandbox", "allow-scripts allow-same-origin");
-  frame.src = result.url;
-  frame.classList.remove("hidden");
-  $("canvas").classList.add("hidden");
-  $("code-editor").classList.add("hidden");
-  $("btn-preview").innerHTML = `<i data-lucide="square"></i> Stop Preview`;
-  refreshIcons();
+  updatePreviewButton(true);
   refreshGuidancePanels();
-  setStatus("Preview running at " + result.url);
+  setStatus("Preview open in a separate window: " + result.url);
 }
 
 /* ---------- Publish ---------- */
@@ -7681,9 +7692,8 @@ async function closeProject(): Promise<void> {
     return;
   }
   if (state.previewUrl) {
-    await window.zephus.stopPreview();
-    state.previewUrl = null;
-    state.unsubLog?.();
+    await window.zephus.closePreviewWindow();
+    resetPreviewState();
   }
   await window.zephus.stopWatch();
   state.unsubExternal?.();
@@ -8692,6 +8702,12 @@ function init(): void {
   $("btn-publish").onclick = () => void publishSite();
   $("btn-preview").onclick = () => void togglePreview();
   $("btn-close").onclick = () => void closeProject();
+  // The preview window can be closed by the user (native close button); when
+  // that happens the main process tears down the dev server and tells us, so
+  // the Preview button + status reset to match.
+  window.zephus.onPreviewClosed(() => {
+    if (state.previewUrl) resetPreviewState("Preview stopped.");
+  });
   $("vp-desktop").onclick = () => setViewport("desktop");
   $("vp-tablet").onclick = () => setViewport("tablet");
   $("vp-mobile").onclick = () => setViewport("mobile");

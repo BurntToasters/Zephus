@@ -548,6 +548,9 @@ interface ZephusApi {
   listPages(projectPath: string, pagesDir: string): Promise<string[]>;
   startPreview(projectPath: string): Promise<DevServerStartResult>;
   stopPreview(): Promise<OperationResult>;
+  openPreviewWindow(url: string): Promise<OperationResult>;
+  closePreviewWindow(): Promise<OperationResult>;
+  onPreviewClosed(callback: () => void): () => void;
   ensureThemePreviewServer(): Promise<ThemePreviewServerResult>;
   publish(
     projectPath: string,
