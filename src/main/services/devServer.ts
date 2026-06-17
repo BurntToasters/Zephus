@@ -10,6 +10,16 @@ import { npmCommand } from "./npmCommand";
 const URL_PATTERN =
   /(https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\]):\d+\/?[^\s]*)/i;
 const STARTUP_TIMEOUT_MS = 60_000;
+// Strips ANSI color/escape sequences. Astro/Vite still colorize their startup
+// banner even with FORCE_COLOR=0, and the URL pattern's `[^\s]*` tail would
+// otherwise swallow a trailing reset code (e.g. ESC[39m) into the captured
+// URL — producing a malformed iframe src that 404s.
+// eslint-disable-next-line no-control-regex
+const ANSI_PATTERN = /\x1b\[[0-9;]*m/g;
+
+function stripAnsi(text: string): string {
+  return text.replace(ANSI_PATTERN, "");
+}
 
 interface RunningServer {
   projectPath: string;
@@ -119,7 +129,7 @@ async function startDevServerProcess(
     const child = spawn(npm.command, npm.args, {
       cwd: projectPath,
       windowsHide: true,
-      env: { ...spawnEnv, FORCE_COLOR: "0" },
+      env: { ...spawnEnv, FORCE_COLOR: "0", NO_COLOR: "1" },
     });
 
     current = { projectPath, child, url: null };
@@ -135,7 +145,7 @@ async function startDevServerProcess(
     }, STARTUP_TIMEOUT_MS);
 
     const handleData = (data: Buffer) => {
-      const text = data.toString();
+      const text = stripAnsi(data.toString());
       onLog(text);
       const match = text.match(URL_PATTERN);
       const url = match?.[1];
