@@ -491,11 +491,42 @@ function escapeAttr(value: string): string {
 }
 
 function cloneBlock(block: Block): Block {
-  return {
+  const copy: Block = {
     ...block,
     props: { ...block.props },
     style: block.style ? JSON.parse(JSON.stringify(block.style)) : undefined,
   };
+  // Deep-clone nested structures so a duplicate never shares mutable state with
+  // its source, and give nested children fresh ids to avoid id collisions.
+  const nested = block as unknown as {
+    children?: Block[];
+    asset?: unknown;
+    link?: unknown;
+    form?: unknown;
+  };
+  const target = copy as unknown as {
+    children?: Block[];
+    asset?: unknown;
+    link?: unknown;
+    form?: unknown;
+  };
+  if (Array.isArray(nested.children)) {
+    target.children = nested.children.map((child) => {
+      const childCopy = cloneBlock(child);
+      childCopy.id = uid();
+      return childCopy;
+    });
+  }
+  if (nested.asset !== undefined) {
+    target.asset = JSON.parse(JSON.stringify(nested.asset));
+  }
+  if (nested.link !== undefined) {
+    target.link = JSON.parse(JSON.stringify(nested.link));
+  }
+  if (nested.form !== undefined) {
+    target.form = JSON.parse(JSON.stringify(nested.form));
+  }
+  return copy;
 }
 
 function cloneSections(sections: SectionNode[]): SectionNode[] {
@@ -4140,6 +4171,20 @@ let dropSectionId: string | null = null;
 let draggingSectionId: string | null = null;
 let sectionDropIndex = -1;
 
+// Manual double-click tracking. The canvas rebuilds on every selection change,
+// so a block's DOM node is replaced between the two clicks of a native
+// double-click and the browser never fires `dblclick`. We detect a rapid
+// second click on the same block id ourselves so double-click-to-edit works on
+// the first try, not only after the block is already selected.
+let lastClickBlockId: string | null = null;
+let lastClickTime = 0;
+const DOUBLE_CLICK_MS = 400;
+// True while an inline contenteditable session is active. Used to stop the
+// block click/select logic from hijacking clicks during editing (which would
+// re-enter edit mode and collapse the user's text selection — e.g. when
+// double-clicking a word to highlight it).
+let isInlineEditing = false;
+
 function captureSnapshot(): EditorSnapshot {
   return {
     sections: cloneSections(state.sections),
@@ -4200,6 +4245,39 @@ function commitBlockChange(summary: string): void {
 }
 
 let inspectorUndoActive = false;
+// Debounce timer for canvas repaints triggered by rapid property edits.
+let inspectorRepaintTimer: number | null = null;
+
+/**
+ * Repaints the canvas + layers. While the user is actively typing in a text
+ * field, repaints are debounced so a long page doesn't re-render on every
+ * keystroke (the model is already updated synchronously, so save/serialize
+ * stay correct). A pending repaint is flushed on blur via endInspectorEdit.
+ */
+function scheduleCanvasRepaint(debounce: boolean): void {
+  if (inspectorRepaintTimer !== null) {
+    window.clearTimeout(inspectorRepaintTimer);
+    inspectorRepaintTimer = null;
+  }
+  if (!debounce) {
+    renderLayers();
+    renderCanvas();
+    return;
+  }
+  inspectorRepaintTimer = window.setTimeout(() => {
+    inspectorRepaintTimer = null;
+    renderLayers();
+    renderCanvas();
+  }, 140);
+}
+
+function flushCanvasRepaint(): void {
+  if (inspectorRepaintTimer === null) return;
+  window.clearTimeout(inspectorRepaintTimer);
+  inspectorRepaintTimer = null;
+  renderLayers();
+  renderCanvas();
+}
 
 function beginInspectorEdit(): void {
   if (inspectorUndoActive) return;
@@ -4209,6 +4287,7 @@ function beginInspectorEdit(): void {
 
 function endInspectorEdit(): void {
   inspectorUndoActive = false;
+  flushCanvasRepaint();
 }
 
 function commitInspectorChange(
@@ -4220,8 +4299,14 @@ function commitInspectorChange(
   syncSelectionState();
   trackChange(summary);
   markDirty(true);
-  renderLayers();
-  renderCanvas();
+  // Debounce the (potentially expensive) repaint only while typing in a text
+  // field; everything else repaints immediately for snappy feedback.
+  const active = document.activeElement as HTMLElement | null;
+  const typing =
+    !rerenderProperties &&
+    !!active &&
+    (active.tagName === "INPUT" || active.tagName === "TEXTAREA");
+  scheduleCanvasRepaint(typing);
   if (rerenderProperties) {
     endInspectorEdit();
     renderProperties();
@@ -5188,6 +5273,11 @@ function renderCanvas(): void {
         `${blockLabel(block)} block${block.id === state.selectedId ? ", selected" : ""}`,
       );
       shell.onkeydown = (event) => {
+        // Only treat Enter/Space as "activate block" when the shell itself is
+        // focused. While inline-editing, the contenteditable child is the
+        // target and its keystrokes (notably Space) must pass through, or the
+        // user can't type spaces on the canvas.
+        if (event.target !== event.currentTarget) return;
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
           if (
@@ -5247,6 +5337,26 @@ function renderCanvas(): void {
 
       shell.onclick = (event) => {
         event.stopPropagation();
+        // While inline-editing, let native clicks (caret placement, word
+        // double-click selection) work untouched — don't re-enter edit mode.
+        if (isInlineEditing) return;
+        // Detect a rapid second click on the same block ourselves (native
+        // dblclick can't fire because the canvas rebuilds between clicks) so
+        // double-click starts inline text editing on the first attempt.
+        const now = Date.now();
+        const isSecondClick =
+          lastClickBlockId === block.id &&
+          now - lastClickTime < DOUBLE_CLICK_MS;
+        lastClickBlockId = block.id;
+        lastClickTime = now;
+        if (
+          isSecondClick &&
+          TEXT_EDITABLE.includes(block.type) &&
+          !block.locked
+        ) {
+          startFirstInlineEdit(preview, block);
+          return;
+        }
         // Re-clicking the already-selected block must NOT rebuild the canvas:
         // a full re-render swaps out this DOM node between the two clicks of a
         // native double-click, so dblclick never fires and inline text editing
@@ -5395,6 +5505,7 @@ function handleDrop(e: DragEvent): void {
   dropSectionId = null;
   draggingSectionId = null;
   sectionDropIndex = -1;
+  indicator?.remove();
 }
 
 interface InlineEditTarget {
@@ -5459,6 +5570,9 @@ function attachInlineTarget(
   el.classList.add("editable-text-target");
   el.title = "Double-click to edit text";
   el.ondblclick = (event) => {
+    // Already editing: let the browser's native word-selection happen instead
+    // of restarting the edit session (which would collapse the selection).
+    if (isInlineEditing) return;
     event.preventDefault();
     event.stopPropagation();
     startInlineEdit(el, block, target);
@@ -5580,6 +5694,7 @@ function startInlineEdit(
   el.setAttribute("role", "textbox");
   el.setAttribute("aria-label", "Edit text");
   el.classList.add("inline-editing");
+  isInlineEditing = true;
   el.focus();
   const selection = window.getSelection();
   if (selection) {
@@ -5590,6 +5705,7 @@ function startInlineEdit(
     selection.addRange(range);
   }
   const cleanup = (): void => {
+    isInlineEditing = false;
     el.removeAttribute("contenteditable");
     el.removeAttribute("role");
     el.removeAttribute("aria-label");
@@ -5625,9 +5741,16 @@ function startInlineEdit(
       cancel();
       return;
     }
-    if (event.key === "Enter" && (!target.multiline || !event.shiftKey)) {
-      event.preventDefault();
-      finish();
+    if (event.key === "Enter") {
+      // Allow a literal line break only for free-form multiline props. Targets
+      // backed by a line-encoded shared prop (lineIndex set, e.g. an accordion
+      // answer) must NOT contain newlines — that would corrupt the encoding —
+      // so those still commit on Enter.
+      const allowNewline = target.multiline && target.lineIndex === undefined;
+      if (!allowNewline || event.metaKey || event.ctrlKey) {
+        event.preventDefault();
+        finish();
+      }
     }
   };
   el.addEventListener("blur", finish);
@@ -6949,7 +7072,9 @@ function renderProperties(): void {
   layoutGroup.appendChild(
     labeledLength("Gap", block.style?.gap ?? "", (v) => commitStyle("gap", v)),
   );
-  if (block.type === "columns" || block.type === "gallery") {
+  if (block.type === "gallery") {
+    // `columns` blocks edit their column count via the Content-group select;
+    // exposing a second free-text control here let the two values drift.
     layoutGroup.appendChild(
       labeledInput("Columns", block.style?.columns ?? "", (v) =>
         commitStyle("columns", v),
@@ -7652,6 +7777,21 @@ function onKeydown(e: KeyboardEvent): void {
       active.tagName === "TEXTAREA" ||
       active.tagName === "SELECT");
   if (editing) return;
+  // Don't let a destructive block shortcut fire while a chrome control (e.g. a
+  // toolbar button) holds focus — only when a block itself is the focus/target.
+  const onChromeControl =
+    !!active &&
+    (active.tagName === "BUTTON" || active.getAttribute("role") === "button") &&
+    !active.classList.contains("block");
+  if (
+    onChromeControl &&
+    (e.key === "Delete" ||
+      e.key === "Backspace" ||
+      e.key === "d" ||
+      e.key === "D")
+  ) {
+    return;
+  }
   if (mod && e.key === "z" && !e.shiftKey) {
     doUndo();
     e.preventDefault();

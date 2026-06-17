@@ -5,10 +5,10 @@
 
 | <img height="20" src="https://raw.githubusercontent.com/BurntToasters/bcls/main/media/windows.png" /> Windows | <img height="20" src="https://raw.githubusercontent.com/BurntToasters/bcls/main/media/mac.png" /> macOS | <img height="20" src="https://raw.githubusercontent.com/BurntToasters/bcls/main/media/linux.png" /> Linux |
 | :--- | :--- | :--- |
-| **EXE:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.7/Zephus-Windows-x64.exe) / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.7/Zephus-Windows-arm64.exe) | **[Universal DMG](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.7/Zephus-MacOS-universal.dmg)** | **AppImage:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.7/Zephus-Linux-x86_64.AppImage) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.7/Zephus-Linux-arm64.AppImage) --> |
-| | **[Universal ZIP](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.7/Zephus-MacOS-universal.zip)** | **DEB:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.7/Zephus-Linux-amd64.deb) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.7/Zephus-Linux-arm64.deb) --> |
-| | | **RPM:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.7/Zephus-Linux-x86_64.rpm) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.7/Zephus-Linux-aarch64.rpm) --> |
-| | | **Flatpak:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.7/Zephus-Linux-x86_64.flatpak) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.7/Zephus-Linux-aarch64.flatpak) --> |
+| **EXE:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.8/Zephus-Windows-x64.exe) / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.8/Zephus-Windows-arm64.exe) | **[Universal DMG](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.8/Zephus-MacOS-universal.dmg)** | **AppImage:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.8/Zephus-Linux-x86_64.AppImage) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.8/Zephus-Linux-arm64.AppImage) --> |
+| | **[Universal ZIP](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.8/Zephus-MacOS-universal.zip)** | **DEB:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.8/Zephus-Linux-amd64.deb) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.8/Zephus-Linux-arm64.deb) --> |
+| | | **RPM:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.8/Zephus-Linux-x86_64.rpm) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.8/Zephus-Linux-aarch64.rpm) --> |
+| | | **Flatpak:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.8/Zephus-Linux-x86_64.flatpak) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.8/Zephus-Linux-aarch64.flatpak) --> |
 
 > [!IMPORTANT]
 > The `.sig` files in this repo are NOT normal GPG signatures — they are for Zephus's built-in updater to verify the integrity of updates before downloading and installing.
@@ -20,6 +20,30 @@
 ### ℹ️ Enjoying Zephus? Consider [❤️ Supporting Me! ❤️](https://rosie.run/support)
 
 ---
+
+## Changes in `v0.1.0-db.8:`
+
+### Editor — Inline Editing
+* **Fix:** Double-click inline text editing now works on the first attempt — clicking a block triggered a full canvas re-render between the two clicks of a double-click, so the browser never fired `dblclick`. Added manual rapid-second-click detection so double-clicking immediately enters edit mode.
+* **Fix:** Spacebar no longer gets swallowed while typing on the canvas — the block shell's keyboard handler was intercepting Space for accessibility activation, which also fired during inline editing. Now only acts when the shell itself is focused, not its children.
+* **Fix:** Double-clicking a word to highlight it no longer immediately un-highlights — the click and `dblclick` handlers were re-entering edit mode and collapsing the selection. Native word selection now works correctly while editing.
+* **Fix:** Multiline blocks (text, quote, testimonial, etc.) now insert a real line break on Enter. Commit with Cmd/Ctrl+Enter or blur. Single-line targets (heading, button) still commit on Enter. Line-encoded targets (accordion items) still commit on Enter to avoid corrupting their encoding.
+* **Fix:** Blocks rendered black/unreadable on the canvas — block background was incorrectly set to the app chrome color instead of transparent, making text invisible against themed backgrounds.
+
+### Editor — Canvas & Resize
+* **Fix:** Resize handles no longer allow blocks or sections to be dragged wider than the page boundary. Width is clamped to the parent container's content width (both pointer drag and keyboard resize).
+* **Fix:** Stale drop-indicator no longer lingers on the canvas after a drag completes.
+* **Fix:** `Delete`/`Backspace`/`Cmd+D` block shortcuts no longer fire while a toolbar button (Up, Down, Dup, etc.) holds keyboard focus.
+
+### Editor — Property Panel
+* **Fix:** Typing in a property panel text field no longer causes per-keystroke full canvas rebuilds. The canvas repaint is now debounced (140ms) while typing and flushed immediately on blur — model updates remain synchronous so save is unaffected.
+* **Fix:** Removed a duplicate "Columns" free-text input in the Layout group for `columns` blocks. Column count is now controlled exclusively by the Content-group select, eliminating a two-source drift bug.
+
+### Preview
+* **Fix:** Live preview no longer shows a 404 "Path: / [39m" — Astro/Vite colorize their startup banner even with `FORCE_COLOR=0`, causing the URL regex to swallow a trailing ANSI reset code into the captured URL, producing a malformed iframe src. ANSI sequences are now stripped before URL extraction and `NO_COLOR=1` is also set.
+
+### Setup
+* **Fix:** "Setting Up Your Site" install modal no longer shows a blank progress area. A ticking elapsed-time counter updates every second and live npm output streams to the log box so there is always visible activity during dependency installation.
 
 ## Changes in `v0.1.0-db.7:`
 * **Editor:** Fixed blocks rendering black/unreadable on the canvas — block background was incorrectly set to the app chrome color instead of transparent, making text invisible against themed backgrounds.
