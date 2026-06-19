@@ -73,7 +73,7 @@ describe("detectAstro", () => {
     fs.writeFileSync(path.join(tmpDir, "package.json"), JSON.stringify(pkg));
     const result = detectAstro(tmpDir);
     expect(result.srcDir).toBe("source");
-    expect(result.pagesDir).toBe(path.join("source", "pages"));
+    expect(result.pagesDir).toBe("source/pages");
     expect(result.configReadError).toBe(false);
   });
 
@@ -91,7 +91,7 @@ describe("detectAstro", () => {
 
     const result = detectAstro(tmpDir);
     expect(result.srcDir).toBe("src");
-    expect(result.pagesDir).toBe(path.join("src", "pages"));
+    expect(result.pagesDir).toBe("src/pages");
     expect(result.publicDir).toBe("public");
     expect(result.outDir).toBe("dist");
     expect(result.configReadError).toBe(true);
@@ -122,9 +122,9 @@ describe("listPages", () => {
     fs.writeFileSync(path.join(dir, "about.md"), "");
     fs.writeFileSync(path.join(dir, "style.css"), ""); // not a page
     const pages = listPages(tmpDir, "src/pages");
-    expect(pages).toContain(path.join("src", "pages", "index.astro"));
-    expect(pages).toContain(path.join("src", "pages", "about.md"));
-    expect(pages).not.toContain(path.join("src", "pages", "style.css"));
+    expect(pages).toContain("src/pages/index.astro");
+    expect(pages).toContain("src/pages/about.md");
+    expect(pages).not.toContain("src/pages/style.css");
   });
 
   it("does not walk pages directories outside the project", () => {

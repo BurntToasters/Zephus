@@ -22,6 +22,10 @@ export function normalizeProjectRelativeDir(
   return normalized;
 }
 
+export function toProjectRelativePath(value: string): string {
+  return value.replace(/\\/g, "/");
+}
+
 export function resolveProjectRelativeDir(
   projectPath: string,
   value: string,
