@@ -29,6 +29,7 @@ import {
   assertRealpathInside,
   safeResolve as safeResolveString,
 } from "./fsSafe";
+import { toProjectRelativePath } from "./projectPaths";
 
 const FRONTMATTER_PATTERN = /^(---\r?\n[\s\S]*?\r?\n---\r?\n?)/;
 const ZEPHUS_SCHEMA_VERSION = 1;
@@ -96,11 +97,17 @@ export function normalizePageSlug(input: string): string | null {
 }
 
 export function routeFromPage(page: string, pagesDir: string): string {
-  const rel = page
-    .replace(
-      new RegExp(`^${pagesDir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[/\\\\]?`),
-      "",
-    )
+  const normalizedPage = toProjectRelativePath(page).replace(/^\/+/, "");
+  const normalizedPagesDir = toProjectRelativePath(pagesDir).replace(
+    /^\/+|\/+$/g,
+    "",
+  );
+  const prefix = normalizedPagesDir ? `${normalizedPagesDir}/` : "";
+  const rel = (
+    normalizedPage.startsWith(prefix)
+      ? normalizedPage.slice(prefix.length)
+      : normalizedPage
+  )
     .replace(/\.(astro|md|mdx|html)$/i, "")
     .replace(/\\/g, "/");
   if (!rel || rel === "index") return "/";
@@ -117,8 +124,13 @@ export function pagePathFromSlug(
   slug: string,
   ext = ".astro",
 ): string {
-  if (slug === "index") return path.join(pagesDir, `index${ext}`);
-  return path.join(pagesDir, `${slug}${ext}`);
+  const normalizedPagesDir = toProjectRelativePath(pagesDir).replace(
+    /\/+$/g,
+    "",
+  );
+  if (slug === "index")
+    return path.posix.join(normalizedPagesDir, `index${ext}`);
+  return path.posix.join(normalizedPagesDir, `${slug}${ext}`);
 }
 
 function pageSchemaRelativePath(slug: string): string {
@@ -933,8 +945,15 @@ function parseBlocksFromInner(inner: string): BlockNode[] {
   return blocks;
 }
 
+function normalizeHashText(value: string): string {
+  return value.replace(/\r\n/g, "\n");
+}
+
 function hashText(value: string): string {
-  return crypto.createHash("sha1").update(value).digest("hex");
+  return crypto
+    .createHash("sha1")
+    .update(normalizeHashText(value))
+    .digest("hex");
 }
 
 function defaultSectionNode(blocks: BlockNode[]): SectionNode {
@@ -1399,7 +1418,9 @@ function readPageDocumentFile(
   projectPath: string,
   slug: string,
 ): PageDocument | null {
-  return readJsonFile<PageDocument>(pageSchemaFile(projectPath, slug));
+  const doc = readJsonFile<PageDocument>(pageSchemaFile(projectPath, slug));
+  if (!doc) return null;
+  return { ...doc, page: toProjectRelativePath(doc.page) };
 }
 
 function writePageDocumentFile(projectPath: string, doc: PageDocument): void {
@@ -1616,7 +1637,11 @@ export function ensureVisualSchema(
 ): SchemaEnsureResult {
   try {
     const astro = detectAstro(projectPath);
-    const layoutPath = path.join(astro.srcDir, "layouts", "BaseLayout.astro");
+    const layoutPath = path.posix.join(
+      astro.srcDir,
+      "layouts",
+      "BaseLayout.astro",
+    );
     const repoSettings = readRepoSettings(projectPath) as unknown as Record<
       string,
       unknown
@@ -1784,7 +1809,9 @@ function resolveManagedStatus(
 ): ManagedFileStatus {
   if (doc.detached) return "detached";
   if (actualSource === null) return "missing";
-  if (actualSource === generatedSource) return "managed";
+  if (normalizeHashText(actualSource) === normalizeHashText(generatedSource)) {
+    return "managed";
+  }
   if (!doc.generatedHash) return "managed";
   return hashText(actualSource) === doc.generatedHash
     ? "managed"

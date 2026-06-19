@@ -88,6 +88,21 @@ describe("schema service", () => {
     expect(page.pageDocument?.managedFileStatus).toBe("managed");
   });
 
+  it("reads POSIX sidecars when callers pass Windows-style page paths", () => {
+    const ensured = ensureVisualSchema(tmpDir, pagesDir);
+    expect(ensured.ok).toBe(true);
+
+    const page = readPageDocument(
+      tmpDir,
+      "src\\pages\\index.astro",
+      "src\\pages",
+    );
+
+    expect(page.ok).toBe(true);
+    expect(page.pageDocument?.page).toBe("src/pages/index.astro");
+    expect(page.pageDocument?.slug).toBe("index");
+  });
+
   it("strips dangerous URL schemes from emitted links (build side)", () => {
     ensureVisualSchema(tmpDir, pagesDir);
     const created = createSchemaPage(tmpDir, pagesDir, "danger");
@@ -253,6 +268,21 @@ import BaseLayout from '../layouts/BaseLayout.astro';
     expect(reread.ok).toBe(true);
     expect(reread.pageDocument?.managedFileStatus).toBe("out-of-sync");
     expect(reread.source).toBe(manualSource);
+  });
+
+  it("does not mark managed pages out-of-sync for CRLF-only changes", () => {
+    ensureVisualSchema(tmpDir, pagesDir);
+    const created = createSchemaPage(tmpDir, pagesDir, "line-endings");
+    expect(created.ok).toBe(true);
+    const page = pagePathFromSlug(pagesDir, "line-endings");
+    const pageFile = path.join(tmpDir, page);
+    const lfSource = fs.readFileSync(pageFile, "utf8");
+    fs.writeFileSync(pageFile, lfSource.replace(/\n/g, "\r\n"), "utf8");
+
+    const reread = readPageDocument(tmpDir, page, pagesDir);
+
+    expect(reread.ok).toBe(true);
+    expect(reread.pageDocument?.managedFileStatus).toBe("managed");
   });
 
   it("keeps a real section element for wrapperless styled sections", () => {
