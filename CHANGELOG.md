@@ -22,6 +22,7 @@
 ---
 
 ## Changes in `v0.1.0-db.11:`
+* **Win:** Fixes issues with windows file pathing for the editor engine and user's website git repos.
 
 ## Changes in `v0.1.0-db.10:`
 * **Preview:** The Astro dev-server preview now opens in its own dedicated window instead of inside the editor canvas — fixes the "half preview / half edit mode" state and keeps the editor fully usable while previewing.
