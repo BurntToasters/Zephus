@@ -5,6 +5,7 @@ import { AstroInfo, PackageValidation, ProjectOpenResult } from "../types";
 import {
   normalizeProjectRelativeDir,
   resolveProjectRelativeDir,
+  toProjectRelativePath,
 } from "./projectPaths";
 import { getVisualSchemaStatus } from "./schema";
 import { isZephusProject } from "./settings";
@@ -121,7 +122,7 @@ export function detectAstro(projectPath: string): AstroInfo {
     isAstro: Boolean(configFile) && Boolean(version),
     version,
     srcDir,
-    pagesDir: path.join(srcDir, "pages"),
+    pagesDir: path.posix.join(srcDir, "pages"),
     publicDir,
     outDir,
     configFile,
@@ -152,7 +153,7 @@ export function listPages(projectPath: string, pagesDir: string): string[] {
       if (entry.isDirectory()) {
         walk(full);
       } else if (entry.isFile() && PAGE_EXT.test(entry.name)) {
-        out.push(path.relative(projectPath, full));
+        out.push(toProjectRelativePath(path.relative(projectPath, full)));
       }
     }
   }
@@ -217,7 +218,7 @@ function makeFailure(projectPath: string, message: string): ProjectOpenResult {
       isAstro: false,
       version: null,
       srcDir: "src",
-      pagesDir: path.join("src", "pages"),
+      pagesDir: path.posix.join("src", "pages"),
       publicDir: "public",
       outDir: "dist",
       configFile: null,

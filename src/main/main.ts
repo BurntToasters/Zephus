@@ -305,7 +305,9 @@ function installGlobalNavigationGuards(): void {
 
 /** True for an http(s) localhost/127.0.0.1 URL (the dev-server preview). */
 function isLocalhostPreviewUrl(target: string): boolean {
-  return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i.test(target);
+  return /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/|$)/i.test(
+    target,
+  );
 }
 
 /**
