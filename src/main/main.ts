@@ -7,7 +7,7 @@ import { stopDevServer } from "./services/devServer";
 import { stopThemePreviewServer } from "./services/themePreviewServer";
 import { readGlobalSettings, writeGlobalSettings } from "./services/settings";
 import { setupAutoUpdater, checkForUpdates } from "./updater";
-import { checkNodeVersion } from "./services/nodeCheck";
+import { checkNodeVersion, validateNodePath } from "./services/nodeCheck";
 import { IPC } from "./ipcChannels";
 
 const isDev =
@@ -241,7 +241,7 @@ async function completeSmokeRun(windowRef: BrowserWindow): Promise<void> {
 function isAllowedFrameUrl(target: string, rendererRootUrl: string): boolean {
   if (target.startsWith(rendererRootUrl)) return true;
   if (target === "about:blank") return true;
-  return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i.test(target);
+  return isLocalhostPreviewUrl(target);
 }
 
 /**
@@ -440,7 +440,7 @@ function setupSecurityHeaders(): void {
     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
     "img-src 'self' data:; connect-src 'self'; object-src 'none'; " +
     "base-uri 'self'; frame-ancestors 'none'; form-action 'self'; " +
-    "frame-src 'self' http://localhost:* http://127.0.0.1:*";
+    "frame-src 'self' http://localhost:* http://127.0.0.1:* http://[::1]:*";
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     if (!details.url.startsWith("file://")) {
       callback({ responseHeaders: details.responseHeaders });
@@ -475,7 +475,19 @@ async function promptLocateNode(): Promise<void> {
 
   const selected = picked.filePaths[0];
   if (!selected) return;
-  const status = await checkNodeVersion(selected);
+  const validation = validateNodePath(selected);
+  if (!validation.ok || !validation.path) {
+    await dialog.showMessageBox(target as BrowserWindow, {
+      type: "error",
+      title: "Invalid Node.js Location",
+      message: validation.error ?? "That file is not a valid Node.js path.",
+      detail: selected,
+      buttons: ["OK"],
+      noLink: true,
+    });
+    return;
+  }
+  const status = await checkNodeVersion(validation.path);
   if (status.status === "missing" || status.status === "unknown") {
     await dialog.showMessageBox(target as BrowserWindow, {
       type: "error",
@@ -489,7 +501,7 @@ async function promptLocateNode(): Promise<void> {
   }
 
   const settings = readGlobalSettings();
-  settings.customNodePath = selected;
+  settings.customNodePath = validation.path;
   writeGlobalSettings(settings);
 
   await dialog.showMessageBox(target as BrowserWindow, {

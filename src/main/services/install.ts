@@ -43,7 +43,11 @@ export async function installDependencies(
   return new Promise<OperationResult>((resolve) => {
     let child;
     try {
-      const npm = npmCommand(["install", "--loglevel=http", "--no-fund"]);
+      const npm = npmCommand(
+        ["install", "--loglevel=http", "--no-fund"],
+        process.platform,
+        env,
+      );
       child = spawn(npm.command, npm.args, {
         cwd: projectPath,
         windowsHide: true,

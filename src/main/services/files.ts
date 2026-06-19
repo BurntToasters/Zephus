@@ -32,13 +32,30 @@ const PROTECTED_WRITE_TARGETS = new Set([
   "npm-shrinkwrap.json",
   "yarn.lock",
   "pnpm-lock.yaml",
+  "npm",
+  "npm.cmd",
+  "npx",
+  "npx.cmd",
+  "node",
+  "node.exe",
+]);
+const PROTECTED_WRITE_EXTENSIONS = new Set([
+  ".bat",
+  ".cmd",
+  ".com",
+  ".exe",
+  ".msi",
+  ".ps1",
+  ".vbs",
 ]);
 
 function assertWritablePath(relativePath: string): void {
   const normalized = relativePath.replace(/\\/g, "/").toLowerCase();
   const base = normalized.split("/").pop() ?? "";
+  const ext = path.extname(base);
   if (
     PROTECTED_WRITE_TARGETS.has(base) ||
+    PROTECTED_WRITE_EXTENSIONS.has(ext) ||
     /^astro\.config\.[mc]?[jt]s$/.test(base)
   ) {
     throw new Error(

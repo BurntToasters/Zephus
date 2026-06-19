@@ -35,6 +35,12 @@ export function createSite(
   const zephusDir = path.join(targetPath, ".zephus");
   const hadZephusDir = fs.existsSync(zephusDir);
   try {
+    if (fs.existsSync(targetPath) && fs.readdirSync(targetPath).length > 0) {
+      return {
+        ok: false,
+        error: "Choose an empty folder for the new site.",
+      };
+    }
     fs.mkdirSync(targetPath, { recursive: true });
 
     for (const [rel, content] of Object.entries(theme.files)) {

@@ -125,7 +125,7 @@ async function startDevServerProcess(
       clearTimeout(timeout);
       resolve(r);
     };
-    const npm = npmCommand(["run", "dev"]);
+    const npm = npmCommand(["run", "dev"], process.platform, spawnEnv);
     const child = spawn(npm.command, npm.args, {
       cwd: projectPath,
       windowsHide: true,

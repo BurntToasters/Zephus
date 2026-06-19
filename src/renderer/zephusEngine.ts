@@ -3898,7 +3898,12 @@ function sanitizeHtmlForCanvas(html: string): string {
   let node = walker.nextNode() as Element | null;
   while (node) {
     const tag = node.tagName.toLowerCase();
-    if (tag === "script" || tag === "object" || tag === "embed") {
+    if (
+      tag === "script" ||
+      tag === "object" ||
+      tag === "embed" ||
+      tag === "iframe"
+    ) {
       toRemove.push(node);
     } else {
       for (const attr of Array.from(node.attributes)) {
@@ -3906,8 +3911,10 @@ function sanitizeHtmlForCanvas(html: string): string {
         if (name.startsWith("on")) {
           node.removeAttribute(attr.name);
         } else if (
-          (name === "href" || name === "src" || name === "xlink:href") &&
-          /^\s*(javascript|vbscript):/i.test(attr.value)
+          name === "srcdoc" ||
+          name === "formaction" ||
+          ((name === "href" || name === "src" || name === "xlink:href") &&
+            /^\s*(javascript|vbscript|data):/i.test(attr.value))
         ) {
           node.removeAttribute(attr.name);
         }
@@ -4962,9 +4969,12 @@ function applyCanvasBoxStyle(
   node: { style?: BlockStyle },
 ): void {
   const style = effectiveNodeStyle(node);
+  element.style.boxSizing = "border-box";
+  element.style.maxWidth = style.maxWidth
+    ? `min(${style.maxWidth}, 100%)`
+    : "100%";
   if (style.width) element.style.width = style.width;
   if (style.height) element.style.height = style.height;
-  if (style.maxWidth) element.style.maxWidth = style.maxWidth;
   if (style.background) element.style.background = style.background;
   if (style.color) element.style.color = style.color;
   if (style.padding) element.style.padding = style.padding;

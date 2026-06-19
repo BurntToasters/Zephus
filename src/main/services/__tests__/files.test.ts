@@ -72,6 +72,21 @@ describe("writeProjectFile", () => {
     expect(gitCfg.ok).toBe(false);
   });
 
+  it("rejects executable and package-runner writes", () => {
+    for (const rel of [
+      "npm.cmd",
+      "sub/npx.cmd",
+      "node.exe",
+      "scripts/run.ps1",
+      "scripts/run.bat",
+      "scripts/tool.exe",
+    ]) {
+      const result = writeProjectFile(tmpDir, rel, "x");
+      expect(result.ok).toBe(false);
+      expect(fs.existsSync(path.join(tmpDir, rel))).toBe(false);
+    }
+  });
+
   it("writes a file inside the project", () => {
     const result = writeProjectFile(tmpDir, "sub/dir/file.txt", "data");
     expect(result.ok).toBe(true);

@@ -1400,6 +1400,8 @@ body {
   background: transparent;
   cursor: pointer;
   position: relative;
+  box-sizing: border-box;
+  max-width: 100%;
   transition: all 0.15s ease;
 }
 
@@ -1458,6 +1460,8 @@ body {
   background: rgba(255, 255, 255, 0.015);
   margin: 12px 0;
   position: relative;
+  box-sizing: border-box;
+  max-width: 100%;
 }
 
 .canvas-section.selected {
@@ -1546,11 +1550,14 @@ body {
 .block-preview {
   border-radius: var(--radius-md);
   overflow: hidden;
+  max-width: 100%;
 }
 
 .block-preview > * {
   margin-top: 0;
   margin-bottom: 0;
+  box-sizing: border-box;
+  max-width: 100% !important;
 }
 
 .block-preview img {
