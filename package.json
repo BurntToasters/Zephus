@@ -148,7 +148,7 @@
     "esbuild": "^0.28.1",
     "eslint": "^10.3.0",
     "husky": "^9.1.7",
-    "js-yaml": "^4.1.0",
+    "js-yaml": "^5.0.0",
     "jsdom": "^29.1.1",
     "lint-staged": "^17.0.2",
     "license-checker-rseidelsohn": "^5.0.1",
