@@ -1,7 +1,12 @@
 # Zephus
 A WYSIWYG Local GUI web editor; edit your git-hosted sites!
 
-Zephus is currently in the early stages of development.
+> [!IMPORTANT]
+> Zephus is a project of mine that for the foreseeable future should not be treated as a stable, production-ready product. If you use this app to create or edit websites, please do be aware of the risks that are inherent with using this unstable app.
+>
+> Zephus also uses electron which im not the proudest about, but seeing as its a web editor, I figured out of a lot of the options it was the easiest to work with for this project.
+>
+> Zephus can ONLY edit/work with sites that have been created by Zephus in the app! It is not compatible with general astro-created sites unfortunately as I have a whole schema developed for the engine. If you try to force it to work with a non-zephus-made app, your site will break.
 
 ## License
 
