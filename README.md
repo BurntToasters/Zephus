@@ -8,15 +8,18 @@ A WYSIWYG Local GUI web editor; edit your git-hosted sites!
 >
 > Zephus can ONLY edit/work with sites that have been created by Zephus in the app! It is not compatible with general astro-created sites unfortunately as I have a whole schema developed for the engine. If you try to force it to work with a non-zephus-made app, your site will break.
 
+## Documentation
+To understand more how Zephus works and how to use it, please read the current documentation **[HERE](./docs/README.md)**.
+
 ## License
 
 Zephus is free software released under the [GNU General Public License v3.0](./LICENSE).
 
 The desktop application bundles third-party open-source software:
 
-- **Electron, Chromium, and Node.js** — redistributed under their respective
+- **Electron, Chromium, and Node.js**; redistributed under their respective
   licenses (notices ship alongside the application binary).
-- **Bundled libraries** (CodeMirror, Lucide, and others) — see the in-app
+- **Bundled libraries** (CodeMirror, Lucide, and others); see the in-app
   **About → Third-Party Licenses** view, generated into `licenses.json` from the
   packages compiled into the app, including those inlined into the renderer
   bundle.
