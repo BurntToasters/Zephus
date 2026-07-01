@@ -39,6 +39,21 @@
   box-sizing: border-box;
 }
 
+/* Global keyboard focus indicator — meets WCAG 2.4.7 (Level AA).
+   Relies on :focus-visible so mouse users are unaffected. */
+*:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Suppress the browser default only on elements that provide their own
+   focus-visible styling (inputs, selects, textareas use border + glow). */
+.properties input:focus-visible,
+.properties textarea:focus-visible,
+.properties select:focus-visible {
+  outline: none;
+}
+
 html,
 body {
   margin: 0;
@@ -170,7 +185,7 @@ body {
 }
 
 .brand-subtitle {
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.1em;
@@ -201,7 +216,11 @@ body {
   text-align: left;
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  outline: none;
+}
+
+.start-nav-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .start-nav-item:hover {
@@ -2076,7 +2095,6 @@ body {
 .properties input:focus,
 .properties textarea:focus,
 .properties select:focus {
-  outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent-bg);
 }

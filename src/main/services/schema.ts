@@ -472,7 +472,7 @@ function renderManagedLayout(
     .filter((item) => item.visible)
     .map(
       (item) =>
-        `      <a href="${escapeAttr(item.href)}">${escapeHtml(item.label)}</a>`,
+        `      <a href="${escapeAttr(safeUrl(item.href) || "#")}">${escapeHtml(item.label)}</a>`,
     )
     .join("\n");
   const cta =
@@ -1180,7 +1180,7 @@ export function renderBlockNode(block: BlockNode): string {
     case "text":
       return `<p${common}>${plainTextToHtml(block.props["text"] ?? "")}</p>`;
     case "image":
-      return `<img${common} src="${escapeAttr(block.props["src"] ?? "")}" alt="${escapeAttr(block.props["alt"] ?? "")}" />`;
+      return `<img${common} src="${escapeAttr(safeUrl(block.props["src"] ?? ""))}" alt="${escapeAttr(block.props["alt"] ?? "")}" />`;
     case "button":
       return `<a${common} href="${escapeAttr(safeUrl(block.props["href"] ?? "#") || "#")}">${plainTextToHtml(block.props["text"] ?? "")}</a>`;
     case "section":
@@ -1214,8 +1214,8 @@ export function renderBlockNode(block: BlockNode): string {
       return `<section${structuralCommon(block, "zephus-gallery")}>${images
         .map(
           (src, index) =>
-            `<img src="${escapeAttr(src)}" alt="${escapeAttr(
-              block.props[`alt${index + 1}`] ?? `Gallery image ${index + 1}`,
+            `<img src="${escapeAttr(safeUrl(src))}" alt="${escapeAttr(
+              block.props[`alt${index + 1}`] ?? "",
             )}" />`,
         )
         .join("")}</section>`;

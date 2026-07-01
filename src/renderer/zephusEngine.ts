@@ -433,8 +433,21 @@ let promptedDownloadedUpdateVersion: string | null = null;
 const modalController = createModalController(refreshIcons);
 const { closeModal, showModal, showModalNode } = modalController;
 
+let statusTimer: ReturnType<typeof setTimeout> | null = null;
+
 function setStatus(message: string): void {
+  if (statusTimer !== null) {
+    clearTimeout(statusTimer);
+    statusTimer = null;
+  }
   $("status-bar").textContent = message;
+  // Auto-clear transient confirmations so the bar doesn't show stale text.
+  if (message) {
+    statusTimer = setTimeout(() => {
+      $("status-bar").textContent = "";
+      statusTimer = null;
+    }, 6000);
+  }
 }
 
 const TOOLBAR_TIPS: Record<string, string> = {
@@ -1185,6 +1198,35 @@ function renderNextActions(): void {
         {
           label: "Choose Asset",
           onClick: () => void chooseAssetForImage(imageBlock),
+        },
+      ],
+    );
+  }
+
+  // Warn when image blocks have a src but are missing alt text.
+  const imagesWithNoAlt = state.blocks.filter(
+    (block) =>
+      block.type === "image" &&
+      (block.props["src"] ?? "").trim() !== "" &&
+      (block.props["alt"] ?? "").trim() === "",
+  );
+  if (imagesWithNoAlt.length > 0) {
+    const first = imagesWithNoAlt[0]!;
+    const count = imagesWithNoAlt.length;
+    addActionCard(
+      "Add image alt text",
+      `${count === 1 ? "One image is" : `${count} images are`} missing alt text. Screen readers need a description to convey the image to users who cannot see it.`,
+      [
+        {
+          label: "Edit Image",
+          onClick: () => {
+            state.selectedId = first.id;
+            const loc = findBlockLocation(first.id);
+            if (loc) state.selectedSectionId = loc.section.id;
+            renderLayers();
+            renderCanvas();
+            renderProperties();
+          },
         },
       ],
     );
@@ -2223,6 +2265,20 @@ async function renderTemplates(): Promise<void> {
     const li = document.createElement("li");
     li.innerHTML = `<i data-lucide="layout-template"></i> <span>${tpl.label}</span>`;
     li.draggable = true;
+    li.tabIndex = 0;
+    li.setAttribute("role", "button");
+    li.setAttribute("aria-label", `Insert ${tpl.label} section`);
+    li.title = `Insert ${tpl.label} (or drag onto the canvas)`;
+    const insertTpl = (): void => {
+      addSectionAt(state.sections.length, tpl);
+    };
+    li.onclick = insertTpl;
+    li.onkeydown = (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        insertTpl();
+      }
+    };
     li.addEventListener("dragstart", (e) => {
       e.dataTransfer?.setData("text/zephus-template", tpl.id);
     });
@@ -3551,10 +3607,89 @@ function capturePageFrame(raw: string): string {
   return inner;
 }
 
+/**
+ * Parses the managed inner HTML into SectionNodes, reconstructing section
+ * wrappers emitted by sectionToHtml as editable SectionNodes rather than
+ * collapsing them into opaque html blocks (Code→Visual round-trip safety).
+ *
+ * Top-level <section> elements without data-zephus-block are wrappers produced
+ * by sectionToHtml when a section has a surface (wrapper, style, or cls).
+ * All other top-level content is collected into a default fallback section.
+ */
+function parseSections(inner: string): SectionNode[] {
+  const doc = new DOMParser().parseFromString(
+    `<div id="z-root">${inner}</div>`,
+    "text/html",
+  );
+  const root = doc.getElementById("z-root");
+  if (!root) return [ensureFallbackSection()];
+
+  // Fast path: no un-annotated <section> wrappers — single fallback section
+  // (original behaviour, avoids duplicate parsing).
+  const hasWrapper = Array.from(root.children).some(
+    (el) =>
+      el.tagName.toLowerCase() === "section" &&
+      !el.getAttribute("data-zephus-block"),
+  );
+  if (!hasWrapper) {
+    const sec = ensureFallbackSection();
+    sec.children = parseInner(inner);
+    return [sec];
+  }
+
+  // Multi-section path: each wrapper <section> becomes an editable SectionNode.
+  const sections: SectionNode[] = [];
+  let looseBlocks: Block[] = [];
+
+  const flushLoose = (): void => {
+    if (looseBlocks.length === 0) return;
+    const sec = ensureFallbackSection();
+    sec.label =
+      sections.length === 0 ? "Main Content" : `Section ${sections.length + 1}`;
+    sec.children = looseBlocks;
+    looseBlocks = [];
+    sections.push(sec);
+  };
+
+  for (const node of Array.from(root.childNodes)) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const text = node.textContent ?? "";
+      if (text.trim())
+        looseBlocks.push({ id: uid(), type: "html", props: {}, raw: text });
+      continue;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) {
+      const raw = (node as ChildNode).textContent ?? "";
+      if (raw.trim())
+        looseBlocks.push({ id: uid(), type: "html", props: {}, raw });
+      continue;
+    }
+    const el = node as HTMLElement;
+    const tag = el.tagName.toLowerCase();
+    if (tag === "section" && !el.dataset["zephusBlock"]) {
+      // Un-annotated wrapper from sectionToHtml: reconstruct as SectionNode.
+      flushLoose();
+      const cls = el.getAttribute("class") ?? "";
+      sections.push({
+        id: uid(),
+        type: "section",
+        label: `Section ${sections.length + 1}`,
+        props: { wrapper: "box", cls },
+        children: parseInner(el.innerHTML),
+      });
+    } else {
+      // Regular block or typed element: delegate to parseInner.
+      looseBlocks.push(...parseInner(el.outerHTML));
+    }
+  }
+
+  flushLoose();
+  return sections.length > 0 ? sections : [ensureFallbackSection()];
+}
+
 function parsePage(raw: string): void {
   const inner = capturePageFrame(raw);
-  state.sections = [ensureFallbackSection()];
-  state.sections[0]!.children = parseInner(inner);
+  state.sections = parseSections(inner);
   syncBlocksFromSections();
   state.selectedSectionId = state.sections[0]?.id ?? null;
 }
@@ -3970,7 +4105,7 @@ function blockToHtml(
       const isProjectAsset = forCanvas && src.startsWith("/");
       const srcAttr = isProjectAsset
         ? ` src="" data-asset-src="${escapeAttr(src)}"`
-        : ` src="${escapeAttr(src)}"`;
+        : ` src="${escapeAttr(safeUrl(src))}"`;
       return `<img${common}${srcAttr} alt="${escapeAttr(block.props["alt"] ?? "")}" />`;
     }
     case "button":
@@ -4017,9 +4152,9 @@ function blockToHtml(
           const isProjectAsset = forCanvas && src.startsWith("/");
           const srcAttr = isProjectAsset
             ? ` src="" data-asset-src="${escapeAttr(src)}"`
-            : ` src="${escapeAttr(src)}"`;
+            : ` src="${escapeAttr(safeUrl(src))}"`;
           return `<img${srcAttr} alt="${escapeAttr(
-            block.props[`alt${index + 1}`] ?? `Gallery image ${index + 1}`,
+            block.props[`alt${index + 1}`] ?? "",
           )}" />`;
         })
         .join("")}</section>`;
@@ -7836,15 +7971,43 @@ function onKeydown(e: KeyboardEvent): void {
 /* ---------- Start view tabs and theme picker ---------- */
 
 function initStartTabs(): void {
-  const tabRecent = $("tab-recent");
-  const tabCreate = $("tab-create");
-  const tabSettings = $("tab-settings");
-  const tabAbout = $("tab-about");
+  const tabs = ["recent", "create", "settings", "about"] as const;
+  const tabBtns = tabs.map((t) => $("tab-" + t));
 
-  if (tabRecent) tabRecent.onclick = () => void switchStartTab("recent");
-  if (tabCreate) tabCreate.onclick = () => void switchStartTab("create");
-  if (tabSettings) tabSettings.onclick = () => void switchStartTab("settings");
-  if (tabAbout) tabAbout.onclick = () => void switchStartTab("about");
+  // Wire click handlers.
+  for (const [i, t] of tabs.entries()) {
+    const btn = tabBtns[i];
+    if (btn) btn.onclick = () => void switchStartTab(t);
+  }
+
+  // Arrow-key roving tabindex (ARIA Authoring Practices Guide — Tabs pattern).
+  // Only one tab is in the natural tab order at a time; Left/Right/Home/End
+  // move focus within the tablist without requiring an extra Tab keypress.
+  const tablist = document.querySelector<HTMLElement>(
+    ".start-nav[role='tablist']",
+  );
+  if (!tablist) return;
+  tablist.addEventListener("keydown", (e) => {
+    const currentIndex = tabBtns.findIndex(
+      (btn) => btn === document.activeElement,
+    );
+    if (currentIndex < 0) return;
+    let next = -1;
+    if (e.key === "ArrowDown" || e.key === "ArrowRight") {
+      next = (currentIndex + 1) % tabs.length;
+    } else if (e.key === "ArrowUp" || e.key === "ArrowLeft") {
+      next = (currentIndex - 1 + tabs.length) % tabs.length;
+    } else if (e.key === "Home") {
+      next = 0;
+    } else if (e.key === "End") {
+      next = tabs.length - 1;
+    }
+    if (next < 0) return;
+    e.preventDefault();
+    const target = tabs[next]!;
+    void switchStartTab(target);
+    tabBtns[next]?.focus();
+  });
 }
 
 async function switchStartTab(
@@ -7857,6 +8020,7 @@ async function switchStartTab(
     if (tabBtn) {
       tabBtn.classList.toggle("active", t === target);
       tabBtn.setAttribute("aria-selected", t === target ? "true" : "false");
+      tabBtn.setAttribute("tabindex", t === target ? "0" : "-1");
     }
     if (pane) {
       pane.classList.toggle("active", t === target);

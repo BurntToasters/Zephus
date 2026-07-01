@@ -18,7 +18,7 @@ exports[`build render parity (renderBlockNode goldens) > renders embed-13 to sta
 
 exports[`build render parity (renderBlockNode goldens) > renders feature-15 to stable markup 1`] = `"<div data-zephus-id="fix-feature" data-zephus-block="feature" data-zephus-props="%7B%22icon%22%3A%22%E2%9A%A1%22%2C%22title%22%3A%22Fast%22%2C%22text%22%3A%22Body%22%2C%22cls%22%3A%22%22%7D" class="zephus-feature"><div class="zephus-feature-icon">⚡</div><h3>Fast</h3><p>Body</p></div>"`;
 
-exports[`build render parity (renderBlockNode goldens) > renders gallery-10 to stable markup 1`] = `"<section data-zephus-id="fix-gallery" data-zephus-block="gallery" data-zephus-props="%7B%22images%22%3A%22%2Fa.svg%5Cn%2Fb.svg%22%2C%22cls%22%3A%22%22%7D" class="zephus-gallery"><img src="/a.svg" alt="Gallery image 1" /><img src="/b.svg" alt="Gallery image 2" /></section>"`;
+exports[`build render parity (renderBlockNode goldens) > renders gallery-10 to stable markup 1`] = `"<section data-zephus-id="fix-gallery" data-zephus-block="gallery" data-zephus-props="%7B%22images%22%3A%22%2Fa.svg%5Cn%2Fb.svg%22%2C%22cls%22%3A%22%22%7D" class="zephus-gallery"><img src="/a.svg" alt="" /><img src="/b.svg" alt="" /></section>"`;
 
 exports[`build render parity (renderBlockNode goldens) > renders heading-0 to stable markup 1`] = `"<h2 data-zephus-id="fix-heading" data-zephus-block="heading" data-zephus-props="%7B%22text%22%3A%22Hello%20%26%20%3Cworld%3E%22%2C%22level%22%3A%222%22%2C%22cls%22%3A%22%22%7D">Hello &amp; &lt;world&gt;</h2>"`;
 
