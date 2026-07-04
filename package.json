@@ -160,7 +160,7 @@
   "dependencies": {
     "electron-log": "^5.3.4",
     "electron-updater": "^6.3.9",
-    "lucide": "^1.17.0",
+    "lucide": "^1.23.0",
     "sanitize-filename": "^1.6.3"
   },
   "lint-staged": {
