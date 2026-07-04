@@ -128,14 +128,12 @@ export function listDraftSummaries(): DraftSummaryResult {
       .filter((entry): entry is DraftData =>
         Boolean(entry?.projectPath && entry.target && entry.savedAt),
       )
-      .map(
-        (entry): DraftSummary => ({
-          projectPath: entry.projectPath,
-          scope: entry.scope,
-          target: entry.target,
-          savedAt: entry.savedAt,
-        }),
-      )
+      .map((entry): DraftSummary => ({
+        projectPath: entry.projectPath,
+        scope: entry.scope,
+        target: entry.target,
+        savedAt: entry.savedAt,
+      }))
       .sort((a, b) => b.savedAt.localeCompare(a.savedAt));
     return { ok: true, entries };
   } catch (error) {

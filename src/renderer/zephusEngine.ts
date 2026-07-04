@@ -803,8 +803,7 @@ function updaterStatusMessage(): string {
 async function restartToApplyUpdate(): Promise<void> {
   setStatus("Restarting to apply update...");
   const result = (await window.zephus.installUpdate()) as
-    | { ok?: boolean; error?: string }
-    | undefined;
+    { ok?: boolean; error?: string } | undefined;
   if (result && result.ok === false) {
     setStatus("Update install could not start.");
     showModal(
@@ -5047,8 +5046,7 @@ function appendGalleryManager(
 
 type ResizeCorner = "nw" | "ne" | "sw" | "se";
 type ResizeTarget =
-  | { kind: "block"; node: Block }
-  | { kind: "section"; node: SectionNode };
+  { kind: "block"; node: Block } | { kind: "section"; node: SectionNode };
 
 const MIN_RESIZE_WIDTH = 40;
 const MIN_RESIZE_HEIGHT = 24;
