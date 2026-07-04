@@ -8,7 +8,7 @@ import {
   parseNodeVersion,
   validateNodePath,
 } from "../nodeCheck";
-import { npmCommand } from "../npmCommand";
+import { npmCommand, resolveWindowsNpmCmd } from "../npmCommand";
 
 describe("nodeCheck", () => {
   describe("validateNodePath", () => {
@@ -141,10 +141,53 @@ describe("npmCommand", () => {
     });
   });
 
-  it("routes npm.cmd through cmd.exe on Windows", () => {
-    expect(npmCommand(["run", "dev"], "win32")).toEqual({
+  it("routes an absolute npm.cmd through cmd.exe on Windows", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "zephus-npm-"));
+    const npm = path.join(dir, "npm.cmd");
+    fs.writeFileSync(npm, "@echo npm");
+    try {
+      expect(
+        npmCommand(["run", "dev"], "win32", {
+          PATH: dir,
+          ProgramFiles: "C:\\Missing",
+        }),
+      ).toEqual({
+        command: "cmd.exe",
+        args: ["/d", "/s", "/c", `"${npm}" run dev`],
+      });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not resolve npm.cmd from the project working directory", () => {
+    const pathDir = fs.mkdtempSync(path.join(os.tmpdir(), "zephus-npm-path-"));
+    const cwdDir = fs.mkdtempSync(path.join(os.tmpdir(), "zephus-npm-cwd-"));
+    const trusted = path.join(pathDir, "npm.cmd");
+    fs.writeFileSync(trusted, "@echo trusted");
+    fs.writeFileSync(path.join(cwdDir, "npm.cmd"), "@echo shadow");
+    const previous = process.cwd();
+    try {
+      process.chdir(cwdDir);
+      expect(
+        resolveWindowsNpmCmd({ PATH: pathDir, ProgramFiles: "C:\\Missing" }),
+      ).toBe(trusted);
+    } finally {
+      process.chdir(previous);
+      fs.rmSync(pathDir, { recursive: true, force: true });
+      fs.rmSync(cwdDir, { recursive: true, force: true });
+    }
+  });
+
+  it("falls back to an absolute Program Files npm.cmd path", () => {
+    expect(
+      npmCommand(["run", "dev"], "win32", {
+        PATH: "",
+        ProgramFiles: "C:\\Program Files",
+      }),
+    ).toEqual({
       command: "cmd.exe",
-      args: ["/d", "/s", "/c", "npm.cmd", "run", "dev"],
+      args: ["/d", "/s", "/c", '"C:\\Program Files\\nodejs\\npm.cmd" run dev'],
     });
   });
 });

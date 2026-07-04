@@ -28,7 +28,11 @@ export function createModalController(refreshIcons: () => void) {
       shell.querySelectorAll<HTMLElement>(
         'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
       ),
-    ).filter((el) => !el.hasAttribute("disabled") && el.offsetParent !== null);
+    ).filter(
+      (el) =>
+        !el.hasAttribute("disabled") &&
+        (el.offsetParent !== null || getComputedStyle(el).position === "fixed"),
+    );
   }
 
   /** Esc activates a Cancel/Close button if present, else just closes. */

@@ -166,10 +166,7 @@ export interface EditorBlock {
 }
 
 export type ManagedFileStatus =
-  | "managed"
-  | "detached"
-  | "out-of-sync"
-  | "missing";
+  "managed" | "detached" | "out-of-sync" | "missing";
 
 export interface AssetRef {
   id: string;

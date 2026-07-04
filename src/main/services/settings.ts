@@ -114,8 +114,7 @@ export function getMergedSettings(projectPath: string): {
   const repo = readRepoSettings(projectPath);
   // Theme is a cross-cutting setting: repo can override the global theme.
   const repoTheme = (repo as unknown as Record<string, unknown>)["theme"] as
-    | GlobalSettings["theme"]
-    | undefined;
+    GlobalSettings["theme"] | undefined;
   const theme: GlobalSettings["theme"] =
     repoTheme && ["light", "dark", "system"].includes(repoTheme)
       ? repoTheme

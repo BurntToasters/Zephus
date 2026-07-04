@@ -1,7 +1,6 @@
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { shell } from "electron";
-import * as path from "path";
 import log from "electron-log";
 import { OperationResult } from "../types";
 import { readGlobalSettings } from "./settings";
@@ -28,7 +27,7 @@ export async function buildAndReveal(
   }
   try {
     const env = await buildSpawnEnv(readGlobalSettings().customNodePath);
-    const npm = npmCommand(["run", "build"]);
+    const npm = npmCommand(["run", "build"], process.platform, env);
     await execFileAsync(npm.command, npm.args, {
       cwd: projectPath,
       windowsHide: true,

@@ -5,10 +5,10 @@
 
 | <img height="20" src="https://raw.githubusercontent.com/BurntToasters/bcls/main/media/windows.png" /> Windows | <img height="20" src="https://raw.githubusercontent.com/BurntToasters/bcls/main/media/mac.png" /> macOS | <img height="20" src="https://raw.githubusercontent.com/BurntToasters/bcls/main/media/linux.png" /> Linux |
 | :--- | :--- | :--- |
-| **EXE:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.11/Zephus-Windows-x64.exe) / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.11/Zephus-Windows-arm64.exe) | **[Universal DMG](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.11/Zephus-MacOS-universal.dmg)** | **AppImage:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.11/Zephus-Linux-x86_64.AppImage) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.11/Zephus-Linux-arm64.AppImage) --> |
-| | **[Universal ZIP](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.11/Zephus-MacOS-universal.zip)** | **DEB:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.11/Zephus-Linux-amd64.deb) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.11/Zephus-Linux-arm64.deb) --> |
-| | | **RPM:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.11/Zephus-Linux-x86_64.rpm) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.11/Zephus-Linux-aarch64.rpm) --> |
-| | | **Flatpak:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.11/Zephus-Linux-x86_64.flatpak) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.11/Zephus-Linux-aarch64.flatpak) --> |
+| **EXE:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.12/Zephus-Windows-x64.exe) / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.12/Zephus-Windows-arm64.exe) | **[Universal DMG](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.12/Zephus-MacOS-universal.dmg)** | **AppImage:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.12/Zephus-Linux-x86_64.AppImage) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.12/Zephus-Linux-arm64.AppImage) --> |
+| | **[Universal ZIP](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.12/Zephus-MacOS-universal.zip)** | **DEB:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.12/Zephus-Linux-amd64.deb) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.12/Zephus-Linux-arm64.deb) --> |
+| | | **RPM:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.12/Zephus-Linux-x86_64.rpm) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.12/Zephus-Linux-aarch64.rpm) --> |
+| | | **Flatpak:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.12/Zephus-Linux-x86_64.flatpak) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.12/Zephus-Linux-aarch64.flatpak) --> |
 
 > [!IMPORTANT]
 > The `.sig` files in this repo are NOT normal GPG signatures — they are for Zephus's built-in updater to verify the integrity of updates before downloading and installing.
@@ -20,6 +20,26 @@
 ### ℹ️ Enjoying Zephus? Consider [❤️ Supporting Me! ❤️](https://rosie.run/support)
 
 ---
+
+## Changes in `v0.1.0-db.12:`
+
+### Accessibility
+- **Accessibility:** Keyboard focus is now visible throughout the app — added a global `:focus-visible` outline rule and removed the `outline: none` that was suppressing it on the start-screen sidebar tabs and many other controls, meeting WCAG 2.4.7.
+- **Accessibility:** Start-screen tabs now implement the ARIA Tabs keyboard pattern — the active tab is the only one in the natural Tab order, and Left / Right / Home / End arrow keys move between tabs without needing an extra Tab press.
+- **Accessibility:** Section templates in the left panel are now fully keyboard-accessible — Tab to reach them, Enter or Space to insert, matching the block palette directly above them.
+- **Accessibility:** Fixed the modal focus trap silently excluding `position: fixed` elements — `offsetParent !== null` misses fixed-position focusables per spec.
+
+### Editor
+- **Editor:** Fixed an issue where switching back to Visual mode after editing in Code mode would collapse any section that had a background, padding, or CSS class into a single opaque HTML block. Section wrappers are now reconstructed as individually editable sections.
+- **Editor:** Added a Next Actions card that appears when an image block has a source asset but no alt text, pointing you directly to the Properties panel where you can add a description. Gallery images no longer emit the meaningless `Gallery image N` filler alt text — they default to empty now.
+
+### Security
+- **Security:** The renderer `<meta>` CSP was missing four directives (`object-src 'none'`, `base-uri 'self'`, `frame-ancestors 'none'`, `form-action 'self'`) relative to the main-process header, and also lacked the IPv6 localhost frame-src entry. The meta now matches `setupSecurityHeaders` exactly.
+- **Security:** `file:` and `javascript:` scheme URLs in image and gallery `src` attributes, and in nav-item `href` values, are now blocked at the render level — consistent with how button, embed, and CTA links were already handled.
+
+### UI
+- **UI:** Status bar messages now auto-clear after 6 seconds instead of persisting indefinitely.
+- **UI:** Bumped the "Visual Astro Builder" subtitle text in the start-screen sidebar from 9 px to 11 px — it was too small to be legible at normal display sizes.
 
 ## Changes in `v0.1.0-db.11:`
 * **Win:** Fixes issues with windows file pathing for the editor engine and user's website git repos.
