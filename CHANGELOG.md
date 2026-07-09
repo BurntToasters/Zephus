@@ -1,14 +1,14 @@
 > [!NOTE]
-> ⛔️ This is a Developer Beta build. These builds are extremely unstable and are meant for testing only.
+> 📢 This is a Beta build. This build is intended for testing and early feedback.
 
 # ⬇️ Downloads
 
 | <img height="20" src="https://raw.githubusercontent.com/BurntToasters/bcls/main/media/windows.png" /> Windows | <img height="20" src="https://raw.githubusercontent.com/BurntToasters/bcls/main/media/mac.png" /> macOS | <img height="20" src="https://raw.githubusercontent.com/BurntToasters/bcls/main/media/linux.png" /> Linux |
 | :--- | :--- | :--- |
-| **EXE:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.12/Zephus-Windows-x64.exe) / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.12/Zephus-Windows-arm64.exe) | **[Universal DMG](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.12/Zephus-MacOS-universal.dmg)** | **AppImage:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.12/Zephus-Linux-x86_64.AppImage) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.12/Zephus-Linux-arm64.AppImage) --> |
-| | **[Universal ZIP](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.12/Zephus-MacOS-universal.zip)** | **DEB:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.12/Zephus-Linux-amd64.deb) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.12/Zephus-Linux-arm64.deb) --> |
-| | | **RPM:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.12/Zephus-Linux-x86_64.rpm) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.12/Zephus-Linux-aarch64.rpm) --> |
-| | | **Flatpak:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.12/Zephus-Linux-x86_64.flatpak) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-db.12/Zephus-Linux-aarch64.flatpak) --> |
+| **EXE:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.1/Zephus-Windows-x64.exe) / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.1/Zephus-Windows-arm64.exe) | **[Universal DMG](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.1/Zephus-MacOS-universal.dmg)** | **AppImage:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.1/Zephus-Linux-x86_64.AppImage) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.1/Zephus-Linux-arm64.AppImage) --> |
+| | **[Universal ZIP](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.1/Zephus-MacOS-universal.zip)** | **DEB:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.1/Zephus-Linux-amd64.deb) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.1/Zephus-Linux-arm64.deb) --> |
+| | | **RPM:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.1/Zephus-Linux-x86_64.rpm) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.1/Zephus-Linux-aarch64.rpm) --> |
+| | | **Flatpak:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.1/Zephus-Linux-x86_64.flatpak) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.1/Zephus-Linux-aarch64.flatpak) --> |
 
 > [!IMPORTANT]
 > The `.sig` files in this repo are NOT normal GPG signatures — they are for Zephus's built-in updater to verify the integrity of updates before downloading and installing.
@@ -21,118 +21,30 @@
 
 ---
 
-## Changes in `v0.1.0-db.12:`
+## Changes in `v0.1.0-beta.1:`
 
-### Accessibility
-- **Accessibility:** Keyboard focus is now visible throughout the app — added a global `:focus-visible` outline rule and removed the `outline: none` that was suppressing it on the start-screen sidebar tabs and many other controls, meeting WCAG 2.4.7.
-- **Accessibility:** Start-screen tabs now implement the ARIA Tabs keyboard pattern — the active tab is the only one in the natural Tab order, and Left / Right / Home / End arrow keys move between tabs without needing an extra Tab press.
-- **Accessibility:** Section templates in the left panel are now fully keyboard-accessible — Tab to reach them, Enter or Space to insert, matching the block palette directly above them.
-- **Accessibility:** Fixed the modal focus trap silently excluding `position: fixed` elements — `offsetParent !== null` misses fixed-position focusables per spec.
+### Splash Screen
+- **Splash Screen:** Completely redesigned the launcher splash screen with a creative CLI-style boot diagnostics sequence, typewriter-effect prompts, and a blinking cursor. Added CRT scanline overlays for a sleek retro-tech aesthetic.
 
-### Editor
-- **Editor:** Fixed an issue where switching back to Visual mode after editing in Code mode would collapse any section that had a background, padding, or CSS class into a single opaque HTML block. Section wrappers are now reconstructed as individually editable sections.
-- **Editor:** Added a Next Actions card that appears when an image block has a source asset but no alt text, pointing you directly to the Properties panel where you can add a description. Gallery images no longer emit the meaningless `Gallery image N` filler alt text — they default to empty now.
+### UI & UX Polish
+- **Layout Transitions:** Added smooth slide-in keyframe animations for the left and right panels on editor entrance, and lift-and-fade animations (`fade-in-up`) for the main editor canvas and home command center tabs.
+- **Micro-interactions:** Applied bouncy, interactive scaling (`transform: scale(0.97)`) to active buttons, navigation tabs, and project list cards.
+- **Modernized Highlights:** Updated primary buttons with a premium Indigo gradient, subtle borders, and inset overlays.
+- **Help Guide Modal:** Designed an in-app interactive shortcuts modal detailing visual editor key bindings and workflow tips, accessible via a new Topbar Help button or by pressing <kbd>?</kbd> / <kbd>H</kbd> on the canvas.
+- **Live Google Fonts Rendering:** Updated Content-Security-Policy headers and implemented dynamic stylesheet injection, allowing chosen Google Fonts to load and render instantly in real-time in the editor workspace.
 
-### Security
-- **Security:** The renderer `<meta>` CSP was missing four directives (`object-src 'none'`, `base-uri 'self'`, `frame-ancestors 'none'`, `form-action 'self'`) relative to the main-process header, and also lacked the IPv6 localhost frame-src entry. The meta now matches `setupSecurityHeaders` exactly.
-- **Security:** `file:` and `javascript:` scheme URLs in image and gallery `src` attributes, and in nav-item `href` values, are now blocked at the render level — consistent with how button, embed, and CTA links were already handled.
+### Responsive Device Simulator Bezels
+- **Device Frames:** Replaced basic viewport dimensions with sleek mock hardware bezels (metallic bezels, screen reflections, and rounded corners) for mobile and tablet simulation states.
+- **Animations:** Added smooth transitions on borders, spacing, and drop shadows when switching between preview device modes.
 
-### UI
-- **UI:** Status bar messages now auto-clear after 6 seconds instead of persisting indefinitely.
-- **UI:** Bumped the "Visual Astro Builder" subtitle text in the start-screen sidebar from 9 px to 11 px — it was too small to be legible at normal display sizes.
+### Accessibility (A11y)
+- **ARIA Labels:** Added descriptive screen-reader `aria-label` tags to topbar and sidebar buttons (Undo, Redo, Save, Publish, Start Preview, Close, Regen Nav).
 
-## Changes in `v0.1.0-db.11:`
-* **Win:** Fixes issues with windows file pathing for the editor engine and user's website git repos.
+### SEO Best Practices
+- **SEO Warnings:** Integrated page meta description validation (warning if empty) and duplicate H1 tag checks into the "Next Actions" helper panel list, along with quick actions to navigate directly to Page Settings or focus the duplicate block.
 
-## Changes in `v0.1.0-db.10:`
-* **Preview:** The Astro dev-server preview now opens in its own dedicated window instead of inside the editor canvas — fixes the "half preview / half edit mode" state and keeps the editor fully usable while previewing.
-* **Preview:** Closing the preview window (or the editor's Stop Preview button) now force-stops the dev server. The teardown kills the whole process tree on every OS — process-group kill on macOS/Linux and `taskkill /t` on Windows — so the server port is never left bound by an orphaned process.
-* **Security:** The preview window loads the local dev server with no preload bridge, sandboxed and context-isolated, and only localhost URLs are allowed.
-
-## Changes in `v0.1.0-db.9:`
-* **CI Runners:** Added `.gitattributes` to fix failing windows-latest runner.
-* **Logo:** Updated logo.
-
-## Changes in `v0.1.0-db.8:`
-
-### Editor — Inline Editing
-* **Fix:** Double-click inline text editing now works on the first attempt — clicking a block triggered a full canvas re-render between the two clicks of a double-click, so the browser never fired `dblclick`. Added manual rapid-second-click detection so double-clicking immediately enters edit mode.
-* **Fix:** Spacebar no longer gets swallowed while typing on the canvas — the block shell's keyboard handler was intercepting Space for accessibility activation, which also fired during inline editing. Now only acts when the shell itself is focused, not its children.
-* **Fix:** Double-clicking a word to highlight it no longer immediately un-highlights — the click and `dblclick` handlers were re-entering edit mode and collapsing the selection. Native word selection now works correctly while editing.
-* **Fix:** Multiline blocks (text, quote, testimonial, etc.) now insert a real line break on Enter. Commit with Cmd/Ctrl+Enter or blur. Single-line targets (heading, button) still commit on Enter. Line-encoded targets (accordion items) still commit on Enter to avoid corrupting their encoding.
-* **Fix:** Blocks rendered black/unreadable on the canvas — block background was incorrectly set to the app chrome color instead of transparent, making text invisible against themed backgrounds.
-
-### Editor — Canvas & Resize
-* **Fix:** Resize handles no longer allow blocks or sections to be dragged wider than the page boundary. Width is clamped to the parent container's content width (both pointer drag and keyboard resize).
-* **Fix:** Stale drop-indicator no longer lingers on the canvas after a drag completes.
-* **Fix:** `Delete`/`Backspace`/`Cmd+D` block shortcuts no longer fire while a toolbar button (Up, Down, Dup, etc.) holds keyboard focus.
-
-### Editor — Property Panel
-* **Fix:** Typing in a property panel text field no longer causes per-keystroke full canvas rebuilds. The canvas repaint is now debounced (140ms) while typing and flushed immediately on blur — model updates remain synchronous so save is unaffected.
-* **Fix:** Removed a duplicate "Columns" free-text input in the Layout group for `columns` blocks. Column count is now controlled exclusively by the Content-group select, eliminating a two-source drift bug.
-
-### Preview
-* **Fix:** Live preview no longer shows a 404 "Path: / [39m" — Astro/Vite colorize their startup banner even with `FORCE_COLOR=0`, causing the URL regex to swallow a trailing ANSI reset code into the captured URL, producing a malformed iframe src. ANSI sequences are now stripped before URL extraction and `NO_COLOR=1` is also set.
-
-### Setup
-* **Fix:** "Setting Up Your Site" install modal no longer shows a blank progress area. A ticking elapsed-time counter updates every second and live npm output streams to the log box so there is always visible activity during dependency installation.
-
-## Changes in `v0.1.0-db.7:`
-* **Editor:** Fixed blocks rendering black/unreadable on the canvas — block background was incorrectly set to the app chrome color instead of transparent, making text invisible against themed backgrounds.
-* **Editor:** Fixed double-click inline text editing not working — clicking a block triggered a full canvas re-render, destroying the DOM node between the two clicks of a double-click so `dblclick` never fired. Blocks now stay stable in the DOM when re-clicked while already selected.
-* **Editor:** Fixed resize handles allowing blocks and sections to be dragged wider than the page boundary. Width is now clamped to the parent container's content width.
-* **Setup:** Fixed the "Setting Up Your Site" install modal showing a blank progress area. The log box now shows a ticking elapsed-time counter and live npm output so there is always visible activity during dependency installation.
-
-## Changes in `v0.1.0-db.6:`
-* **License:** Updated to comply with bundled license items.
-
-## Changes in `v0.1.0-db.5:`
-* **Codebase:** More optimizations and fixes to the WYSIWYG engine.
-* **Misc:** Further back-end updater and front end GUI fixes.
-
-## Changes in `v0.1.0-db.4:`
-* **Updater:** Downloaded updates now ask users to restart instead of installing silently on quit.
-* **Codebase:** Multiple fixes and improvements to the engine (including being able to click on text boxes to edit).
-
-## Changes in `v0.1.0-db.3:`
-* **Windows:** Fixed and npm/nodejs spawner error.
-* **Recent Sites:** Users can now remove sites from the recent sites list.
-
-## Changes in `v0.1.0-db.2:`
-- **Icon:** Added the first concept icon to the app replacing the legacy ROSI icons.
-- **Themes:**
-  - Fully re-designed the theming backend.
-  - Added more themes.
-  - Improved all themes.
-- **Engine:** Dramatically updated the engine and added more elements to add/use on sites.
-- **Codebase:** Major bug fixes and improvements.
-
-## Changes in `v0.1.0-db.1:`
-
-Beta 1 releases of Zephus don't include any changes besides the initial build, and are meant to sync beta users to the first working version.
-
-- **NEW - Visual Editor:** Added UI drag-and-drop WYSIWYG page editor with block palette (heading, text, image, button, section), inline text editing, typed property widgets, color/spacing controls, and undo/redo.
-- **NEW - Code Editor:** Added CodeMirror 6 syntax-highlighted code view with HTML language support and one-dark theme. Bidirectional sync between visual and code modes.
-- **NEW - Live Preview:** Added dev-server preview via the project's `npm run dev` — renders in an embedded iframe with desktop/tablet/mobile viewport toggle.
-- **NEW - Theme Wizard:** Added site creation wizard with 5 bundled themes (Documentation, Project, Blog, Portfolio, Minimal). Creates a complete Astro project, initializes Git, and writes the `.zephus` marker.
-- **NEW - Page Manager:** Added page creation from theme layouts, page list with active indicator, and navigation regeneration from the page tree.
-- **NEW - Section Templates:** Added draggable prebuilt sections (Hero, Features, CTA, Footer) inserted as preserved HTML blocks.
-- **NEW - Publish:** Added production build via `npm run build` with output folder reveal in the system file manager.
-- **NEW - Git Awareness:** Added branch display (including detached HEAD), modified/added/deleted file lists in the right panel, and auto-refresh on save.
-- **NEW - Image Import:** Added image picker dialog that copies assets into `public/images/` and inserts the correct web-root path.
-- **NEW - File Watching:** Added external-change detection via `fs.watch` with reload/keep prompt when a file is modified outside Zephus.
-- **NEW - Settings:** Added global `settings.json` in the OS user config directory with repo-over-global precedence via merged settings. Repo-scoped `.zephus/settings.json` controls editor rules (`allowedBlocks`, `maxHeadingLevel`).
-- **NEW - Onboarding:** Added first-run welcome modal with "Create My First Site" action for new users.
-- **Codebase:** Built the full Electron main/renderer/preload architecture in TypeScript mirroring the ROSI project structure. IPC layer with contextIsolation and sandboxed preload bridge.
-- **Codebase:** Added esbuild renderer bundling pipeline replacing the previous tsc-in-place compilation for the renderer process.
-- **Codebase:** Rebranded all ROSI-derived build tooling, scripts, manifests, and identifiers to Zephus (`run.rosie.zephus`).
-- **Codebase:** Removed all yt-dlp/ffmpeg/binary-restore tooling that was specific to the ROSI downloader use case.
-- **Codebase:** Added `astro.config` parsing for custom `srcDir`/`publicDir`/`outDir` directories.
-- **Testing:** Added Vitest test suite with 13 tests covering project detection, package validation, page listing, file read/write, and path-traversal rejection.
-- **Security:** Enforced CSP in the renderer, path-traversal guards on all file operations, and validated that the preload bridge exposes no raw Node APIs.
-- **UI:** Dark theme (Catppuccin Mocha palette), responsive layout, modal system, status bar, dirty indicator, keyboard shortcuts (Ctrl/Cmd+S save, Ctrl/Cmd+Z undo, Ctrl/Cmd+Shift+Z redo).
-- **Ver:** Initial version `v0.1.0-beta.1`.
-- **PKG:** Updated packages.
+### Codebase & Quality
+- **Code Quality:** Formatted the renderer assets and scripts with Prettier, and successfully verified that all 178 unit tests, configuration checks, and syntax checks pass.
 
 ## ℹ️ Release Info
 

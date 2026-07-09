@@ -55,6 +55,7 @@ import {
   Tag,
   Megaphone,
   X,
+  Info,
 } from "lucide";
 
 type Mode = "visual" | "code";
@@ -168,6 +169,7 @@ function refreshIcons(): void {
       Tag,
       Megaphone,
       X,
+      Info,
     },
   });
 }
@@ -1231,6 +1233,51 @@ function renderNextActions(): void {
     );
   }
 
+  // SEO 1: Missing Meta Description Warning
+  if (
+    state.page &&
+    state.currentMeta &&
+    !(state.currentMeta.metaDescription ?? "").trim()
+  ) {
+    addActionCard(
+      "Add page meta description",
+      "This page is missing a meta description. Adding one helps search engines summarize your page and improves click-through rates.",
+      [
+        {
+          label: "Page Settings",
+          onClick: () => {
+            if (state.page) void openPageMetaModal(state.page);
+          },
+        },
+      ],
+    );
+  }
+
+  // SEO 2: Multiple H1 Headings Warning
+  const h1Blocks = state.blocks.filter(
+    (block) => block.type === "heading" && block.props["level"] === "1",
+  );
+  if (h1Blocks.length > 1) {
+    const secondH1 = h1Blocks[1]!;
+    addActionCard(
+      "Multiple H1 headings detected",
+      "SEO best practices recommend using exactly one H1 heading per page to establish a clear hierarchy. Consider changing extra H1s to H2.",
+      [
+        {
+          label: "Fix Heading",
+          onClick: () => {
+            state.selectedId = secondH1.id;
+            const loc = findBlockLocation(secondH1.id);
+            if (loc) state.selectedSectionId = loc.section.id;
+            renderLayers();
+            renderCanvas();
+            renderProperties();
+          },
+        },
+      ],
+    );
+  }
+
   if (state.siteDirty || state.pageDirty) {
     const actions = [{ label: "Save All", onClick: () => void save() }];
     if (state.siteDirty) {
@@ -1908,6 +1955,25 @@ function applyDesignPreview(): void {
   for (const [name, value] of props) {
     if (value && value.trim()) canvas.style.setProperty(name, value);
     else canvas.style.removeProperty(name);
+  }
+
+  // Load Google Fonts link in the editor if a fontImportUrl exists
+  const fontImportUrl = design?.fontImportUrl;
+  let fontLink = document.getElementById(
+    "zephus-canvas-google-fonts",
+  ) as HTMLLinkElement | null;
+  if (fontImportUrl && fontImportUrl.trim()) {
+    if (!fontLink) {
+      fontLink = document.createElement("link");
+      fontLink.id = "zephus-canvas-google-fonts";
+      fontLink.rel = "stylesheet";
+      document.head.appendChild(fontLink);
+    }
+    if (fontLink.href !== fontImportUrl) {
+      fontLink.href = fontImportUrl;
+    }
+  } else if (fontLink) {
+    fontLink.remove();
   }
 }
 
@@ -2990,6 +3056,35 @@ function renderPageList(result: ProjectOpenResult): void {
     list.appendChild(li);
   }
   refreshIcons();
+}
+
+function openHelpModal(): void {
+  const content = document.createElement("div");
+  content.className = "help-modal-content";
+  content.innerHTML = `
+    <div class="help-section">
+      <h4>Visual Mode Keyboard Shortcuts</h4>
+      <table class="help-table">
+        <tr><td><kbd>Ctrl/Cmd</kbd> + <kbd>S</kbd></td><td>Save Changes</td></tr>
+        <tr><td><kbd>Ctrl/Cmd</kbd> + <kbd>Z</kbd></td><td>Undo Last Change</td></tr>
+        <tr><td><kbd>Ctrl/Cmd</kbd> + <kbd>Shift</kbd> + <kbd>Z</kbd> / <kbd>Y</kbd></td><td>Redo Last Change</td></tr>
+        <tr><td><kbd>Ctrl/Cmd</kbd> + <kbd>D</kbd></td><td>Duplicate Selected Block</td></tr>
+        <tr><td><kbd>Delete</kbd> / <kbd>Backspace</kbd></td><td>Delete Selected Block/Section</td></tr>
+      </table>
+    </div>
+    <div class="help-section" style="margin-top: 16px;">
+      <h4>Useful Tips</h4>
+      <ul>
+        <li><strong>Double-click</strong> a block on the canvas to edit its text inline.</li>
+        <li>Drag blocks inside a section or columns to reorder.</li>
+        <li>Select blocks to edit properties in the Inspector sidebar on the right.</li>
+        <li>Press <kbd>?</kbd> or <kbd>H</kbd> on the dashboard or editor canvas to view this help guide.</li>
+      </ul>
+    </div>
+  `;
+  showModalNode("Keyboard Shortcuts & Help", content, [
+    { label: "Close", kind: "primary", onClick: closeModal },
+  ]);
 }
 
 async function reloadPages(): Promise<void> {
@@ -7914,14 +8009,6 @@ function doRedo(): void {
 }
 
 function onKeydown(e: KeyboardEvent): void {
-  const mod = e.ctrlKey || e.metaKey;
-  if (mod && e.key === "s") {
-    void save();
-    e.preventDefault();
-    return;
-  }
-  if (state.mode !== "visual") return;
-  // Don't hijack native editing keys while typing in a field or inline editor.
   const active = document.activeElement as HTMLElement | null;
   const editing =
     !!active &&
@@ -7929,6 +8016,20 @@ function onKeydown(e: KeyboardEvent): void {
       active.tagName === "INPUT" ||
       active.tagName === "TEXTAREA" ||
       active.tagName === "SELECT");
+
+  if ((e.key === "?" || e.key === "h" || e.key === "H") && !editing) {
+    openHelpModal();
+    e.preventDefault();
+    return;
+  }
+
+  const mod = e.ctrlKey || e.metaKey;
+  if (mod && e.key === "s") {
+    void save();
+    e.preventDefault();
+    return;
+  }
+  if (state.mode !== "visual") return;
   if (editing) return;
   // Don't let a destructive block shortcut fire while a chrome control (e.g. a
   // toolbar button) holds focus — only when a block itself is the focus/target.
@@ -8873,6 +8974,7 @@ function init(): void {
   $("btn-save").onclick = () => void save();
   $("btn-publish").onclick = () => void publishSite();
   $("btn-preview").onclick = () => void togglePreview();
+  $("btn-help").onclick = () => void openHelpModal();
   $("btn-close").onclick = () => void closeProject();
   // The preview window can be closed by the user (native close button); when
   // that happens the main process tears down the dev server and tells us, so
