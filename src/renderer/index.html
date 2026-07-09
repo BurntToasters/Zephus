@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; frame-src 'self' http://localhost:* http://127.0.0.1:* http://[::1]:*;"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; frame-src 'self' http://localhost:* http://127.0.0.1:* http://[::1]:*;"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Zephus</title>
@@ -274,26 +274,49 @@
           </div>
         </div>
         <div class="topbar-right">
-          <button id="btn-undo" class="btn ghost" title="Undo (Ctrl/Cmd+Z)">
+          <button
+            id="btn-undo"
+            class="btn ghost"
+            title="Undo (Ctrl/Cmd+Z)"
+            aria-label="Undo last change"
+          >
             <i data-lucide="undo-2"></i> Undo
           </button>
           <button
             id="btn-redo"
             class="btn ghost"
             title="Redo (Ctrl/Cmd+Shift+Z)"
+            aria-label="Redo last change"
           >
             <i data-lucide="redo-2"></i> Redo
           </button>
-          <button id="btn-preview" class="btn">
+          <button id="btn-preview" class="btn" aria-label="Start Live Preview">
             <i data-lucide="play"></i> Start Preview
           </button>
-          <button id="btn-publish" class="btn">
+          <button
+            id="btn-publish"
+            class="btn"
+            aria-label="Publish Site to Production"
+          >
             <i data-lucide="globe"></i> Publish
           </button>
-          <button id="btn-save" class="btn primary">
+          <button id="btn-save" class="btn primary" aria-label="Save Changes">
             <i data-lucide="save"></i> Save
           </button>
-          <button id="btn-close" class="btn ghost" title="Close Project">
+          <button
+            id="btn-help"
+            class="btn ghost"
+            title="Keyboard Shortcuts &amp; Help"
+            aria-label="View Keyboard Shortcuts and Help"
+          >
+            <i data-lucide="info"></i> Help
+          </button>
+          <button
+            id="btn-close"
+            class="btn ghost"
+            title="Close Project"
+            aria-label="Close Project and Return Home"
+          >
             <i data-lucide="log-out"></i> Close
           </button>
         </div>
@@ -334,6 +357,7 @@
                 id="btn-regen-nav"
                 class="mini-btn"
                 title="Regenerate nav from pages"
+                aria-label="Regenerate navigation from pages"
               >
                 <i data-lucide="refresh-cw"></i> Regen
               </button>

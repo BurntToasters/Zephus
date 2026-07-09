@@ -437,7 +437,8 @@ function initAutoUpdater(): void {
  */
 function setupSecurityHeaders(): void {
   const CSP =
-    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+    "font-src 'self' data: https://fonts.gstatic.com; " +
     "img-src 'self' data:; connect-src 'self'; object-src 'none'; " +
     "base-uri 'self'; frame-ancestors 'none'; form-action 'self'; " +
     "frame-src 'self' http://localhost:* http://127.0.0.1:* http://[::1]:*";
