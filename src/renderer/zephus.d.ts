@@ -584,4 +584,5 @@ interface ZephusApi {
 interface Window {
   zephus: ZephusApi;
   __zephusRunEditorSmoke?: () => string[];
+  refreshIcons?: () => void;
 }

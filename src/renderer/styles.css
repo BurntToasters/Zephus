@@ -266,15 +266,19 @@ body {
 }
 
 .update-status-pill {
+  appearance: none;
   font-size: 12px;
   color: var(--muted);
   display: flex;
   align-items: center;
   gap: 8px;
+  width: 100%;
   padding: 6px 10px;
   border-radius: 20px;
   background: rgba(9, 9, 11, 0.4);
   border: 1px solid rgba(255, 255, 255, 0.04);
+  text-align: left;
+  font: inherit;
 }
 
 .update-status-pill.clickable {
