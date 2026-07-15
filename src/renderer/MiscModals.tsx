@@ -49,8 +49,8 @@ export function renderProductionLicensesModalBody(
     () => (
       <div class="licenses-modal">
         <p class="licenses-summary">
-          Generated from npm-license-crawler --production. {entryCount} packages
-          listed.
+          Generated from license-checker-rseidelsohn --production. {entryCount}{" "}
+          packages listed.
         </p>
 
         <div class="licenses-table-wrap">
