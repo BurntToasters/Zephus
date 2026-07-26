@@ -13,6 +13,8 @@ A WYSIWYG Local GUI web editor; edit your git-hosted sites!
 ## Documentation
 To understand more how Zephus works and how to use it, please read the current documentation **[HERE](./docs/README.md)**.
 
+Developers: see **[Development guide](./docs/DEVELOPMENT.md)** for tests, bundling, and editor architecture.
+
 ## License
 
 Zephus is free software released under the [GNU General Public License v3.0](./LICENSE).

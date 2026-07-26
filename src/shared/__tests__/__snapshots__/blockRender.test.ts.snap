@@ -1,0 +1,9 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`section wrapper snapshots > wrapSectionChildren unwrap-plain 1`] = `"<p>inner</p>"`;
+
+exports[`section wrapper snapshots > wrapSectionChildren wrap-box 1`] = `
+"<section data-zephus-id="sec-box" data-zephus-block="section" data-zephus-props="%7B%22wrapper%22%3A%22box%22%2C%22cls%22%3A%22hero-shell%22%2C%22label%22%3A%22Hero%22%7D" data-zephus-style="%7B%22padding%22%3A%222rem%22%7D" data-zephus-locked="true" class="hero-shell" style="padding:2rem">
+<p>hero</p>
+</section>"
+`;

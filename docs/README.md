@@ -26,6 +26,7 @@ This guide explains how to create, edit, preview, and publish Astro sites with Z
    - Edit in code mode
    - Handle external file changes
    - Manage auto-saves
+   - Version control with Git (editor panel)
 
 4. **[Settings](./SETTINGS.md)**: Configuration & preferences
    - App theme and appearance
@@ -41,6 +42,11 @@ This guide explains how to create, edit, preview, and publish Astro sites with Z
    - Asset and image issues
    - Save and sync issues
    - Performance tips
+
+6. **[Development](./DEVELOPMENT.md)**: Contributing & architecture
+   - Build/test commands
+   - Render parity between build and editor
+   - Renderer module layout (`editorGit`, `editorSerialize`, …)
 
 ---
 
@@ -78,7 +84,7 @@ This guide explains how to create, edit, preview, and publish Astro sites with Z
 ## The Editor Interface
 
 ### Left Sidebar
-Your site's pages listed in a menu. Click to edit, click the eye icon to toggle visibility, use ⋯ menu for more options.
+Your site's pages listed in a menu. Click to edit, click the eye icon to toggle visibility, use ⋯ menu for more options. The **Git** panel shows branch status, changed files, and in-editor commit/push/pull when the project is a Git repository.
 
 ### Center (Canvas)
 Your main editing area. Add blocks with the **+ Add Block** button, then click blocks to edit their content and properties.
@@ -270,7 +276,7 @@ If you edit a page outside Zephus (in VS Code, Git, etc.), Zephus detects it and
 - **No custom components**: Fixed 20 block types (no component builder)
 - **Single schema version**: Major Zephus updates may require migration
 - **Detach/reattach**: Reattaching overwrites code changes
-- **Design tokens**: Live preview except Google Fonts (which don't load in CSP sandbox)
+- **Design tokens**: Live preview, including Google Fonts loaded in the editor workspace
 
 ---
 
@@ -282,6 +288,7 @@ If you edit a page outside Zephus (in VS Code, Git, etc.), Zephus detects it and
 - 📋 [Workflows](./WORKFLOWS.md): Detailed tutorials
 - ⚙️ [Settings](./SETTINGS.md): Configuration
 - 🐛 [Troubleshooting](./TROUBLESHOOTING.md): Common issues & fixes
+- 🛠️ [Development](./DEVELOPMENT.md): Build, tests, render parity
 
 **External Links:**
 - [Astro Documentation](https://docs.astro.build): The framework Zephus uses

@@ -44,7 +44,13 @@ export interface GitStatus {
   deleted: string[];
   /** True if .zephus/ is git-ignored (a misconfiguration). */
   zephusIgnored?: boolean;
+  /** True when the project folder is not a git repository. */
+  notARepository?: boolean;
   error?: string;
+  /** Commits on the current branch not on @{upstream} (when upstream is set). */
+  ahead?: number;
+  /** Commits on @{upstream} not merged into HEAD (when upstream is set). */
+  behind?: number;
 }
 
 export interface GlobalSettings {

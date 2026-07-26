@@ -42,7 +42,10 @@ interface GitStatus {
   added: string[];
   deleted: string[];
   zephusIgnored?: boolean;
+  notARepository?: boolean;
   error?: string;
+  ahead?: number;
+  behind?: number;
 }
 
 interface GlobalSettings {
@@ -464,8 +467,18 @@ interface ZephusApi {
     page: string,
     pagesDir: string,
   ): Promise<PageDocumentResult>;
-  getGitStatus(projectPath: string): Promise<GitStatus>;
+  getGitStatus(
+    projectPath: string,
+    options?: { fetchRemote?: boolean },
+  ): Promise<GitStatus>;
   initGitRepo(projectPath: string): Promise<OperationResult>;
+  commitGitChanges(
+    projectPath: string,
+    message: string,
+    paths?: string[],
+  ): Promise<OperationResult>;
+  pushGitChanges(projectPath: string): Promise<OperationResult>;
+  pullGitChanges(projectPath: string): Promise<OperationResult>;
   readGlobalSettings(): Promise<GlobalSettings>;
   writeGlobalSettings(settings: GlobalSettings): Promise<OperationResult>;
   removeRecentProject(projectPath: string): Promise<GlobalSettings>;
@@ -584,4 +597,5 @@ interface ZephusApi {
 interface Window {
   zephus: ZephusApi;
   __zephusRunEditorSmoke?: () => string[];
+  refreshIcons?: () => void;
 }

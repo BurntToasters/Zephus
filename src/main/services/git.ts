@@ -14,11 +14,60 @@ async function git(projectPath: string, args: string[]): Promise<string> {
   return stdout;
 }
 
+/** True when git failed because the project has no `.git` directory. */
+export function gitErrorLooksLikeMissingRepo(message: string): boolean {
+  return /not a git repository/i.test(message);
+}
+
+/** Parses `git rev-list --left-right --count @{upstream}...HEAD` (behind, ahead). */
+export function parseRevListAheadBehind(
+  stdout: string,
+): { ahead: number; behind: number } | null {
+  const parts = stdout.trim().split(/\s+/);
+  if (parts.length !== 2) return null;
+  const behind = Number(parts[0]);
+  const ahead = Number(parts[1]);
+  if (!Number.isFinite(ahead) || !Number.isFinite(behind)) return null;
+  return { ahead, behind };
+}
+
+async function readUpstreamAheadBehind(
+  projectPath: string,
+  fetchRemote: boolean,
+): Promise<{ ahead: number; behind: number } | null> {
+  if (fetchRemote) {
+    try {
+      await git(projectPath, ["fetch", "--quiet", "--prune"]);
+    } catch {
+      // Offline or no remote — still report local ahead/behind vs last fetch.
+    }
+  }
+  try {
+    const raw = await git(projectPath, [
+      "rev-list",
+      "--left-right",
+      "--count",
+      "@{upstream}...HEAD",
+    ]);
+    return parseRevListAheadBehind(raw);
+  } catch {
+    return null;
+  }
+}
+
+export interface GetGitStatusOptions {
+  /** Run `git fetch` before ahead/behind (Git panel Refresh, after push/pull). */
+  fetchRemote?: boolean;
+}
+
 /**
  * Reports the git status of a project: branch (or detached HEAD) and the
  * lists of modified, added, and deleted files in the working tree.
  */
-export async function getGitStatus(projectPath: string): Promise<GitStatus> {
+export async function getGitStatus(
+  projectPath: string,
+  options: GetGitStatusOptions = {},
+): Promise<GitStatus> {
   const empty: GitStatus = {
     available: false,
     branch: null,
@@ -48,6 +97,10 @@ export async function getGitStatus(projectPath: string): Promise<GitStatus> {
       else if (code.includes("M") || code.includes("R")) modified.push(file);
     }
 
+    const upstream = !detachedHead
+      ? await readUpstreamAheadBehind(projectPath, options.fetchRemote ?? false)
+      : null;
+
     return {
       available: true,
       branch: detachedHead ? null : branchRaw,
@@ -56,18 +109,122 @@ export async function getGitStatus(projectPath: string): Promise<GitStatus> {
       added,
       deleted,
       zephusIgnored: await isZephusIgnored(projectPath),
+      ...(upstream ? { ahead: upstream.ahead, behind: upstream.behind } : {}),
     };
   } catch (error) {
     log.warn("Git status unavailable for project", projectPath, error);
+    const detail = error instanceof Error ? error.message : String(error);
     return {
       ...empty,
-      error: error instanceof Error ? error.message : String(error),
+      error: detail,
+      notARepository: gitErrorLooksLikeMissingRepo(detail),
     };
   }
 }
 
 export async function initGitRepo(projectPath: string): Promise<void> {
   await git(projectPath, ["init"]);
+}
+
+/** Returns trimmed message or null when empty/whitespace-only. */
+export function normalizeCommitMessage(message: string): string | null {
+  const trimmed = message.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+/** Stages all changes and creates a commit. Requires a non-empty message. */
+export async function commitAllChanges(
+  projectPath: string,
+  message: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const normalized = normalizeCommitMessage(message);
+  if (!normalized) {
+    return { ok: false, error: "Commit message is required." };
+  }
+  try {
+    await git(projectPath, ["add", "-A"]);
+    await git(projectPath, ["commit", "-m", normalized]);
+    return { ok: true };
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    log.warn("Git commit failed", projectPath, error);
+    return { ok: false, error: detail };
+  }
+}
+
+/**
+ * Stages the given paths (repo-relative) and commits. Empty list is an error.
+ */
+export async function commitProjectPaths(
+  projectPath: string,
+  message: string,
+  paths: string[],
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const normalized = normalizeCommitMessage(message);
+  if (!normalized) {
+    return { ok: false, error: "Commit message is required." };
+  }
+  const unique = [...new Set(paths.map((p) => p.trim()).filter(Boolean))];
+  if (unique.length === 0) {
+    return { ok: false, error: "Select at least one file to commit." };
+  }
+  try {
+    await git(projectPath, ["add", "--", ...unique]);
+    await git(projectPath, ["commit", "-m", normalized]);
+    return { ok: true };
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    log.warn("Git commit failed", projectPath, error);
+    return { ok: false, error: detail };
+  }
+}
+
+/** Pushes the current branch to its configured upstream (git push). */
+export async function pushCurrentBranch(
+  projectPath: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const status = await getGitStatus(projectPath);
+    if (!status.available) {
+      return { ok: false, error: "Git is not available for this project." };
+    }
+    if (status.detachedHead) {
+      return {
+        ok: false,
+        error: "Cannot push while in detached HEAD. Check out a branch first.",
+      };
+    }
+    await git(projectPath, ["push"]);
+    return { ok: true };
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    log.warn("Git push failed", projectPath, error);
+    return { ok: false, error: detail };
+  }
+}
+
+/** Fast-forward pull from the configured upstream (git pull --ff-only). */
+export async function pullCurrentBranch(
+  projectPath: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const status = await getGitStatus(projectPath);
+    if (!status.available) {
+      return { ok: false, error: "Git is not available for this project." };
+    }
+    if (status.detachedHead) {
+      return {
+        ok: false,
+        error: "Cannot pull while in detached HEAD. Check out a branch first.",
+      };
+    }
+    await git(projectPath, ["pull", "--ff-only"]);
+    return { ok: true };
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    log.warn("Git pull failed", projectPath, error);
+    return { ok: false, error: detail };
+  }
 }
 
 /**

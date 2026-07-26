@@ -26,6 +26,19 @@ import { detectAstro, listPages } from "./project";
 import { readRepoSettings } from "./settings";
 import { readJsonSafe, writeFileAtomic } from "./fsSafe";
 import {
+  escapeAttr,
+  escapeHtml,
+  safeUrl,
+  splitLines,
+  splitPair,
+  styleAttr,
+} from "../../shared/renderHelpers";
+import {
+  renderBlockHtml,
+  renderSectionsMarkup,
+  collectResponsiveCss,
+} from "../../shared/blockRender";
+import {
   assertRealpathInside,
   safeResolve as safeResolveString,
 } from "./fsSafe";
@@ -890,7 +903,7 @@ function parseSectionsFromSource(raw: string): SectionNode[] {
         type: "section",
         label: stored.props["label"] || "Section",
         props: {
-          wrapper: stored.props["wrapper"] ?? "box",
+          wrapper: stored.props["wrapper"] ?? "none",
           cls: stored.props["cls"] ?? "",
         },
         style: stored.style,
@@ -967,52 +980,6 @@ function defaultSectionNode(blocks: BlockNode[]): SectionNode {
 }
 
 /**
- * Encodes a value as a URI-encoded JSON payload for a data-* attribute.
- * encodeURIComponent leaves apostrophes literal, so we encode them too to
- * guarantee the attribute value contains no quote characters.
- */
-function encodeDataPayload(value: unknown): string {
-  return encodeURIComponent(JSON.stringify(value)).replace(/'/g, "%27");
-}
-
-function blockMetadataAttrs(block: BlockNode): string {
-  const attrs = [
-    `data-zephus-id="${escapeAttr(block.id)}"`,
-    `data-zephus-block="${escapeAttr(block.type)}"`,
-    `data-zephus-props="${escapeAttr(encodeDataPayload(block.props))}"`,
-  ];
-  if (block.style) {
-    attrs.push(
-      `data-zephus-style="${escapeAttr(encodeDataPayload(block.style))}"`,
-    );
-  }
-  if (block.locked) attrs.push(`data-zephus-locked="true"`);
-  return " " + attrs.join(" ");
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
-
-function escapeAttr(value: string): string {
-  return escapeHtml(value).replace(/"/g, "&quot;");
-}
-
-/**
- * Blocks dangerous URL schemes for href/src values (mirror of the renderer's
- * safeUrl). Returns "" for javascript:/data:/vbscript:/file: so the built site
- * never emits an executable URL. Keep in sync with zephusEngine.ts.
- */
-function safeUrl(value: string): string {
-  const trimmed = (value ?? "").trim();
-  if (/^(javascript|vbscript|data|file):/i.test(trimmed)) return "";
-  return trimmed;
-}
-
-/**
  * Sanitizes a value destined for a CSS declaration. Strips characters that
  * could break out of the declaration/rule (`;{}<>` and newlines) to prevent
  * CSS injection from design-token values in site.json. Caps length.
@@ -1026,338 +993,18 @@ function cssValue(value: string): string {
     .slice(0, 200);
 }
 
-function blockCssValue(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  if (!trimmed || /[;{}<>\r\n]/.test(trimmed)) return null;
-  return trimmed.slice(0, 240);
-}
-
-function addCssValue(css: string[], property: string, value: unknown): void {
-  const safe = blockCssValue(value);
-  if (safe) css.push(`${property}:${safe}`);
-}
-
-function plainTextToHtml(text: string): string {
-  return escapeHtml(text).replace(/\n/g, "<br />");
-}
-
-function renderListItems(items: string): string {
-  return items
-    .split(/\r?\n/)
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .map((item) => `<li>${plainTextToHtml(item)}</li>`)
-    .join("");
-}
-
-function styleAttr(block: BlockNode): string {
-  const style = block.style ?? {};
-  const css: string[] = [];
-  if (["left", "center", "right"].includes(String(style.align))) {
-    css.push(`text-align:${style.align}`);
-  }
-  addCssValue(css, "width", style.width);
-  addCssValue(css, "height", style.height);
-  addCssValue(css, "max-width", style.maxWidth);
-  addCssValue(css, "background", style.background);
-  addCssValue(css, "color", style.color);
-  addCssValue(css, "padding", style.padding);
-  addCssValue(css, "margin", style.margin);
-  addCssValue(css, "border-radius", style.radius);
-  addCssValue(css, "gap", style.gap);
-  addCssValue(css, "aspect-ratio", style.aspectRatio);
-  addCssValue(css, "object-fit", style.objectFit);
-  addCssValue(css, "object-position", style.objectPosition);
-  if (style.columns && (block.type === "columns" || block.type === "gallery")) {
-    css.push(
-      `grid-template-columns:repeat(${Math.max(1, Number(style.columns) || 1)}, minmax(0, 1fr))`,
-    );
-  }
-  if (style.shadow === "sm") css.push(`box-shadow:var(--shadow-sm)`);
-  if (style.shadow === "md") css.push(`box-shadow:var(--shadow-md)`);
-  if (style.shadow === "lg") css.push(`box-shadow:var(--shadow-lg)`);
-  if (block.type === "spacer" && !style.height) {
-    addCssValue(css, "height", block.props["height"] || "48px");
-  }
-  return css.length ? ` style="${escapeAttr(css.join(";"))}"` : "";
-}
-
-function responsiveCssDeclarations(
-  style: BlockStyle | undefined,
-): string | null {
-  if (!style) return null;
-  const css: string[] = [];
-  if (["left", "center", "right"].includes(String(style.align))) {
-    css.push(`text-align:${style.align}`);
-  }
-  addCssValue(css, "width", style.width);
-  addCssValue(css, "height", style.height);
-  addCssValue(css, "max-width", style.maxWidth);
-  addCssValue(css, "padding", style.padding);
-  addCssValue(css, "margin", style.margin);
-  addCssValue(css, "gap", style.gap);
-  if (style.columns) {
-    css.push(
-      `grid-template-columns:repeat(${Math.max(1, Number(style.columns) || 1)}, minmax(0, 1fr))`,
-    );
-  }
-  return css.length ? css.join(";") : null;
-}
-
-function collectResponsiveCss(sections: SectionNode[]): string {
-  const tabletRules: string[] = [];
-  const mobileRules: string[] = [];
-
-  const addRules = (
-    id: string,
-    style: BlockStyle | undefined,
-    includeStackRule = false,
-  ): void => {
-    const tablet = responsiveCssDeclarations(style?.responsive?.tablet);
-    const mobile = responsiveCssDeclarations(style?.responsive?.mobile);
-    const selector = `[data-zephus-id="${escapeAttr(id)}"]`;
-    if (tablet) tabletRules.push(`${selector}{${tablet}}`);
-    if (mobile) mobileRules.push(`${selector}{${mobile}}`);
-    if (includeStackRule && style?.stackOnMobile) {
-      mobileRules.push(`${selector}{grid-template-columns:1fr}`);
-    }
-  };
-
-  for (const section of sections) {
-    addRules(section.id, section.style);
-    for (const block of section.children) {
-      addRules(block.id, block.style, block.type === "columns");
-    }
-  }
-
-  const chunks: string[] = [];
-  if (tabletRules.length > 0) {
-    chunks.push(`@media (max-width: 1024px){${tabletRules.join("")}}`);
-  }
-  if (mobileRules.length > 0) {
-    chunks.push(`@media (max-width: 720px){${mobileRules.join("")}}`);
-  }
-  return chunks.join("\n");
-}
-
-function classAttr(block: BlockNode): string {
-  const cls = block.props["cls"];
-  return cls ? ` class="${escapeAttr(cls)}"` : "";
-}
-
-/** Metadata + style + a fixed structural class merged with the user's class. */
-function structuralCommon(block: BlockNode, fixedClass: string): string {
-  const userCls = block.props["cls"]
-    ? " " + escapeAttr(block.props["cls"])
-    : "";
-  return `${blockMetadataAttrs(block)} class="${fixedClass}${userCls}"${styleAttr(block)}`;
-}
-
-function splitLines(raw: string): string[] {
-  return (raw ?? "")
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-}
-
-/** Splits "left :: right" into a tuple; right is "" when no separator. */
-function splitPair(line: string, sep = "::"): [string, string] {
-  const i = line.indexOf(sep);
-  if (i < 0) return [line.trim(), ""];
-  return [line.slice(0, i).trim(), line.slice(i + sep.length).trim()];
-}
-
 export function renderBlockNode(block: BlockNode): string {
-  const common = `${blockMetadataAttrs(block)}${classAttr(block)}${styleAttr(block)}`;
-  switch (block.type) {
-    case "heading": {
-      const level = Math.max(1, Math.min(6, Number(block.props["level"] ?? 2)));
-      return `<h${level}${common}>${plainTextToHtml(
-        block.props["text"] ?? "",
-      )}</h${level}>`;
-    }
-    case "text":
-      return `<p${common}>${plainTextToHtml(block.props["text"] ?? "")}</p>`;
-    case "image":
-      return `<img${common} src="${escapeAttr(safeUrl(block.props["src"] ?? ""))}" alt="${escapeAttr(block.props["alt"] ?? "")}" />`;
-    case "button":
-      return `<a${common} href="${escapeAttr(safeUrl(block.props["href"] ?? "#") || "#")}">${plainTextToHtml(block.props["text"] ?? "")}</a>`;
-    case "section":
-      return `<section${common}>${plainTextToHtml(block.props["text"] ?? "")}</section>`;
-    case "divider":
-      return `<hr${common} />`;
-    case "spacer":
-      return `<div${common}></div>`;
-    case "columns": {
-      const cols = Number(block.style?.columns ?? block.props["count"] ?? 2);
-      const parts = Array.from(
-        { length: Math.max(2, Math.min(cols || 2, 4)) },
-        (_, index) => {
-          const key = `col${index + 1}`;
-          return `<div class="zephus-column">${plainTextToHtml(
-            block.props[key] ?? `Column ${index + 1}`,
-          )}</div>`;
-        },
-      ).join("");
-      return `<section${common}>${parts}</section>`;
-    }
-    case "card":
-      return `<article${common}><h3>${plainTextToHtml(
-        block.props["title"] ?? "Card title",
-      )}</h3><p>${plainTextToHtml(block.props["text"] ?? "Card body")}</p></article>`;
-    case "gallery": {
-      const images = (block.props["images"] ?? "")
-        .split(/\r?\n|,/)
-        .map((item) => item.trim())
-        .filter(Boolean);
-      return `<section${structuralCommon(block, "zephus-gallery")}>${images
-        .map(
-          (src, index) =>
-            `<img src="${escapeAttr(safeUrl(src))}" alt="${escapeAttr(
-              block.props[`alt${index + 1}`] ?? "",
-            )}" />`,
-        )
-        .join("")}</section>`;
-    }
-    case "quote":
-      return `<blockquote${common}><p>${plainTextToHtml(
-        block.props["text"] ?? "",
-      )}</p>${
-        block.props["cite"]
-          ? `<cite>${plainTextToHtml(block.props["cite"])}</cite>`
-          : ""
-      }</blockquote>`;
-    case "list": {
-      const tag = block.props["ordered"] === "true" ? "ol" : "ul";
-      return `<${tag}${common}>${renderListItems(
-        block.props["items"] ?? "",
-      )}</${tag}>`;
-    }
-    case "embed":
-      return `<iframe${common} src="${escapeAttr(safeUrl(block.props["src"] ?? ""))}" title="${escapeAttr(block.props["title"] ?? "Embed")}" loading="lazy"></iframe>`;
-    case "html":
-      return block.raw ?? "";
-    case "feature":
-      return `<div${structuralCommon(block, "zephus-feature")}><div class="zephus-feature-icon">${plainTextToHtml(
-        block.props["icon"] ?? "★",
-      )}</div><h3>${plainTextToHtml(
-        block.props["title"] ?? "Feature",
-      )}</h3><p>${plainTextToHtml(block.props["text"] ?? "")}</p></div>`;
-    case "testimonial":
-      return `<figure${structuralCommon(block, "zephus-testimonial")}><blockquote>${plainTextToHtml(
-        block.props["quote"] ?? "",
-      )}</blockquote><figcaption><strong>${plainTextToHtml(
-        block.props["author"] ?? "",
-      )}</strong>${
-        block.props["role"]
-          ? ` <span>${plainTextToHtml(block.props["role"])}</span>`
-          : ""
-      }</figcaption></figure>`;
-    case "accordion": {
-      const items = splitLines(block.props["items"] ?? "")
-        .map((line) => splitPair(line))
-        .map(
-          ([q, a]) =>
-            `<details><summary>${plainTextToHtml(q)}</summary><p>${plainTextToHtml(a)}</p></details>`,
-        )
-        .join("");
-      return `<div${structuralCommon(block, "zephus-accordion")}>${items}</div>`;
-    }
-    case "stats": {
-      const items = splitLines(block.props["items"] ?? "")
-        .map((line) => splitPair(line))
-        .map(
-          ([n, l]) =>
-            `<div class="zephus-stat"><span class="zephus-stat-num">${plainTextToHtml(
-              n,
-            )}</span><span class="zephus-stat-label">${plainTextToHtml(l)}</span></div>`,
-        )
-        .join("");
-      return `<div${structuralCommon(block, "zephus-stats")}>${items}</div>`;
-    }
-    case "pricing": {
-      const features = splitLines(block.props["features"] ?? "")
-        .map((f) => `<li>${plainTextToHtml(f)}</li>`)
-        .join("");
-      const cta = block.props["ctaText"]
-        ? `<a class="button" href="${escapeAttr(safeUrl(block.props["ctaHref"] ?? "#") || "#")}">${plainTextToHtml(
-            block.props["ctaText"],
-          )}</a>`
-        : "";
-      return `<div${structuralCommon(block, "zephus-pricing")}><h3>${plainTextToHtml(
-        block.props["plan"] ?? "Plan",
-      )}</h3><div class="zephus-price"><span class="zephus-price-amount">${plainTextToHtml(
-        block.props["price"] ?? "",
-      )}</span>${
-        block.props["period"]
-          ? `<span class="zephus-price-period">${plainTextToHtml(block.props["period"])}</span>`
-          : ""
-      }</div><ul>${features}</ul>${cta}</div>`;
-    }
-    case "cta": {
-      const cta = block.props["buttonText"]
-        ? `<a class="button" href="${escapeAttr(safeUrl(block.props["buttonHref"] ?? "#") || "#")}">${plainTextToHtml(
-            block.props["buttonText"],
-          )}</a>`
-        : "";
-      return `<div${structuralCommon(block, "zephus-cta")}><h2>${plainTextToHtml(
-        block.props["heading"] ?? "",
-      )}</h2>${
-        block.props["text"]
-          ? `<p>${plainTextToHtml(block.props["text"])}</p>`
-          : ""
-      }${cta}</div>`;
-    }
-    default: {
-      // Unknown block type (forward-compatible: a sidecar from a newer Zephus
-      // version, or hand-edited JSON). Preserve it as a data-annotated div so
-      // its content is not silently lost and it round-trips on next save.
-      const unknownType = (block as { type: string }).type;
+  return renderBlockHtml(block, {
+    onUnknownBlockType: (unknownType) => {
       log.warn(
         `renderBlockNode: unknown block type "${unknownType}", preserving as HTML`,
       );
-      const payload = encodeDataPayload(block.props);
-      return `<div data-zephus-block="${escapeAttr(unknownType)}" data-zephus-props="${escapeAttr(payload)}" class="zephus-unknown-block"><!-- Unknown block type: ${escapeHtml(unknownType)} --></div>`;
-    }
-  }
+    },
+  });
 }
 
 function renderSections(sections: SectionNode[]): string {
-  const responsiveCss = collectResponsiveCss(sections);
-  const body = sections
-    .map((section) => {
-      const body = section.children
-        .map((child) => renderBlockNode(child))
-        .join("\n");
-      const hasSectionSurface =
-        Boolean(section.style && Object.keys(section.style).length > 0) ||
-        Boolean(section.locked) ||
-        Boolean(section.props["cls"]);
-      if (section.props["wrapper"] === "none" && !hasSectionSurface) {
-        return body;
-      }
-      const cls = section.props["cls"]
-        ? ` class="${escapeAttr(section.props["cls"])}"`
-        : "";
-      const style = styleAttr({
-        id: section.id,
-        type: "section",
-        props: section.props,
-        style: section.style,
-      } as BlockNode);
-      const metadata = blockMetadataAttrs({
-        id: section.id,
-        type: "section",
-        props: { ...section.props, label: section.label },
-        style: section.style,
-        locked: section.locked,
-      } as BlockNode);
-      return `<section${metadata}${cls}${style}>\n${body}\n</section>`;
-    })
-    .filter(Boolean)
-    .join("\n");
-  return responsiveCss ? `<style>${responsiveCss}</style>\n${body}` : body;
+  return renderSectionsMarkup(sections, renderBlockNode);
 }
 
 function pageImportPath(

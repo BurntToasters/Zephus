@@ -1,6 +1,6 @@
 {
   "name": "zephus",
-  "version": "0.1.0-beta.1",
+  "version": "0.1.0-beta.2",
   "private": true,
   "description": "Local WYSIWYG website editor for Astro sites",
   "desktopName": "run.rosie.zephus.desktop",
@@ -148,12 +148,13 @@
     "electron": "^42.0.0",
     "electron-builder": "^26.7.0",
     "esbuild": "^0.28.1",
+    "esbuild-plugin-solid": "^0.6.0",
     "eslint": "^10.3.0",
     "husky": "^9.1.7",
     "js-yaml": "^4.1.0",
     "jsdom": "^29.1.1",
-    "lint-staged": "^17.0.2",
     "license-checker-rseidelsohn": "^5.0.1",
+    "lint-staged": "^17.0.2",
     "prettier": "^3.8.1",
     "typescript": "^6.0.2",
     "typescript-eslint": "^8.59.2",
@@ -163,7 +164,8 @@
     "electron-log": "^5.3.4",
     "electron-updater": "^6.3.9",
     "lucide": "^1.17.0",
-    "sanitize-filename": "^1.6.3"
+    "sanitize-filename": "^1.6.3",
+    "solid-js": "^1.9.14"
   },
   "lint-staged": {
     "src/**/*.ts": [

@@ -2,6 +2,7 @@
 // dependencies (CodeMirror, etc.) into a single browser IIFE that the
 // sandboxed renderer can load via a plain <script> tag.
 const esbuild = require("esbuild");
+const { solidPlugin } = require("esbuild-plugin-solid");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
@@ -26,6 +27,7 @@ const options = {
   legalComments: "none",
   metafile: true,
   logLevel: "info",
+  plugins: [solidPlugin()],
 };
 
 function writeMeta(metafile) {

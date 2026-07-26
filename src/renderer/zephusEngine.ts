@@ -1,9 +1,63 @@
 // Zephus renderer logic. Talks to the main process exclusively through
 // window.zephus (the preload bridge). No Node APIs are used here.
 
-// TODO: Split UI rendering from state management.
+// TODO: Split UI rendering from state management (see editorCommands, editorGit, editorSerialize, editorBlockRender, editorSave, editorParse, editorPageModel, editorUndo, editorDraft, editorInspector).
 
-import { createCodeEditor, CodeEditor } from "./codeEditor";
+import { appendCappedLog } from "./editorLog";
+import { collectUnsavedWorkSummaryLines } from "./editorUnsavedWork";
+import { createEditorGitActions } from "./editorGit";
+import { createEditorSaveActions } from "./editorSave";
+import { createEditorSiteSaveActions } from "./editorSiteSave";
+import { createEditorDraftRestoreActions } from "./editorDraftRestore";
+import { createEditorPageParser } from "./editorParse";
+import {
+  blocksFromSections,
+  buildPageDocumentFromSections,
+  cloneSections,
+} from "./editorPageModel";
+import {
+  cancelScheduledEditorDraftWrite,
+  scheduleEditorDraftWrite,
+  SITE_DRAFT_TARGET,
+} from "./editorDraft";
+import {
+  createDebouncedCanvasRepaint,
+  createInspectorUndoLatch,
+  isInspectorTextInputFocused,
+} from "./editorInspector";
+import {
+  captureEditorSnapshot,
+  editorSnapshotSectionsChanged,
+  popEditorRedoEntry,
+  popEditorUndoEntry,
+  pushEditorRedoFromCurrent,
+  pushEditorUndo,
+  pushEditorUndoFromCurrent,
+  restoreEditorSnapshot,
+} from "./editorUndo";
+import {
+  blockToHtmlForEditor,
+  sectionToHtmlForEditor,
+} from "./editorBlockRender";
+import { assembleManagedPage, splitManagedPageSource } from "./editorSerialize";
+import {
+  EditorClipboardPayload,
+  formatPanelMountFailureStatus,
+  handlePlainTextPaste,
+  isBlockTypeAllowed,
+  isNodeLocked,
+  lockedMutationMessage,
+  shouldBlockManagedVisualSwitch,
+  syncUndoRedoToolbar,
+} from "./editorCommands";
+import {
+  escapeAttr,
+  escapeHtml,
+  plainTextToHtml,
+  safeUrl,
+  splitLines,
+  splitPair,
+} from "../shared/renderHelpers";
 import {
   clearPageChanges,
   clearSiteChanges,
@@ -57,6 +111,102 @@ import {
   X,
   Info,
 } from "lucide";
+import { renderHelpModal } from "./HelpModal";
+import { mountAboutLicenses, updateAboutLicenses } from "./AboutLicenses";
+import {
+  AssetBrowserModalEntry,
+  renderAssetBrowserModalBody,
+} from "./AssetBrowserModal";
+import { renderBlockProperties } from "./BlockProperties";
+import {
+  mountCanvas,
+  registerCanvasHandlers,
+  updateCanvas,
+} from "./CanvasView";
+import {
+  googleFontForStack,
+  renderDesignSystemModalBody,
+} from "./DesignSystemModal";
+import { renderInsertModal } from "./InsertModals";
+import {
+  renderProductionLicensesModalBody,
+  renderPublishSuccessModalBody,
+  renderSiteShellModalBody,
+  renderThemePreviewModalBody,
+  renderUnsavedWorkSummaryModalBody,
+} from "./MiscModals";
+import { mountNextActions, updateNextActions } from "./NextActions";
+import { LinkPickerKind, renderLinkPickerModal } from "./LinkPickerModal";
+import {
+  renderPropertiesEmpty,
+  renderSectionProperties,
+} from "./SectionProperties";
+import {
+  initializeSettingsTab,
+  mountSettingsTab,
+  registerSettingsTabHandlers,
+  updateSettingsTabNode,
+  updateSettingsTabSettings,
+  updateSettingsTabUpdater,
+} from "./SettingsTab";
+import { renderSettingsModalBody } from "./SettingsModal";
+import {
+  mountGitBranch,
+  mountGitPanel,
+  registerGitPanelHandlers,
+  updateGitStatus,
+} from "./GitPanel";
+import {
+  mountHomeDraftRecovery,
+  registerHomeDraftRecoveryHandlers,
+  updateHomeDraftRecovery,
+} from "./HomeDraftRecovery";
+import { mountLayers, registerLayersHandlers, updateLayers } from "./Layers";
+import {
+  mountBlockPalette,
+  updateAllowedBlocks,
+  registerInsertBlockCallback,
+} from "./Palette";
+import {
+  mountRecentProjects,
+  registerRecentProjectsHandlers,
+  updateRecentProjects,
+} from "./RecentProjects";
+import { mountProjectOverview, updateProjectOverview } from "./ProjectOverview";
+import {
+  mountPageList,
+  registerPageListHandlers,
+  updatePageList,
+} from "./PageList";
+import {
+  renderNavigationPreviewModal,
+  renderNewPageModal,
+  renderPageSettingsModal,
+} from "./PageModals";
+import {
+  mountNavList,
+  registerNavListHandlers,
+  updateNavList,
+} from "./NavList";
+import {
+  mountEditorStateBanner,
+  updateEditorStateBanners,
+} from "./EditorStateBanner";
+import {
+  mountSidebarUpdateStatus,
+  registerSidebarUpdateStatusHandlers,
+  updateSidebarUpdateStatus,
+} from "./SidebarUpdateStatus";
+import {
+  mountThemesTab,
+  registerThemesTabHandlers,
+  updateThemesTab,
+} from "./ThemesTab";
+import {
+  mountTemplatePalette,
+  registerInsertTemplateCallback,
+  updateTemplates,
+} from "./Templates";
 
 type Mode = "visual" | "code";
 type BlockType = EditorBlockType;
@@ -112,24 +262,6 @@ const PALETTE_ICONS: Record<BlockType, string> = {
 const KNOWN_BLOCK_TYPES: ReadonlySet<string> = new Set(
   Object.keys(PALETTE_ICONS),
 );
-
-const DANGEROUS_KEYS = new Set(["__proto__", "constructor", "prototype"]);
-
-/** Coerces an arbitrary decoded object into a flat string-prop record, dropping
- * prototype-pollution keys and non-primitive values. */
-function sanitizeStringRecord(
-  input: Record<string, unknown> | undefined,
-): Record<string, string> {
-  const out: Record<string, string> = {};
-  if (!input || typeof input !== "object") return out;
-  for (const [key, value] of Object.entries(input)) {
-    if (DANGEROUS_KEYS.has(key)) continue;
-    if (typeof value === "string") out[key] = value;
-    else if (typeof value === "number" || typeof value === "boolean")
-      out[key] = String(value);
-  }
-  return out;
-}
 
 function refreshIcons(): void {
   createIcons({
@@ -198,6 +330,8 @@ interface SectionTemplate {
   blocks?: () => BlockNode[];
   /** Legacy/saved sections inserted as a single preserved HTML block. */
   html?: string;
+  deletable?: boolean;
+  onDelete?: () => void | Promise<void>;
 }
 
 /** Build a fresh editable block node with merged default props. */
@@ -402,6 +536,10 @@ const editorRules = {
   maxHeadingLevel: 6,
 };
 
+let editorClipboard: EditorClipboardPayload | null = null;
+let skipDeleteConfirm = false;
+const panelMountFailures: string[] = [];
+
 /** Cache of saved reusable sections, refreshed by renderTemplates(). */
 let reusableSectionsCache: ReusableSection[] = [];
 
@@ -501,10 +639,6 @@ function uid(): string {
   return "b" + Math.random().toString(36).slice(2, 9);
 }
 
-function escapeAttr(value: string): string {
-  return escapeHtml(value).replace(/"/g, "&quot;");
-}
-
 function cloneBlock(block: Block): Block {
   const copy: Block = {
     ...block,
@@ -544,29 +678,12 @@ function cloneBlock(block: Block): Block {
   return copy;
 }
 
-function cloneSections(sections: SectionNode[]): SectionNode[] {
-  return JSON.parse(JSON.stringify(sections)) as SectionNode[];
-}
-
 function trackChange(label: string): void {
   trackPageChange(state, label);
 }
 
 function clearChanges(): void {
   clearPageChanges(state);
-}
-
-function blocksFromSections(sections: SectionNode[]): Block[] {
-  return sections.flatMap((section) =>
-    section.children.map((child) => ({
-      id: child.id,
-      type: child.type,
-      props: { ...child.props },
-      style: child.style ? JSON.parse(JSON.stringify(child.style)) : undefined,
-      locked: child.locked,
-      raw: child.raw,
-    })),
-  );
 }
 
 function syncBlocksFromSections(): void {
@@ -579,11 +696,11 @@ function sectionsFromPageDocument(doc: PageDocument): SectionNode[] {
 
 function pageDocumentFromState(): PageDocument | null {
   if (!state.pageDocument || !state.page) return null;
-  return {
-    ...state.pageDocument,
-    page: state.page,
-    sections: cloneSections(state.sections),
-  };
+  return buildPageDocumentFromSections(
+    state.pageDocument,
+    state.page,
+    state.sections,
+  );
 }
 
 function syncVisualModeState(): void {
@@ -592,7 +709,7 @@ function syncVisualModeState(): void {
   visualBtn.classList.toggle("disabled", !state.visualEditable);
   visualBtn.title =
     state.managedStatus === "out-of-sync"
-      ? "This page was edited outside Zephus. Reattach it to resume visual editing."
+      ? "This page was edited outside Zephus. Reload from disk or detach in Code mode to continue."
       : state.visualEditable
         ? "Visual"
         : "Detached pages are code-only until reattached.";
@@ -604,9 +721,14 @@ let settingCode = false;
 
 function ensureCodeEditor(): void {
   if (cm) return;
-  cm = createCodeEditor($("code-editor"), () => {
-    if (state.mode === "code" && !settingCode) markDirty(true);
-  });
+  cm = createCodeEditor(
+    $("code-editor"),
+    () => {
+      if (state.mode === "code" && !settingCode) markDirty(true);
+      updateUndoRedoButtons();
+    },
+    updateUndoRedoButtons,
+  );
 }
 
 function setCode(value: string): void {
@@ -617,13 +739,6 @@ function setCode(value: string): void {
 
 function getCode(): string {
   return cm ? cm.getValue() : state.rawCode;
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
 }
 
 function currentPageLabel(): string {
@@ -661,29 +776,8 @@ function visibleNavCount(): number {
 }
 
 function renderThemePlaceholder(): void {
-  const container = $("theme-list-container");
   if (startThemes) return;
-  container.innerHTML = "";
-  const card = document.createElement("article");
-  card.className = "theme-card";
-  card.innerHTML = `
-    <div class="theme-card-preview">
-      <div class="theme-card-preview-empty">Theme previews load on demand</div>
-    </div>
-    <div class="theme-card-body">
-      <span class="t-name">Bundled starter themes</span>
-      <span class="t-desc">Open Get Started to lazy-load live previews for each bundled Zephus theme.</span>
-    </div>
-  `;
-  const actions = document.createElement("div");
-  actions.className = "theme-card-actions";
-  const btn = document.createElement("button");
-  btn.className = "btn primary";
-  btn.textContent = "Load Theme Previews";
-  btn.onclick = () => void activateHomeSection("create");
-  actions.appendChild(btn);
-  card.appendChild(actions);
-  container.appendChild(card);
+  updateThemesTab({ mode: "placeholder", themes: [] });
 }
 
 async function refreshHomeDraftSummaries(): Promise<void> {
@@ -701,33 +795,6 @@ function homeDraftLabel(entry: DraftSummary): string {
     : `Unsaved draft for ${page.replace(/\.(astro|md|mdx|html)$/i, "")}`;
 }
 
-function buildHomeStatusCard(
-  title: string,
-  body: string,
-  actions: Array<{ label: string; onClick: () => void }> = [],
-): HTMLElement {
-  const card = document.createElement("section");
-  card.className = "home-status-card";
-  const heading = document.createElement("strong");
-  heading.textContent = title;
-  const copy = document.createElement("p");
-  copy.textContent = body;
-  card.append(heading, copy);
-  if (actions.length > 0) {
-    const row = document.createElement("div");
-    row.className = "home-status-actions";
-    for (const action of actions) {
-      const btn = document.createElement("button");
-      btn.className = "mini-btn";
-      btn.textContent = action.label;
-      btn.onclick = action.onClick;
-      row.appendChild(btn);
-    }
-    card.appendChild(row);
-  }
-  return card;
-}
-
 function syncHomeActionState(): void {
   const resumeBtn = $("btn-resume-last") as HTMLButtonElement;
   const hasLastProject = Boolean(appSettings?.lastOpenedProject);
@@ -738,44 +805,19 @@ function syncHomeActionState(): void {
 function renderHomeStatusPanels(): void {
   const recoveryHost = $maybe("home-recovery-list");
   if (recoveryHost) {
-    recoveryHost.innerHTML = "";
     const drafts = homeDraftSummaries.slice(0, 4);
     if (drafts.length === 0) {
       recoveryHost.classList.add("hidden");
     } else {
       recoveryHost.classList.remove("hidden");
-
-      const alertHeader = document.createElement("div");
-      alertHeader.className = "pane-header-title";
-      alertHeader.style.marginBottom = "12px";
-      alertHeader.innerHTML = `
-        <p class="pane-kicker" style="color: var(--warning);">Unsaved Work Recovery</p>
-        <strong style="font-size: 14px;">Zephus detected unsaved page or site drafts.</strong>
-      `;
-      recoveryHost.appendChild(alertHeader);
-
-      const alertList = document.createElement("div");
-      alertList.className = "home-status-stack";
-
-      for (const draft of drafts) {
-        alertList.appendChild(
-          buildHomeStatusCard(
-            `${projectBaseName(draft.projectPath)} - ${formatRelativeTime(draft.savedAt)}`,
-            homeDraftLabel(draft),
-            [
-              {
-                label: "Resume Draft",
-                onClick: () => {
-                  pendingHomeDraftResume = draft;
-                  void openProjectByPath(draft.projectPath);
-                },
-              },
-            ],
-          ),
-        );
-      }
-      recoveryHost.appendChild(alertList);
     }
+    updateHomeDraftRecovery(
+      drafts.map((draft) => ({
+        projectPath: draft.projectPath,
+        title: `${projectBaseName(draft.projectPath)} - ${formatRelativeTime(draft.savedAt)}`,
+        body: homeDraftLabel(draft),
+      })),
+    );
   }
 
   // Render sidebar status badge
@@ -869,15 +911,30 @@ function renderUpdaterActions(container: HTMLElement): void {
   refreshIcons();
 }
 
+function currentUpdaterActions(): Array<{
+  id: "check" | "download" | "restart" | "cancel";
+  label: string;
+  tone: "secondary" | "primary" | "ghost";
+}> {
+  const actions: Array<{
+    id: "check" | "download" | "restart" | "cancel";
+    label: string;
+    tone: "secondary" | "primary" | "ghost";
+  }> = [{ id: "check", label: "Check for Updates Now", tone: "secondary" }];
+
+  if (updaterSnapshot?.status === "available") {
+    actions.push({ id: "download", label: "Download Update", tone: "primary" });
+  } else if (updaterSnapshot?.status === "downloaded") {
+    actions.push({ id: "restart", label: "Restart Now", tone: "primary" });
+  } else if (updaterSnapshot?.status === "downloading") {
+    actions.push({ id: "cancel", label: "Cancel Download", tone: "ghost" });
+  }
+
+  return actions;
+}
+
 function refreshUpdaterControls(): void {
-  document
-    .querySelectorAll<HTMLElement>("[data-updater-status-text]")
-    .forEach((el) => {
-      el.textContent = updaterStatusMessage();
-    });
-  document
-    .querySelectorAll<HTMLElement>("[data-updater-actions]")
-    .forEach((el) => renderUpdaterActions(el));
+  updateSettingsTabUpdater(updaterStatusMessage(), currentUpdaterActions());
 }
 
 function promptDownloadedUpdate(force = false): void {
@@ -903,116 +960,71 @@ function promptDownloadedUpdate(force = false): void {
 }
 
 function renderSidebarUpdateStatus(): void {
-  const sidebarUpdate = $("sidebar-update-status");
-  if (!sidebarUpdate) return;
-  sidebarUpdate.innerHTML = "";
-
   if (!updaterSnapshot) {
-    sidebarUpdate.classList.remove("clickable");
-    sidebarUpdate.onclick = null;
-    sidebarUpdate.innerHTML = `
-      <div class="update-status-dot"></div>
-      <span>Up to date</span>
-    `;
+    updateSidebarUpdateStatus({
+      clickable: false,
+      dotTone: "default",
+      label: "Up to date",
+    });
     return;
   }
 
   if (updaterSnapshot.status === "available") {
-    sidebarUpdate.classList.add("clickable");
-    sidebarUpdate.onclick = () => void switchStartTab("settings");
-    sidebarUpdate.innerHTML = `
-      <div class="update-status-dot active"></div>
-      <span style="color: #ffffff; font-weight: bold;">Update Available</span>
-    `;
+    updateSidebarUpdateStatus({
+      clickable: true,
+      dotTone: "active",
+      label: "Update Available",
+      emphasized: true,
+    });
   } else if (updaterSnapshot.status === "downloading") {
-    sidebarUpdate.classList.remove("clickable");
-    sidebarUpdate.onclick = null;
-    sidebarUpdate.innerHTML = `
-      <div class="update-status-dot active"></div>
-      <span>Downloading (${Math.round(updaterSnapshot.percent ?? 0)}%)</span>
-    `;
+    updateSidebarUpdateStatus({
+      clickable: false,
+      dotTone: "active",
+      label: `Downloading (${Math.round(updaterSnapshot.percent ?? 0)}%)`,
+    });
   } else if (updaterSnapshot.status === "downloaded") {
-    sidebarUpdate.classList.add("clickable");
-    sidebarUpdate.onclick = () => promptDownloadedUpdate(true);
-    sidebarUpdate.innerHTML = `
-      <div class="update-status-dot active"></div>
-      <span>Restart to install</span>
-    `;
+    updateSidebarUpdateStatus({
+      clickable: true,
+      dotTone: "active",
+      label: "Restart to install",
+    });
   } else if (updaterSnapshot.status === "checking") {
-    sidebarUpdate.classList.remove("clickable");
-    sidebarUpdate.onclick = null;
-    sidebarUpdate.innerHTML = `
-      <div class="update-status-dot"></div>
-      <span>Checking updates…</span>
-    `;
+    updateSidebarUpdateStatus({
+      clickable: false,
+      dotTone: "default",
+      label: "Checking updates…",
+    });
   } else if (updaterSnapshot.status === "error") {
-    sidebarUpdate.classList.add("clickable");
-    sidebarUpdate.onclick = () => void switchStartTab("settings");
-    sidebarUpdate.innerHTML = `
-      <div class="update-status-dot error"></div>
-      <span>Update Error</span>
-    `;
+    updateSidebarUpdateStatus({
+      clickable: true,
+      dotTone: "error",
+      label: "Update Error",
+    });
   } else {
-    sidebarUpdate.classList.remove("clickable");
-    sidebarUpdate.onclick = null;
     const versionStr = updaterSnapshot.version
       ? `v${updaterSnapshot.version}`
       : "";
-    sidebarUpdate.innerHTML = `
-      <div class="update-status-dot"></div>
-      <span>Up to date${versionStr ? " · " + versionStr : ""}</span>
-    `;
+    updateSidebarUpdateStatus({
+      clickable: false,
+      dotTone: "default",
+      label: `Up to date${versionStr ? " · " + versionStr : ""}`,
+    });
   }
 }
 
 function renderProjectOverview(): void {
-  const host = $("project-overview");
-  host.innerHTML = "";
   if (!state.project) {
-    host.innerHTML =
-      '<p class="muted">Open a Zephus site to see page and project status.</p>';
+    updateProjectOverview({ hasProject: false });
     return;
   }
-
-  const grid = document.createElement("div");
-  grid.className = "overview-grid";
-
-  const pageCard = document.createElement("section");
-  pageCard.className = "overview-card";
-  pageCard.innerHTML = `
-    <div class="overview-title">
-      <strong>${escapeHtml(state.currentMeta?.navLabel ?? state.currentMeta?.title ?? state.page ?? "No page selected")}</strong>
-      <span class="overview-pill info">${escapeHtml(state.currentMeta?.route ?? "No route")}</span>
-    </div>
-  `;
-  const pageMeta = document.createElement("div");
-  pageMeta.className = "overview-meta";
   const navState = state.currentMeta
     ? state.currentMeta.navVisible
       ? "Visible in nav"
       : "Hidden from nav"
     : "No page metadata";
-  const wrapperState = state.sections.length
+  const canvasState = state.sections.length
     ? `${state.sections.length} section${state.sections.length === 1 ? "" : "s"}`
     : "Empty page";
-  const pageRows: Array<[string, string]> = [
-    ["Route", state.currentMeta?.route ?? "Not selected"],
-    ["Navigation", navState],
-    ["Canvas", wrapperState],
-  ];
-  for (const [label, value] of pageRows) {
-    const row = document.createElement("div");
-    row.className = "overview-row";
-    row.innerHTML = `<span>${escapeHtml(label)}</span><span>${escapeHtml(value)}</span>`;
-    pageMeta.appendChild(row);
-  }
-  pageCard.appendChild(pageMeta);
-  grid.appendChild(pageCard);
-
-  const stateCard = document.createElement("section");
-  stateCard.className = "overview-card";
-  const pillRow = document.createElement("div");
-  pillRow.className = "overview-pills";
   const pills: Array<[string, string]> = [];
   pills.push([
     state.pageDirty ? "Page Dirty" : "Page Saved",
@@ -1031,15 +1043,7 @@ function renderProjectOverview(): void {
     state.managedStatus === "managed" ? "good" : "warn",
   ]);
   pills.push([state.previewUrl ? "Preview Live" : "Preview Idle", "info"]);
-  for (const [label, tone] of pills) {
-    const pill = document.createElement("span");
-    pill.className = `overview-pill ${tone}`;
-    pill.textContent = label;
-    pillRow.appendChild(pill);
-  }
-  const hint = document.createElement("p");
-  hint.className = "overview-hint";
-  hint.textContent =
+  const hint =
     state.sections.length === 0
       ? "This page is blank. Start with a hero, a blank section, or a reusable section."
       : visibleNavCount() === 0
@@ -1049,16 +1053,6 @@ function renderProjectOverview(): void {
           : state.previewUrl
             ? "Preview is running. Review the live page, then publish when ready."
             : "This project is ready for preview and publish checks.";
-  stateCard.append(pillRow, hint);
-  grid.appendChild(stateCard);
-
-  const actionsCard = document.createElement("section");
-  actionsCard.className = "overview-card";
-  const actionsTitle = document.createElement("div");
-  actionsTitle.className = "overview-title";
-  actionsTitle.innerHTML = "<strong>Quick controls</strong>";
-  const actions = document.createElement("div");
-  actions.className = "overview-actions";
   const quickActions: Array<{ label: string; onClick: () => void }> = [
     {
       label: "Page Settings",
@@ -1075,20 +1069,26 @@ function renderProjectOverview(): void {
     },
     { label: "Publish", onClick: () => void publishSite() },
   ];
-  for (const action of quickActions) {
-    const btn = document.createElement("button");
-    btn.className = "mini-btn";
-    btn.textContent = action.label;
-    btn.onclick = action.onClick;
-    if (action.label === "Page Settings" && !state.page) {
-      btn.disabled = true;
-    }
-    actions.appendChild(btn);
-  }
-  actionsCard.append(actionsTitle, actions);
-  grid.appendChild(actionsCard);
-
-  host.appendChild(grid);
+  updateProjectOverview({
+    hasProject: true,
+    pageTitle:
+      state.currentMeta?.navLabel ??
+      state.currentMeta?.title ??
+      state.page ??
+      "No page selected",
+    route: state.currentMeta?.route ?? "No route",
+    navState,
+    canvasState,
+    pills: pills.map(([label, tone]) => ({
+      label,
+      tone: tone as "good" | "warn" | "info",
+    })),
+    hint,
+    actions: quickActions.map((action) => ({
+      ...action,
+      disabled: action.label === "Page Settings" && !state.page,
+    })),
+  });
 }
 
 async function addImageBlockWithAssetFlow(): Promise<void> {
@@ -1102,54 +1102,30 @@ async function addImageBlockWithAssetFlow(): Promise<void> {
 }
 
 function renderNextActions(): void {
-  const host = $("next-actions");
-  host.innerHTML = "";
   if (!state.project) {
-    host.innerHTML =
-      '<p class="muted">Guided actions will appear here while you edit.</p>';
+    updateNextActions(false, []);
     return;
   }
 
-  const list = document.createElement("div");
-  list.className = "next-actions-list";
-  const addActionCard = (
-    title: string,
-    body: string,
-    actions: Array<{ label: string; onClick: () => void }>,
-  ) => {
-    const card = document.createElement("section");
-    card.className = "next-action-card";
-    const heading = document.createElement("div");
-    heading.className = "next-action-title";
-    heading.innerHTML = `<strong>${escapeHtml(title)}</strong>`;
-    const copy = document.createElement("p");
-    copy.textContent = body;
-    const row = document.createElement("div");
-    row.className = "next-action-actions";
-    for (const action of actions) {
-      const btn = document.createElement("button");
-      btn.className = "mini-btn";
-      btn.textContent = action.label;
-      btn.onclick = action.onClick;
-      row.appendChild(btn);
-    }
-    card.append(heading, copy, row);
-    list.appendChild(card);
-  };
+  const cards: Array<{
+    title: string;
+    body: string;
+    actions: Array<{ label: string; onClick: () => void }>;
+  }> = [];
 
   if (state.pageMeta.length === 0) {
-    addActionCard(
-      "Create your first page",
-      "New projects feel much less empty once you have a visible route to edit and preview.",
-      [{ label: "Create Page", onClick: () => void newPageFlow() }],
-    );
+    cards.push({
+      title: "Create your first page",
+      body: "New projects feel much less empty once you have a visible route to edit and preview.",
+      actions: [{ label: "Create Page", onClick: () => void newPageFlow() }],
+    });
   }
 
   if (state.page && state.sections.length === 0) {
-    addActionCard(
-      "Start the page structure",
-      "Add a section now so the canvas has a real layout to work with.",
-      [
+    cards.push({
+      title: "Start the page structure",
+      body: "Add a section now so the canvas has a real layout to work with.",
+      actions: [
         {
           label: "Add Hero",
           onClick: () => addSectionAt(state.sections.length, TEMPLATES[0]),
@@ -1160,14 +1136,14 @@ function renderNextActions(): void {
         },
         { label: "Open Site Shell", onClick: () => void openSiteShellModal() },
       ],
-    );
+    });
   }
 
   if (state.page && visibleNavCount() === 0) {
-    addActionCard(
-      "No visible navigation items",
-      "Visitors will not see page links yet. Review the current page metadata or stage a nav set from the shell.",
-      [
+    cards.push({
+      title: "No visible navigation items",
+      body: "Visitors will not see page links yet. Review the current page metadata or stage a nav set from the shell.",
+      actions: [
         {
           label: "Page Settings",
           onClick: () => {
@@ -1176,32 +1152,32 @@ function renderNextActions(): void {
         },
         { label: "Review Navigation", onClick: () => void regenerateNav() },
       ],
-    );
+    });
   }
 
   const imageBlock = state.blocks.find((block) => block.type === "image");
   if (state.page && !imageBlock) {
-    addActionCard(
-      "Add visual assets",
-      "This page has no image blocks yet. Drop in an image and reuse bundled asset import flows.",
-      [
+    cards.push({
+      title: "Add visual assets",
+      body: "This page has no image blocks yet. Drop in an image and reuse bundled asset import flows.",
+      actions: [
         {
           label: "Import Image",
           onClick: () => void addImageBlockWithAssetFlow(),
         },
       ],
-    );
+    });
   } else if (imageBlock && !(imageBlock.props["src"] ?? "").trim()) {
-    addActionCard(
-      "Finish the image block",
-      "An image block exists but it is still missing a selected asset.",
-      [
+    cards.push({
+      title: "Finish the image block",
+      body: "An image block exists but it is still missing a selected asset.",
+      actions: [
         {
           label: "Choose Asset",
           onClick: () => void chooseAssetForImage(imageBlock),
         },
       ],
-    );
+    });
   }
 
   // Warn when image blocks have a src but are missing alt text.
@@ -1214,10 +1190,10 @@ function renderNextActions(): void {
   if (imagesWithNoAlt.length > 0) {
     const first = imagesWithNoAlt[0]!;
     const count = imagesWithNoAlt.length;
-    addActionCard(
-      "Add image alt text",
-      `${count === 1 ? "One image is" : `${count} images are`} missing alt text. Screen readers need a description to convey the image to users who cannot see it.`,
-      [
+    cards.push({
+      title: "Add image alt text",
+      body: `${count === 1 ? "One image is" : `${count} images are`} missing alt text. Screen readers need a description to convey the image to users who cannot see it.`,
+      actions: [
         {
           label: "Edit Image",
           onClick: () => {
@@ -1230,7 +1206,7 @@ function renderNextActions(): void {
           },
         },
       ],
-    );
+    });
   }
 
   // SEO 1: Missing Meta Description Warning
@@ -1239,10 +1215,10 @@ function renderNextActions(): void {
     state.currentMeta &&
     !(state.currentMeta.metaDescription ?? "").trim()
   ) {
-    addActionCard(
-      "Add page meta description",
-      "This page is missing a meta description. Adding one helps search engines summarize your page and improves click-through rates.",
-      [
+    cards.push({
+      title: "Add page meta description",
+      body: "This page is missing a meta description. Adding one helps search engines summarize your page and improves click-through rates.",
+      actions: [
         {
           label: "Page Settings",
           onClick: () => {
@@ -1250,7 +1226,7 @@ function renderNextActions(): void {
           },
         },
       ],
-    );
+    });
   }
 
   // SEO 2: Multiple H1 Headings Warning
@@ -1259,10 +1235,10 @@ function renderNextActions(): void {
   );
   if (h1Blocks.length > 1) {
     const secondH1 = h1Blocks[1]!;
-    addActionCard(
-      "Multiple H1 headings detected",
-      "SEO best practices recommend using exactly one H1 heading per page to establish a clear hierarchy. Consider changing extra H1s to H2.",
-      [
+    cards.push({
+      title: "Multiple H1 headings detected",
+      body: "SEO best practices recommend using exactly one H1 heading per page to establish a clear hierarchy. Consider changing extra H1s to H2.",
+      actions: [
         {
           label: "Fix Heading",
           onClick: () => {
@@ -1275,39 +1251,27 @@ function renderNextActions(): void {
           },
         },
       ],
-    );
+    });
   }
 
   if (state.siteDirty || state.pageDirty) {
-    const actions = [{ label: "Save All", onClick: () => void save() }];
+    const actionsList = [
+      { label: "Save All", onClick: () => void performSave() },
+    ];
     if (state.siteDirty) {
-      actions.push({
+      actionsList.push({
         label: "Discard Site",
         onClick: () => void discardPendingSiteChanges(),
       });
     }
-    addActionCard(
-      "Unsaved work pending",
-      "Keep page and site state in sync before you switch context or run a full preview.",
-      actions,
-    );
+    cards.push({
+      title: "Unsaved work pending",
+      body: "Keep page and site state in sync before you switch context or run a full preview.",
+      actions: actionsList,
+    });
   }
 
-  if (list.childElementCount === 0) {
-    addActionCard(
-      "Builder is in a good state",
-      "Use preview to verify your page, then publish when the content and navigation look right.",
-      [
-        {
-          label: state.previewUrl ? "Stop Preview" : "Start Preview",
-          onClick: () => void togglePreview(),
-        },
-        { label: "Publish", onClick: () => void publishSite() },
-      ],
-    );
-  }
-
-  host.appendChild(list);
+  updateNextActions(true, cards);
 }
 
 function refreshGuidancePanels(): void {
@@ -1368,6 +1332,12 @@ function ensureFallbackSection(): SectionNode {
   };
 }
 
+const { parseSections } = createEditorPageParser({
+  uid,
+  createFallbackSection: ensureFallbackSection,
+  knownBlockTypes: KNOWN_BLOCK_TYPES,
+});
+
 function syncSelectionState(): void {
   if (state.selectedId && !findBlockLocation(state.selectedId)) {
     state.selectedId = null;
@@ -1384,10 +1354,6 @@ function draftContentForCurrentState(): string {
   return state.mode === "code" ? getCode() : serializeBlocks();
 }
 
-function siteDraftTarget(): string {
-  return "site-shell";
-}
-
 function siteDraftContentForCurrentState(): string {
   return JSON.stringify(
     effectiveSiteDocument(state) ?? state.siteDocument,
@@ -1397,29 +1363,11 @@ function siteDraftContentForCurrentState(): string {
 }
 
 function scheduleDraftWrite(): void {
-  if (!state.project) return;
-  if (state.draftTimer !== null) {
-    window.clearTimeout(state.draftTimer);
-  }
-  state.draftTimer = window.setTimeout(() => {
-    if (!state.project || !isGlobalDirty(state)) return;
-    if (state.pageDirty && state.page) {
-      void window.zephus.writeDraft(
-        state.project.path,
-        "page",
-        state.page,
-        draftContentForCurrentState(),
-      );
-    }
-    if (state.siteDirty && effectiveSiteDocument(state)) {
-      void window.zephus.writeDraft(
-        state.project.path,
-        "site",
-        siteDraftTarget(),
-        siteDraftContentForCurrentState(),
-      );
-    }
-  }, 800);
+  scheduleEditorDraftWrite(state, {
+    writeDraft: window.zephus.writeDraft.bind(window.zephus),
+    pageDraftContent: draftContentForCurrentState,
+    siteDraftContent: siteDraftContentForCurrentState,
+  });
 }
 
 function renderDirtyIndicators(): void {
@@ -1464,100 +1412,20 @@ function markDirty(d: boolean): void {
 async function renderRecent(): Promise<void> {
   const settings = await window.zephus.readGlobalSettings();
   appSettings = settings;
-  const list = $("recent-list");
-  if (!list) return;
-  list.innerHTML = "";
-  if (settings.recentProjects.length === 0) {
-    const welcome = document.createElement("div");
-    welcome.className = "welcome-card";
-    welcome.innerHTML = `
-      <div class="welcome-icon-pill">
-        <i data-lucide="layout"></i>
-      </div>
-      <h3 class="welcome-title">Welcome to Zephus</h3>
-      <p class="welcome-copy">
-        Create a new Astro site from one of the starter templates, or open an existing Zephus project from your computer.
-      </p>
-      <div class="welcome-buttons">
-        <button id="btn-welcome-open" class="btn primary">
-          <i data-lucide="folder-open"></i> Open Folder
-        </button>
-        <button id="btn-welcome-create" class="btn">
-          <i data-lucide="compass"></i> Explore Templates
-        </button>
-      </div>
-    `;
-
-    // Wire up buttons
-    const openBtn = welcome.querySelector(
-      "#btn-welcome-open",
-    ) as HTMLButtonElement;
-    if (openBtn) openBtn.onclick = () => void chooseFolder();
-
-    const createBtn = welcome.querySelector(
-      "#btn-welcome-create",
-    ) as HTMLButtonElement;
-    if (createBtn) createBtn.onclick = () => void switchStartTab("create");
-
-    list.appendChild(welcome);
-    refreshIcons();
-    renderHomeStatusPanels();
-    syncHomeActionState();
-    return;
-  }
-  settings.recentProjects.forEach((p, index) => {
-    const li = document.createElement("li");
-    const button = document.createElement("button");
-    button.className = "recent-project";
-    button.type = "button";
-    const head = document.createElement("div");
-    head.className = "recent-project-head";
-    const name = document.createElement("span");
-    name.className = "proj-name";
-    name.textContent = projectBaseName(p);
-    const badge = document.createElement("span");
-    badge.className = "recent-badge";
-    badge.textContent =
-      settings.lastOpenedProject === p
-        ? "Last Opened"
-        : index === 0
-          ? "Most Recent"
-          : "Recent";
-    head.append(name, badge);
-    const pathSpan = document.createElement("span");
-    pathSpan.className = "path";
-    pathSpan.textContent = p;
-    const meta = document.createElement("div");
-    meta.className = "recent-project-meta";
-    const managed = document.createElement("span");
-    managed.textContent = "Zephus-managed project";
-    const resume = document.createElement("span");
-    resume.textContent =
-      settings.lastOpenedProject === p ? "Resume ready" : "Open directly";
-    meta.append(managed, resume);
-    button.append(head, pathSpan, meta);
-    button.onclick = () => void openProjectByPath(p);
-    const removeButton = document.createElement("button");
-    removeButton.type = "button";
-    removeButton.className = "recent-remove";
-    removeButton.title = "Remove from recent projects";
-    removeButton.setAttribute(
-      "aria-label",
-      `Remove ${projectBaseName(p)} from recent projects`,
-    );
-    removeButton.innerHTML = `<i data-lucide="x"></i>`;
-    removeButton.onclick = async (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      await window.zephus.removeRecentProject(p);
-      setStatus("Removed recent project: " + projectBaseName(p));
-      await renderRecent();
-    };
-    li.appendChild(button);
-    li.appendChild(removeButton);
-    list.appendChild(li);
+  updateRecentProjects({
+    entries: settings.recentProjects.map((p, index) => ({
+      path: p,
+      name: projectBaseName(p),
+      badge:
+        settings.lastOpenedProject === p
+          ? "Last Opened"
+          : index === 0
+            ? "Most Recent"
+            : "Recent",
+      resumeLabel:
+        settings.lastOpenedProject === p ? "Resume ready" : "Open directly",
+    })),
   });
-  refreshIcons();
   renderHomeStatusPanels();
   syncHomeActionState();
 }
@@ -1570,56 +1438,7 @@ async function chooseFolder(): Promise<void> {
 
 /* ---------- App Settings ---------- */
 
-function checkboxRow(
-  id: string,
-  label: string,
-  checked: boolean,
-): { row: HTMLElement; input: HTMLInputElement } {
-  const row = document.createElement("div");
-  row.className = "settings-row";
-
-  const lbl = document.createElement("label");
-  lbl.htmlFor = id;
-  lbl.textContent = label;
-
-  const input = document.createElement("input");
-  input.type = "checkbox";
-  input.id = id;
-  input.checked = checked;
-
-  row.append(lbl, input);
-  return { row, input };
-}
-
-function selectField(
-  labelText: string,
-  options: { value: string; label: string }[],
-  current: string,
-): { wrap: HTMLElement; select: HTMLSelectElement } {
-  const wrap = document.createElement("div");
-  wrap.className = "settings-row";
-
-  const selectId = `zephus-select-${uid()}`;
-  const label = document.createElement("label");
-  label.textContent = labelText;
-  label.htmlFor = selectId;
-
-  const select = document.createElement("select");
-  select.id = selectId;
-  for (const opt of options) {
-    const o = document.createElement("option");
-    o.value = opt.value;
-    o.textContent = opt.label;
-    if (opt.value === current) o.selected = true;
-    select.appendChild(o);
-  }
-
-  wrap.append(label, select);
-  return { wrap, select };
-}
-
 async function openSettingsModal(): Promise<void> {
-  // Build and show the modal immediately; never block opening on async work.
   let settings: GlobalSettings;
   try {
     settings = await window.zephus.readGlobalSettings();
@@ -1628,252 +1447,115 @@ async function openSettingsModal(): Promise<void> {
     return;
   }
 
-  const form = document.createElement("div");
-  form.className = "settings-form";
-
-  // --- Updates Section ---
-  const updatesSec = document.createElement("div");
-  updatesSec.className = "settings-section";
-
-  const updHeader = document.createElement("h4");
-  updHeader.className = "settings-section-title";
-  updHeader.textContent = "Updates";
-  updatesSec.appendChild(updHeader);
-
-  const autoUpd = checkboxRow(
-    "set-auto-update",
-    "Startup check",
-    settings.autoCheckUpdates,
-  );
-  updatesSec.appendChild(autoUpd.row);
-
-  const chan = selectField(
-    "Update channel",
-    [
-      { value: "auto", label: "Auto (match install)" },
-      { value: "stable", label: "Stable" },
-      { value: "beta", label: "Beta" },
-      { value: "developer", label: "Developer (db)" },
-    ],
-    settings.updateChannel,
-  );
-  updatesSec.appendChild(chan.wrap);
-
-  const checkRow = document.createElement("div");
-  checkRow.className = "settings-row";
-  const checkLeft = document.createElement("span");
-  checkLeft.dataset.updaterStatusText = "true";
-  checkLeft.textContent = updaterStatusMessage();
-  const updateActions = document.createElement("div");
-  updateActions.className = "settings-inline-actions";
-  updateActions.dataset.updaterActions = "true";
-  renderUpdaterActions(updateActions);
-
-  checkRow.append(checkLeft, updateActions);
-  updatesSec.appendChild(checkRow);
-  form.appendChild(updatesSec);
-
-  // --- Environment Section (Node.js) ---
-  const envSec = document.createElement("div");
-  envSec.className = "settings-section";
-
-  const envHeader = document.createElement("h4");
-  envHeader.className = "settings-section-title";
-  envHeader.textContent = "Environment";
-  envSec.appendChild(envHeader);
-
-  const nodeRow = document.createElement("div");
-  nodeRow.className = "settings-row";
-
-  const nodeCopy = document.createElement("div");
-  nodeCopy.className = "settings-inline-copy";
-  const nodeStatusText = document.createElement("span");
-  nodeStatusText.textContent = "Checking Node.js…";
-  const nodeStrong = document.createElement("strong");
-  nodeStrong.textContent = "Node.js (for build & preview)";
-  nodeCopy.append(nodeStrong, nodeStatusText);
-
-  const nodeBtns = document.createElement("div");
-  nodeBtns.className = "settings-inline-actions";
-  const nodeBrowseBtn = document.createElement("button");
-  nodeBrowseBtn.className = "btn secondary mini-btn";
-  nodeBrowseBtn.textContent = "Set Custom Location…";
-  const nodeAutoBtn = document.createElement("button");
-  nodeAutoBtn.className = "btn ghost mini-btn";
-  nodeAutoBtn.textContent = "Use Auto-detect";
-  nodeBtns.append(nodeBrowseBtn, nodeAutoBtn);
-
-  nodeRow.append(nodeCopy, nodeBtns);
-  envSec.appendChild(nodeRow);
-
-  const applyNodeStatus = (res: NodeCheckResult): void => {
-    const label =
-      res.status === "ok"
-        ? `Node.js ${res.version} detected ✓`
-        : res.status === "outdated"
-          ? `Node.js ${res.version ?? "?"} — version 22.12+ required`
-          : res.status === "missing"
-            ? "Node.js not found — set a custom location below"
-            : "Node.js status could not be determined";
-    const source = settings.customNodePath
-      ? `Custom: ${settings.customNodePath}`
-      : "Auto-detect (system PATH)";
-    nodeStatusText.textContent = `${label} · ${source}`;
-    nodeAutoBtn.disabled = !settings.customNodePath;
+  const wrap = document.createElement("div");
+  const modalState = {
+    settings: { ...settings },
+    updaterStatusText: updaterStatusMessage(),
+    updaterActions: currentUpdaterActions(),
+    nodeStatusText: "Checking Node.js…",
+    nodeAutoDisabled: !settings.customNodePath,
+    nodeBrowseBusy: false,
+    nodeAutoBusy: false,
+    versionText: "Zephus",
   };
 
-  nodeBrowseBtn.onclick = async () => {
-    nodeBrowseBtn.disabled = true;
-    try {
-      const res = await window.zephus.pickNodePath();
-      if (
-        (res.status === "ok" || res.status === "outdated") &&
-        res.usedCustomPath &&
-        res.binaryPath
-      ) {
-        settings.customNodePath = res.binaryPath;
-      }
-      applyNodeStatus(res);
-    } catch {
-      nodeStatusText.textContent = "Could not set Node.js location.";
-    }
-    nodeBrowseBtn.disabled = false;
-  };
-
-  nodeAutoBtn.onclick = async () => {
-    nodeAutoBtn.disabled = true;
-    try {
-      const res = await window.zephus.setNodePath(null);
-      settings.customNodePath = null;
-      applyNodeStatus(res);
-    } catch {
-      nodeStatusText.textContent = "Could not reset Node.js location.";
-    }
-  };
-
-  window.zephus
-    .getNodeStatus()
-    .then(applyNodeStatus)
-    .catch(() => {
-      nodeStatusText.textContent = "Could not check Node.js.";
+  const renderModal = () =>
+    renderSettingsModalBody(wrap, {
+      ...modalState,
+      onSettingChange: (key, value) => {
+        modalState.settings = { ...modalState.settings, [key]: value };
+        renderModal();
+      },
+      onUpdaterAction: async (actionId) => {
+        if (actionId === "check") {
+          try {
+            await window.zephus.checkForUpdates();
+          } catch {
+            /* status surfaced via updater listener */
+          }
+          modalState.updaterStatusText = updaterStatusMessage();
+          modalState.updaterActions = currentUpdaterActions();
+          renderModal();
+          return;
+        }
+        if (actionId === "download") {
+          const result = (await window.zephus.downloadUpdate()) as {
+            status?: string;
+            error?: string;
+          };
+          if (result?.status === "error") {
+            showModal("Update Download Failed", friendlyError(result.error), [
+              { label: "OK", kind: "primary", onClick: closeModal },
+            ]);
+          }
+          modalState.updaterStatusText = updaterStatusMessage();
+          modalState.updaterActions = currentUpdaterActions();
+          renderModal();
+          return;
+        }
+        if (actionId === "restart") {
+          await restartToApplyUpdate();
+          return;
+        }
+        if (actionId === "cancel") {
+          await window.zephus.cancelUpdateDownload();
+          modalState.updaterStatusText = updaterStatusMessage();
+          modalState.updaterActions = currentUpdaterActions();
+          renderModal();
+        }
+      },
+      onPickNodePath: async () => {
+        modalState.nodeBrowseBusy = true;
+        renderModal();
+        try {
+          const res = await window.zephus.pickNodePath();
+          if (
+            (res.status === "ok" || res.status === "outdated") &&
+            res.usedCustomPath &&
+            res.binaryPath
+          ) {
+            modalState.settings = {
+              ...modalState.settings,
+              customNodePath: res.binaryPath,
+            };
+          }
+          modalState.nodeStatusText = `${nodeStatusMessage(res)} · ${
+            modalState.settings.customNodePath
+              ? `Custom: ${modalState.settings.customNodePath}`
+              : "Auto-detect (system PATH)"
+          }`;
+          modalState.nodeAutoDisabled = !modalState.settings.customNodePath;
+        } catch {
+          modalState.nodeStatusText = "Could not set Node.js location.";
+        } finally {
+          modalState.nodeBrowseBusy = false;
+          renderModal();
+        }
+      },
+      onAutoNodePath: async () => {
+        modalState.nodeAutoBusy = true;
+        renderModal();
+        try {
+          const res = await window.zephus.setNodePath(null);
+          modalState.settings = {
+            ...modalState.settings,
+            customNodePath: null,
+          };
+          modalState.nodeStatusText = `${nodeStatusMessage(res)} · Auto-detect (system PATH)`;
+          modalState.nodeAutoDisabled = true;
+        } catch {
+          modalState.nodeStatusText = "Could not reset Node.js location.";
+        } finally {
+          modalState.nodeAutoBusy = false;
+          renderModal();
+        }
+      },
+      onOpenProductionLicenses: () => void openProductionLicensesModal(),
+      onOpenConfigFolder: () => void window.zephus.openConfigFolder(),
     });
 
-  form.appendChild(envSec);
-
-  // --- Appearance Section ---
-  const apSec = document.createElement("div");
-  apSec.className = "settings-section";
-
-  const apHeader = document.createElement("h4");
-  apHeader.className = "settings-section-title";
-  apHeader.textContent = "Appearance";
-  apSec.appendChild(apHeader);
-
-  const theme = selectField(
-    "Theme",
-    [
-      { value: "system", label: "System" },
-      { value: "dark", label: "Dark" },
-      { value: "light", label: "Light" },
-    ],
-    settings.theme,
-  );
-  apSec.appendChild(theme.wrap);
-
-  const fontSize = selectField(
-    "Editor font size",
-    [12, 13, 14, 15, 16, 18].map((n) => ({
-      value: String(n),
-      label: `${n}px`,
-    })),
-    String(settings.codeFontSize),
-  );
-  apSec.appendChild(fontSize.wrap);
-  form.appendChild(apSec);
-
-  // --- Editor Section ---
-  const edSec = document.createElement("div");
-  edSec.className = "settings-section";
-
-  const edHeader = document.createElement("h4");
-  edHeader.className = "settings-section-title";
-  edHeader.textContent = "Editor";
-  edSec.appendChild(edHeader);
-
-  const restore = checkboxRow(
-    "set-restore",
-    "Reopen last project",
-    settings.restoreLastProject,
-  );
-  edSec.appendChild(restore.row);
-
-  const autosave = checkboxRow(
-    "set-autosave",
-    "Autosave changes",
-    settings.autosave,
-  );
-  edSec.appendChild(autosave.row);
-
-  const confirmDel = checkboxRow(
-    "set-confirm-del",
-    "Confirm delete block",
-    settings.confirmBlockDelete,
-  );
-  edSec.appendChild(confirmDel.row);
-  form.appendChild(edSec);
-
-  // --- Legal Section ---
-  const legalSec = document.createElement("div");
-  legalSec.className = "settings-section";
-
-  const legalHeader = document.createElement("h4");
-  legalHeader.className = "settings-section-title";
-  legalHeader.textContent = "Legal";
-  legalSec.appendChild(legalHeader);
-
-  const legalRow = document.createElement("div");
-  legalRow.className = "settings-row";
-
-  const legalLabel = document.createElement("div");
-  legalLabel.className = "settings-inline-copy";
-  legalLabel.innerHTML =
-    "<strong>Third-party licenses</strong><span>Show production dependency licenses from bundled licenses.json.</span>";
-
-  const licensesBtn = document.createElement("button");
-  licensesBtn.className = "btn ghost mini-btn";
-  licensesBtn.textContent = "View Production Licenses";
-  licensesBtn.onclick = () => void openProductionLicensesModal();
-
-  legalRow.append(legalLabel, licensesBtn);
-  legalSec.appendChild(legalRow);
-  form.appendChild(legalSec);
-
-  // --- Footer Row ---
-  const footerRow = document.createElement("div");
-  footerRow.className = "settings-footer";
-
-  const ver = document.createElement("span");
-  ver.className = "version-info-text";
-  ver.textContent = "Zephus";
-  footerRow.appendChild(ver);
-
-  window.zephus
-    .getAppVersion()
-    .then((v) => {
-      ver.textContent = `Zephus v${v}`;
-    })
-    .catch(() => {
-      ver.textContent = "Zephus";
-    });
-
-  const configBtn = document.createElement("button");
-  configBtn.className = "btn ghost mini-btn";
-  configBtn.innerHTML = `<i data-lucide="folder-open"></i> Open Config`;
-  configBtn.onclick = () => void window.zephus.openConfigFolder();
-  footerRow.appendChild(configBtn);
-  form.appendChild(footerRow);
-
-  showModalNode("Settings", form, [
+  renderModal();
+  showModalNode("Settings", wrap, [
     {
       label: "Reset to Defaults",
       kind: "danger",
@@ -1887,7 +1569,7 @@ async function openSettingsModal(): Promise<void> {
         )
           return;
         const defaults: GlobalSettings = {
-          ...settings,
+          ...modalState.settings,
           theme: "system",
           autoCheckUpdates: true,
           updateChannel: "auto",
@@ -1902,6 +1584,9 @@ async function openSettingsModal(): Promise<void> {
         applyCodeFontSize(13);
         closeModal();
         setStatus("Settings reset to defaults.");
+        appSettings = defaults;
+        updateSettingsTabSettings(defaults);
+        updateSettingsTabNode("Checking Node.js…", true);
       },
     },
     { label: "Cancel", kind: "ghost", onClick: closeModal },
@@ -1909,24 +1594,46 @@ async function openSettingsModal(): Promise<void> {
       label: "Save",
       kind: "primary",
       onClick: async () => {
-        settings.autoCheckUpdates = autoUpd.input.checked;
-        settings.updateChannel = chan.select
-          .value as GlobalSettings["updateChannel"];
-        settings.theme = theme.select.value as GlobalSettings["theme"];
-        settings.codeFontSize = Number(fontSize.select.value);
-        settings.restoreLastProject = restore.input.checked;
-        settings.autosave = autosave.input.checked;
-        settings.confirmBlockDelete = confirmDel.input.checked;
-
-        await window.zephus.writeGlobalSettings(settings);
-        document.documentElement.setAttribute("data-theme", settings.theme);
-        applyCodeFontSize(settings.codeFontSize);
-        appSettings = settings;
+        await window.zephus.writeGlobalSettings(modalState.settings);
+        document.documentElement.setAttribute(
+          "data-theme",
+          modalState.settings.theme,
+        );
+        applyCodeFontSize(modalState.settings.codeFontSize);
+        appSettings = modalState.settings;
+        updateSettingsTabSettings(modalState.settings);
         closeModal();
         setStatus("Settings saved.");
       },
     },
   ]);
+
+  void window.zephus
+    .getNodeStatus()
+    .then((res) => {
+      modalState.nodeStatusText = `${nodeStatusMessage(res)} · ${
+        modalState.settings.customNodePath
+          ? `Custom: ${modalState.settings.customNodePath}`
+          : "Auto-detect (system PATH)"
+      }`;
+      modalState.nodeAutoDisabled = !modalState.settings.customNodePath;
+      renderModal();
+    })
+    .catch(() => {
+      modalState.nodeStatusText = "Could not check Node.js.";
+      renderModal();
+    });
+
+  void window.zephus
+    .getAppVersion()
+    .then((v) => {
+      modalState.versionText = `Zephus v${v}`;
+      renderModal();
+    })
+    .catch(() => {
+      modalState.versionText = "Zephus";
+      renderModal();
+    });
 }
 
 function applyCodeFontSize(size: number): void {
@@ -2008,50 +1715,18 @@ function showProductionLicensesModal(result: ProductionLicensesResult): void {
   }
 
   const wrap = document.createElement("div");
-  wrap.className = "licenses-modal";
-
-  const summary = document.createElement("p");
-  summary.className = "licenses-summary";
-  summary.textContent =
-    `Generated from npm-license-crawler --production. ` +
-    `${result.entries.length} packages listed.`;
-  wrap.appendChild(summary);
-
-  const tableWrap = document.createElement("div");
-  tableWrap.className = "licenses-table-wrap";
-
-  const table = document.createElement("table");
-  table.className = "licenses-table";
-  table.innerHTML = `
-    <thead>
-      <tr>
-        <th>Package</th>
-        <th>License</th>
-        <th>Repository</th>
-        <th>License URL</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${result.entries
-        .map(
-          (entry) => `
-            <tr>
-              <td class="licenses-package-cell">
-                <div class="licenses-package-name">${escapeHtml(entry.packageId)}</div>
-                <div class="licenses-package-parents">${escapeHtml(
-                  entry.parents.slice(0, 4).join(" > ") || "Direct dependency",
-                )}</div>
-              </td>
-              <td>${escapeHtml(entry.licenses)}</td>
-              <td class="licenses-link-cell">${renderLicenseValue(entry.repository)}</td>
-              <td class="licenses-link-cell">${renderLicenseValue(entry.licenseUrl)}</td>
-            </tr>`,
-        )
-        .join("")}
-    </tbody>
-  `;
-  tableWrap.appendChild(table);
-  wrap.appendChild(tableWrap);
+  renderProductionLicensesModalBody(
+    wrap,
+    result.entries.length,
+    result.entries.map((entry) => ({
+      packageId: entry.packageId,
+      licenses: entry.licenses,
+      repository: entry.repository,
+      licenseUrl: entry.licenseUrl,
+      parentsLabel:
+        entry.parents.slice(0, 4).join(" > ") || "Direct dependency",
+    })),
+  );
 
   showModalNode(
     "Production Licenses",
@@ -2184,7 +1859,7 @@ async function enterEditor(result: ProjectOpenResult): Promise<void> {
   markSiteDirty(state, false);
   ensureCodeEditor();
   await maybeRestoreSiteDraft();
-  void refreshGit();
+  void editorGit.refreshGit();
   void applyRepoRules();
   void applyMergedTheme();
   renderPalette();
@@ -2224,93 +1899,18 @@ async function enterEditor(result: ProjectOpenResult): Promise<void> {
   }
 }
 
-async function refreshGit(): Promise<void> {
-  if (!state.project) return;
-  const git = await window.zephus.getGitStatus(state.project.path);
-  const branch = $("git-branch");
-  if (!git.available)
-    branch.innerHTML = `<i data-lucide="git-branch"></i> <span>git: unavailable</span>`;
-  else if (git.detachedHead)
-    branch.innerHTML = `<i data-lucide="git-branch"></i> <span>detached HEAD</span>`;
-  else
-    branch.innerHTML = `<i data-lucide="git-branch"></i> <span>${escapeHtml(git.branch ?? "")}</span>`;
-
-  const panel = $("git-panel");
-  panel.innerHTML = "";
-  const groups: [string, string[], string][] = [
-    ["M", git.modified, "g-m"],
-    ["A", git.added, "g-a"],
-    ["D", git.deleted, "g-d"],
-  ];
-  const total = git.modified.length + git.added.length + git.deleted.length;
-  if (!git.available) {
-    panel.innerHTML = '<p class="muted">Git status unavailable.</p>';
-    refreshIcons();
-    return;
-  }
-  if (git.zephusIgnored) {
-    const warn = document.createElement("div");
-    warn.className = "g-warning";
-    warn.innerHTML = `<i data-lucide="alert-triangle"></i> <span><strong>.zephus is git-ignored.</strong> Commit it — it stores this project's Zephus save state and is required to open the site on other machines.</span>`;
-    panel.appendChild(warn);
-  }
-  if (total === 0) {
-    const none = document.createElement("p");
-    none.className = "muted";
-    none.textContent = "No changes.";
-    panel.appendChild(none);
-    refreshIcons();
-    return;
-  }
-  for (const [badge, files, cls] of groups) {
-    for (const file of files) {
-      const row = document.createElement("div");
-      row.className = "g-file";
-      row.innerHTML = `<span class="g-badge ${cls}">${badge}</span><span>${escapeHtml(file)}</span>`;
-      panel.appendChild(row);
-    }
-  }
-  refreshIcons();
-}
+const editorGit = createEditorGitActions({
+  getProjectPath: () => state.project?.path ?? null,
+  setStatus,
+  setGitStatus: updateGitStatus,
+  zephus: window.zephus,
+});
 
 function renderPalette(): void {
-  const palette = $("block-palette");
-  palette.innerHTML = "";
-  const allowed = editorRules.allowedBlocks;
-  for (const item of PALETTE) {
-    if (allowed && !allowed.includes(item.type)) continue;
-    const li = document.createElement("li");
-    const iconName = PALETTE_ICONS[item.type] ?? "box";
-    li.innerHTML = `<i data-lucide="${iconName}"></i> <span>${item.label}</span>`;
-    li.draggable = true;
-    li.dataset["type"] = item.type;
-    li.tabIndex = 0;
-    li.setAttribute("role", "button");
-    li.setAttribute("aria-label", `Add ${item.label} block`);
-    li.title = `Add ${item.label} (or drag onto the canvas)`;
-    const insert = () => {
-      const sectionId = activeSectionId();
-      const section = findSection(sectionId) ?? state.sections[0];
-      addBlockAt(item.type, section ? section.children.length : 0, sectionId);
-    };
-    li.onclick = insert;
-    li.onkeydown = (e) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        insert();
-      }
-    };
-    li.addEventListener("dragstart", (e) => {
-      e.dataTransfer?.setData("text/zephus-new", item.type);
-    });
-    palette.appendChild(li);
-  }
-  refreshIcons();
+  updateAllowedBlocks(editorRules.allowedBlocks);
 }
 
 async function renderTemplates(): Promise<void> {
-  const palette = $("template-palette");
-  palette.innerHTML = "";
   const allowed = editorRules.allowedBlocks;
   const htmlAllowed = !allowed || allowed.includes("html");
   const saved = await window.zephus.listReusableSections().catch(() => null);
@@ -2324,43 +1924,14 @@ async function renderTemplates(): Promise<void> {
       id: section.id,
       label: `${section.label} (Saved)`,
       html: section.html,
+      deletable: true,
+      onDelete: async () => {
+        await window.zephus.deleteReusableSection(section.id);
+        await renderTemplates();
+      },
     })),
   ];
-  for (const tpl of merged) {
-    const li = document.createElement("li");
-    li.innerHTML = `<i data-lucide="layout-template"></i> <span>${tpl.label}</span>`;
-    li.draggable = true;
-    li.tabIndex = 0;
-    li.setAttribute("role", "button");
-    li.setAttribute("aria-label", `Insert ${tpl.label} section`);
-    li.title = `Insert ${tpl.label} (or drag onto the canvas)`;
-    const insertTpl = (): void => {
-      addSectionAt(state.sections.length, tpl);
-    };
-    li.onclick = insertTpl;
-    li.onkeydown = (e) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        insertTpl();
-      }
-    };
-    li.addEventListener("dragstart", (e) => {
-      e.dataTransfer?.setData("text/zephus-template", tpl.id);
-    });
-    if (saved?.ok && saved.sections.some((section) => section.id === tpl.id)) {
-      const del = document.createElement("button");
-      del.className = "mini-btn";
-      del.textContent = "Delete";
-      del.onclick = async (event) => {
-        event.stopPropagation();
-        await window.zephus.deleteReusableSection(tpl.id);
-        await renderTemplates();
-      };
-      li.appendChild(del);
-    }
-    palette.appendChild(li);
-  }
-  refreshIcons();
+  updateTemplates(merged);
 }
 
 /* ---------- Multi-page nav editor ---------- */
@@ -2383,8 +1954,6 @@ function syncCurrentMeta(): void {
 }
 
 function renderNavEditor(result: ProjectOpenResult): void {
-  const list = $("nav-list");
-  list.innerHTML = "";
   const currentSite = effectiveSiteDocument(state);
   const entries = currentSite?.shell.navItems?.length
     ? currentSite.shell.navItems.filter((item) => item.visible)
@@ -2407,36 +1976,14 @@ function renderNavEditor(result: ProjectOpenResult): void {
           visible: true,
           children: [],
         }));
-  if (entries.length === 0) {
-    const li = document.createElement("li");
-    li.className = "nav-empty-state";
-    li.innerHTML =
-      "<strong>No visible nav items</strong><span>Mark a page as visible in Page Settings or stage a navigation set from the Site Shell.</span>";
-    const actions = document.createElement("div");
-    actions.className = "nav-empty-actions";
-    if (state.page) {
-      const pageBtn = document.createElement("button");
-      pageBtn.className = "mini-btn";
-      pageBtn.textContent = "Page Settings";
-      pageBtn.onclick = () => void openPageMetaModal(state.page!);
-      actions.appendChild(pageBtn);
-    }
-    const navBtn = document.createElement("button");
-    navBtn.className = "mini-btn";
-    navBtn.textContent = "Review Navigation";
-    navBtn.onclick = () => void regenerateNav();
-    actions.appendChild(navBtn);
-    li.appendChild(actions);
-    list.appendChild(li);
-    refreshGuidancePanels();
-    return;
-  }
-  for (const entry of entries) {
-    const li = document.createElement("li");
-    li.innerHTML = `<i data-lucide="link"></i> <span>${escapeHtml(entry.label)} <span class="nav-route">${escapeHtml(entry.href)}</span></span>`;
-    list.appendChild(li);
-  }
-  refreshIcons();
+  updateNavList(
+    entries.map((entry) => ({
+      id: entry.id,
+      label: entry.label,
+      href: entry.href,
+    })),
+    { showPageSettings: !!state.page },
+  );
   refreshGuidancePanels();
 }
 
@@ -2446,14 +1993,6 @@ async function regenerateNav(): Promise<void> {
   const nextSite = cloneSiteDocument(
     effectiveSiteDocument(state),
   ) as SiteDocument;
-  const wrap = document.createElement("div");
-  wrap.className = "meta-form";
-
-  const help = document.createElement("p");
-  help.className = "muted";
-  help.textContent =
-    "Preview and adjust the Zephus-managed navigation before saving the site shell.";
-  wrap.appendChild(help);
 
   const currentEntries = nextSite.shell.navItems.length
     ? nextSite.shell.navItems
@@ -2467,30 +2006,30 @@ async function regenerateNav(): Promise<void> {
       }));
   const rows: {
     entry: NavItem;
-    labelInput: HTMLInputElement;
-    visibleInput: HTMLInputElement;
+    label: string;
+    visible: boolean;
   }[] = [];
 
   for (const entry of currentEntries) {
-    const row = document.createElement("div");
-    row.className = "meta-grid";
-
-    const visible = document.createElement("input");
-    visible.type = "checkbox";
-    visible.checked = entry.visible;
-
-    const label = document.createElement("input");
-    label.className = "text";
-    label.value = entry.label;
-
-    const route = document.createElement("span");
-    route.className = "muted";
-    route.textContent = entry.href;
-
-    row.append(visible, label, route);
-    wrap.appendChild(row);
-    rows.push({ entry, labelInput: label, visibleInput: visible });
+    rows.push({ entry, label: entry.label, visible: entry.visible });
   }
+
+  const wrap = document.createElement("div");
+  renderNavigationPreviewModal(
+    wrap,
+    rows.map((row) => ({
+      id: row.entry.id,
+      href: row.entry.href,
+      label: row.label,
+      visible: row.visible,
+      onLabelChange: (value) => {
+        row.label = value;
+      },
+      onVisibleChange: (value) => {
+        row.visible = value;
+      },
+    })),
+  );
 
   showModalNode("Navigation Preview", wrap, [
     { label: "Cancel", kind: "ghost", onClick: closeModal },
@@ -2506,16 +2045,16 @@ async function regenerateNav(): Promise<void> {
             row.entry.page,
             state.project.astro.pagesDir,
             {
-              navLabel: row.labelInput.value.trim() || row.entry.label,
-              navVisible: row.visibleInput.checked,
+              navLabel: row.label.trim() || row.entry.label,
+              navVisible: row.visible,
             },
           );
         }
         nextSite.shell.layoutMode = "managed";
         nextSite.shell.navItems = rows.map((row) => ({
           ...row.entry,
-          label: row.labelInput.value.trim() || row.entry.label,
-          visible: row.visibleInput.checked,
+          label: row.label.trim() || row.entry.label,
+          visible: row.visible,
         }));
         closeModal();
         await writeSiteDocumentFromRenderer(
@@ -2532,32 +2071,18 @@ async function regenerateNav(): Promise<void> {
 
 function renderEditorStateBanner(): void {
   const host = $("editor-state-banner");
-  host.innerHTML = "";
+  const banners: Array<{
+    tone: "warning" | "info";
+    message: string;
+    actions: Array<{ label: string; onClick: () => void }>;
+  }> = [];
 
   const addBanner = (
     tone: "warning" | "info",
     message: string,
     actions: Array<{ label: string; onClick: () => void }>,
   ) => {
-    const item = document.createElement("div");
-    item.className = `editor-banner-item ${tone}`;
-
-    const copy = document.createElement("p");
-    copy.className = "editor-banner-copy";
-    copy.textContent = message;
-
-    const actionRow = document.createElement("div");
-    actionRow.className = "editor-banner-actions";
-    for (const action of actions) {
-      const btn = document.createElement("button");
-      btn.className = "mini-btn";
-      btn.textContent = action.label;
-      btn.onclick = action.onClick;
-      actionRow.appendChild(btn);
-    }
-
-    item.append(copy, actionRow);
-    host.appendChild(item);
+    banners.push({ tone, message, actions });
   };
 
   if (state.managedStatus === "detached" && state.page && state.project) {
@@ -2679,62 +2204,41 @@ function renderEditorStateBanner(): void {
     );
   }
 
-  host.classList.toggle("hidden", host.childElementCount === 0);
+  if (panelMountFailures.length > 0) {
+    addBanner(
+      "warning",
+      formatPanelMountFailureStatus(panelMountFailures) +
+        (panelMountFailures.includes("Canvas")
+          ? " Reload the window to retry the canvas."
+          : " Some sidebar panels may be unavailable."),
+      panelMountFailures.includes("Canvas")
+        ? [
+            {
+              label: "Reload Window",
+              onClick: () => window.location.reload(),
+            },
+          ]
+        : [],
+    );
+  }
+
+  updateEditorStateBanners(banners);
+  host.classList.toggle("hidden", banners.length === 0);
 }
 
 function renderLayers(): void {
-  const list = $("layers-list");
-  list.innerHTML = "";
-
-  if (state.sections.length === 0) {
-    const li = document.createElement("li");
-    li.className = "muted";
-    li.textContent = "No sections yet.";
-    list.appendChild(li);
-    return;
-  }
-
-  for (const section of state.sections) {
-    const row = document.createElement("li");
-    row.classList.toggle(
-      "active",
-      section.id === state.selectedSectionId && !state.selectedId,
-    );
-
-    const sectionBtn = document.createElement("button");
-    sectionBtn.className = "layer-button";
-    sectionBtn.textContent = section.label;
-    sectionBtn.onclick = () => {
-      state.selectedId = null;
-      state.selectedSectionId = section.id;
-      renderLayers();
-      renderCanvas();
-      renderProperties();
-    };
-    row.appendChild(sectionBtn);
-
-    if (section.children.length > 0) {
-      const children = document.createElement("div");
-      children.className = "layer-children";
-      for (const child of section.children) {
-        const childBtn = document.createElement("button");
-        childBtn.className = "layer-button";
-        childBtn.textContent = blockLabel(child as Block);
-        childBtn.onclick = () => {
-          state.selectedId = child.id;
-          state.selectedSectionId = section.id;
-          renderLayers();
-          renderCanvas();
-          renderProperties();
-        };
-        childBtn.classList.toggle("muted", state.selectedId !== child.id);
-        children.appendChild(childBtn);
-      }
-      row.appendChild(children);
-    }
-
-    list.appendChild(row);
-  }
+  updateLayers(
+    state.sections.map((section) => ({
+      id: section.id,
+      label: section.label,
+      active: section.id === state.selectedSectionId && !state.selectedId,
+      children: section.children.map((child) => ({
+        id: child.id,
+        label: blockLabel(child as Block),
+        active: state.selectedId === child.id,
+      })),
+    })),
+  );
 }
 
 async function writeSiteDocumentFromRenderer(
@@ -2768,68 +2272,60 @@ async function openSiteShellModal(): Promise<void> {
   const nextSite = cloneSiteDocument(
     effectiveSiteDocument(state),
   ) as SiteDocument;
+  const shellState = {
+    siteTitle: nextSite.shell.siteTitle,
+    logoText: nextSite.shell.logoText,
+    announcementText: nextSite.shell.announcementText,
+    announcementVisible: nextSite.shell.announcementVisible,
+    ctaLabel: nextSite.shell.navCtaLabel,
+    ctaHref: nextSite.shell.navCtaHref,
+    footerHtml: nextSite.shell.footerHtml,
+    customHeadHtml: nextSite.shell.customHeadHtml,
+  };
+
   const wrap = document.createElement("div");
-  wrap.className = "meta-form";
-
-  const help = document.createElement("p");
-  help.className = "muted";
-  help.textContent =
-    "Saving here switches the project shell into Zephus-managed layout mode so the header, announcement bar, and footer stay GUI-editable.";
-  wrap.appendChild(help);
-
-  const siteTitle = document.createElement("input");
-  siteTitle.className = "text";
-  siteTitle.value = nextSite.shell.siteTitle;
-  const logoText = document.createElement("input");
-  logoText.className = "text";
-  logoText.value = nextSite.shell.logoText;
-  const announcementText = document.createElement("textarea");
-  announcementText.rows = 3;
-  announcementText.value = nextSite.shell.announcementText;
-  const announcementVisible = document.createElement("input");
-  announcementVisible.type = "checkbox";
-  announcementVisible.checked = nextSite.shell.announcementVisible;
-  const ctaLabel = document.createElement("input");
-  ctaLabel.className = "text";
-  ctaLabel.value = nextSite.shell.navCtaLabel;
-  const ctaHref = document.createElement("input");
-  ctaHref.className = "text";
-  ctaHref.value = nextSite.shell.navCtaHref;
-  const ctaHrefField = document.createElement("div");
-  ctaHrefField.className = "link-field";
-  const ctaHrefPick = document.createElement("button");
-  ctaHrefPick.type = "button";
-  ctaHrefPick.className = "btn ghost mini-btn";
-  ctaHrefPick.textContent = "Choose…";
-  ctaHrefPick.onclick = () =>
-    openLinkPicker(ctaHref.value, (href) => {
-      ctaHref.value = href;
+  const mountShellModal = () =>
+    renderSiteShellModalBody(wrap, {
+      siteTitle: shellState.siteTitle,
+      logoText: shellState.logoText,
+      announcementText: shellState.announcementText,
+      announcementVisible: shellState.announcementVisible,
+      ctaLabel: shellState.ctaLabel,
+      ctaHref: shellState.ctaHref,
+      footerHtml: shellState.footerHtml,
+      customHeadHtml: shellState.customHeadHtml,
+      onSiteTitleChange: (value) => {
+        shellState.siteTitle = value;
+      },
+      onLogoTextChange: (value) => {
+        shellState.logoText = value;
+      },
+      onAnnouncementTextChange: (value) => {
+        shellState.announcementText = value;
+      },
+      onAnnouncementVisibleChange: (value) => {
+        shellState.announcementVisible = value;
+      },
+      onCtaLabelChange: (value) => {
+        shellState.ctaLabel = value;
+      },
+      onCtaHrefChange: (value) => {
+        shellState.ctaHref = value;
+      },
+      onPickCtaHref: () => {
+        openLinkPicker(shellState.ctaHref, (href) => {
+          shellState.ctaHref = href;
+          mountShellModal();
+        });
+      },
+      onFooterHtmlChange: (value) => {
+        shellState.footerHtml = value;
+      },
+      onCustomHeadHtmlChange: (value) => {
+        shellState.customHeadHtml = value;
+      },
     });
-  ctaHrefField.append(ctaHref, ctaHrefPick);
-  const footerHtml = document.createElement("textarea");
-  footerHtml.rows = 4;
-  footerHtml.value = nextSite.shell.footerHtml;
-  const customHeadHtml = document.createElement("textarea");
-  customHeadHtml.rows = 4;
-  customHeadHtml.value = nextSite.shell.customHeadHtml;
-
-  for (const [labelText, field] of [
-    ["Site title", siteTitle],
-    ["Logo text", logoText],
-    ["Announcement text", announcementText],
-    ["Show announcement", announcementVisible],
-    ["CTA label", ctaLabel],
-    ["CTA link", ctaHrefField],
-    ["Footer HTML", footerHtml],
-    ["Custom head HTML", customHeadHtml],
-  ] as [string, HTMLElement][]) {
-    const row = document.createElement("label");
-    row.className = "meta-field";
-    const span = document.createElement("span");
-    span.textContent = labelText;
-    row.append(span, field);
-    wrap.appendChild(row);
-  }
+  mountShellModal();
 
   showModalNode(
     "Site Shell",
@@ -2840,8 +2336,8 @@ async function openSiteShellModal(): Promise<void> {
         label: "Stage Shell",
         kind: "primary",
         onClick: async () => {
-          const newFooter = footerHtml.value.trim();
-          const newHead = customHeadHtml.value.trim();
+          const newFooter = shellState.footerHtml.trim();
+          const newHead = shellState.customHeadHtml.trim();
           const hadFooter = Boolean(nextSite.shell.footerHtml.trim());
           const hadHead = Boolean(nextSite.shell.customHeadHtml.trim());
           // Gate: warn user when they first add raw HTML (they might not
@@ -2858,14 +2354,15 @@ async function openSiteShellModal(): Promise<void> {
           }
           nextSite.shell.layoutMode = "managed";
           nextSite.shell.siteTitle =
-            siteTitle.value.trim() || nextSite.siteName;
-          nextSite.shell.logoText = logoText.value.trim() || nextSite.siteName;
-          nextSite.shell.announcementText = announcementText.value.trim();
-          nextSite.shell.announcementVisible = announcementVisible.checked;
-          nextSite.shell.navCtaLabel = ctaLabel.value.trim();
-          nextSite.shell.navCtaHref = ctaHref.value.trim() || "#";
-          nextSite.shell.footerHtml = footerHtml.value.trim();
-          nextSite.shell.customHeadHtml = customHeadHtml.value.trim();
+            shellState.siteTitle.trim() || nextSite.siteName;
+          nextSite.shell.logoText =
+            shellState.logoText.trim() || nextSite.siteName;
+          nextSite.shell.announcementText = shellState.announcementText.trim();
+          nextSite.shell.announcementVisible = shellState.announcementVisible;
+          nextSite.shell.navCtaLabel = shellState.ctaLabel.trim();
+          nextSite.shell.navCtaHref = shellState.ctaHref.trim() || "#";
+          nextSite.shell.footerHtml = shellState.footerHtml.trim();
+          nextSite.shell.customHeadHtml = shellState.customHeadHtml.trim();
           closeModal();
           await writeSiteDocumentFromRenderer(
             nextSite,
@@ -2886,58 +2383,61 @@ async function openDesignSystemModal(): Promise<void> {
   const nextSite = cloneSiteDocument(
     effectiveSiteDocument(state),
   ) as SiteDocument;
+  const designState = {
+    accent: nextSite.design.accent,
+    background: nextSite.design.background,
+    foreground: nextSite.design.foreground,
+    surface: nextSite.design.surface,
+    bodyFont: nextSite.design.fontFamily,
+    bodyFontGoogle: googleFontForStack(nextSite.design.fontFamily),
+    headingFont: nextSite.design.headingFontFamily,
+    headingFontGoogle: googleFontForStack(nextSite.design.headingFontFamily),
+    radius: nextSite.design.radius,
+    containerWidth: nextSite.design.containerWidth,
+    shadow: nextSite.design.shadow,
+  };
+
   const wrap = document.createElement("div");
-  wrap.className = "meta-form";
-
-  const inputs = {
-    radius: document.createElement("input"),
-    containerWidth: document.createElement("input"),
-  };
-
-  for (const input of Object.values(inputs)) {
-    input.className = "text";
-  }
-
-  const colorControls = {
-    accent: createColorControl(nextSite.design.accent),
-    background: createColorControl(nextSite.design.background),
-    foreground: createColorControl(nextSite.design.foreground),
-    surface: createColorControl(nextSite.design.surface),
-  };
-
-  const bodyFont = createFontControl(nextSite.design.fontFamily);
-  const headingFont = createFontControl(nextSite.design.headingFontFamily);
-
-  inputs.radius.value = nextSite.design.radius;
-  inputs.containerWidth.value = nextSite.design.containerWidth;
-
-  const shadow = document.createElement("select");
-  for (const value of ["none", "sm", "md", "lg"] as const) {
-    const option = document.createElement("option");
-    option.value = value;
-    option.textContent = value;
-    option.selected = nextSite.design.shadow === value;
-    shadow.appendChild(option);
-  }
-
-  for (const [labelText, field] of [
-    ["Accent color", colorControls.accent.element],
-    ["Background", colorControls.background.element],
-    ["Foreground", colorControls.foreground.element],
-    ["Surface", colorControls.surface.element],
-    ["Body font", bodyFont.element],
-    ["Heading font", headingFont.element],
-    ["Radius", inputs.radius],
-    ["Container width", inputs.containerWidth],
-    ["Shadow depth", shadow],
-  ] as [string, HTMLElement][]) {
-    const row = document.createElement("label");
-    row.className = "meta-field";
-    const span = document.createElement("span");
-    span.textContent = labelText;
-    row.append(span, field);
-    wrap.appendChild(row);
-  }
+  renderDesignSystemModalBody(wrap, {
+    accent: designState.accent,
+    background: designState.background,
+    foreground: designState.foreground,
+    surface: designState.surface,
+    bodyFont: designState.bodyFont,
+    headingFont: designState.headingFont,
+    radius: designState.radius,
+    containerWidth: designState.containerWidth,
+    shadow: designState.shadow,
+    onAccentChange: (value) => {
+      designState.accent = value;
+    },
+    onBackgroundChange: (value) => {
+      designState.background = value;
+    },
+    onForegroundChange: (value) => {
+      designState.foreground = value;
+    },
+    onSurfaceChange: (value) => {
+      designState.surface = value;
+    },
+    onBodyFontChange: (stack, google) => {
+      designState.bodyFont = stack;
+      designState.bodyFontGoogle = google;
+    },
+    onHeadingFontChange: (stack, google) => {
+      designState.headingFont = stack;
+      designState.headingFontGoogle = google;
+    },
+    onRadiusChange: (value) => {
+      designState.radius = value;
+    },
+    onContainerWidthChange: (value) => {
+      designState.containerWidth = value;
+    },
+    onShadowChange: (value) => {
+      designState.shadow = value;
+    },
+  });
 
   showModalNode("Design System", wrap, [
     { label: "Cancel", kind: "ghost", onClick: closeModal },
@@ -2946,19 +2446,19 @@ async function openDesignSystemModal(): Promise<void> {
       kind: "primary",
       onClick: async () => {
         nextSite.shell.layoutMode = "managed";
-        nextSite.design.accent = colorControls.accent.getValue().trim();
-        nextSite.design.background = colorControls.background.getValue().trim();
-        nextSite.design.foreground = colorControls.foreground.getValue().trim();
-        nextSite.design.surface = colorControls.surface.getValue().trim();
-        nextSite.design.fontFamily = bodyFont.getStack();
-        nextSite.design.headingFontFamily = headingFont.getStack();
+        nextSite.design.accent = designState.accent.trim();
+        nextSite.design.background = designState.background.trim();
+        nextSite.design.foreground = designState.foreground.trim();
+        nextSite.design.surface = designState.surface.trim();
+        nextSite.design.fontFamily = designState.bodyFont;
+        nextSite.design.headingFontFamily = designState.headingFont;
         nextSite.design.fontImportUrl = buildFontImportUrl([
-          bodyFont.getGoogle(),
-          headingFont.getGoogle(),
+          designState.bodyFontGoogle,
+          designState.headingFontGoogle,
         ]);
-        nextSite.design.radius = inputs.radius.value.trim();
-        nextSite.design.containerWidth = inputs.containerWidth.value.trim();
-        nextSite.design.shadow = shadow.value as DesignTokenSet["shadow"];
+        nextSite.design.radius = designState.radius.trim();
+        nextSite.design.containerWidth = designState.containerWidth.trim();
+        nextSite.design.shadow = designState.shadow;
         closeModal();
         await writeSiteDocumentFromRenderer(
           nextSite,
@@ -3011,8 +2511,6 @@ async function applyMergedTheme(): Promise<void> {
 }
 
 function renderPageList(result: ProjectOpenResult): void {
-  const list = $("page-list");
-  list.innerHTML = "";
   const entries = state.pageMeta.length
     ? state.pageMeta
     : result.pages.map((page) => ({
@@ -3025,63 +2523,20 @@ function renderPageList(result: ProjectOpenResult): void {
         navVisible: true,
         isHome: pageToRoute(page) === "/",
       }));
-  if (entries.length === 0) {
-    const li = document.createElement("li");
-    li.className = "muted";
-    li.textContent = "No pages found.";
-    list.appendChild(li);
-    return;
-  }
-  for (const entry of entries) {
-    const li = document.createElement("li");
-    li.className = "page-item";
-    li.classList.toggle("hidden-page", !entry.navVisible);
-    li.dataset["page"] = entry.page;
-    if (entry.page === state.page) {
-      li.classList.add("active");
-    }
-    const main = document.createElement("button");
-    main.className = "page-main";
-    main.innerHTML = `<i data-lucide="file-code"></i><span><strong>${escapeHtml(entry.navLabel)}</strong><small>${escapeHtml(entry.route)}</small></span>`;
-    main.onclick = () => void loadPage(entry.page);
-
-    const manage = document.createElement("button");
-    manage.className = "mini-btn";
-    manage.textContent = "Manage";
-    manage.onclick = (event) => {
-      event.stopPropagation();
-      void openPageMetaModal(entry.page);
-    };
-    li.append(main, manage);
-    list.appendChild(li);
-  }
-  refreshIcons();
+  updatePageList(
+    entries.map((entry) => ({
+      page: entry.page,
+      route: entry.route,
+      navLabel: entry.navLabel,
+      navVisible: entry.navVisible,
+      active: entry.page === state.page,
+    })),
+  );
 }
 
 function openHelpModal(): void {
   const content = document.createElement("div");
-  content.className = "help-modal-content";
-  content.innerHTML = `
-    <div class="help-section">
-      <h4>Visual Mode Keyboard Shortcuts</h4>
-      <table class="help-table">
-        <tr><td><kbd>Ctrl/Cmd</kbd> + <kbd>S</kbd></td><td>Save Changes</td></tr>
-        <tr><td><kbd>Ctrl/Cmd</kbd> + <kbd>Z</kbd></td><td>Undo Last Change</td></tr>
-        <tr><td><kbd>Ctrl/Cmd</kbd> + <kbd>Shift</kbd> + <kbd>Z</kbd> / <kbd>Y</kbd></td><td>Redo Last Change</td></tr>
-        <tr><td><kbd>Ctrl/Cmd</kbd> + <kbd>D</kbd></td><td>Duplicate Selected Block</td></tr>
-        <tr><td><kbd>Delete</kbd> / <kbd>Backspace</kbd></td><td>Delete Selected Block/Section</td></tr>
-      </table>
-    </div>
-    <div class="help-section" style="margin-top: 16px;">
-      <h4>Useful Tips</h4>
-      <ul>
-        <li><strong>Double-click</strong> a block on the canvas to edit its text inline.</li>
-        <li>Drag blocks inside a section or columns to reorder.</li>
-        <li>Select blocks to edit properties in the Inspector sidebar on the right.</li>
-        <li>Press <kbd>?</kbd> or <kbd>H</kbd> on the dashboard or editor canvas to view this help guide.</li>
-      </ul>
-    </div>
-  `;
+  renderHelpModal(content);
   showModalNode("Keyboard Shortcuts & Help", content, [
     { label: "Close", kind: "primary", onClick: closeModal },
   ]);
@@ -3111,16 +2566,14 @@ async function reloadPages(): Promise<void> {
 
 async function newPageFlow(): Promise<void> {
   if (!state.project) return;
-  const input = document.createElement("input");
-  input.className = "text";
-  input.placeholder = "docs/getting-started";
+  let nextName = "";
   const wrap = document.createElement("div");
-  wrap.className = "meta-form";
-  const label = document.createElement("p");
-  label.className = "muted";
-  label.textContent =
-    "New pages inherit the project theme layout. Nested routes like docs/getting-started are supported.";
-  wrap.append(label, input);
+  renderNewPageModal(wrap, {
+    value: nextName,
+    onValueChange: (value) => {
+      nextName = value;
+    },
+  });
 
   showModalNode("New Page", wrap, [
     { label: "Cancel", kind: "ghost", onClick: closeModal },
@@ -3128,7 +2581,7 @@ async function newPageFlow(): Promise<void> {
       label: "Create Page",
       kind: "primary",
       onClick: async () => {
-        const name = input.value.trim();
+        const name = nextName.trim();
         if (!name || !state.project) return;
         closeModal();
         const r = await window.zephus.createPage(
@@ -3164,46 +2617,38 @@ async function openPageMetaModal(page: string): Promise<void> {
     state.project.astro.pagesDir,
   );
 
+  const formState = {
+    title: entry.title,
+    slug: entry.slug,
+    navLabel: entry.navLabel,
+    description: entry.metaDescription,
+    visible: entry.navVisible,
+  };
+
   const wrap = document.createElement("div");
-  wrap.className = "meta-form";
-
-  const title = document.createElement("input");
-  title.className = "text";
-  title.value = entry.title;
-
-  const slug = document.createElement("input");
-  slug.className = "text";
-  slug.value = entry.slug;
-  if (entry.isHome) slug.disabled = true;
-
-  const navLabel = document.createElement("input");
-  navLabel.className = "text";
-  navLabel.value = entry.navLabel;
-
-  const description = document.createElement("textarea");
-  description.rows = 3;
-  description.value = entry.metaDescription;
-
-  const visible = document.createElement("input");
-  visible.type = "checkbox";
-  visible.checked = entry.navVisible;
-
-  const fields: [string, HTMLElement][] = [
-    ["Page title", title],
-    ["Slug", slug],
-    ["Nav label", navLabel],
-    ["Meta description", description],
-    ["Show in nav", visible],
-  ];
-
-  for (const [labelText, field] of fields) {
-    const row = document.createElement("label");
-    row.className = "meta-field";
-    const span = document.createElement("span");
-    span.textContent = labelText;
-    row.append(span, field);
-    wrap.appendChild(row);
-  }
+  renderPageSettingsModal(wrap, {
+    title: formState.title,
+    slug: formState.slug,
+    slugDisabled: entry.isHome,
+    navLabel: formState.navLabel,
+    metaDescription: formState.description,
+    navVisible: formState.visible,
+    onTitleChange: (value) => {
+      formState.title = value;
+    },
+    onSlugChange: (value) => {
+      formState.slug = value;
+    },
+    onNavLabelChange: (value) => {
+      formState.navLabel = value;
+    },
+    onMetaDescriptionChange: (value) => {
+      formState.description = value;
+    },
+    onNavVisibleChange: (value) => {
+      formState.visible = value;
+    },
+  });
 
   showModalNode("Page Settings", wrap, [
     {
@@ -3313,7 +2758,7 @@ async function openPageMetaModal(page: string): Promise<void> {
       kind: "primary",
       onClick: async () => {
         if (!state.project) return;
-        const nextSlug = slug.value.trim() || entry.slug;
+        const nextSlug = formState.slug.trim() || entry.slug;
         let nextPage = entry.page;
         if (!entry.isHome && nextSlug !== entry.slug) {
           const renamed = await window.zephus.renamePage(
@@ -3333,11 +2778,13 @@ async function openPageMetaModal(page: string): Promise<void> {
           nextPage,
           state.project.astro.pagesDir,
           {
-            title: title.value.trim() || entry.title,
+            title: formState.title.trim() || entry.title,
             navLabel:
-              navLabel.value.trim() || title.value.trim() || entry.navLabel,
-            metaDescription: description.value.trim(),
-            navVisible: visible.checked,
+              formState.navLabel.trim() ||
+              formState.title.trim() ||
+              entry.navLabel,
+            metaDescription: formState.description.trim(),
+            navVisible: formState.visible,
           },
         );
         if (!saved.ok) {
@@ -3364,69 +2811,33 @@ async function openPageMetaModal(page: string): Promise<void> {
 
 function buildUnsavedWorkSummary(): HTMLElement {
   const wrap = document.createElement("div");
-  wrap.className = "save-summary";
-
-  const intro = document.createElement("p");
-  intro.textContent = "You have unsaved changes in Zephus.";
-  wrap.appendChild(intro);
-
-  const list = document.createElement("ul");
-  list.className = "change-list";
-
-  const pageItems = state.pageChangeSummary.length
-    ? state.pageChangeSummary
-    : state.pageDirty
-      ? [`Unsaved page edits for ${currentPageLabel()}`]
-      : [];
-  const siteItems = state.siteChangeSummary.length
-    ? state.siteChangeSummary
-    : state.siteDirty
-      ? ["Unsaved site shell or design edits"]
-      : [];
-
-  for (const item of [...pageItems, ...siteItems]) {
-    const li = document.createElement("li");
-    li.textContent = item;
-    list.appendChild(li);
-  }
-  wrap.appendChild(list);
+  renderUnsavedWorkSummaryModalBody(
+    wrap,
+    collectUnsavedWorkSummaryLines({
+      pageDirty: state.pageDirty,
+      pageChangeSummary: state.pageChangeSummary,
+      pageFallbackLabel: `Unsaved page edits for ${currentPageLabel()}`,
+      siteDirty: state.siteDirty,
+      siteChangeSummary: state.siteChangeSummary,
+    }),
+  );
   return wrap;
 }
 
+let editorSiteSave!: ReturnType<typeof createEditorSiteSaveActions>;
+
 async function discardPendingSiteChanges(): Promise<void> {
-  if (!state.project) return;
-  await window.zephus.clearDraft(state.project.path, "site", siteDraftTarget());
-  clearSiteChanges(state);
-  markSiteDirty(state, false);
-  renderDirtyIndicators();
-  if (state.project) {
-    renderNavEditor(state.project);
-  }
+  return editorSiteSave.discardPendingSiteChanges();
 }
 
 async function persistPendingSiteDocument(): Promise<boolean> {
-  if (!state.project || !state.pendingSiteDocument) return true;
-  const result = await window.zephus.writeSiteDocument(
-    state.project.path,
-    state.pendingSiteDocument,
-    state.project.astro.pagesDir,
-  );
-  if (!result.ok) {
-    setStatus("Could not save site settings: " + (result.error ?? "unknown"));
-    return false;
-  }
-  const refreshed = await window.zephus.readSiteDocument(state.project.path);
-  if (refreshed.ok && refreshed.site) {
-    state.siteDocument = refreshed.site;
-  }
-  await window.zephus.clearDraft(state.project.path, "site", siteDraftTarget());
-  clearSiteChanges(state);
-  markSiteDirty(state, false);
-  renderDirtyIndicators();
-  if (state.project) {
-    renderNavEditor(state.project);
-  }
-  return true;
+  return editorSiteSave.persistPendingSiteDocument();
+}
+
+let editorDraftRestore!: ReturnType<typeof createEditorDraftRestoreActions>;
+
+async function maybeRestoreSiteDraft(): Promise<void> {
+  return editorDraftRestore.maybeRestoreSiteDraft();
 }
 
 async function maybeResolveUnsavedWork(options?: {
@@ -3482,54 +2893,6 @@ async function resolveSiteEditorConflict(
   return true;
 }
 
-async function maybeRestoreSiteDraft(): Promise<void> {
-  if (!state.project || !state.siteDocument) return;
-  const draft = await window.zephus.readDraft(
-    state.project.path,
-    "site",
-    siteDraftTarget(),
-  );
-  if (!draft.ok || !draft.draft?.content) return;
-  if (draft.draft.content === JSON.stringify(state.siteDocument, null, 2)) {
-    return;
-  }
-  const choice = await modalController.confirmRestoreDraft(
-    "Restore Site Draft",
-    `Zephus found unsaved site-level changes from ${new Date(
-      draft.draft.savedAt,
-    ).toLocaleString()}. Restore them?`,
-  );
-  if (choice === "discard") {
-    await window.zephus.clearDraft(
-      state.project.path,
-      "site",
-      siteDraftTarget(),
-    );
-    return;
-  }
-  if (choice !== "restore") return;
-  try {
-    const restored = JSON.parse(draft.draft.content) as SiteDocument;
-    state.pendingSiteDocument = restored;
-    state.pendingSiteEditorKind = "shell";
-    state.recoveredSiteDraft = draft.draft;
-    trackSiteChange(state, "Recovered unsaved site settings");
-    markSiteDirty(state, true);
-    renderDirtyIndicators();
-    scheduleDraftWrite();
-    renderNavEditor(state.project);
-    setStatus(
-      `Recovered site settings draft from ${new Date(draft.draft.savedAt).toLocaleString()}.`,
-    );
-  } catch {
-    await window.zephus.clearDraft(
-      state.project.path,
-      "site",
-      siteDraftTarget(),
-    );
-  }
-}
-
 async function loadPage(
   page: string,
   options?: { skipUnsavedGuard?: boolean; skipDraftRestore?: boolean },
@@ -3562,38 +2925,19 @@ async function loadPage(
   state.rawCode = state.visualEditable ? state.generatedCode : initialSource;
   state.recoveredPageDraft = null;
   if (!options?.skipDraftRestore) {
-    const draft = await window.zephus.readDraft(
-      state.project.path,
-      "page",
+    await editorDraftRestore.maybeRestorePageDraft(
       page,
+      findPageMeta(page)?.navLabel ?? page,
+      state.rawCode,
+      {
+        visualEditable: state.visualEditable,
+        applyRestoredSource: (content) => parsePage(content),
+      },
     );
-    if (
-      draft.ok &&
-      draft.draft?.content &&
-      draft.draft.content !== state.rawCode
-    ) {
-      const choice = await modalController.confirmRestoreDraft(
-        "Restore Page Draft",
-        `Zephus found an unsaved draft for ${
-          findPageMeta(page)?.navLabel ?? page
-        } from ${new Date(draft.draft.savedAt).toLocaleString()}. Restore it?`,
-      );
-      if (choice === "discard") {
-        await window.zephus.clearDraft(state.project.path, "page", page);
-      } else if (choice === "restore") {
-        state.rawCode = draft.draft.content;
-        state.recoveredPageDraft = draft.draft;
-        if (state.visualEditable) {
-          parsePage(state.rawCode);
-        }
-        setStatus(
-          `Recovered draft from ${new Date(draft.draft.savedAt).toLocaleString()}.`,
-        );
-      }
-    }
   }
   state.undo = [];
   state.redo = [];
+  updateUndoRedoButtons();
   state.selectedId = null;
   state.selectedSectionId = state.sections[0]?.id ?? null;
   clearChanges();
@@ -3616,7 +2960,7 @@ async function loadPage(
     );
   } else if (state.managedStatus === "detached") {
     setStatus(
-      "Detached page loaded in code mode. Reattach it from Page Settings to restore visual editing.",
+      "Detached page loaded in code mode. Reattach it from the editor banner or Page Settings to restore visual editing.",
     );
   } else {
     setStatus("Editing " + page);
@@ -3665,120 +3009,11 @@ async function onExternalChange(): Promise<void> {
 // untouched content round-trips. Unknown nodes become verbatim "html" blocks.
 
 function capturePageFrame(raw: string): string {
-  state.frontmatter = "";
-  state.prefix = "";
-  state.suffix = "";
-
-  let rest = raw;
-  const fm = raw.match(/^(---\r?\n[\s\S]*?\r?\n---\r?\n?)/);
-  if (fm && fm[1]) {
-    state.frontmatter = fm[1];
-    rest = raw.slice(fm[1].length);
-  }
-
-  // Prefer a <body> region; otherwise the inner of the single root element.
-  const bodyMatch = rest.match(
-    /([\s\S]*<body[^>]*>)([\s\S]*?)(<\/body>[\s\S]*)/i,
-  );
-  let inner: string;
-  if (bodyMatch) {
-    state.prefix = bodyMatch[1] ?? "";
-    inner = bodyMatch[2] ?? "";
-    state.suffix = bodyMatch[3] ?? "";
-  } else {
-    const rootMatch = rest.match(
-      /^(\s*<([A-Za-z][\w.-]*)\b[^>]*>)([\s\S]*)(<\/\2>\s*)$/,
-    );
-    if (rootMatch) {
-      state.prefix = rootMatch[1] ?? "";
-      inner = rootMatch[3] ?? "";
-      state.suffix = rootMatch[4] ?? "";
-    } else {
-      inner = rest;
-    }
-  }
-
+  const { frame, inner } = splitManagedPageSource(raw);
+  state.frontmatter = frame.frontmatter;
+  state.prefix = frame.prefix;
+  state.suffix = frame.suffix;
   return inner;
-}
-
-/**
- * Parses the managed inner HTML into SectionNodes, reconstructing section
- * wrappers emitted by sectionToHtml as editable SectionNodes rather than
- * collapsing them into opaque html blocks (Code→Visual round-trip safety).
- *
- * Top-level <section> elements without data-zephus-block are wrappers produced
- * by sectionToHtml when a section has a surface (wrapper, style, or cls).
- * All other top-level content is collected into a default fallback section.
- */
-function parseSections(inner: string): SectionNode[] {
-  const doc = new DOMParser().parseFromString(
-    `<div id="z-root">${inner}</div>`,
-    "text/html",
-  );
-  const root = doc.getElementById("z-root");
-  if (!root) return [ensureFallbackSection()];
-
-  // Fast path: no un-annotated <section> wrappers — single fallback section
-  // (original behaviour, avoids duplicate parsing).
-  const hasWrapper = Array.from(root.children).some(
-    (el) =>
-      el.tagName.toLowerCase() === "section" &&
-      !el.getAttribute("data-zephus-block"),
-  );
-  if (!hasWrapper) {
-    const sec = ensureFallbackSection();
-    sec.children = parseInner(inner);
-    return [sec];
-  }
-
-  // Multi-section path: each wrapper <section> becomes an editable SectionNode.
-  const sections: SectionNode[] = [];
-  let looseBlocks: Block[] = [];
-
-  const flushLoose = (): void => {
-    if (looseBlocks.length === 0) return;
-    const sec = ensureFallbackSection();
-    sec.label =
-      sections.length === 0 ? "Main Content" : `Section ${sections.length + 1}`;
-    sec.children = looseBlocks;
-    looseBlocks = [];
-    sections.push(sec);
-  };
-
-  for (const node of Array.from(root.childNodes)) {
-    if (node.nodeType === Node.TEXT_NODE) {
-      const text = node.textContent ?? "";
-      if (text.trim())
-        looseBlocks.push({ id: uid(), type: "html", props: {}, raw: text });
-      continue;
-    }
-    if (node.nodeType !== Node.ELEMENT_NODE) {
-      const raw = (node as ChildNode).textContent ?? "";
-      if (raw.trim())
-        looseBlocks.push({ id: uid(), type: "html", props: {}, raw });
-      continue;
-    }
-    const el = node as HTMLElement;
-    const tag = el.tagName.toLowerCase();
-    if (tag === "section" && !el.dataset["zephusBlock"]) {
-      // Un-annotated wrapper from sectionToHtml: reconstruct as SectionNode.
-      flushLoose();
-      const cls = el.getAttribute("class") ?? "";
-      sections.push({
-        id: uid(),
-        type: "section",
-        label: `Section ${sections.length + 1}`,
-        props: { wrapper: "box", cls },
-        children: parseInner(el.innerHTML),
-      });
-    } else {
-      // Regular block or typed element: delegate to parseInner.
-      looseBlocks.push(...parseInner(el.outerHTML));
-    }
-  }
-
-  flushLoose();
-  return sections.length > 0 ? sections : [ensureFallbackSection()];
 }
 
 function parsePage(raw: string): void {
@@ -3788,382 +3023,19 @@ function parsePage(raw: string): void {
   state.selectedSectionId = state.sections[0]?.id ?? null;
 }
 
-function parseInner(inner: string): Block[] {
-  const doc = new DOMParser().parseFromString(
-    `<div id="z-root">${inner}</div>`,
-    "text/html",
-  );
-  const root = doc.getElementById("z-root");
-  const blocks: Block[] = [];
-  if (!root) return blocks;
-
-  for (const node of Array.from(root.childNodes)) {
-    if (node.nodeType === Node.TEXT_NODE) {
-      const text = node.textContent ?? "";
-      if (text.trim().length > 0) {
-        blocks.push({ id: uid(), type: "html", props: {}, raw: text });
-      }
-      continue;
-    }
-    if (node.nodeType !== Node.ELEMENT_NODE) {
-      // Comments and others preserved verbatim.
-      const raw = (node as ChildNode).textContent ?? "";
-      if (raw.trim()) blocks.push({ id: uid(), type: "html", props: {}, raw });
-      continue;
-    }
-    const el = node as HTMLElement;
-    const tag = el.tagName.toLowerCase();
-    const cls = el.getAttribute("class") ?? "";
-    const storedType = el.dataset["zephusBlock"];
-    const storedProps = parseJsonAttr<Record<string, unknown>>(
-      el.dataset["zephusProps"] ?? null,
-    );
-    const storedStyle = parseJsonAttr<BlockStyle>(
-      el.dataset["zephusStyle"] ?? null,
-    );
-    // Only trust the stored type if it is a known block type; otherwise fall
-    // through to structural tag parsing / verbatim preservation. Props are
-    // coerced to a flat string record (prototype-pollution keys dropped).
-    if (storedType && KNOWN_BLOCK_TYPES.has(storedType) && storedProps) {
-      blocks.push({
-        id: uid(),
-        type: storedType as BlockType,
-        props: sanitizeStringRecord(storedProps),
-        style: storedStyle,
-        locked: el.dataset["zephusLocked"] === "true",
-        raw: storedType === "html" ? el.outerHTML : undefined,
-      });
-      continue;
-    }
-
-    if (/^h[1-6]$/.test(tag)) {
-      blocks.push({
-        id: uid(),
-        type: "heading",
-        props: { text: el.textContent ?? "", level: tag[1] ?? "2", cls },
-        style: styleFromLegacyProps(el),
-      });
-    } else if (tag === "p") {
-      blocks.push({
-        id: uid(),
-        type: "text",
-        props: { text: el.textContent ?? "", cls },
-        style: styleFromLegacyProps(el),
-      });
-    } else if (tag === "a") {
-      blocks.push({
-        id: uid(),
-        type: "button",
-        props: {
-          text: el.textContent ?? "",
-          href: el.getAttribute("href") ?? "#",
-          cls,
-        },
-        style: styleFromLegacyProps(el),
-      });
-    } else if (tag === "img") {
-      blocks.push({
-        id: uid(),
-        type: "image",
-        props: {
-          src: el.getAttribute("src") ?? "",
-          alt: el.getAttribute("alt") ?? "",
-          cls,
-        },
-        style: styleFromLegacyProps(el),
-      });
-    } else if (tag === "hr") {
-      blocks.push({
-        id: uid(),
-        type: "divider",
-        props: { cls },
-        style: styleFromLegacyProps(el),
-      });
-    } else if (tag === "blockquote") {
-      blocks.push({
-        id: uid(),
-        type: "quote",
-        props: {
-          text:
-            el.querySelector("p")?.textContent?.trim() ??
-            el.textContent?.trim() ??
-            "",
-          cite: el.querySelector("cite")?.textContent?.trim() ?? "",
-          cls,
-        },
-        style: styleFromLegacyProps(el),
-      });
-    } else if (tag === "ul" || tag === "ol") {
-      blocks.push({
-        id: uid(),
-        type: "list",
-        props: {
-          items: Array.from(el.querySelectorAll("li"))
-            .map((item) => item.textContent?.trim() ?? "")
-            .filter(Boolean)
-            .join("\n"),
-          ordered: tag === "ol" ? "true" : "false",
-          cls,
-        },
-        style: styleFromLegacyProps(el),
-      });
-    } else if (tag === "iframe") {
-      blocks.push({
-        id: uid(),
-        type: "embed",
-        props: {
-          src: el.getAttribute("src") ?? "",
-          title: el.getAttribute("title") ?? "Embed",
-          cls,
-        },
-        style: styleFromLegacyProps(el),
-      });
-    } else {
-      // Unknown / structural element: preserve verbatim so nothing is lost.
-      blocks.push({ id: uid(), type: "html", props: {}, raw: el.outerHTML });
-    }
-  }
-  return blocks;
-}
-
-function parseJsonAttr<T>(value: string | null): T | undefined {
-  if (!value) return undefined;
-  try {
-    const parsed = JSON.parse(decodeURIComponent(value)) as unknown;
-    // Strip prototype-pollution keys from any decoded object before use.
-    if (parsed && typeof parsed === "object") {
-      for (const key of DANGEROUS_KEYS) {
-        if (Object.prototype.hasOwnProperty.call(parsed, key)) {
-          delete (parsed as Record<string, unknown>)[key];
-        }
-      }
-    }
-    return parsed as T;
-  } catch {
-    return undefined;
-  }
-}
-
-function styleFromLegacyProps(el: HTMLElement): BlockStyle | undefined {
-  const style = {
-    color: el.style.color || undefined,
-    background: el.style.background || undefined,
-    padding: el.style.padding || undefined,
-    margin: el.style.margin || undefined,
-    width: el.style.width || undefined,
-    height: el.style.height || undefined,
-    maxWidth: el.style.maxWidth || undefined,
-    radius: el.style.borderRadius || undefined,
-    gap: el.style.gap || undefined,
-  } satisfies BlockStyle;
-  return Object.values(style).some(Boolean) ? style : undefined;
-}
-
-/**
- * Encodes a value as a URI-encoded JSON payload for a data-* attribute.
- * Mirrors schema.ts encodeDataPayload exactly (apostrophes encoded too) so the
- * editor serialization is byte-identical to the build renderer output.
- */
-function encodeDataPayload(value: unknown): string {
-  return encodeURIComponent(JSON.stringify(value)).replace(/'/g, "%27");
-}
-
-function metadataAttrs(block: Block): string {
-  const attrs = [
-    `data-zephus-id="${escapeAttr(block.id)}"`,
-    `data-zephus-block="${escapeAttr(block.type)}"`,
-    `data-zephus-props="${escapeAttr(encodeDataPayload(block.props))}"`,
-  ];
-  if (block.style) {
-    attrs.push(
-      `data-zephus-style="${escapeAttr(encodeDataPayload(block.style))}"`,
-    );
-  }
-  if (block.locked) attrs.push(`data-zephus-locked="true"`);
-  return " " + attrs.join(" ");
-}
-
-function effectiveStyle(
-  block: Block,
-  viewport = state.currentViewport,
-): BlockStyle {
-  const base = block.style ? JSON.parse(JSON.stringify(block.style)) : {};
-  const responsive =
-    viewport === "desktop" ? undefined : block.style?.responsive?.[viewport];
-  if (responsive) Object.assign(base, responsive);
-  return base;
-}
-
-function blockCssValue(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  if (!trimmed || /[;{}<>\r\n]/.test(trimmed)) return null;
-  return trimmed.slice(0, 240);
-}
-
-function addCssValue(css: string[], property: string, value: unknown): void {
-  const safe = blockCssValue(value);
-  if (safe) css.push(`${property}:${safe}`);
-}
-
-function styleAttr(
-  block: Block,
+function editorRenderOptions(
   viewport = state.currentViewport,
   forCanvas = false,
-): string {
-  const style = effectiveStyle(block, viewport);
-  const css: string[] = [];
-  if (["left", "center", "right"].includes(String(style.align))) {
-    css.push(`text-align:${style.align}`);
-  }
-  addCssValue(css, "width", style.width);
-  addCssValue(css, "height", style.height);
-  addCssValue(css, "max-width", style.maxWidth);
-  addCssValue(css, "background", style.background);
-  addCssValue(css, "color", style.color);
-  addCssValue(css, "padding", style.padding);
-  addCssValue(css, "margin", style.margin);
-  addCssValue(css, "border-radius", style.radius);
-  addCssValue(css, "gap", style.gap);
-  addCssValue(css, "aspect-ratio", style.aspectRatio);
-  addCssValue(css, "object-fit", style.objectFit);
-  addCssValue(css, "object-position", style.objectPosition);
-  if (style.columns && (block.type === "columns" || block.type === "gallery")) {
-    css.push(
-      `grid-template-columns:repeat(${Math.max(1, Number(style.columns) || 1)}, minmax(0, 1fr))`,
-    );
-  }
-  if (style.shadow === "sm") css.push(`box-shadow:var(--shadow-sm)`);
-  if (style.shadow === "md") css.push(`box-shadow:var(--shadow-md)`);
-  if (style.shadow === "lg") css.push(`box-shadow:var(--shadow-lg)`);
-  if (
-    style.stackOnMobile &&
-    viewport === "mobile" &&
-    block.type === "columns"
-  ) {
-    css.push(`grid-template-columns:1fr`);
-  }
-  if (style.hideOn?.includes(viewport) && forCanvas) {
-    css.push(`display:none`);
-  }
-  if (block.type === "spacer" && !style.height) {
-    addCssValue(css, "height", block.props["height"] || "48px");
-  }
-  return css.length ? ` style="${escapeAttr(css.join(";"))}"` : "";
-}
-
-function classAttr(block: Block): string {
-  const cls = block.props["cls"];
-  return cls ? ` class="${escapeAttr(cls)}"` : "";
-}
-
-function structuralCommon(
-  block: Block,
-  fixedClass: string,
-  viewport = state.currentViewport,
-  forCanvas = false,
-): string {
-  const userCls = block.props["cls"]
-    ? " " + escapeAttr(block.props["cls"])
-    : "";
-  return `${metadataAttrs(block)} class="${fixedClass}${userCls}"${styleAttr(block, viewport, forCanvas)}`;
-}
-
-function splitLines(raw: string): string[] {
-  return (raw ?? "")
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-}
-
-function splitPair(line: string, sep = "::"): [string, string] {
-  const i = line.indexOf(sep);
-  if (i < 0) return [line.trim(), ""];
-  return [line.slice(0, i).trim(), line.slice(i + sep.length).trim()];
-}
-
-function plainTextToHtml(text: string): string {
-  return escapeHtml(text).replace(/\n/g, "<br />");
-}
-
-function renderListItems(items: string): string {
-  return items
-    .split(/\r?\n/)
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .map((item) => `<li>${plainTextToHtml(item)}</li>`)
-    .join("");
-}
-
-/**
- * Blocks dangerous URL schemes for href/src values. Allows relative paths,
- * anchors, and ordinary schemes; returns "" for javascript:/data:/vbscript:/
- * file: so neither the live canvas nor the built site can execute them. Mirror
- * of the same helper in schema.ts — keep both in sync.
- */
-function safeUrl(value: string): string {
-  const trimmed = (value ?? "").trim();
-  if (/^(javascript|vbscript|data|file):/i.test(trimmed)) return "";
-  return trimmed;
-}
-
-/**
- * Defense-in-depth sanitizer for raw `html` blocks shown on the live editor
- * canvas (which runs in the renderer with the preload bridge in scope). The
- * production CSP already blocks inline handlers, but we additionally strip
- * <script>/<object>/<embed>, on* event-handler attributes, and
- * javascript:/vbscript: URLs. Parsing into a <template> is inert (no script
- * execution, no resource loads). Canvas-only: the serialized/built output keeps
- * the user's authored HTML verbatim.
- */
-function sanitizeHtmlForCanvas(html: string): string {
-  const tpl = document.createElement("template");
-  tpl.innerHTML = html;
-  const toRemove: Element[] = [];
-  const walker = document.createTreeWalker(
-    tpl.content,
-    NodeFilter.SHOW_ELEMENT,
-  );
-  let node = walker.nextNode() as Element | null;
-  while (node) {
-    const tag = node.tagName.toLowerCase();
-    if (
-      tag === "script" ||
-      tag === "object" ||
-      tag === "embed" ||
-      tag === "iframe"
-    ) {
-      toRemove.push(node);
-    } else {
-      for (const attr of Array.from(node.attributes)) {
-        const name = attr.name.toLowerCase();
-        if (name.startsWith("on")) {
-          node.removeAttribute(attr.name);
-        } else if (
-          name === "srcdoc" ||
-          name === "formaction" ||
-          ((name === "href" || name === "src" || name === "xlink:href") &&
-            /^\s*(javascript|vbscript|data):/i.test(attr.value))
-        ) {
-          node.removeAttribute(attr.name);
-        }
-      }
-    }
-    node = walker.nextNode() as Element | null;
-  }
-  for (const el of toRemove) el.remove();
-  return tpl.innerHTML;
-}
-
-/** Appends to a log element, trimming the front so it can't grow without bound. */
-const MAX_LOG_CHARS = 100_000;
-function appendCappedLog(el: HTMLElement, chunk: string): void {
-  const next = (el.textContent ?? "") + chunk;
-  el.textContent =
-    next.length > MAX_LOG_CHARS
-      ? next.slice(next.length - MAX_LOG_CHARS)
-      : next;
-  el.scrollTop = el.scrollHeight;
+): {
+  viewport: typeof state.currentViewport;
+  forCanvas: boolean;
+  canvasMaxHeadingLevel: number;
+} {
+  return {
+    viewport,
+    forCanvas,
+    canvasMaxHeadingLevel: editorRules.maxHeadingLevel,
+  };
 }
 
 function blockToHtml(
@@ -4171,193 +3043,7 @@ function blockToHtml(
   viewport = state.currentViewport,
   forCanvas = false,
 ): string {
-  const common = `${metadataAttrs(block)}${classAttr(block)}${styleAttr(
-    block,
-    viewport,
-    forCanvas,
-  )}`;
-  switch (block.type) {
-    case "heading": {
-      const level = Math.max(
-        1,
-        Math.min(
-          editorRules.maxHeadingLevel,
-          Number(block.props["level"] ?? 2),
-        ),
-      );
-      return `<h${level}${common}>${plainTextToHtml(
-        block.props["text"] ?? "",
-      )}</h${level}>`;
-    }
-    case "text":
-      return `<p${common}>${plainTextToHtml(block.props["text"] ?? "")}</p>`;
-    case "image": {
-      const src = block.props["src"] ?? "";
-      if (!src && forCanvas) {
-        return `<figure${common}><div class="canvas-empty">Missing image. Choose one in Properties.</div></figure>`;
-      }
-      const isProjectAsset = forCanvas && src.startsWith("/");
-      const srcAttr = isProjectAsset
-        ? ` src="" data-asset-src="${escapeAttr(src)}"`
-        : ` src="${escapeAttr(safeUrl(src))}"`;
-      return `<img${common}${srcAttr} alt="${escapeAttr(block.props["alt"] ?? "")}" />`;
-    }
-    case "button":
-      return `<a${common} href="${escapeAttr(safeUrl(block.props["href"] ?? "#") || "#")}">${plainTextToHtml(block.props["text"] ?? "")}</a>`;
-    case "section":
-      return `<section${common}>${plainTextToHtml(block.props["text"] ?? "")}</section>`;
-    case "divider":
-      return `<hr${common} />`;
-    case "spacer":
-      return `<div${common}></div>`;
-    case "columns": {
-      const cols = Number(block.style?.columns ?? block.props["count"] ?? 2);
-      const parts = Array.from(
-        { length: Math.max(2, Math.min(cols || 2, 4)) },
-        (_, index) => {
-          const key = `col${index + 1}`;
-          return `<div class="zephus-column">${plainTextToHtml(
-            block.props[key] ?? `Column ${index + 1}`,
-          )}</div>`;
-        },
-      ).join("");
-      return `<section${common}>${parts}</section>`;
-    }
-    case "card":
-      return `<article${common}><h3>${plainTextToHtml(
-        block.props["title"] ?? "Card title",
-      )}</h3><p>${plainTextToHtml(block.props["text"] ?? "Card body")}</p></article>`;
-    case "gallery": {
-      const images = (block.props["images"] ?? "")
-        .split(/\r?\n|,/)
-        .map((item) => item.trim())
-        .filter(Boolean);
-      const galleryCommon = structuralCommon(
-        block,
-        "zephus-gallery",
-        viewport,
-        forCanvas,
-      );
-      if (images.length === 0 && forCanvas) {
-        return `<section${galleryCommon}><div class="canvas-empty">No gallery images yet.</div></section>`;
-      }
-      return `<section${galleryCommon}>${images
-        .map((src, index) => {
-          const isProjectAsset = forCanvas && src.startsWith("/");
-          const srcAttr = isProjectAsset
-            ? ` src="" data-asset-src="${escapeAttr(src)}"`
-            : ` src="${escapeAttr(safeUrl(src))}"`;
-          return `<img${srcAttr} alt="${escapeAttr(
-            block.props[`alt${index + 1}`] ?? "",
-          )}" />`;
-        })
-        .join("")}</section>`;
-    }
-    case "quote":
-      return `<blockquote${common}><p>${plainTextToHtml(
-        block.props["text"] ?? "",
-      )}</p>${
-        block.props["cite"]
-          ? `<cite>${plainTextToHtml(block.props["cite"])}</cite>`
-          : ""
-      }</blockquote>`;
-    case "list": {
-      const tag = block.props["ordered"] === "true" ? "ol" : "ul";
-      return `<${tag}${common}>${renderListItems(
-        block.props["items"] ?? "",
-      )}</${tag}>`;
-    }
-    case "embed":
-      if (!block.props["src"] && forCanvas) {
-        return `<section${common}><div class="canvas-empty">Missing embed URL.</div></section>`;
-      }
-      return `<iframe${common} src="${escapeAttr(safeUrl(block.props["src"] ?? ""))}" title="${escapeAttr(block.props["title"] ?? "Embed")}" loading="lazy"></iframe>`;
-    case "html":
-      return forCanvas
-        ? sanitizeHtmlForCanvas(block.raw ?? "")
-        : (block.raw ?? "");
-    case "feature":
-      return `<div${structuralCommon(block, "zephus-feature", viewport, forCanvas)}><div class="zephus-feature-icon">${plainTextToHtml(
-        block.props["icon"] ?? "★",
-      )}</div><h3>${plainTextToHtml(
-        block.props["title"] ?? "Feature",
-      )}</h3><p>${plainTextToHtml(block.props["text"] ?? "")}</p></div>`;
-    case "testimonial":
-      return `<figure${structuralCommon(block, "zephus-testimonial", viewport, forCanvas)}><blockquote>${plainTextToHtml(
-        block.props["quote"] ?? "",
-      )}</blockquote><figcaption><strong>${plainTextToHtml(
-        block.props["author"] ?? "",
-      )}</strong>${
-        block.props["role"]
-          ? ` <span>${plainTextToHtml(block.props["role"])}</span>`
-          : ""
-      }</figcaption></figure>`;
-    case "accordion": {
-      const items = splitLines(block.props["items"] ?? "")
-        .map((line) => splitPair(line))
-        .map(
-          ([q, a]) =>
-            `<details><summary>${plainTextToHtml(q)}</summary><p>${plainTextToHtml(a)}</p></details>`,
-        )
-        .join("");
-      return `<div${structuralCommon(block, "zephus-accordion", viewport, forCanvas)}>${items}</div>`;
-    }
-    case "stats": {
-      const items = splitLines(block.props["items"] ?? "")
-        .map((line) => splitPair(line))
-        .map(
-          ([n, l]) =>
-            `<div class="zephus-stat"><span class="zephus-stat-num">${plainTextToHtml(
-              n,
-            )}</span><span class="zephus-stat-label">${plainTextToHtml(l)}</span></div>`,
-        )
-        .join("");
-      return `<div${structuralCommon(block, "zephus-stats", viewport, forCanvas)}>${items}</div>`;
-    }
-    case "pricing": {
-      const features = splitLines(block.props["features"] ?? "")
-        .map((f) => `<li>${plainTextToHtml(f)}</li>`)
-        .join("");
-      const cta = block.props["ctaText"]
-        ? `<a class="button" href="${escapeAttr(safeUrl(block.props["ctaHref"] ?? "#") || "#")}">${plainTextToHtml(
-            block.props["ctaText"],
-          )}</a>`
-        : "";
-      return `<div${structuralCommon(block, "zephus-pricing", viewport, forCanvas)}><h3>${plainTextToHtml(
-        block.props["plan"] ?? "Plan",
-      )}</h3><div class="zephus-price"><span class="zephus-price-amount">${plainTextToHtml(
-        block.props["price"] ?? "",
-      )}</span>${
-        block.props["period"]
-          ? `<span class="zephus-price-period">${plainTextToHtml(block.props["period"])}</span>`
-          : ""
-      }</div><ul>${features}</ul>${cta}</div>`;
-    }
-    case "cta": {
-      const cta = block.props["buttonText"]
-        ? `<a class="button" href="${escapeAttr(safeUrl(block.props["buttonHref"] ?? "#") || "#")}">${plainTextToHtml(
-            block.props["buttonText"],
-          )}</a>`
-        : "";
-      return `<div${structuralCommon(block, "zephus-cta", viewport, forCanvas)}><h2>${plainTextToHtml(
-        block.props["heading"] ?? "",
-      )}</h2>${
-        block.props["text"]
-          ? `<p>${plainTextToHtml(block.props["text"])}</p>`
-          : ""
-      }${cta}</div>`;
-    }
-    default: {
-      const unknownType = (block as { type: string }).type;
-      // Canvas: show a visible placeholder. Serialization: mirror schema.ts so
-      // the unknown block round-trips byte-identically and is not lost.
-      if (forCanvas) {
-        return `<div${common} class="canvas-unknown-block">Unknown block: ${escapeHtml(unknownType)}</div>`;
-      }
-      const payload = encodeDataPayload(block.props);
-      return `<div data-zephus-block="${escapeAttr(unknownType)}" data-zephus-props="${escapeAttr(payload)}" class="zephus-unknown-block"><!-- Unknown block type: ${escapeHtml(unknownType)} --></div>`;
-    }
-  }
+  return blockToHtmlForEditor(block, editorRenderOptions(viewport, forCanvas));
 }
 
 function sectionToHtml(
@@ -4365,34 +3051,24 @@ function sectionToHtml(
   viewport = state.currentViewport,
   forCanvas = false,
 ): string {
-  const body = section.children
-    .map((block) => blockToHtml(block as Block, viewport, forCanvas))
-    .join("\n");
-  const cls = section.props["cls"]
-    ? ` class="${escapeAttr(section.props["cls"])}"`
-    : "";
-  const wrapper = section.props["wrapper"] ?? "none";
-  const hasSectionSurface =
-    Boolean(section.style && Object.keys(section.style).length > 0) ||
-    Boolean(section.locked) ||
-    Boolean(section.props["cls"]);
-  if (wrapper === "none" && !hasSectionSurface) return body;
-  const styleBlock = {
-    id: section.id,
-    type: "section",
-    props: { cls: section.props["cls"] ?? "", text: "" },
-    style: section.style,
-  } as Block;
-  return `<section${cls}${styleAttr(styleBlock, viewport, forCanvas)}>\n${body}\n</section>`;
+  return sectionToHtmlForEditor(
+    section,
+    editorRenderOptions(viewport, forCanvas),
+  );
 }
 
+/* ---------- Page structure parse / serialize ---------- */
+
 function serializeBlocks(): string {
-  const body = state.sections
-    .map((section) => sectionToHtml(section, "desktop"))
-    .filter(Boolean)
-    .map((entry) => "    " + entry)
-    .join("\n");
-  return `${state.frontmatter}${state.prefix}\n${body}\n${state.suffix}`;
+  return assembleManagedPage(
+    {
+      frontmatter: state.frontmatter,
+      prefix: state.prefix,
+      suffix: state.suffix,
+    },
+    state.sections,
+    (block) => blockToHtml(block as Block, "desktop", false),
+  );
 }
 
 function currentManagedSource(): string {
@@ -4421,48 +3097,41 @@ const DOUBLE_CLICK_MS = 400;
 // double-clicking a word to highlight it).
 let isInlineEditing = false;
 
+const undoSnapshotEffects = {
+  syncBlocksFromSections,
+  syncSelectionState,
+  applyDesignPreview,
+  renderDirtyIndicators,
+};
+
 function captureSnapshot(): EditorSnapshot {
-  return {
-    sections: cloneSections(state.sections),
-    site: cloneSiteDocument(effectiveSiteDocument(state)),
-  };
+  return captureEditorSnapshot(state);
 }
 
 function pushUndo(): void {
-  state.undo.push(captureSnapshot());
-  if (state.undo.length > 50) state.undo.shift();
-  state.redo = [];
+  pushEditorUndo(state, updateUndoRedoButtons);
 }
 
-/**
- * Restores sections + (if changed) the site design/shell from a snapshot.
- * Page sections and the site document are restored together so a single
- * undo/redo reverts visual edits AND design/theme/shell changes.
- */
 function restoreSnapshot(snap: EditorSnapshot): void {
-  state.sections = cloneSections(snap.sections);
-  syncBlocksFromSections();
-  syncSelectionState();
+  restoreEditorSnapshot(state, snap, undoSnapshotEffects);
+}
 
-  const currentSite = effectiveSiteDocument(state);
-  if (JSON.stringify(snap.site) !== JSON.stringify(currentSite)) {
-    if (
-      snap.site &&
-      state.siteDocument &&
-      JSON.stringify(snap.site) === JSON.stringify(state.siteDocument)
-    ) {
-      // Snapshot matches the last-saved site: drop the pending change.
-      state.pendingSiteDocument = null;
-      state.pendingSiteEditorKind = null;
-      markSiteDirty(state, false);
-    } else if (snap.site) {
-      state.pendingSiteDocument = cloneSiteDocument(snap.site);
-      trackSiteChange(state, "Reverted a design change");
-      markSiteDirty(state, true);
-    }
-    applyDesignPreview();
-    renderDirtyIndicators();
-  }
+const inspectorCanvasRepaint = createDebouncedCanvasRepaint(() => {
+  renderLayers();
+  renderCanvas();
+});
+const inspectorEditLatch = createInspectorUndoLatch(pushUndo);
+
+function scheduleCanvasRepaint(debounce: boolean): void {
+  inspectorCanvasRepaint.schedule(debounce);
+}
+
+function beginInspectorEdit(): void {
+  inspectorEditLatch.begin();
+}
+
+function endInspectorEdit(): void {
+  inspectorEditLatch.end(() => inspectorCanvasRepaint.flush());
 }
 
 function blockLabel(block: Block): string {
@@ -4480,52 +3149,6 @@ function commitBlockChange(summary: string): void {
   renderProperties();
 }
 
-let inspectorUndoActive = false;
-// Debounce timer for canvas repaints triggered by rapid property edits.
-let inspectorRepaintTimer: number | null = null;
-
-/**
- * Repaints the canvas + layers. While the user is actively typing in a text
- * field, repaints are debounced so a long page doesn't re-render on every
- * keystroke (the model is already updated synchronously, so save/serialize
- * stay correct). A pending repaint is flushed on blur via endInspectorEdit.
- */
-function scheduleCanvasRepaint(debounce: boolean): void {
-  if (inspectorRepaintTimer !== null) {
-    window.clearTimeout(inspectorRepaintTimer);
-    inspectorRepaintTimer = null;
-  }
-  if (!debounce) {
-    renderLayers();
-    renderCanvas();
-    return;
-  }
-  inspectorRepaintTimer = window.setTimeout(() => {
-    inspectorRepaintTimer = null;
-    renderLayers();
-    renderCanvas();
-  }, 140);
-}
-
-function flushCanvasRepaint(): void {
-  if (inspectorRepaintTimer === null) return;
-  window.clearTimeout(inspectorRepaintTimer);
-  inspectorRepaintTimer = null;
-  renderLayers();
-  renderCanvas();
-}
-
-function beginInspectorEdit(): void {
-  if (inspectorUndoActive) return;
-  pushUndo();
-  inspectorUndoActive = true;
-}
-
-function endInspectorEdit(): void {
-  inspectorUndoActive = false;
-  flushCanvasRepaint();
-}
-
 function commitInspectorChange(
   summary: string,
   rerenderProperties = false,
@@ -4535,13 +3158,8 @@ function commitInspectorChange(
   syncSelectionState();
   trackChange(summary);
   markDirty(true);
-  // Debounce the (potentially expensive) repaint only while typing in a text
-  // field; everything else repaints immediately for snappy feedback.
-  const active = document.activeElement as HTMLElement | null;
   const typing =
-    !rerenderProperties &&
-    !!active &&
-    (active.tagName === "INPUT" || active.tagName === "TEXTAREA");
+    !rerenderProperties && isInspectorTextInputFocused(document.activeElement);
   scheduleCanvasRepaint(typing);
   if (rerenderProperties) {
     endInspectorEdit();
@@ -4583,10 +3201,17 @@ function addBlockAt(
   index: number,
   sectionId?: string | null,
 ): void {
-  pushUndo();
   if (state.sections.length === 0) {
     state.sections.push(ensureFallbackSection());
   }
+  const targetSection =
+    findSection(sectionId ?? activeSectionId()) ?? state.sections[0];
+  if (!targetSection) return;
+  if (isNodeLocked(targetSection)) {
+    setStatus(lockedMutationMessage("target-section"));
+    return;
+  }
+  pushUndo();
   const block: Block =
     type === "html"
       ? {
@@ -4606,8 +3231,6 @@ function addBlockAt(
                 ? { columns: "3", gap: "12px" }
                 : undefined,
         };
-  const targetSection =
-    findSection(sectionId ?? activeSectionId()) ?? state.sections[0]!;
   targetSection.children.splice(index, 0, block);
   state.selectedId = block.id;
   state.selectedSectionId = targetSection.id;
@@ -4629,7 +3252,19 @@ function duplicateSelectedBlock(block: Block): void {
 function moveBlock(block: Block, direction: -1 | 1): void {
   const location = findBlockLocation(block.id);
   if (!location) return;
-  if (block.locked) return;
+  if (isNodeLocked(block)) {
+    setStatus(lockedMutationMessage("block"));
+    return;
+  }
+  const nextSection = state.sections[location.sectionIndex + direction];
+  if (
+    (location.blockIndex + direction < 0 ||
+      location.blockIndex + direction >= location.section.children.length) &&
+    isNodeLocked(nextSection)
+  ) {
+    setStatus(lockedMutationMessage("target-section"));
+    return;
+  }
   pushUndo();
   const siblings = location.section.children;
   const next = location.blockIndex + direction;
@@ -4639,7 +3274,6 @@ function moveBlock(block: Block, direction: -1 | 1): void {
     if (!moved) return;
     siblings.splice(next, 0, moved);
   } else {
-    const nextSection = state.sections[location.sectionIndex + direction];
     [moved] = siblings.splice(location.blockIndex, 1) as Block[];
     if (!moved || !nextSection) {
       if (moved) siblings.splice(location.blockIndex, 0, moved);
@@ -4670,7 +3304,11 @@ function toggleBlockLock(block: Block): void {
 }
 
 async function deleteBlock(block: Block): Promise<void> {
-  if (appSettings?.confirmBlockDelete) {
+  if (isNodeLocked(block)) {
+    setStatus(lockedMutationMessage("block"));
+    return;
+  }
+  if (appSettings?.confirmBlockDelete && !skipDeleteConfirm) {
     const confirmed = await modalController.confirmDestructive(
       "Delete Block",
       `Delete this ${block.type} block from ${currentPageLabel()}?`,
@@ -4692,6 +3330,10 @@ async function deleteBlock(block: Block): Promise<void> {
 function wrapBlockInSection(block: Block): void {
   const location = findBlockLocation(block.id);
   if (!location) return;
+  if (isNodeLocked(block)) {
+    setStatus(lockedMutationMessage("block"));
+    return;
+  }
   pushUndo();
   const [moved] = location.section.children.splice(location.blockIndex, 1);
   if (!moved) return;
@@ -4712,11 +3354,16 @@ function moveSection(sectionId: string, direction: -1 | 1): void {
   const index = state.sections.findIndex((section) => section.id === sectionId);
   const next = index + direction;
   if (index < 0 || next < 0 || next >= state.sections.length) return;
+  const section = state.sections[index];
+  if (isNodeLocked(section)) {
+    setStatus(lockedMutationMessage("section"));
+    return;
+  }
   pushUndo();
-  const [section] = state.sections.splice(index, 1);
-  if (!section) return;
-  state.sections.splice(next, 0, section);
-  state.selectedSectionId = section.id;
+  const [moved] = state.sections.splice(index, 1);
+  if (!moved) return;
+  state.sections.splice(next, 0, moved);
+  state.selectedSectionId = moved.id;
   commitBlockChange(`Moved section ${direction < 0 ? "up" : "down"}`);
 }
 
@@ -4735,6 +3382,113 @@ function duplicateSection(sectionId: string): void {
   commitBlockChange(`Duplicated ${section.label}`);
 }
 
+function copySelectionToClipboard(): void {
+  const block = findSelectedBlock();
+  if (block) {
+    editorClipboard = { kind: "block", block: cloneBlock(block) };
+    void navigator.clipboard
+      ?.writeText(blockToHtml(block, "desktop"))
+      .catch(() => undefined);
+    setStatus("Copied block.");
+    return;
+  }
+  if (state.selectedSectionId && !state.selectedId) {
+    const section = findSection(state.selectedSectionId);
+    if (section) {
+      editorClipboard = {
+        kind: "section",
+        section: cloneSections([section])[0]!,
+      };
+      setStatus("Copied section.");
+      return;
+    }
+  }
+  setStatus("Select a block or section to copy.");
+}
+
+async function cutSelectionToClipboard(): Promise<void> {
+  const block = findSelectedBlock();
+  if (block) {
+    if (isNodeLocked(block)) {
+      setStatus(lockedMutationMessage("block"));
+      return;
+    }
+    copySelectionToClipboard();
+    skipDeleteConfirm = true;
+    try {
+      await deleteBlock(block);
+    } finally {
+      skipDeleteConfirm = false;
+    }
+    return;
+  }
+  if (state.selectedSectionId && !state.selectedId) {
+    const section = findSection(state.selectedSectionId);
+    if (!section) return;
+    if (isNodeLocked(section)) {
+      setStatus(lockedMutationMessage("section"));
+      return;
+    }
+    copySelectionToClipboard();
+    skipDeleteConfirm = true;
+    try {
+      await deleteSection(state.selectedSectionId);
+    } finally {
+      skipDeleteConfirm = false;
+    }
+  }
+}
+
+function pasteFromClipboard(): void {
+  if (!editorClipboard) {
+    setStatus("Clipboard is empty. Copy a block or section first.");
+    return;
+  }
+  if (editorClipboard.kind === "block") {
+    const source = editorClipboard.block;
+    if (!isBlockTypeAllowed(source.type, editorRules.allowedBlocks)) {
+      setStatus(`Block type "${source.type}" is not allowed on this site.`);
+      return;
+    }
+    const location = findBlockLocation(state.selectedId);
+    const targetSection =
+      location?.section ?? findSection(activeSectionId()) ?? state.sections[0];
+    if (!targetSection) return;
+    if (isNodeLocked(targetSection)) {
+      setStatus(lockedMutationMessage("target-section"));
+      return;
+    }
+    pushUndo();
+    const copy = cloneBlock(source as Block);
+    copy.id = uid();
+    if (location) {
+      location.section.children.splice(location.blockIndex + 1, 0, copy);
+      state.selectedId = copy.id;
+      state.selectedSectionId = location.section.id;
+    } else {
+      targetSection.children.push(copy);
+      state.selectedId = copy.id;
+      state.selectedSectionId = targetSection.id;
+    }
+    commitBlockChange(`Pasted ${source.type} block`);
+    return;
+  }
+  const sourceSection = editorClipboard.section;
+  const index = state.selectedSectionId
+    ? state.sections.findIndex(
+        (section) => section.id === state.selectedSectionId,
+      )
+    : state.sections.length - 1;
+  pushUndo();
+  const copy = cloneSections([sourceSection])[0]!;
+  copy.id = uid();
+  copy.children = copy.children.map((child) => ({ ...child, id: uid() }));
+  state.sections.splice(Math.max(0, index) + 1, 0, copy);
+  state.selectedSectionId = copy.id;
+  state.selectedId = null;
+  commitBlockChange(`Pasted ${sourceSection.label}`);
+}
+
 function toggleSectionLock(sectionId: string): void {
   const section = findSection(sectionId);
   if (!section) return;
@@ -4748,7 +3502,11 @@ function toggleSectionLock(sectionId: string): void {
 async function deleteSection(sectionId: string): Promise<void> {
   const section = findSection(sectionId);
   if (!section) return;
-  if (appSettings?.confirmBlockDelete) {
+  if (isNodeLocked(section)) {
+    setStatus(lockedMutationMessage("section"));
+    return;
+  }
+  if (appSettings?.confirmBlockDelete && !skipDeleteConfirm) {
     const confirmed = await modalController.confirmDestructive(
       "Delete Section",
       `Delete section "${section.label}" from ${currentPageLabel()}?`,
@@ -4763,49 +3521,26 @@ async function deleteSection(sectionId: string): Promise<void> {
   commitBlockChange(`Deleted ${section.label}`);
 }
 
-function buildInsertButton(index: number, sectionId: string): HTMLElement {
-  const row = document.createElement("div");
-  row.className = "canvas-insert";
-  const btn = document.createElement("button");
-  btn.className = "mini-btn";
-  btn.textContent = "+ Add Block";
-  btn.onclick = (event) => {
-    event.stopPropagation();
-    openBlockInsertModal(index, sectionId);
-  };
-  row.appendChild(btn);
-  return row;
-}
-
-function buildSectionInsertButton(index: number): HTMLElement {
-  const row = document.createElement("div");
-  row.className = "canvas-insert section-insert";
-  const btn = document.createElement("button");
-  btn.className = "mini-btn";
-  btn.textContent = "+ Add Section";
-  btn.onclick = (event) => {
-    event.stopPropagation();
-    openSectionInsertModal(index);
-  };
-  row.appendChild(btn);
-  return row;
-}
-
 function openBlockInsertModal(index: number, sectionId: string): void {
-  const wrap = document.createElement("div");
-  wrap.className = "insert-grid";
-  for (const item of PALETTE) {
-    const allowed = editorRules.allowedBlocks;
-    if (allowed && !allowed.includes(item.type)) continue;
-    const btn = document.createElement("button");
-    btn.className = "btn";
-    btn.textContent = item.label;
-    btn.onclick = () => {
-      closeModal();
-      addBlockAt(item.type, index, sectionId);
-    };
-    wrap.appendChild(btn);
+  const section = findSection(sectionId);
+  if (isNodeLocked(section)) {
+    setStatus(lockedMutationMessage("target-section"));
+    return;
   }
+  const wrap = document.createElement("div");
+  renderInsertModal(
+    wrap,
+    PALETTE.filter((item) => {
+      const allowed = editorRules.allowedBlocks;
+      return !allowed || allowed.includes(item.type);
+    }).map((item) => ({
+      label: item.label,
+      onSelect: () => {
+        closeModal();
+        addBlockAt(item.type, index, sectionId);
+      },
+    })),
+  );
   showModalNode("Add Block", wrap, [
     { label: "Close", kind: "ghost", onClick: closeModal },
   ]);
@@ -4813,40 +3548,37 @@ function openBlockInsertModal(index: number, sectionId: string): void {
 
 function openSectionInsertModal(index: number): void {
   const wrap = document.createElement("div");
-  wrap.className = "insert-grid";
-
-  const blank = document.createElement("button");
-  blank.className = "btn primary";
-  blank.textContent = "Blank Section";
-  blank.onclick = () => {
-    closeModal();
-    addSectionAt(index);
-  };
-  wrap.appendChild(blank);
-
-  for (const template of TEMPLATES) {
-    const btn = document.createElement("button");
-    btn.className = "btn";
-    btn.textContent = template.label;
-    btn.onclick = () => {
-      closeModal();
-      addSectionAt(index, template);
-    };
-    wrap.appendChild(btn);
-  }
-
-  for (const saved of reusableSectionsCache) {
-    const tpl = resolveSavedSectionTemplate(saved.id);
-    if (!tpl) continue;
-    const btn = document.createElement("button");
-    btn.className = "btn";
-    btn.textContent = `${saved.label} (Saved)`;
-    btn.onclick = () => {
-      closeModal();
-      addSectionAt(index, tpl);
-    };
-    wrap.appendChild(btn);
-  }
+  const options = [
+    {
+      label: "Blank Section",
+      primary: true,
+      onSelect: () => {
+        closeModal();
+        addSectionAt(index);
+      },
+    },
+    ...TEMPLATES.map((template) => ({
+      label: template.label,
+      onSelect: () => {
+        closeModal();
+        addSectionAt(index, template);
+      },
+    })),
+    ...reusableSectionsCache
+      .map((saved) => {
+        const tpl = resolveSavedSectionTemplate(saved.id);
+        if (!tpl) return null;
+        return {
+          label: `${saved.label} (Saved)`,
+          onSelect: () => {
+            closeModal();
+            addSectionAt(index, tpl);
+          },
+        };
+      })
+      .filter((option): option is NonNullable<typeof option> => !!option),
+  ];
+  renderInsertModal(wrap, options);
 
   showModalNode("Add Section", wrap, [
     { label: "Close", kind: "ghost", onClick: closeModal },
@@ -4891,139 +3623,6 @@ function hydrateCanvasAssets(root: HTMLElement): void {
   });
 }
 
-/** Loads a preview image, hydrating project-relative (`/…`) paths to data URLs. */
-function setPreviewImage(img: HTMLImageElement, src: string): void {
-  if (!src) return;
-  if (src.startsWith("/")) {
-    void fetchAssetDataUrl(src).then((url) => {
-      if (url) img.src = url;
-    });
-  } else {
-    img.src = src;
-  }
-}
-
-function parseObjectPosition(value: string): { x: number; y: number } {
-  const parts = (value || "50% 50%").trim().split(/\s+/);
-  const x = parseFloat(parts[0] ?? "50");
-  const y = parseFloat(parts[1] ?? "50");
-  return {
-    x: Number.isFinite(x) ? Math.min(100, Math.max(0, x)) : 50,
-    y: Number.isFinite(y) ? Math.min(100, Math.max(0, y)) : 50,
-  };
-}
-
-const ASPECT_OPTIONS: Array<[string, string]> = [
-  ["", "Original"],
-  ["1/1", "Square (1:1)"],
-  ["4/3", "Standard (4:3)"],
-  ["3/2", "Photo (3:2)"],
-  ["16/9", "Widescreen (16:9)"],
-  ["21/9", "Cinematic (21:9)"],
-  ["4/5", "Portrait (4:5)"],
-];
-
-/**
- * Non-destructive image framing: aspect-ratio + object-fit + a draggable focal
- * point (object-position). Edits block.style and commits via the supplied
- * helpers so it round-trips through the schema like any other style.
- */
-function appendImageFramingControls(
-  group: HTMLElement,
-  block: Block,
-  commitStyle: (key: keyof BlockStyle, value: string) => void,
-): void {
-  // Aspect ratio
-  const aspectWrap = document.createElement("label");
-  aspectWrap.className = "meta-field";
-  const aspectLabel = document.createElement("span");
-  aspectLabel.textContent = "Shape";
-  const aspectSelect = document.createElement("select");
-  wireInspectorControl(aspectSelect);
-  for (const [value, text] of ASPECT_OPTIONS) {
-    const opt = document.createElement("option");
-    opt.value = value;
-    opt.textContent = text;
-    if (value === (block.style?.aspectRatio ?? "")) opt.selected = true;
-    aspectSelect.appendChild(opt);
-  }
-  aspectSelect.onchange = () => commitStyle("aspectRatio", aspectSelect.value);
-  aspectWrap.append(aspectLabel, aspectSelect);
-  group.appendChild(aspectWrap);
-
-  // Fit
-  const fitWrap = document.createElement("label");
-  fitWrap.className = "meta-field";
-  const fitLabel = document.createElement("span");
-  fitLabel.textContent = "Fit";
-  const fitSelect = document.createElement("select");
-  wireInspectorControl(fitSelect);
-  for (const [value, text] of [
-    ["cover", "Fill frame (crop)"],
-    ["contain", "Fit inside"],
-    ["fill", "Stretch"],
-  ] as Array<[string, string]>) {
-    const opt = document.createElement("option");
-    opt.value = value;
-    opt.textContent = text;
-    if (value === (block.style?.objectFit ?? "cover")) opt.selected = true;
-    fitSelect.appendChild(opt);
-  }
-  fitSelect.onchange = () => commitStyle("objectFit", fitSelect.value);
-  fitWrap.append(fitLabel, fitSelect);
-  group.appendChild(fitWrap);
-
-  // Focal point picker
-  const focalWrap = document.createElement("div");
-  focalWrap.className = "meta-field";
-  const focalLabel = document.createElement("span");
-  focalLabel.textContent = "Focus point (drag)";
-  const box = document.createElement("div");
-  box.className = "focal-box";
-  const previewImg = document.createElement("img");
-  previewImg.className = "focal-img";
-  previewImg.alt = "";
-  setPreviewImage(previewImg, block.props["src"] ?? "");
-  const dot = document.createElement("div");
-  dot.className = "focal-dot";
-  const initial = parseObjectPosition(block.style?.objectPosition ?? "50% 50%");
-  dot.style.left = `${initial.x}%`;
-  dot.style.top = `${initial.y}%`;
-  box.append(previewImg, dot);
-  focalWrap.append(focalLabel, box);
-  group.appendChild(focalWrap);
-
-  let dragging = false;
-  const apply = (e: PointerEvent, commit: boolean): void => {
-    const rect = box.getBoundingClientRect();
-    if (rect.width === 0 || rect.height === 0) return;
-    const x = Math.round(
-      Math.min(100, Math.max(0, ((e.clientX - rect.left) / rect.width) * 100)),
-    );
-    const y = Math.round(
-      Math.min(100, Math.max(0, ((e.clientY - rect.top) / rect.height) * 100)),
-    );
-    dot.style.left = `${x}%`;
-    dot.style.top = `${y}%`;
-    if (commit) commitStyle("objectPosition", `${x}% ${y}%`);
-  };
-  box.addEventListener("pointerdown", (e) => {
-    dragging = true;
-    beginInspectorEdit();
-    box.setPointerCapture(e.pointerId);
-    apply(e, false);
-  });
-  box.addEventListener("pointermove", (e) => {
-    if (dragging) apply(e, false);
-  });
-  box.addEventListener("pointerup", (e) => {
-    if (!dragging) return;
-    dragging = false;
-    apply(e, true);
-    endInspectorEdit();
-  });
-}
-
 function galleryImages(block: Block): string[] {
   return (block.props["images"] ?? "")
     .split(/\r?\n|,/)
@@ -5040,103 +3639,6 @@ function writeGallery(block: Block, images: string[], alts: string[]): void {
   alts.forEach((alt, i) => {
     if (alt) block.props[`alt${i + 1}`] = alt;
   });
-}
-
-/**
- * Visual gallery manager: thumbnail grid with per-image alt text, reordering,
- * and removal. Stores the same `images` + `altN` props the renderer reads.
- */
-function appendGalleryManager(
-  group: HTMLElement,
-  block: Block,
-  addFromAssets: () => void,
-): void {
-  const addRow = document.createElement("div");
-  addRow.className = "prop-actions";
-  const addImg = document.createElement("button");
-  addImg.className = "btn";
-  addImg.textContent = "Add Image from Assets";
-  addImg.onclick = addFromAssets;
-  addRow.appendChild(addImg);
-  group.appendChild(addRow);
-
-  const images = galleryImages(block);
-  const alts = images.map((_, i) => block.props[`alt${i + 1}`] ?? "");
-
-  if (images.length === 0) {
-    const empty = document.createElement("p");
-    empty.className = "muted";
-    empty.textContent = "No images yet. Add one from your assets.";
-    group.appendChild(empty);
-    return;
-  }
-
-  const reorder = (from: number, to: number): void => {
-    if (to < 0 || to >= images.length) return;
-    pushUndo();
-    const [img] = images.splice(from, 1);
-    const [alt] = alts.splice(from, 1);
-    images.splice(to, 0, img ?? "");
-    alts.splice(to, 0, alt ?? "");
-    writeGallery(block, images, alts);
-    commitBlockChange("Reordered gallery image");
-  };
-  const removeAt = (index: number): void => {
-    pushUndo();
-    images.splice(index, 1);
-    alts.splice(index, 1);
-    writeGallery(block, images, alts);
-    commitBlockChange("Removed gallery image");
-  };
-
-  const list = document.createElement("div");
-  list.className = "gallery-manager";
-  images.forEach((src, index) => {
-    const item = document.createElement("div");
-    item.className = "gallery-item";
-
-    const thumb = document.createElement("img");
-    thumb.className = "gallery-thumb";
-    thumb.alt = "";
-    setPreviewImage(thumb, src);
-
-    const main = document.createElement("div");
-    main.className = "gallery-item-main";
-    main.appendChild(
-      labeledInput(`Alt text ${index + 1}`, alts[index] ?? "", (v) => {
-        block.props[`alt${index + 1}`] = v;
-        commitInspectorChange("Updated gallery alt text");
-      }),
-    );
-
-    const actions = document.createElement("div");
-    actions.className = "gallery-item-actions";
-    const up = document.createElement("button");
-    up.className = "btn ghost";
-    up.title = "Move up";
-    up.setAttribute("aria-label", `Move image ${index + 1} up`);
-    up.textContent = "↑";
-    up.disabled = index === 0;
-    up.onclick = () => reorder(index, index - 1);
-    const down = document.createElement("button");
-    down.className = "btn ghost";
-    down.title = "Move down";
-    down.setAttribute("aria-label", `Move image ${index + 1} down`);
-    down.textContent = "↓";
-    down.disabled = index === images.length - 1;
-    down.onclick = () => reorder(index, index + 1);
-    const del = document.createElement("button");
-    del.className = "btn ghost";
-    del.title = "Remove";
-    del.setAttribute("aria-label", `Remove image ${index + 1}`);
-    del.textContent = "✕";
-    del.onclick = () => removeAt(index);
-    actions.append(up, down, del);
-
-    item.append(thumb, main, actions);
-    list.appendChild(item);
-  });
-  group.appendChild(list);
 }
 
 type ResizeCorner = "nw" | "ne" | "sw" | "se";
@@ -5181,6 +3683,8 @@ function effectiveNodeStyle(node: { style?: BlockStyle }): BlockStyle {
 }
 
 function makeCanvasLinksInert(root: HTMLElement): void {
+  if (root.dataset["canvasLinksInert"] === "true") return;
+  root.dataset["canvasLinksInert"] = "true";
   root.addEventListener(
     "click",
     (event) => {
@@ -5190,27 +3694,6 @@ function makeCanvasLinksInert(root: HTMLElement): void {
     },
     true,
   );
-}
-
-function applyCanvasBoxStyle(
-  element: HTMLElement,
-  node: { style?: BlockStyle },
-): void {
-  const style = effectiveNodeStyle(node);
-  element.style.boxSizing = "border-box";
-  element.style.maxWidth = style.maxWidth
-    ? `min(${style.maxWidth}, 100%)`
-    : "100%";
-  if (style.width) element.style.width = style.width;
-  if (style.height) element.style.height = style.height;
-  if (style.background) element.style.background = style.background;
-  if (style.color) element.style.color = style.color;
-  if (style.padding) element.style.padding = style.padding;
-  if (style.margin) element.style.margin = style.margin;
-  if (style.radius) element.style.borderRadius = style.radius;
-  if (style.shadow === "sm") element.style.boxShadow = "var(--shadow-sm)";
-  if (style.shadow === "md") element.style.boxShadow = "var(--shadow-md)";
-  if (style.shadow === "lg") element.style.boxShadow = "var(--shadow-lg)";
 }
 
 function addResizeHandles(
@@ -5244,6 +3727,16 @@ function addResizeHandles(
   shell.appendChild(handleWrap);
 }
 
+function syncResizeHandles(
+  shell: HTMLElement,
+  target: ResizeTarget,
+  getSubject: () => HTMLElement,
+  enabled: boolean,
+): void {
+  shell.querySelector(".resize-handles")?.remove();
+  if (enabled) addResizeHandles(shell, target, getSubject);
+}
+
 function resizeCanvasTargetByKeyboard(
   key: string,
   corner: ResizeCorner,
@@ -5268,10 +3761,12 @@ function resizeCanvasTargetByKeyboard(
   subject.style.width = style.width;
   subject.style.height = style.height;
   pushUndo();
+  inspectorEditLatch.markActive();
   commitInspectorChange(
     `Resized ${target.kind === "block" ? target.node.type : target.node.label}`,
     true,
   );
+  endInspectorEdit();
 }
 
 function beginCanvasResize(
@@ -5282,7 +3777,7 @@ function beginCanvasResize(
   handle: HTMLElement,
 ): void {
   pushUndo();
-  inspectorUndoActive = true;
+  inspectorEditLatch.markActive();
   const startX = event.clientX;
   const startY = event.clientY;
   const rect = subject.getBoundingClientRect();
@@ -5348,306 +3843,31 @@ function beginCanvasResize(
 
 function renderCanvas(): void {
   const canvas = $("canvas");
-  canvas.innerHTML = "";
-  indicator = null;
   canvas.setAttribute("data-viewport", state.currentViewport);
-
-  if (state.sections.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "canvas-empty-state";
-    empty.innerHTML = `<h3>This page is empty</h3><p>Add your first section or drop in a reusable section.</p>`;
-    const actions = document.createElement("div");
-    actions.className = "canvas-empty-actions";
-    for (const label of ["Blank Section", "Hero Section", "Features Section"]) {
-      const btn = document.createElement("button");
-      btn.className = "btn";
-      btn.textContent = label;
-      btn.onclick = () => {
-        if (label === "Blank Section") addSectionAt(state.sections.length);
-        if (label === "Hero Section")
-          addSectionAt(state.sections.length, TEMPLATES[0]);
-        if (label === "Features Section")
-          addSectionAt(state.sections.length, TEMPLATES[1]);
-      };
-      actions.appendChild(btn);
-    }
-    empty.appendChild(actions);
-    canvas.appendChild(empty);
-    return;
-  }
-
-  state.sections.forEach((section, sectionIndex) => {
-    canvas.appendChild(buildSectionInsertButton(sectionIndex));
-
-    const sectionShell = document.createElement("div");
-    sectionShell.className =
-      "canvas-section" +
-      (section.id === state.selectedSectionId && !state.selectedId
-        ? " selected"
-        : "") +
-      (section.locked ? " locked" : "");
-    applyCanvasBoxStyle(sectionShell, section);
-    if (
-      section.id === state.selectedSectionId &&
-      !state.selectedId &&
-      !section.locked
-    ) {
-      addResizeHandles(
-        sectionShell,
-        { kind: "section", node: section },
-        () => sectionShell,
-      );
-    }
-
-    const sectionChrome = document.createElement("div");
-    sectionChrome.className = "section-chrome";
-
-    const grip = document.createElement("span");
-    grip.className = "section-grip";
-    grip.textContent = "⠿";
-    grip.title = "Drag to reorder section";
-    grip.setAttribute("aria-hidden", "true");
-    grip.draggable = !section.locked;
-    grip.addEventListener("dragstart", (event) => {
-      if (section.locked) {
-        event.preventDefault();
-        return;
-      }
-      draggingSectionId = section.id;
-      event.dataTransfer?.setData("text/zephus-move-section", section.id);
-      if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
-    });
-    grip.addEventListener("dragend", () => {
-      draggingSectionId = null;
-      sectionDropIndex = -1;
-      indicator?.remove();
-    });
-
-    const chip = document.createElement("span");
-    chip.className = "block-chip";
-    chip.textContent = `${sectionIndex + 1}. ${section.label}`;
-
-    const crumbs = document.createElement("span");
-    crumbs.className = "block-breadcrumb";
-    crumbs.textContent = `${currentPageLabel()} / section`;
-
-    const actions = document.createElement("div");
-    actions.className = "block-actions";
-    const sectionActions: [string, () => void][] = [
-      [
-        "Add Block",
-        () => openBlockInsertModal(section.children.length, section.id),
-      ],
-      ["Up", () => moveSection(section.id, -1)],
-      ["Down", () => moveSection(section.id, 1)],
-      ["Dup", () => duplicateSection(section.id)],
-      [section.locked ? "Unlock" : "Lock", () => toggleSectionLock(section.id)],
-      ["Delete", () => deleteSection(section.id)],
-    ];
-    for (const [label, handler] of sectionActions) {
-      const btn = document.createElement("button");
-      btn.className = "mini-btn";
-      btn.textContent = label;
-      btn.title = TOOLBAR_TIPS[label] ?? label;
-      btn.onclick = (event) => {
-        event.stopPropagation();
-        handler();
-      };
-      actions.appendChild(btn);
-    }
-    sectionChrome.append(chip, crumbs, actions);
-    sectionShell.insertBefore(grip, sectionShell.firstChild);
-    sectionShell.appendChild(sectionChrome);
-    sectionShell.addEventListener("dragover", (event) => {
-      if (!draggingSectionId) return;
-      event.preventDefault();
-      const rect = sectionShell.getBoundingClientRect();
-      const after = event.clientY > rect.top + rect.height / 2;
-      sectionDropIndex = after ? sectionIndex + 1 : sectionIndex;
-      showIndicator(canvas, sectionShell, after);
-    });
-    sectionShell.addEventListener("drop", (event) => handleDrop(event));
-
-    const sectionBody = document.createElement("div");
-    sectionBody.className = "section-body";
-    sectionBody.onclick = (event) => {
-      event.stopPropagation();
-      state.selectedId = null;
-      state.selectedSectionId = section.id;
-      renderLayers();
-      renderCanvas();
-      renderProperties();
-    };
-    sectionBody.addEventListener("dragover", (event) => {
-      event.preventDefault();
-      dropSectionId = section.id;
-      if (section.children.length === 0) dropIndex = 0;
-    });
-    sectionBody.addEventListener("drop", (event) => handleDrop(event));
-
-    if (section.children.length === 0) {
-      const emptySection = document.createElement("div");
-      emptySection.className = "canvas-empty";
-      emptySection.innerHTML = `<strong>${section.label}</strong><span>Add blocks here or drop in a reusable section.</span>`;
-      sectionBody.appendChild(emptySection);
-    }
-
-    section.children.forEach((blockNode, blockIndex) => {
-      const block = blockNode as Block;
-      sectionBody.appendChild(buildInsertButton(blockIndex, section.id));
-
-      const shell = document.createElement("div");
-      shell.className =
-        "block" +
-        (block.id === state.selectedId ? " selected" : "") +
-        (block.type === "html" ? " html-block" : "") +
-        (block.locked ? " locked" : "");
-      shell.draggable = !block.locked;
-      shell.title = blockLabel(block);
-      shell.tabIndex = 0;
-      shell.setAttribute("role", "button");
-      shell.setAttribute(
-        "aria-label",
-        `${blockLabel(block)} block${block.id === state.selectedId ? ", selected" : ""}`,
-      );
-      shell.onkeydown = (event) => {
-        // Only treat Enter/Space as "activate block" when the shell itself is
-        // focused. While inline-editing, the contenteditable child is the
-        // target and its keystrokes (notably Space) must pass through, or the
-        // user can't type spaces on the canvas.
-        if (event.target !== event.currentTarget) return;
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          if (
-            block.id === state.selectedId &&
-            TEXT_EDITABLE.includes(block.type) &&
-            !block.locked
-          ) {
-            startFirstInlineEdit(preview, block);
-            return;
-          }
-          state.selectedId = block.id;
-          state.selectedSectionId = section.id;
-          renderLayers();
-          renderCanvas();
-          renderProperties();
-        }
-      };
-
-      const chrome = document.createElement("div");
-      chrome.className = "block-chrome";
-
-      const blockChip = document.createElement("span");
-      blockChip.className = "block-chip";
-      blockChip.textContent = `${blockIndex + 1}. ${blockLabel(block)}`;
-
-      const blockCrumbs = document.createElement("span");
-      blockCrumbs.className = "block-breadcrumb";
-      blockCrumbs.textContent = `${currentPageLabel()} / ${section.label} / ${block.type}`;
-
-      const blockActions = document.createElement("div");
-      blockActions.className = "block-actions";
-      const toolbarActions: [string, () => void][] = [
-        ["Up", () => moveBlock(block, -1)],
-        ["Down", () => moveBlock(block, 1)],
-        ["Dup", () => duplicateSelectedBlock(block)],
-        ["Wrap", () => wrapBlockInSection(block)],
-        [block.locked ? "Unlock" : "Lock", () => toggleBlockLock(block)],
-        ["Delete", () => deleteBlock(block)],
-      ];
-      for (const [label, handler] of toolbarActions) {
-        const btn = document.createElement("button");
-        btn.className = "mini-btn";
-        btn.textContent = label;
-        btn.title = TOOLBAR_TIPS[label] ?? label;
-        btn.onclick = (event) => {
-          event.stopPropagation();
-          handler();
+  indicator?.remove();
+  indicator = null;
+  updateCanvas({
+    sections: state.sections.map((section) => ({
+      section,
+      selected: section.id === state.selectedSectionId && !state.selectedId,
+      breadcrumb: `${currentPageLabel()} / section`,
+      effectiveStyle: effectiveNodeStyle(section),
+      children: section.children.map((blockNode) => {
+        const block = blockNode as Block;
+        return {
+          block,
+          label: blockLabel(block),
+          breadcrumb: `${currentPageLabel()} / ${section.label} / ${block.type}`,
+          html: blockToHtml(block, state.currentViewport, true),
+          selected: block.id === state.selectedId,
+          editableText: TEXT_EDITABLE.includes(block.type) && !block.locked,
+          shellAriaLabel: `${blockLabel(block)} block${block.id === state.selectedId ? ", selected" : ""}`,
+          htmlBlock: block.type === "html",
+          effectiveStyle: effectiveNodeStyle(block),
         };
-        blockActions.appendChild(btn);
-      }
-      chrome.append(blockChip, blockCrumbs, blockActions);
-
-      const preview = document.createElement("div");
-      preview.className = "block-preview";
-      preview.innerHTML = blockToHtml(block, state.currentViewport, true);
-      makeCanvasLinksInert(preview);
-
-      shell.onclick = (event) => {
-        event.stopPropagation();
-        // While inline-editing, let native clicks (caret placement, word
-        // double-click selection) work untouched — don't re-enter edit mode.
-        if (isInlineEditing) return;
-        // Detect a rapid second click on the same block ourselves (native
-        // dblclick can't fire because the canvas rebuilds between clicks) so
-        // double-click starts inline text editing on the first attempt.
-        const now = Date.now();
-        const isSecondClick =
-          lastClickBlockId === block.id &&
-          now - lastClickTime < DOUBLE_CLICK_MS;
-        lastClickBlockId = block.id;
-        lastClickTime = now;
-        if (
-          isSecondClick &&
-          TEXT_EDITABLE.includes(block.type) &&
-          !block.locked
-        ) {
-          startFirstInlineEdit(preview, block);
-          return;
-        }
-        // Re-clicking the already-selected block must NOT rebuild the canvas:
-        // a full re-render swaps out this DOM node between the two clicks of a
-        // native double-click, so dblclick never fires and inline text editing
-        // can't start. Keep the node stable once selected.
-        if (state.selectedId === block.id) return;
-        state.selectedId = block.id;
-        state.selectedSectionId = section.id;
-        renderLayers();
-        renderCanvas();
-        renderProperties();
-      };
-
-      if (TEXT_EDITABLE.includes(block.type) && !block.locked) {
-        preview.classList.add("editable-text");
-        attachInlineEditors(preview, block);
-      }
-
-      shell.addEventListener("dragstart", (event) => {
-        if (block.locked) {
-          event.preventDefault();
-          return;
-        }
-        event.dataTransfer?.setData("text/zephus-move-block", block.id);
-      });
-      shell.addEventListener("dragover", (event) => {
-        if (draggingSectionId) return; // a section is being reordered
-        event.preventDefault();
-        dropSectionId = section.id;
-        const rect = shell.getBoundingClientRect();
-        const after = event.clientY > rect.top + rect.height / 2;
-        dropIndex = after ? blockIndex + 1 : blockIndex;
-        showIndicator(sectionBody, shell, after);
-      });
-      shell.addEventListener("drop", (event) => handleDrop(event));
-      shell.append(chrome, preview);
-      if (block.id === state.selectedId && !block.locked) {
-        addResizeHandles(shell, { kind: "block", node: block }, () => {
-          return (preview.firstElementChild as HTMLElement | null) ?? preview;
-        });
-      }
-      sectionBody.appendChild(shell);
-    });
-
-    sectionBody.appendChild(
-      buildInsertButton(section.children.length, section.id),
-    );
-    sectionShell.appendChild(sectionBody);
-    canvas.appendChild(sectionShell);
+      }),
+    })),
   });
-
-  canvas.appendChild(buildSectionInsertButton(state.sections.length));
-
-  hydrateCanvasAssets(canvas);
   applyDesignPreview();
 
   canvas.ondragover = (e) => {
@@ -5696,6 +3916,11 @@ function handleDrop(e: DragEvent): void {
 
   if (moveSectionId) {
     const from = state.sections.findIndex((s) => s.id === moveSectionId);
+    const moving = state.sections[from];
+    if (isNodeLocked(moving)) {
+      setStatus(lockedMutationMessage("section"));
+      return;
+    }
     if (from >= 0 && sectionDropIndex >= 0) {
       let to = sectionDropIndex;
       if (from < to) to -= 1;
@@ -5726,7 +3951,15 @@ function handleDrop(e: DragEvent): void {
     addBlockAt(newType as BlockType, target, targetSection?.id);
   } else if (moveBlockId) {
     const location = findBlockLocation(moveBlockId);
-    if (!location || !targetSection || location.block.locked) return;
+    if (!location || !targetSection) return;
+    if (isNodeLocked(location.block)) {
+      setStatus(lockedMutationMessage("block"));
+      return;
+    }
+    if (isNodeLocked(targetSection)) {
+      setStatus(lockedMutationMessage("target-section"));
+      return;
+    }
     pushUndo();
     const [moved] = location.section.children.splice(location.blockIndex, 1);
     if (!moved) return;
@@ -5950,6 +4183,7 @@ function startInlineEdit(
     el.classList.remove("inline-editing");
     el.removeEventListener("blur", finish);
     el.removeEventListener("keydown", onKeydown);
+    el.removeEventListener("paste", onPaste);
   };
   const finish = () => {
     if (finished) return;
@@ -5973,6 +4207,9 @@ function startInlineEdit(
     renderCanvas();
     renderProperties();
   };
+  const onPaste = (event: ClipboardEvent): void => {
+    handlePlainTextPaste(event);
+  };
   const onKeydown = (event: KeyboardEvent): void => {
     if (event.key === "Escape") {
       event.preventDefault();
@@ -5993,6 +4230,7 @@ function startInlineEdit(
   };
   el.addEventListener("blur", finish);
   el.addEventListener("keydown", onKeydown);
+  el.addEventListener("paste", onPaste);
 }
 
 function defaultProps(type: BlockType): Record<string, string> {
@@ -6094,228 +4332,7 @@ function defaultProps(type: BlockType): Record<string, string> {
 
 /* ---------- Properties panel ---------- */
 
-function labeledInput(
-  key: string,
-  value: string,
-  onChange: (v: string) => void,
-): HTMLElement {
-  const wrap = document.createElement("label");
-  wrap.className = "meta-field";
-  const label = document.createElement("span");
-  label.textContent = key;
-  const input = document.createElement("input");
-  input.className = "text";
-  input.value = value;
-  wireInspectorControl(input);
-  input.oninput = () => onChange(input.value);
-  wrap.append(label, input);
-  return wrap;
-}
-
-function labeledTextarea(
-  key: string,
-  value: string,
-  onChange: (v: string) => void,
-  rows = 4,
-): HTMLElement {
-  const wrap = document.createElement("label");
-  wrap.className = "meta-field";
-  const label = document.createElement("span");
-  label.textContent = key;
-  const input = document.createElement("textarea");
-  input.rows = rows;
-  input.value = value;
-  wireInspectorControl(input);
-  input.oninput = () => onChange(input.value);
-  wrap.append(label, input);
-  return wrap;
-}
-
-const LENGTH_UNITS = ["px", "rem", "em", "%", "vh", "vw", "auto", "custom"];
-
-interface ParsedLength {
-  num: string;
-  unit: string;
-  raw?: string;
-}
-
-function parseLength(value: string): ParsedLength {
-  const t = (value ?? "").trim();
-  if (!t) return { num: "", unit: "px" };
-  if (t === "auto") return { num: "", unit: "auto" };
-  const m = /^(-?\d*\.?\d+)(px|rem|em|%|vh|vw)?$/.exec(t);
-  if (m) return { num: m[1] ?? "", unit: m[2] ?? "px" };
-  return { num: "", unit: "custom", raw: t };
-}
-
-/**
- * Length input: number + unit dropdown (px/rem/%/…), so novices never type raw
- * CSS. Falls back to a free-text "custom" field for compound values like
- * "2rem 0" or calc().
- */
-function labeledLength(
-  key: string,
-  value: string,
-  onChange: (v: string) => void,
-): HTMLElement {
-  const wrap = document.createElement("label");
-  wrap.className = "meta-field";
-  const label = document.createElement("span");
-  // Friendlier wording for CSS box-model terms (non-technical audience).
-  const FRIENDLY: Record<string, string> = {
-    Padding: "Inner spacing",
-    Margin: "Outer spacing",
-    Radius: "Corner roundness",
-    Gap: "Space between",
-  };
-  label.textContent = FRIENDLY[key] ?? key;
-
-  const control = document.createElement("div");
-  control.className = "length-control";
-
-  const num = document.createElement("input");
-  num.type = "number";
-  num.className = "text length-num";
-  num.setAttribute("aria-label", `${key} value`);
-  wireInspectorControl(num);
-
-  const unit = document.createElement("select");
-  unit.className = "length-unit";
-  unit.setAttribute("aria-label", `${key} unit`);
-  wireInspectorControl(unit);
-  for (const u of LENGTH_UNITS) {
-    const o = document.createElement("option");
-    o.value = u;
-    o.textContent = u;
-    unit.appendChild(o);
-  }
-
-  const raw = document.createElement("input");
-  raw.type = "text";
-  raw.className = "text length-raw";
-  raw.placeholder = "e.g. 2rem 0";
-  raw.setAttribute("aria-label", `${key} custom value`);
-  wireInspectorControl(raw);
-
-  const parsed = parseLength(value);
-  num.value = parsed.num;
-  unit.value = parsed.unit;
-  if (parsed.unit === "custom") raw.value = parsed.raw ?? value;
-
-  const emit = (): void => {
-    if (unit.value === "auto") onChange("auto");
-    else if (unit.value === "custom") onChange(raw.value.trim());
-    else onChange(num.value ? `${num.value}${unit.value}` : "");
-  };
-
-  const sync = (): void => {
-    num.style.display =
-      unit.value === "auto" || unit.value === "custom" ? "none" : "";
-    raw.style.display = unit.value === "custom" ? "" : "none";
-  };
-
-  num.oninput = emit;
-  raw.oninput = emit;
-  unit.onchange = () => {
-    sync();
-    emit();
-  };
-  sync();
-
-  control.append(num, unit, raw);
-  wrap.append(label, control);
-  return wrap;
-}
-
-function isHexColor(value: string): boolean {
-  return /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(value.trim());
-}
-
-/** Expands shorthand #abc to #aabbcc so <input type=color> accepts it. */
-function expandHex(value: string): string {
-  const v = value.trim();
-  if (/^#[0-9a-fA-F]{3}$/.test(v)) {
-    return (
-      "#" +
-      v
-        .slice(1)
-        .split("")
-        .map((c) => c + c)
-        .join("")
-    );
-  }
-  return v;
-}
-
-/**
- * A color control combining a native swatch picker with a free-text field so
- * users can also enter rgb()/rgba(), CSS variables, named colors, or clear it.
- */
-function createColorControl(
-  value: string,
-  onChange: (v: string) => void = () => {},
-): { element: HTMLElement; getValue: () => string } {
-  const control = document.createElement("div");
-  control.className = "color-control";
-
-  const swatch = document.createElement("input");
-  swatch.type = "color";
-  swatch.className = "color-swatch";
-  swatch.value = isHexColor(value) ? expandHex(value) : "#000000";
-  wireInspectorControl(swatch);
-
-  const text = document.createElement("input");
-  text.type = "text";
-  text.className = "text color-text";
-  text.value = value;
-  text.placeholder = "#3b82f6, rgb(), var(--accent)…";
-  wireInspectorControl(text);
-
-  const clear = document.createElement("button");
-  clear.type = "button";
-  clear.className = "color-clear";
-  clear.title = "Clear color";
-  clear.setAttribute("aria-label", "Clear color");
-  clear.textContent = "✕";
-
-  swatch.oninput = () => {
-    text.value = swatch.value;
-    onChange(swatch.value);
-  };
-  text.oninput = () => {
-    if (isHexColor(text.value)) swatch.value = expandHex(text.value);
-    onChange(text.value);
-  };
-  clear.onclick = () => {
-    text.value = "";
-    onChange("");
-  };
-
-  control.append(swatch, text, clear);
-  return { element: control, getValue: () => text.value };
-}
-
-function labeledColor(
-  key: string,
-  value: string,
-  onChange: (v: string) => void,
-): HTMLElement {
-  const wrap = document.createElement("label");
-  wrap.className = "meta-field";
-  const label = document.createElement("span");
-  label.textContent = key;
-  const { element } = createColorControl(value, onChange);
-  element.querySelector(".color-text")?.setAttribute("aria-label", key);
-  element
-    .querySelector(".color-swatch")
-    ?.setAttribute("aria-label", `${key} color picker`);
-  wrap.append(label, element);
-  return wrap;
-}
-
-type LinkKind = "page" | "url" | "email" | "phone" | "anchor";
-
-function detectLinkKind(value: string): LinkKind {
+function detectLinkKind(value: string): LinkPickerKind {
   const t = value.trim();
   if (t.startsWith("mailto:")) return "email";
   if (t.startsWith("tel:")) return "phone";
@@ -6331,95 +4348,53 @@ function detectLinkKind(value: string): LinkKind {
  */
 function openLinkPicker(current: string, onPick: (href: string) => void): void {
   const wrap = document.createElement("div");
-  wrap.className = "meta-form";
-
-  const typeField = document.createElement("label");
-  typeField.className = "meta-field";
-  const typeSpan = document.createElement("span");
-  typeSpan.textContent = "Link type";
-  const typeSelect = document.createElement("select");
-  const kinds: [LinkKind, string][] = [
-    ["page", "Page in this site"],
-    ["url", "External URL"],
-    ["email", "Email address"],
-    ["phone", "Phone number"],
-    ["anchor", "Anchor on this page"],
-  ];
-  for (const [value, lbl] of kinds) {
-    const option = document.createElement("option");
-    option.value = value;
-    option.textContent = lbl;
-    typeSelect.appendChild(option);
-  }
-  typeField.append(typeSpan, typeSelect);
-
-  const pageSelect = document.createElement("select");
-  pageSelect.className = "text";
-  for (const meta of state.pageMeta) {
-    const option = document.createElement("option");
-    option.value = meta.route;
-    option.textContent = `${meta.title} (${meta.route})`;
-    pageSelect.appendChild(option);
-  }
-
-  const valueInput = document.createElement("input");
-  valueInput.className = "text";
-
-  const valueField = document.createElement("div");
-
-  let kind = detectLinkKind(current);
-  typeSelect.value = kind;
-
-  const prefillFor = (k: LinkKind, v: string): string => {
-    const t = v.trim();
-    if (k === "email") return t.startsWith("mailto:") ? t.slice(7) : "";
-    if (k === "phone") return t.startsWith("tel:") ? t.slice(4) : "";
-    if (k === "anchor") return t.startsWith("#") ? t.slice(1) : "";
-    if (k === "url") return /^(https?:)?\/\//i.test(t) ? t : "";
+  const prefillFor = (kind: LinkPickerKind, value: string): string => {
+    const t = value.trim();
+    if (kind === "email") return t.startsWith("mailto:") ? t.slice(7) : "";
+    if (kind === "phone") return t.startsWith("tel:") ? t.slice(4) : "";
+    if (kind === "anchor") return t.startsWith("#") ? t.slice(1) : "";
+    if (kind === "url") return /^(https?:)?\/\//i.test(t) ? t : "";
     return "";
   };
 
-  const renderValue = (): void => {
-    valueField.innerHTML = "";
-    const row = document.createElement("label");
-    row.className = "meta-field";
-    const span = document.createElement("span");
-    if (kind === "page") {
-      span.textContent = "Target page";
-      if (state.pageMeta.some((p) => p.route === current)) {
-        pageSelect.value = current;
-      }
-      row.append(span, pageSelect);
-    } else {
-      span.textContent =
-        kind === "url"
-          ? "URL"
-          : kind === "email"
-            ? "Email address"
-            : kind === "phone"
-              ? "Phone number"
-              : "Anchor id";
-      valueInput.placeholder =
-        kind === "url"
-          ? "https://example.com"
-          : kind === "email"
-            ? "name@example.com"
-            : kind === "phone"
-              ? "+1 555 123 4567"
-              : "section-id";
-      valueInput.value = prefillFor(kind, current);
-      row.append(span, valueInput);
-    }
-    valueField.appendChild(row);
+  const pageOptions = state.pageMeta.map((meta) => ({
+    value: meta.route,
+    label: `${meta.title} (${meta.route})`,
+  }));
+  const modalState = {
+    kind: detectLinkKind(current),
+    pageValue:
+      state.pageMeta.find((meta) => meta.route === current)?.route ??
+      pageOptions[0]?.value ??
+      "/",
+    rawValue: "",
   };
+  modalState.rawValue = prefillFor(modalState.kind, current);
 
-  typeSelect.onchange = () => {
-    kind = typeSelect.value as LinkKind;
-    renderValue();
-  };
-  renderValue();
+  const renderModal = () =>
+    renderLinkPickerModal(wrap, {
+      kind: modalState.kind,
+      pageOptions,
+      pageValue: modalState.pageValue,
+      rawValue: modalState.rawValue,
+      onKindChange: (value) => {
+        modalState.kind = value;
+        if (value === "page" && !modalState.pageValue) {
+          modalState.pageValue = pageOptions[0]?.value ?? "/";
+        }
+        renderModal();
+      },
+      onPageValueChange: (value) => {
+        modalState.pageValue = value;
+        renderModal();
+      },
+      onRawValueChange: (value) => {
+        modalState.rawValue = value;
+        renderModal();
+      },
+    });
 
-  wrap.append(typeField, valueField);
+  renderModal();
 
   showModalNode("Choose Link", wrap, [
     { label: "Cancel", kind: "ghost", onClick: closeModal },
@@ -6427,50 +4402,18 @@ function openLinkPicker(current: string, onPick: (href: string) => void): void {
       label: "Use Link",
       kind: "primary",
       onClick: () => {
-        let href: string;
-        const raw = valueInput.value.trim();
-        if (kind === "page") href = pageSelect.value || "/";
-        else if (kind === "email") href = raw ? `mailto:${raw}` : "";
-        else if (kind === "phone") href = raw ? `tel:${raw}` : "";
-        else if (kind === "anchor")
+        const raw = modalState.rawValue.trim();
+        let href = modalState.pageValue || "/";
+        if (modalState.kind === "email") href = raw ? `mailto:${raw}` : "";
+        else if (modalState.kind === "phone") href = raw ? `tel:${raw}` : "";
+        else if (modalState.kind === "anchor")
           href = raw ? `#${raw.replace(/^#/, "")}` : "";
-        else href = raw;
+        else if (modalState.kind === "url") href = raw;
         closeModal();
         onPick(href);
       },
     },
   ]);
-}
-
-function labeledLink(
-  key: string,
-  value: string,
-  onChange: (v: string) => void,
-): HTMLElement {
-  const wrap = document.createElement("label");
-  wrap.className = "meta-field";
-  const label = document.createElement("span");
-  label.textContent = key;
-  const row = document.createElement("div");
-  row.className = "link-field";
-  const input = document.createElement("input");
-  input.className = "text";
-  input.value = value;
-  input.setAttribute("aria-label", key);
-  wireInspectorControl(input);
-  input.oninput = () => onChange(input.value);
-  const pick = document.createElement("button");
-  pick.type = "button";
-  pick.className = "btn ghost mini-btn";
-  pick.textContent = "Choose…";
-  pick.onclick = () =>
-    openLinkPicker(input.value, (href) => {
-      input.value = href;
-      onChange(href);
-    });
-  row.append(input, pick);
-  wrap.append(label, row);
-  return wrap;
 }
 
 interface FontOption {
@@ -6602,15 +4545,6 @@ function buildFontImportUrl(googleSpecs: (string | null)[]): string {
   return `https://fonts.googleapis.com/css2?${families}&display=swap`;
 }
 
-function propertyGroup(title: string): HTMLElement {
-  const wrap = document.createElement("section");
-  wrap.className = "prop-group";
-  const heading = document.createElement("h4");
-  heading.textContent = title;
-  wrap.appendChild(heading);
-  return wrap;
-}
-
 async function chooseAssetForImage(block: Block): Promise<void> {
   openAssetBrowser({
     filter: "images",
@@ -6629,64 +4563,52 @@ interface AssetBrowserOptions {
   onSelect: (webPath: string) => void;
 }
 
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-const CATEGORY_ICONS: Record<AssetEntry["category"], string> = {
-  images: "image",
-  media: "play",
-  documents: "file-code",
-  other: "file-code",
-};
-
 function openAssetBrowser(options: AssetBrowserOptions): void {
   if (!state.project) return;
   const project = state.project;
   const filter = options.filter ?? "all";
-
   const wrap = document.createElement("div");
-  wrap.className = "asset-browser";
+  const modalState = {
+    assets: [] as AssetBrowserModalEntry[],
+    dragActive: false,
+  };
 
-  const dropzone = document.createElement("div");
-  dropzone.className = "asset-dropzone";
-  dropzone.setAttribute("tabindex", "0");
-  dropzone.setAttribute("role", "region");
-  dropzone.setAttribute("aria-label", "Drop files here to import");
-  dropzone.innerHTML =
-    "<span>Drag & drop files here, or use Import below</span>";
+  const renderModal = () =>
+    renderAssetBrowserModalBody(wrap, {
+      assets: modalState.assets,
+      dragActive: modalState.dragActive,
+      emptyMessage: "No assets yet. Import or drop files to get started.",
+      onDragActiveChange: (active) => {
+        modalState.dragActive = active;
+        renderModal();
+      },
+      onDropFiles: (files) => {
+        void handleDroppedFiles(files);
+      },
+      onSelect: (webPath) => {
+        closeModal();
+        options.onSelect(webPath);
+      },
+      onRendered: refreshIcons,
+    });
 
-  const grid = document.createElement("div");
-  grid.className = "asset-grid";
-
-  wrap.append(dropzone, grid);
-
-  const renderThumb = async (
-    tile: HTMLElement,
+  const resolvePreviewSrc = async (
     asset: AssetEntry,
-  ): Promise<void> => {
-    if (asset.category !== "images") return;
+  ): Promise<string | undefined> => {
+    if (asset.category !== "images") return undefined;
     try {
       const res = await window.zephus.readAssetDataUrl(
         project.path,
         project.astro.publicDir,
         asset.webPath,
       );
-      if (res.ok && res.dataUrl) {
-        const img = document.createElement("img");
-        img.src = res.dataUrl;
-        img.alt = asset.fileName;
-        tile.querySelector(".asset-thumb")?.replaceChildren(img);
-      }
+      return res.ok ? (res.dataUrl ?? undefined) : undefined;
     } catch {
-      /* leave icon fallback */
+      return undefined;
     }
   };
 
   const refresh = async (): Promise<void> => {
-    grid.innerHTML = "";
     const result = await window.zephus.listAssets(
       project.path,
       project.astro.publicDir,
@@ -6694,34 +4616,16 @@ function openAssetBrowser(options: AssetBrowserOptions): void {
     const assets = (result.ok ? result.assets : []).filter(
       (a) => filter === "all" || a.category === filter,
     );
-    if (assets.length === 0) {
-      const empty = document.createElement("p");
-      empty.className = "muted";
-      empty.textContent = "No assets yet. Import or drop files to get started.";
-      grid.appendChild(empty);
-      return;
-    }
-    for (const asset of assets) {
-      const tile = document.createElement("button");
-      tile.className = "asset-tile";
-      tile.title = `${asset.fileName} · ${formatBytes(asset.size)}`;
-      const thumb = document.createElement("div");
-      thumb.className = "asset-thumb";
-      const icon = document.createElement("i");
-      icon.setAttribute("data-lucide", CATEGORY_ICONS[asset.category]);
-      thumb.appendChild(icon);
-      const name = document.createElement("span");
-      name.className = "asset-name";
-      name.textContent = asset.fileName.split("/").pop() ?? asset.fileName;
-      tile.append(thumb, name);
-      tile.onclick = () => {
-        closeModal();
-        options.onSelect(asset.webPath);
-      };
-      grid.appendChild(tile);
-      void renderThumb(tile, asset);
-    }
-    refreshIcons();
+    modalState.assets = await Promise.all(
+      assets.map(async (asset) => ({
+        category: asset.category,
+        fileName: asset.fileName,
+        previewSrc: await resolvePreviewSrc(asset),
+        size: asset.size,
+        webPath: asset.webPath,
+      })),
+    );
+    renderModal();
   };
 
   const handleDropPaths = async (paths: string[]): Promise<void> => {
@@ -6739,17 +4643,9 @@ function openAssetBrowser(options: AssetBrowserOptions): void {
     await refresh();
   };
 
-  dropzone.addEventListener("dragover", (event) => {
-    event.preventDefault();
-    dropzone.classList.add("dragover");
-  });
-  dropzone.addEventListener("dragleave", () => {
-    dropzone.classList.remove("dragover");
-  });
-  dropzone.addEventListener("drop", (event) => {
-    event.preventDefault();
-    dropzone.classList.remove("dragover");
-    const files = Array.from(event.dataTransfer?.files ?? []);
+  const handleDroppedFiles = async (files: File[]): Promise<void> => {
+    modalState.dragActive = false;
+    renderModal();
     const paths = files
       .map((file) => {
         try {
@@ -6759,9 +4655,10 @@ function openAssetBrowser(options: AssetBrowserOptions): void {
         }
       })
       .filter(Boolean);
-    void handleDropPaths(paths);
-  });
+    await handleDropPaths(paths);
+  };
 
+  renderModal();
   void refresh();
 
   showModalNode(options.title ?? "Asset Browser", wrap, [
@@ -6795,27 +4692,18 @@ function renderProperties(): void {
   panel.innerHTML = "";
 
   if (!block && !section) {
-    const empty = document.createElement("div");
-    empty.className = "prop-empty";
-    empty.innerHTML = `<p class="muted">Select a section or block to edit its properties.</p>`;
-    if (state.page) {
-      const pageBtn = document.createElement("button");
-      pageBtn.className = "btn";
-      pageBtn.textContent = "Page Settings";
-      pageBtn.onclick = () => void openPageMetaModal(state.page!);
-      empty.appendChild(pageBtn);
-    }
-    panel.appendChild(empty);
+    renderPropertiesEmpty(panel, !!state.page, () => {
+      if (state.page) void openPageMetaModal(state.page);
+    });
     return;
   }
 
   if (!block && section) {
-    const header = document.createElement("div");
-    header.className = "prop-header";
-    header.innerHTML = `<strong>${escapeHtml(section.label)}</strong><span class="muted">${currentPageLabel()} / section</span>`;
-    panel.appendChild(header);
-
     const commitSection = (key: string, value: string) => {
+      if (isNodeLocked(section)) {
+        setStatus(lockedMutationMessage("section"));
+        return;
+      }
       section.props[key] = value;
       if (key === "label") section.label = value || section.label;
       commitInspectorChange(`Updated ${section.label}`);
@@ -6825,656 +4713,245 @@ function renderProperties(): void {
       key: keyof BlockStyle,
       value: string | boolean | string[],
     ) => {
+      if (isNodeLocked(section)) {
+        setStatus(lockedMutationMessage("section"));
+        return;
+      }
       section.style = section.style ?? {};
       (section.style as Record<string, unknown>)[key] = value;
       commitInspectorChange(`Updated ${section.label} style`);
     };
-
-    const contentGroup = propertyGroup("Content");
-    contentGroup.appendChild(
-      labeledInput("Section label", section.label, (value) => {
+    renderSectionProperties(panel, {
+      sectionLabel: section.label,
+      currentPageLabel: currentPageLabel(),
+      wrapper: section.props["wrapper"] ?? "none",
+      cssClass: section.props["cls"] ?? "",
+      width: section.style?.width ?? "",
+      height: section.style?.height ?? "",
+      padding: section.style?.padding ?? "",
+      margin: section.style?.margin ?? "",
+      maxWidth: section.style?.maxWidth ?? "",
+      gap: section.style?.gap ?? "",
+      background: section.style?.background ?? "",
+      color: section.style?.color ?? "",
+      radius: section.style?.radius ?? "",
+      locked: !!section.locked,
+      onFocus: beginInspectorEdit,
+      onBlur: endInspectorEdit,
+      onSectionLabelChange: (value) => {
+        if (isNodeLocked(section)) {
+          setStatus(lockedMutationMessage("section"));
+          return;
+        }
         section.label = value.trim() || "Section";
         commitInspectorChange("Renamed section");
-      }),
-    );
-    const wrapper = document.createElement("label");
-    wrapper.className = "meta-field";
-    const wrapperLabel = document.createElement("span");
-    wrapperLabel.textContent = "Background container";
-    const wrapperSelect = document.createElement("select");
-    wireInspectorControl(wrapperSelect);
-    const wrapperLabels: Record<string, string> = {
-      none: "None (transparent)",
-      box: "Boxed surface",
-    };
-    for (const value of ["none", "box"]) {
-      const option = document.createElement("option");
-      option.value = value;
-      option.textContent = wrapperLabels[value] ?? value;
-      option.selected = (section.props["wrapper"] ?? "none") === value;
-      wrapperSelect.appendChild(option);
-    }
-    wrapperSelect.onchange = () =>
-      commitSection("wrapper", wrapperSelect.value);
-    wrapper.append(wrapperLabel, wrapperSelect);
-    contentGroup.appendChild(wrapper);
-    contentGroup.appendChild(
-      labeledInput(
-        "CSS class (optional)",
-        section.props["cls"] ?? "",
-        (value) => commitSection("cls", value),
-      ),
-    );
-    panel.appendChild(contentGroup);
-
-    const layoutGroup = propertyGroup("Layout");
-    layoutGroup.appendChild(
-      labeledLength("Width", section.style?.width ?? "", (value) =>
-        commitSectionStyle("width", value),
-      ),
-    );
-    layoutGroup.appendChild(
-      labeledLength("Height", section.style?.height ?? "", (value) =>
-        commitSectionStyle("height", value),
-      ),
-    );
-    layoutGroup.appendChild(
-      labeledLength("Padding", section.style?.padding ?? "", (value) =>
-        commitSectionStyle("padding", value),
-      ),
-    );
-    layoutGroup.appendChild(
-      labeledLength("Margin", section.style?.margin ?? "", (value) =>
-        commitSectionStyle("margin", value),
-      ),
-    );
-    layoutGroup.appendChild(
-      labeledLength("Max width", section.style?.maxWidth ?? "", (value) =>
-        commitSectionStyle("maxWidth", value),
-      ),
-    );
-    layoutGroup.appendChild(
-      labeledLength("Gap", section.style?.gap ?? "", (value) =>
-        commitSectionStyle("gap", value),
-      ),
-    );
-    panel.appendChild(layoutGroup);
-
-    const styleGroup = propertyGroup("Style");
-    styleGroup.appendChild(
-      labeledColor("Background", section.style?.background ?? "", (value) =>
-        commitSectionStyle("background", value),
-      ),
-    );
-    styleGroup.appendChild(
-      labeledColor("Text color", section.style?.color ?? "", (value) =>
-        commitSectionStyle("color", value),
-      ),
-    );
-    styleGroup.appendChild(
-      labeledLength("Radius", section.style?.radius ?? "", (value) =>
-        commitSectionStyle("radius", value),
-      ),
-    );
-    panel.appendChild(styleGroup);
-
-    const actions = document.createElement("div");
-    actions.className = "prop-actions";
-    for (const [label, handler, kind] of [
-      [
-        "Add Block",
-        () => openBlockInsertModal(section.children.length, section.id),
-        "",
-      ],
-      ["Duplicate", () => duplicateSection(section.id), ""],
-      ["Move Up", () => moveSection(section.id, -1), ""],
-      ["Move Down", () => moveSection(section.id, 1), ""],
-      [
-        section.locked ? "Unlock" : "Lock",
-        () => toggleSectionLock(section.id),
-        "",
-      ],
-      ["Delete", () => deleteSection(section.id), "danger"],
-    ] as [string, () => void, string][]) {
-      const btn = document.createElement("button");
-      btn.className = `btn ${kind}`.trim();
-      btn.textContent = label;
-      btn.onclick = handler;
-      actions.appendChild(btn);
-    }
-    panel.appendChild(actions);
+      },
+      onWrapperChange: (value) => commitSection("wrapper", value),
+      onCssClassChange: (value) => commitSection("cls", value),
+      onWidthChange: (value) => commitSectionStyle("width", value),
+      onHeightChange: (value) => commitSectionStyle("height", value),
+      onPaddingChange: (value) => commitSectionStyle("padding", value),
+      onMarginChange: (value) => commitSectionStyle("margin", value),
+      onMaxWidthChange: (value) => commitSectionStyle("maxWidth", value),
+      onGapChange: (value) => commitSectionStyle("gap", value),
+      onBackgroundChange: (value) => commitSectionStyle("background", value),
+      onColorChange: (value) => commitSectionStyle("color", value),
+      onRadiusChange: (value) => commitSectionStyle("radius", value),
+      onAddBlock: () =>
+        openBlockInsertModal(section.children.length, section.id),
+      onDuplicate: () => duplicateSection(section.id),
+      onMoveUp: () => moveSection(section.id, -1),
+      onMoveDown: () => moveSection(section.id, 1),
+      onToggleLock: () => toggleSectionLock(section.id),
+      onDelete: () => void deleteSection(section.id),
+    });
     return;
   }
 
   if (!block) return;
 
-  const header = document.createElement("div");
-  header.className = "prop-header";
-  header.innerHTML = `<strong>${blockLabel(block)}</strong><span class="muted">${currentPageLabel()} / ${section?.label ?? "section"} / ${block.type}</span>`;
-  panel.appendChild(header);
-
-  const commit = (key: string, value: string) => {
-    block.props[key] = value;
-    commitInspectorChange(`Updated ${block.type} ${key}`);
-  };
-
-  const commitStyle = (
-    key: keyof BlockStyle,
-    value: string | boolean | string[],
-  ) => {
-    block.style = block.style ?? {};
-    (block.style as Record<string, unknown>)[key] = value;
-    commitInspectorChange(`Updated ${block.type} style`);
-  };
-
-  const contentGroup = propertyGroup("Content");
-  if (block.type === "html") {
-    const copy = document.createElement("p");
-    copy.className = "muted";
-    copy.textContent =
-      "Raw HTML / structural block. Edit the markup in Code mode.";
-    contentGroup.appendChild(copy);
-  } else if (block.type === "heading") {
-    contentGroup.appendChild(
-      labeledInput("Text", block.props["text"] ?? "", (v) => commit("text", v)),
-    );
-    const wrap = document.createElement("label");
-    wrap.className = "meta-field";
-    const label = document.createElement("span");
-    label.textContent = "Heading level";
-    const select = document.createElement("select");
-    wireInspectorControl(select);
-    for (let i = 1; i <= editorRules.maxHeadingLevel; i++) {
-      const opt = document.createElement("option");
-      opt.value = String(i);
-      opt.textContent = "H" + i;
-      if (String(i) === (block.props["level"] ?? "2")) opt.selected = true;
-      select.appendChild(opt);
-    }
-    select.onchange = () => commit("level", select.value);
-    wrap.append(label, select);
-    contentGroup.appendChild(wrap);
-  } else if (
-    block.type === "text" ||
-    block.type === "section" ||
-    block.type === "quote"
-  ) {
-    contentGroup.appendChild(
-      labeledTextarea("Text", block.props["text"] ?? "", (v) =>
-        commit("text", v),
-      ),
-    );
-    if (block.type === "quote") {
-      contentGroup.appendChild(
-        labeledInput("Citation", block.props["cite"] ?? "", (v) =>
-          commit("cite", v),
-        ),
-      );
-    }
-  } else if (block.type === "button") {
-    contentGroup.appendChild(
-      labeledInput("Label", block.props["text"] ?? "", (v) =>
-        commit("text", v),
-      ),
-    );
-    contentGroup.appendChild(
-      labeledLink("Link", block.props["href"] ?? "", (v) => commit("href", v)),
-    );
-    const variant = document.createElement("label");
-    variant.className = "meta-field";
-    const variantLabel = document.createElement("span");
-    variantLabel.textContent = "Button style";
-    const variantSelect = document.createElement("select");
-    wireInspectorControl(variantSelect);
-    const currentVariant = /\bsecondary\b/.test(block.props["cls"] ?? "")
-      ? "secondary"
-      : "primary";
-    for (const [value, text] of [
-      ["primary", "Primary (filled)"],
-      ["secondary", "Secondary (outline)"],
-    ] as const) {
-      const opt = document.createElement("option");
-      opt.value = value;
-      opt.textContent = text;
-      if (value === currentVariant) opt.selected = true;
-      variantSelect.appendChild(opt);
-    }
-    variantSelect.onchange = () => {
-      const rest = (block.props["cls"] ?? "")
-        .split(/\s+/)
-        .filter((c) => c && c !== "secondary")
-        .join(" ");
-      const next =
-        variantSelect.value === "secondary" ? `${rest} secondary`.trim() : rest;
-      commit("cls", next);
-    };
-    variant.append(variantLabel, variantSelect);
-    contentGroup.appendChild(variant);
-  } else if (block.type === "image") {
-    const imageRow = document.createElement("div");
-    imageRow.className = "prop-actions";
-    const browse = document.createElement("button");
-    browse.className = "btn";
-    browse.textContent = block.props["src"] ? "Replace Image" : "Choose Image";
-    browse.onclick = () => void chooseAssetForImage(block);
-    const remove = document.createElement("button");
-    remove.className = "btn ghost";
-    remove.textContent = "Remove";
-    remove.onclick = () => commit("src", "");
-    imageRow.append(browse, remove);
-    contentGroup.appendChild(imageRow);
-    contentGroup.appendChild(
-      labeledInput("Alt text", block.props["alt"] ?? "", (v) =>
-        commit("alt", v),
-      ),
-    );
-    if (block.props["src"]) {
-      appendImageFramingControls(contentGroup, block, commitStyle);
-    }
-  } else if (block.type === "columns") {
-    const count = document.createElement("label");
-    count.className = "meta-field";
-    const countLabel = document.createElement("span");
-    countLabel.textContent = "Columns";
-    const select = document.createElement("select");
-    wireInspectorControl(select);
-    for (const value of ["2", "3", "4"]) {
-      const opt = document.createElement("option");
-      opt.value = value;
-      opt.textContent = value;
-      if (value === (block.style?.columns ?? block.props["count"] ?? "2")) {
-        opt.selected = true;
-      }
-      select.appendChild(opt);
-    }
-    select.onchange = () => {
-      block.props["count"] = select.value;
-      block.style = block.style ?? {};
-      block.style.columns = select.value;
-      commitInspectorChange(`Updated ${block.type} columns`, true);
-    };
-    count.append(countLabel, select);
-    contentGroup.appendChild(count);
-    const total = Number(block.style?.columns ?? block.props["count"] ?? 2);
-    for (let i = 1; i <= total; i++) {
-      contentGroup.appendChild(
-        labeledTextarea(
-          `Column ${i}`,
-          block.props[`col${i}`] ?? "",
-          (v) => commit(`col${i}`, v),
-          3,
-        ),
-      );
-    }
-  } else if (block.type === "card") {
-    contentGroup.appendChild(
-      labeledInput("Title", block.props["title"] ?? "", (v) =>
-        commit("title", v),
-      ),
-    );
-    contentGroup.appendChild(
-      labeledTextarea("Body", block.props["text"] ?? "", (v) =>
-        commit("text", v),
-      ),
-    );
-  } else if (block.type === "gallery") {
-    appendGalleryManager(contentGroup, block, () =>
-      openAssetBrowser({
-        filter: "images",
-        title: "Add Gallery Image",
-        onSelect: (webPath) => {
-          pushUndo();
-          const existing = (block.props["images"] ?? "").trim();
-          block.props["images"] = existing
-            ? `${existing}\n${webPath}`
-            : webPath;
-          commitBlockChange("Added gallery image");
-          renderProperties();
-        },
-      }),
-    );
-  } else if (block.type === "list") {
-    contentGroup.appendChild(
-      labeledTextarea("Items", block.props["items"] ?? "", (v) =>
-        commit("items", v),
-      ),
-    );
-    const ordered = document.createElement("label");
-    ordered.className = "meta-field";
-    const orderedSpan = document.createElement("span");
-    orderedSpan.textContent = "Ordered list";
-    const orderedInput = document.createElement("input");
-    orderedInput.type = "checkbox";
-    wireInspectorControl(orderedInput);
-    orderedInput.checked = block.props["ordered"] === "true";
-    orderedInput.onchange = () =>
-      commit("ordered", orderedInput.checked ? "true" : "false");
-    ordered.append(orderedSpan, orderedInput);
-    contentGroup.appendChild(ordered);
-  } else if (block.type === "embed") {
-    contentGroup.appendChild(
-      labeledInput("Embed URL", block.props["src"] ?? "", (v) =>
-        commit("src", v),
-      ),
-    );
-    contentGroup.appendChild(
-      labeledInput("Title", block.props["title"] ?? "", (v) =>
-        commit("title", v),
-      ),
-    );
-  } else if (block.type === "spacer") {
-    contentGroup.appendChild(
-      labeledInput("Height", block.props["height"] ?? "48px", (v) =>
-        commit("height", v),
-      ),
-    );
-  } else if (block.type === "feature") {
-    contentGroup.appendChild(
-      labeledInput("Icon (emoji or text)", block.props["icon"] ?? "", (v) =>
-        commit("icon", v),
-      ),
-    );
-    contentGroup.appendChild(
-      labeledInput("Title", block.props["title"] ?? "", (v) =>
-        commit("title", v),
-      ),
-    );
-    contentGroup.appendChild(
-      labeledTextarea("Description", block.props["text"] ?? "", (v) =>
-        commit("text", v),
-      ),
-    );
-  } else if (block.type === "testimonial") {
-    contentGroup.appendChild(
-      labeledTextarea("Quote", block.props["quote"] ?? "", (v) =>
-        commit("quote", v),
-      ),
-    );
-    contentGroup.appendChild(
-      labeledInput("Author", block.props["author"] ?? "", (v) =>
-        commit("author", v),
-      ),
-    );
-    contentGroup.appendChild(
-      labeledInput("Role / company", block.props["role"] ?? "", (v) =>
-        commit("role", v),
-      ),
-    );
-  } else if (block.type === "accordion") {
-    contentGroup.appendChild(
-      labeledTextarea(
-        "Items (one per line: Question :: Answer)",
-        block.props["items"] ?? "",
-        (v) => commit("items", v),
-        6,
-      ),
-    );
-  } else if (block.type === "stats") {
-    contentGroup.appendChild(
-      labeledTextarea(
-        "Stats (one per line: Number :: Label)",
-        block.props["items"] ?? "",
-        (v) => commit("items", v),
-        5,
-      ),
-    );
-  } else if (block.type === "pricing") {
-    contentGroup.appendChild(
-      labeledInput("Plan name", block.props["plan"] ?? "", (v) =>
-        commit("plan", v),
-      ),
-    );
-    contentGroup.appendChild(
-      labeledInput("Price", block.props["price"] ?? "", (v) =>
-        commit("price", v),
-      ),
-    );
-    contentGroup.appendChild(
-      labeledInput("Period (e.g. /mo)", block.props["period"] ?? "", (v) =>
-        commit("period", v),
-      ),
-    );
-    contentGroup.appendChild(
-      labeledTextarea(
-        "Features (one per line)",
-        block.props["features"] ?? "",
-        (v) => commit("features", v),
-      ),
-    );
-    contentGroup.appendChild(
-      labeledInput("Button label", block.props["ctaText"] ?? "", (v) =>
-        commit("ctaText", v),
-      ),
-    );
-    contentGroup.appendChild(
-      labeledLink("Button link", block.props["ctaHref"] ?? "", (v) =>
-        commit("ctaHref", v),
-      ),
-    );
-  } else if (block.type === "cta") {
-    contentGroup.appendChild(
-      labeledInput("Heading", block.props["heading"] ?? "", (v) =>
-        commit("heading", v),
-      ),
-    );
-    contentGroup.appendChild(
-      labeledTextarea("Text", block.props["text"] ?? "", (v) =>
-        commit("text", v),
-      ),
-    );
-    contentGroup.appendChild(
-      labeledInput("Button label", block.props["buttonText"] ?? "", (v) =>
-        commit("buttonText", v),
-      ),
-    );
-    contentGroup.appendChild(
-      labeledLink("Button link", block.props["buttonHref"] ?? "", (v) =>
-        commit("buttonHref", v),
-      ),
-    );
-  }
-  panel.appendChild(contentGroup);
-
-  const layoutGroup = propertyGroup("Layout");
-  const align = document.createElement("label");
-  align.className = "meta-field";
-  const alignLabel = document.createElement("span");
-  alignLabel.textContent = "Alignment";
-  const alignSelect = document.createElement("select");
-  wireInspectorControl(alignSelect);
-  for (const value of ["left", "center", "right"] as const) {
-    const opt = document.createElement("option");
-    opt.value = value;
-    opt.textContent = value;
-    if (value === (block.style?.align ?? "left")) opt.selected = true;
-    alignSelect.appendChild(opt);
-  }
-  alignSelect.onchange = () => commitStyle("align", alignSelect.value);
-  align.append(alignLabel, alignSelect);
-  layoutGroup.appendChild(align);
-  layoutGroup.appendChild(
-    labeledLength("Width", block.style?.width ?? "", (v) =>
-      commitStyle("width", v),
-    ),
-  );
-  layoutGroup.appendChild(
-    labeledLength("Height", block.style?.height ?? "", (v) =>
-      commitStyle("height", v),
-    ),
-  );
-  layoutGroup.appendChild(
-    labeledLength("Max width", block.style?.maxWidth ?? "", (v) =>
-      commitStyle("maxWidth", v),
-    ),
-  );
-  layoutGroup.appendChild(
-    labeledLength("Gap", block.style?.gap ?? "", (v) => commitStyle("gap", v)),
-  );
-  if (block.type === "gallery") {
-    // `columns` blocks edit their column count via the Content-group select;
-    // exposing a second free-text control here let the two values drift.
-    layoutGroup.appendChild(
-      labeledInput("Columns", block.style?.columns ?? "", (v) =>
-        commitStyle("columns", v),
-      ),
-    );
-  }
-  const stack = document.createElement("label");
-  stack.className = "meta-field";
-  const stackLabel = document.createElement("span");
-  stackLabel.textContent = "Stack on mobile";
-  const stackInput = document.createElement("input");
-  stackInput.type = "checkbox";
-  wireInspectorControl(stackInput);
-  stackInput.checked = block.style?.stackOnMobile ?? false;
-  stackInput.onchange = () => commitStyle("stackOnMobile", stackInput.checked);
-  stack.append(stackLabel, stackInput);
-  layoutGroup.appendChild(stack);
-  panel.appendChild(layoutGroup);
-
-  const styleGroup = propertyGroup("Style");
-  styleGroup.appendChild(
-    labeledColor("Background", block.style?.background ?? "", (v) =>
-      commitStyle("background", v),
-    ),
-  );
-  styleGroup.appendChild(
-    labeledColor("Text color", block.style?.color ?? "", (v) =>
-      commitStyle("color", v),
-    ),
-  );
-  styleGroup.appendChild(
-    labeledLength("Padding", block.style?.padding ?? "", (v) =>
-      commitStyle("padding", v),
-    ),
-  );
-  styleGroup.appendChild(
-    labeledLength("Margin", block.style?.margin ?? "", (v) =>
-      commitStyle("margin", v),
-    ),
-  );
-  styleGroup.appendChild(
-    labeledLength("Radius", block.style?.radius ?? "", (v) =>
-      commitStyle("radius", v),
-    ),
-  );
-  const shadow = document.createElement("label");
-  shadow.className = "meta-field";
-  const shadowLabel = document.createElement("span");
-  shadowLabel.textContent = "Shadow";
-  const shadowSelect = document.createElement("select");
-  wireInspectorControl(shadowSelect);
-  for (const value of ["none", "sm", "md", "lg"] as const) {
-    const opt = document.createElement("option");
-    opt.value = value;
-    opt.textContent = value;
-    if (value === (block.style?.shadow ?? "none")) opt.selected = true;
-    shadowSelect.appendChild(opt);
-  }
-  shadowSelect.onchange = () => commitStyle("shadow", shadowSelect.value);
-  shadow.append(shadowLabel, shadowSelect);
-  styleGroup.appendChild(shadow);
-  panel.appendChild(styleGroup);
-
-  const advancedGroup = propertyGroup("Advanced");
-  advancedGroup.appendChild(
-    labeledInput("CSS class (optional)", block.props["cls"] ?? "", (v) =>
-      commit("cls", v),
-    ),
-  );
-  if (state.currentViewport !== "desktop") {
-    const responsive = document.createElement("div");
-    responsive.className = "responsive-note";
-    responsive.innerHTML = `<strong>${state.currentViewport}</strong> override`;
-    advancedGroup.appendChild(responsive);
-    const currentResponsive =
-      block.style?.responsive?.[state.currentViewport] ?? {};
-    const commitResponsiveStyle = (
-      key: "width" | "height" | "padding" | "margin",
-      value: string,
-    ): void => {
-      block.style = block.style ?? {};
-      block.style.responsive = block.style.responsive ?? {};
-      block.style.responsive[state.currentViewport] = {
-        ...block.style.responsive[state.currentViewport],
-        [key]: value,
-      };
-      commitInspectorChange(`Updated ${state.currentViewport} override`);
-    };
-    advancedGroup.appendChild(
-      labeledLength("Viewport width", currentResponsive.width ?? "", (v) =>
-        commitResponsiveStyle("width", v),
-      ),
-    );
-    advancedGroup.appendChild(
-      labeledLength("Viewport height", currentResponsive.height ?? "", (v) =>
-        commitResponsiveStyle("height", v),
-      ),
-    );
-    advancedGroup.appendChild(
-      labeledLength("Viewport padding", currentResponsive.padding ?? "", (v) =>
-        commitResponsiveStyle("padding", v),
-      ),
-    );
-    advancedGroup.appendChild(
-      labeledLength("Viewport margin", currentResponsive.margin ?? "", (v) =>
-        commitResponsiveStyle("margin", v),
-      ),
-    );
-  }
-  if (
-    block.type === "section" ||
-    block.type === "card" ||
-    block.type === "html"
-  ) {
-    const saveSection = document.createElement("button");
-    saveSection.className = "btn";
-    saveSection.textContent = "Save as Reusable Section";
-    saveSection.onclick = async () => {
-      const label = await modalController.promptText(
-        "Save as Reusable Section",
-        {
-          label: "Section name",
-          placeholder: "e.g. Hero with CTA",
-          confirmLabel: "Save",
-        },
-      );
-      if (!label) return;
-      const result = await window.zephus.saveReusableSection(
-        label,
-        blockToHtml(block, "desktop"),
-      );
-      if (!result.ok) {
-        setStatus(
-          "Could not save reusable section: " + (result.error ?? "unknown"),
-        );
-        return;
-      }
-      setStatus(`Saved reusable section "${label}".`);
-      renderTemplates();
-    };
-    advancedGroup.appendChild(saveSection);
-  }
-  panel.appendChild(advancedGroup);
-
-  const actionRow = document.createElement("div");
-  actionRow.className = "prop-actions";
-  const actionButtons: [string, () => void, string?][] = [
-    ["Duplicate", () => duplicateSelectedBlock(block)],
-    ["Move Up", () => moveBlock(block, -1)],
-    ["Move Down", () => moveBlock(block, 1)],
-    ["Wrap", () => wrapBlockInSection(block)],
-    [block.locked ? "Unlock" : "Lock", () => toggleBlockLock(block)],
-    ["Delete", () => deleteBlock(block), "danger"],
+  const supportedBlockTypes: EditorBlockType[] = [
+    "html",
+    "heading",
+    "text",
+    "section",
+    "quote",
+    "button",
+    "image",
+    "columns",
+    "card",
+    "gallery",
+    "list",
+    "embed",
+    "divider",
+    "spacer",
+    "feature",
+    "testimonial",
+    "accordion",
+    "stats",
+    "pricing",
+    "cta",
   ];
-  for (const [label, handler, extraClass] of actionButtons) {
-    const btn = document.createElement("button");
-    btn.className = `btn ${extraClass ?? ""}`.trim();
-    btn.textContent = label;
-    btn.onclick = handler;
-    actionRow.appendChild(btn);
+
+  if (supportedBlockTypes.includes(block.type)) {
+    renderBlockProperties(panel, {
+      title: blockLabel(block),
+      subtitle: `${currentPageLabel()} / ${section?.label ?? "section"} / ${block.type}`,
+      blockType: block.type,
+      props: block.props,
+      style: block.style,
+      raw: block.raw,
+      currentViewport: state.currentViewport,
+      maxHeadingLevel: editorRules.maxHeadingLevel,
+      locked: !!block.locked,
+      responsive: block.style?.responsive?.[state.currentViewport] ?? {},
+      onFocus: beginInspectorEdit,
+      onBlur: endInspectorEdit,
+      onPropChange: (key, value, rerenderProperties) => {
+        if (isNodeLocked(block)) {
+          setStatus(lockedMutationMessage("block"));
+          return;
+        }
+        block.props[key] = value;
+        commitInspectorChange(
+          `Updated ${block.type} ${key}`,
+          rerenderProperties,
+        );
+      },
+      onRawChange:
+        block.type === "html"
+          ? (value) => {
+              if (isNodeLocked(block)) {
+                setStatus(lockedMutationMessage("block"));
+                return;
+              }
+              block.raw = value;
+              commitInspectorChange("Updated HTML markup");
+            }
+          : undefined,
+      onStyleChange: (key, value, rerenderProperties) => {
+        if (isNodeLocked(block)) {
+          setStatus(lockedMutationMessage("block"));
+          return;
+        }
+        block.style = block.style ?? {};
+        (block.style as Record<string, unknown>)[key] = value;
+        commitInspectorChange(
+          `Updated ${block.type} style`,
+          rerenderProperties,
+        );
+      },
+      onPickLink: openLinkPicker,
+      onResponsiveStyleChange: (key, value) => {
+        if (isNodeLocked(block)) {
+          setStatus(lockedMutationMessage("block"));
+          return;
+        }
+        block.style = block.style ?? {};
+        block.style.responsive = block.style.responsive ?? {};
+        block.style.responsive[state.currentViewport] = {
+          ...block.style.responsive[state.currentViewport],
+          [key]: value,
+        };
+        commitInspectorChange(`Updated ${state.currentViewport} override`);
+      },
+      resolveAssetPreviewSrc: fetchAssetDataUrl,
+      onPickImage:
+        block.type === "image"
+          ? () => void chooseAssetForImage(block)
+          : undefined,
+      onClearImage:
+        block.type === "image"
+          ? () => {
+              block.props["src"] = "";
+              commitInspectorChange(`Updated ${block.type} src`, true);
+            }
+          : undefined,
+      onAddGalleryImage:
+        block.type === "gallery"
+          ? () =>
+              openAssetBrowser({
+                filter: "images",
+                title: "Add Gallery Image",
+                onSelect: (webPath) => {
+                  pushUndo();
+                  const existing = (block.props["images"] ?? "").trim();
+                  block.props["images"] = existing
+                    ? `${existing}\n${webPath}`
+                    : webPath;
+                  commitBlockChange("Added gallery image");
+                },
+              })
+          : undefined,
+      onReorderGalleryImage:
+        block.type === "gallery"
+          ? (from, to) => {
+              const images = galleryImages(block);
+              if (to < 0 || to >= images.length) return;
+              const alts = images.map(
+                (_, index) => block.props[`alt${index + 1}`] ?? "",
+              );
+              pushUndo();
+              const [image] = images.splice(from, 1);
+              const [alt] = alts.splice(from, 1);
+              images.splice(to, 0, image ?? "");
+              alts.splice(to, 0, alt ?? "");
+              writeGallery(block, images, alts);
+              commitBlockChange("Reordered gallery image");
+            }
+          : undefined,
+      onRemoveGalleryImage:
+        block.type === "gallery"
+          ? (index) => {
+              const images = galleryImages(block);
+              const alts = images.map(
+                (_, altIndex) => block.props[`alt${altIndex + 1}`] ?? "",
+              );
+              pushUndo();
+              images.splice(index, 1);
+              alts.splice(index, 1);
+              writeGallery(block, images, alts);
+              commitBlockChange("Removed gallery image");
+            }
+          : undefined,
+      onSaveReusable:
+        block.type === "section" ||
+        block.type === "card" ||
+        block.type === "html"
+          ? async () => {
+              const label = await modalController.promptText(
+                "Save as Reusable Section",
+                {
+                  label: "Section name",
+                  placeholder: "e.g. Hero with CTA",
+                  confirmLabel: "Save",
+                },
+              );
+              if (!label) return;
+              const result = await window.zephus.saveReusableSection(
+                label,
+                blockToHtml(block, "desktop"),
+              );
+              if (!result.ok) {
+                setStatus(
+                  "Could not save reusable section: " +
+                    (result.error ?? "unknown"),
+                );
+                return;
+              }
+              setStatus(`Saved reusable section "${label}".`);
+              renderTemplates();
+            }
+          : undefined,
+      onDuplicate: () => duplicateSelectedBlock(block),
+      onMoveUp: () => moveBlock(block, -1),
+      onMoveDown: () => moveBlock(block, 1),
+      onWrap: () => wrapBlockInSection(block),
+      onToggleLock: () => toggleBlockLock(block),
+      onDelete: () => void deleteBlock(block),
+    });
+    return;
   }
-  panel.appendChild(actionRow);
 }
 
 /* ---------- Mode switching ---------- */
@@ -7484,18 +4961,19 @@ function setMode(mode: Mode): void {
     showModal(
       "Visual Mode Unavailable",
       state.managedStatus === "out-of-sync"
-        ? "This page was edited outside Zephus. Review it in Code mode, then reattach it from Page Settings to resume GUI editing."
-        : "This page was detached from visual mode after a structural code edit. Reattach it from Page Settings to resume GUI editing.",
+        ? "This page was edited outside Zephus. Use Reload From Disk on the editor banner, or edit in Code mode and save to detach."
+        : "This page was detached from visual mode after a structural code edit. Reattach it from the editor banner or Page Settings to resume GUI editing.",
       [{ label: "OK", kind: "primary", onClick: closeModal }],
     );
     return;
   }
-  state.mode = mode;
-  $("mode-visual").classList.toggle("active", mode === "visual");
-  $("mode-code").classList.toggle("active", mode === "code");
+
   const codeEl = $("code-editor");
 
   if (mode === "code") {
+    state.mode = mode;
+    $("mode-visual").classList.toggle("active", false);
+    $("mode-code").classList.toggle("active", true);
     state.rawCode =
       state.managedStatus === "detached" ||
       state.managedStatus === "out-of-sync"
@@ -7506,211 +4984,83 @@ function setMode(mode: Mode): void {
     $("canvas").classList.add("hidden");
     $("preview-frame").classList.add("hidden");
     cm?.focus();
-  } else {
-    const codeVal = getCode();
-    if (codeVal !== state.rawCode) {
-      if (state.managedStatus !== "detached") {
-        showModal(
-          "Save Code Changes First",
-          "Managed pages cannot safely round-trip structural Astro edits back into visual mode. Save to detach this page, or discard your code changes first.",
-          [{ label: "OK", kind: "primary", onClick: closeModal }],
-        );
-        return;
-      }
-      state.rawCode = codeVal;
-      parsePage(state.rawCode);
-      markDirty(true);
-    }
-    $("canvas").classList.remove("hidden");
-    codeEl.classList.add("hidden");
-    $("preview-frame").classList.add("hidden");
-    renderCanvas();
-    renderProperties();
+    updateUndoRedoButtons();
+    return;
   }
+
+  const codeVal = getCode();
+  if (
+    shouldBlockManagedVisualSwitch(codeVal, state.rawCode, state.managedStatus)
+  ) {
+    showModal(
+      "Save Code Changes First",
+      "Managed pages cannot safely round-trip structural Astro edits back into visual mode. Save to detach this page, or discard your code changes first.",
+      [{ label: "OK", kind: "primary", onClick: closeModal }],
+    );
+    return;
+  }
+  if (codeVal !== state.rawCode) {
+    state.rawCode = codeVal;
+    parsePage(state.rawCode);
+    markDirty(true);
+  }
+
+  state.mode = mode;
+  $("mode-visual").classList.toggle("active", true);
+  $("mode-code").classList.toggle("active", false);
+  $("canvas").classList.remove("hidden");
+  codeEl.classList.add("hidden");
+  $("preview-frame").classList.add("hidden");
+  renderCanvas();
+  renderProperties();
+  updateUndoRedoButtons();
 }
 
 /* ---------- Save ---------- */
 
-async function performSave(): Promise<boolean> {
-  if (!state.project) {
-    setStatus("No project open to save.");
-    return false;
-  }
-  if (state.draftTimer !== null) {
-    window.clearTimeout(state.draftTimer);
-    state.draftTimer = null;
-  }
-  let savedPage = false;
-  let savedSite = false;
+let performSave: () => Promise<boolean>;
 
-  if (state.pageDirty) {
-    if (!state.page) {
-      setStatus("No page open to save.");
-      return false;
-    }
-    const content = state.mode === "code" ? getCode() : serializeBlocks();
-    if (state.mode === "code") {
-      if (state.managedStatus === "detached") {
-        const detached = await window.zephus.detachPageDocument(
-          state.project.path,
-          state.page,
-          state.project.astro.pagesDir,
-          content,
-        );
-        if (!detached.ok || !detached.pageDocument) {
-          setStatus("Save failed: " + (detached.error ?? "unknown"));
-          return false;
-        }
-        state.pageDocument = detached.pageDocument;
-        state.siteDocument = detached.site;
-        state.managedStatus = detached.pageDocument.managedFileStatus;
-        state.visualEditable = false;
-        state.generatedCode =
-          detached.generatedSource ?? detached.source ?? content;
-        state.rawCode = content;
-      } else if (state.managedStatus === "out-of-sync") {
-        const detached = await window.zephus.detachPageDocument(
-          state.project.path,
-          state.page,
-          state.project.astro.pagesDir,
-          content,
-        );
-        if (!detached.ok || !detached.pageDocument) {
-          setStatus("Save failed: " + (detached.error ?? "unknown"));
-          return false;
-        }
-        state.pageDocument = detached.pageDocument;
-        state.siteDocument = detached.site;
-        state.managedStatus = detached.pageDocument.managedFileStatus;
-        state.visualEditable = false;
-        state.generatedCode =
-          detached.generatedSource ?? detached.source ?? content;
-        state.rawCode = content;
-        setStatus(
-          "Page saved as hand-authored Astro. Reattach when you want visual editing again.",
-        );
-      } else {
-        const visualDoc = pageDocumentFromState();
-        if (!visualDoc) {
-          setStatus("Save failed: missing page document.");
-          return false;
-        }
-        const generated = await window.zephus.writePageDocument(
-          state.project.path,
-          state.project.astro.pagesDir,
-          visualDoc,
-        );
-        if (!generated.ok || !generated.pageDocument) {
-          setStatus("Save failed: " + (generated.error ?? "unknown"));
-          return false;
-        }
-        const normalizedGenerated = generated.source ?? "";
-        if (content !== normalizedGenerated) {
-          const detached = await window.zephus.detachPageDocument(
-            state.project.path,
-            state.page,
-            state.project.astro.pagesDir,
-            content,
-          );
-          if (!detached.ok || !detached.pageDocument) {
-            setStatus("Detach failed: " + (detached.error ?? "unknown"));
-            return false;
-          }
-          state.pageDocument = detached.pageDocument;
-          state.siteDocument = detached.site;
-          state.managedStatus = detached.pageDocument.managedFileStatus;
-          state.visualEditable = false;
-          state.generatedCode = normalizedGenerated;
-          state.rawCode = content;
-          setStatus(
-            "Page detached from visual mode and saved as hand-authored Astro.",
-          );
-        } else {
-          state.pageDocument = generated.pageDocument;
-          state.siteDocument = generated.site;
-          state.managedStatus = generated.pageDocument.managedFileStatus;
-          state.visualEditable = true;
-          state.generatedCode = normalizedGenerated;
-          state.rawCode = normalizedGenerated;
-        }
-      }
-    } else {
-      const doc = pageDocumentFromState();
-      if (!doc) {
-        setStatus("Save failed: missing page document.");
-        return false;
-      }
-      const saved = await window.zephus.writePageDocument(
-        state.project.path,
-        state.project.astro.pagesDir,
-        doc,
-      );
-      if (!saved.ok || !saved.pageDocument) {
-        setStatus("Save failed: " + (saved.error ?? "unknown"));
-        return false;
-      }
-      state.pageDocument = saved.pageDocument;
-      state.siteDocument = saved.site;
-      state.managedStatus = saved.pageDocument.managedFileStatus;
-      state.visualEditable = true;
-      state.generatedCode = saved.generatedSource ?? saved.source ?? content;
-      state.rawCode = state.generatedCode;
-    }
-    syncVisualModeState();
-    if (state.mode === "code" && state.visualEditable) {
-      const currentDoc = pageDocumentFromState();
-      if (currentDoc) {
-        state.sections = sectionsFromPageDocument(currentDoc);
-        syncBlocksFromSections();
-      }
-    }
-    await window.zephus.clearDraft(state.project.path, "page", state.page);
-    clearChanges();
-    markDirty(false);
-    savedPage = true;
-  }
+editorSiteSave = createEditorSiteSaveActions({
+  getState: () => state,
+  setStatus,
+  onSiteStateChanged: () => {
+    renderDirtyIndicators();
+    if (state.project) renderNavEditor(state.project);
+  },
+  zephus: window.zephus,
+});
 
-  if (state.siteDirty) {
-    const saved = await persistPendingSiteDocument();
-    if (!saved) return false;
-    savedSite = true;
-  }
+editorDraftRestore = createEditorDraftRestoreActions({
+  getState: () => state,
+  setStatus,
+  confirmRestoreDraft: (title, message) =>
+    modalController.confirmRestoreDraft(title, message),
+  onSiteDraftRestored: () => {
+    renderDirtyIndicators();
+    scheduleDraftWrite();
+    if (state.project) renderNavEditor(state.project);
+  },
+  zephus: window.zephus,
+});
 
-  renderDirtyIndicators();
-  if (savedPage && savedSite) {
-    setStatus(`Saved ${state.page ?? "page"} and site settings.`);
-  } else if (savedPage) {
-    setStatus("Saved " + state.page);
-  } else if (savedSite) {
-    setStatus("Saved site settings.");
-  } else {
-    setStatus("Nothing to save.");
-  }
-  void refreshGit();
-  await reloadPages();
-  return true;
-}
-
-async function save(): Promise<void> {
-  if (!isGlobalDirty(state)) {
-    await performSave();
-    return;
-  }
-  const wrap = document.createElement("div");
-  wrap.className = "save-summary";
-  wrap.appendChild(buildUnsavedWorkSummary());
-  showModalNode("Save Changes", wrap, [
-    { label: "Cancel", kind: "ghost", onClick: closeModal },
-    {
-      label: "Save",
-      kind: "primary",
-      onClick: async () => {
-        closeModal();
-        await performSave();
-      },
-    },
-  ]);
-}
+const editorSave = createEditorSaveActions({
+  getState: () => state,
+  setStatus,
+  getCode,
+  serializeBlocks,
+  pageDocumentFromState,
+  syncVisualModeState,
+  sectionsFromPageDocument,
+  syncBlocksFromSections,
+  clearChanges,
+  markDirty,
+  renderDirtyIndicators,
+  reloadPages,
+  persistPendingSiteDocument,
+  afterSave: () => void editorGit.refreshGit(),
+  zephus: window.zephus,
+});
+performSave = () => editorSave.performSave();
 
 /* ---------- Preview + responsive viewport ---------- */
 
@@ -7896,17 +5246,9 @@ async function publishSite(): Promise<void> {
     "Build complete. Output: " + (r.outputDir ?? state.project.astro.outDir),
   );
   const pubWrap = document.createElement("div");
-  pubWrap.className = "publish-done";
-  pubWrap.innerHTML = `
-    <p>Your site was built into the <strong>${escapeHtml(r.outputDir ?? state.project.astro.outDir)}</strong> folder (now open in your file manager).</p>
-    <p>To put it online, upload that folder to a free static host:</p>
-    <ul class="publish-hosts">
-      <li><a href="https://app.netlify.com/drop">Netlify Drop</a> — drag the folder onto the page, done.</li>
-      <li><a href="https://pages.cloudflare.com">Cloudflare Pages</a> — connect or upload.</li>
-      <li><a href="https://pages.github.com">GitHub Pages</a> — if your project is on GitHub.</li>
-    </ul>
-    <p class="muted">Tip: Netlify Drop is the easiest — no account needed to start.</p>
-  `;
+  renderPublishSuccessModalBody(pubWrap, {
+    outputDir: r.outputDir ?? state.project.astro.outDir,
+  });
   showModalNode("Site Built — Ready to Go Online", pubWrap, [
     {
       label: "Open Output Folder",
@@ -7953,10 +5295,7 @@ async function closeProject(): Promise<void> {
   state.selectedSectionId = null;
   state.recoveredPageDraft = null;
   state.recoveredSiteDraft = null;
-  if (state.draftTimer !== null) {
-    window.clearTimeout(state.draftTimer);
-    state.draftTimer = null;
-  }
+  cancelScheduledEditorDraftWrite(state);
   clearChanges();
   clearSiteChanges(state);
   markSiteDirty(state, false);
@@ -7976,12 +5315,23 @@ async function closeProject(): Promise<void> {
 
 /* ---------- Undo / redo ---------- */
 
+function updateUndoRedoButtons(): void {
+  syncUndoRedoToolbar({
+    mode: state.mode,
+    visualUndoDepth: state.undo.length,
+    visualRedoDepth: state.redo.length,
+    codeCanUndo: cm?.canUndo() ?? false,
+    codeCanRedo: cm?.canRedo() ?? false,
+    undoButton: $("btn-undo") as HTMLButtonElement,
+    redoButton: $("btn-redo") as HTMLButtonElement,
+  });
+}
+
 function doUndo(): void {
-  const prev = state.undo.pop();
+  const prev = popEditorUndoEntry(state);
   if (!prev) return;
-  const sectionsChanged =
-    JSON.stringify(prev.sections) !== JSON.stringify(state.sections);
-  state.redo.push(captureSnapshot());
+  const sectionsChanged = editorSnapshotSectionsChanged(prev, state.sections);
+  pushEditorRedoFromCurrent(state);
   restoreSnapshot(prev);
   if (sectionsChanged) {
     trackChange("Undid a change");
@@ -7990,14 +5340,14 @@ function doUndo(): void {
   renderLayers();
   renderCanvas();
   renderProperties();
+  updateUndoRedoButtons();
 }
 
 function doRedo(): void {
-  const next = state.redo.pop();
+  const next = popEditorRedoEntry(state);
   if (!next) return;
-  const sectionsChanged =
-    JSON.stringify(next.sections) !== JSON.stringify(state.sections);
-  state.undo.push(captureSnapshot());
+  const sectionsChanged = editorSnapshotSectionsChanged(next, state.sections);
+  pushEditorUndoFromCurrent(state);
   restoreSnapshot(next);
   if (sectionsChanged) {
     trackChange("Redid a change");
@@ -8006,6 +5356,7 @@ function doRedo(): void {
   renderLayers();
   renderCanvas();
   renderProperties();
+  updateUndoRedoButtons();
 }
 
 function onKeydown(e: KeyboardEvent): void {
@@ -8025,9 +5376,23 @@ function onKeydown(e: KeyboardEvent): void {
 
   const mod = e.ctrlKey || e.metaKey;
   if (mod && e.key === "s") {
-    void save();
+    void performSave();
     e.preventDefault();
     return;
+  }
+  if (state.mode === "code" && mod) {
+    if (e.key === "z" && !e.shiftKey) {
+      cm?.undo();
+      updateUndoRedoButtons();
+      e.preventDefault();
+      return;
+    }
+    if (e.key === "y" || (e.key === "z" && e.shiftKey)) {
+      cm?.redo();
+      updateUndoRedoButtons();
+      e.preventDefault();
+      return;
+    }
   }
   if (state.mode !== "visual") return;
   if (editing) return;
@@ -8057,12 +5422,30 @@ function onKeydown(e: KeyboardEvent): void {
     if (block) {
       duplicateSelectedBlock(block);
       e.preventDefault();
+    } else if (state.selectedSectionId && !state.selectedId) {
+      duplicateSection(state.selectedSectionId);
+      e.preventDefault();
     }
+  } else if (mod && e.key === "c") {
+    copySelectionToClipboard();
+    e.preventDefault();
+  } else if (mod && e.key === "x") {
+    void cutSelectionToClipboard();
+    e.preventDefault();
+  } else if (mod && e.key === "v") {
+    pasteFromClipboard();
+    e.preventDefault();
   } else if (e.key === "Delete" || e.key === "Backspace") {
     const block = findSelectedBlock();
     if (block && !block.locked) {
       void deleteBlock(block);
       e.preventDefault();
+    } else if (!block && state.selectedSectionId && !state.selectedId) {
+      const section = findSection(state.selectedSectionId);
+      if (section && !section.locked) {
+        void deleteSection(state.selectedSectionId);
+        e.preventDefault();
+      }
     }
   }
 }
@@ -8156,19 +5539,18 @@ function previewUrlForTheme(theme: ThemeMeta): string | null {
 
 function selectThemeCard(themeId: string): void {
   selectedTabTheme = themeId;
-  const container = $("theme-list-container");
-  if (container) {
-    for (const card of Array.from(
-      container.querySelectorAll<HTMLElement>(".theme-card"),
-    )) {
-      const selected = card.dataset.themeId === themeId;
-      card.classList.toggle("selected", selected);
-      card.setAttribute("aria-pressed", selected ? "true" : "false");
-      const label = card.querySelector<HTMLElement>(".theme-select-btn");
-      if (label) {
-        label.textContent = selected ? "Selected" : "Select";
-      }
-    }
+  if (startThemes) {
+    updateThemesTab({
+      mode: "ready",
+      themes: startThemes.map((theme) => ({
+        id: theme.id,
+        name: theme.name,
+        description: theme.description,
+        previewUrl: previewUrlForTheme(theme),
+        selected: theme.id === selectedTabTheme,
+        header: getThemeHeaderDetails(theme.id),
+      })),
+    });
   }
   syncCreateButtonState();
 }
@@ -8185,30 +5567,11 @@ function openThemePreviewModal(theme: ThemeMeta): void {
   }
 
   const wrap = document.createElement("div");
-  wrap.className = "theme-preview-modal";
-
-  const meta = document.createElement("div");
-  meta.className = "theme-preview-meta";
-  const kicker = document.createElement("p");
-  kicker.className = "theme-preview-kicker";
-  kicker.textContent = "Read-only preview";
-  const description = document.createElement("p");
-  description.className = "theme-preview-description";
-  description.textContent = theme.description;
-  meta.append(kicker, description);
-
-  const frameWrap = document.createElement("div");
-  frameWrap.className = "theme-preview-modal-frame";
-
-  const frame = document.createElement("iframe");
-  frame.className = "theme-preview-modal-iframe";
-  frame.src = previewUrl;
-  frame.sandbox.add("allow-same-origin");
-  frame.sandbox.add("allow-scripts");
-  frame.title = `${theme.name} preview`;
-  frameWrap.appendChild(frame);
-
-  wrap.append(meta, frameWrap);
+  renderThemePreviewModalBody(wrap, {
+    description: theme.description,
+    previewUrl,
+    themeName: theme.name,
+  });
 
   showModalNode(
     `${theme.name} Preview`,
@@ -8262,99 +5625,8 @@ function getThemeHeaderDetails(themeId: string): {
   }
 }
 
-function buildThemeCard(
-  theme: ThemeMeta,
-  previewBase: string | null,
-): HTMLElement {
-  const card = document.createElement("article");
-  card.className = "theme-card";
-  card.dataset.themeId = theme.id;
-  card.tabIndex = 0;
-  card.setAttribute("role", "button");
-  card.setAttribute("aria-label", `Select ${theme.name} theme`);
-  card.setAttribute(
-    "aria-pressed",
-    selectedTabTheme === theme.id ? "true" : "false",
-  );
-  if (selectedTabTheme === theme.id) {
-    card.classList.add("selected");
-  }
-
-  const details = getThemeHeaderDetails(theme.id);
-  const header = document.createElement("div");
-  header.className = "theme-card-icon-header";
-
-  if (previewBase) {
-    const previewUrl = new URL(theme.previewPath, previewBase).toString();
-    header.classList.add("has-preview");
-    const frame = document.createElement("iframe");
-    frame.className = "theme-card-preview-frame";
-    frame.setAttribute("sandbox", "allow-scripts allow-same-origin");
-    frame.setAttribute("title", `${theme.name} preview`);
-    frame.setAttribute("aria-hidden", "true");
-    frame.setAttribute("tabindex", "-1");
-    frame.src = previewUrl;
-    header.appendChild(frame);
-  } else {
-    header.style.background = details.gradient;
-    header.innerHTML = `
-      <div class="theme-card-icon-pill">
-        <i data-lucide="${details.icon}"></i>
-      </div>
-    `;
-  }
-
-  const body = document.createElement("div");
-  body.className = "theme-card-body";
-  const name = document.createElement("span");
-  name.className = "t-name";
-  name.textContent = theme.name;
-  const desc = document.createElement("span");
-  desc.className = "t-desc";
-  desc.textContent = theme.description;
-  body.append(name, desc);
-
-  const actions = document.createElement("div");
-  actions.className = "theme-card-actions";
-
-  const previewBtn = document.createElement("button");
-  previewBtn.className = "mini-btn";
-  previewBtn.textContent = "Preview";
-  previewBtn.onclick = (event) => {
-    event.stopPropagation();
-    openThemePreviewModal(theme);
-  };
-
-  const selectBtn = document.createElement("button");
-  selectBtn.className = "mini-btn theme-select-btn";
-  selectBtn.textContent = selectedTabTheme === theme.id ? "Selected" : "Select";
-  selectBtn.onclick = (event) => {
-    event.stopPropagation();
-    selectThemeCard(theme.id);
-  };
-
-  actions.append(previewBtn, selectBtn);
-  card.append(header, body, actions);
-
-  card.onclick = () => selectThemeCard(theme.id);
-  card.ondblclick = () => {
-    selectThemeCard(theme.id);
-    void createSiteFromTabFlow();
-  };
-  card.onkeydown = (event) => {
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      selectThemeCard(theme.id);
-    }
-  };
-
-  return card;
-}
-
 async function renderThemesInTab(): Promise<void> {
-  const container = $("theme-list-container");
-  if (!container) return;
-  container.innerHTML = `<p class="muted">Loading theme previews…</p>`;
+  updateThemesTab({ mode: "loading", themes: [] });
 
   try {
     if (!startThemes) {
@@ -8370,34 +5642,28 @@ async function renderThemesInTab(): Promise<void> {
       themePreviewBaseUrl = previewServer.baseUrl;
     }
 
-    container.innerHTML = "";
-    for (const theme of startThemes) {
-      const card = buildThemeCard(theme, themePreviewBaseUrl);
-      container.appendChild(card);
-      // Scale the live preview iframe to fit the card header.
-      const frame = card.querySelector<HTMLIFrameElement>(
-        ".theme-card-preview-frame",
-      );
-      const headerEl = card.querySelector<HTMLElement>(
-        ".theme-card-icon-header",
-      );
-      if (frame && headerEl) {
-        const scale = headerEl.offsetWidth / 1280;
-        frame.style.transform = `scale(${scale})`;
-      }
-    }
+    updateThemesTab({
+      mode: "ready",
+      themes: startThemes.map((theme) => ({
+        id: theme.id,
+        name: theme.name,
+        description: theme.description,
+        previewUrl: previewUrlForTheme(theme),
+        selected: theme.id === selectedTabTheme,
+        header: getThemeHeaderDetails(theme.id),
+      })),
+    });
     syncCreateButtonState();
-    refreshIcons();
   } catch (err) {
-    container.innerHTML = `<p class="muted">Could not load themes: ${escapeHtml(String(err))}</p>`;
+    updateThemesTab({
+      mode: "error",
+      error: String(err),
+      themes: [],
+    });
   }
 }
 
 async function renderSettingsInTab(): Promise<void> {
-  const container = $("settings-tab-container");
-  if (!container) return;
-  container.innerHTML = "";
-
   let settings: GlobalSettings;
   try {
     settings = await window.zephus.readGlobalSettings();
@@ -8405,86 +5671,14 @@ async function renderSettingsInTab(): Promise<void> {
     setStatus("Could not load settings.");
     return;
   }
+  initializeSettingsTab(settings);
+  updateSettingsTabUpdater(updaterStatusMessage(), currentUpdaterActions());
+  updateSettingsTabNode("Checking Node.js…", !settings.customNodePath);
 
-  const form = document.createElement("div");
-  form.className = "settings-form";
-
-  // --- Updates Section ---
-  const updatesSec = document.createElement("div");
-  updatesSec.className = "settings-section";
-
-  const updHeader = document.createElement("h4");
-  updHeader.className = "settings-section-title";
-  updHeader.textContent = "Updates";
-  updatesSec.appendChild(updHeader);
-
-  const autoUpd = checkboxRow(
-    "set-auto-update",
-    "Startup check",
-    settings.autoCheckUpdates,
-  );
-  updatesSec.appendChild(autoUpd.row);
-
-  const chan = selectField(
-    "Update channel",
-    [
-      { value: "auto", label: "Auto (match install)" },
-      { value: "stable", label: "Stable" },
-      { value: "beta", label: "Beta" },
-      { value: "developer", label: "Developer (db)" },
-    ],
-    settings.updateChannel,
-  );
-  updatesSec.appendChild(chan.wrap);
-
-  const checkRow = document.createElement("div");
-  checkRow.className = "settings-row";
-  const checkLeft = document.createElement("span");
-  checkLeft.dataset.updaterStatusText = "true";
-  checkLeft.textContent = updaterStatusMessage();
-  const updateActions = document.createElement("div");
-  updateActions.className = "settings-inline-actions";
-  updateActions.dataset.updaterActions = "true";
-  renderUpdaterActions(updateActions);
-
-  checkRow.append(checkLeft, updateActions);
-  updatesSec.appendChild(checkRow);
-  form.appendChild(updatesSec);
-
-  // --- Environment Section (Node.js) ---
-  const envSec = document.createElement("div");
-  envSec.className = "settings-section";
-
-  const envHeader = document.createElement("h4");
-  envHeader.className = "settings-section-title";
-  envHeader.textContent = "Environment";
-  envSec.appendChild(envHeader);
-
-  const nodeRow = document.createElement("div");
-  nodeRow.className = "settings-row";
-
-  const nodeCopy = document.createElement("div");
-  nodeCopy.className = "settings-inline-copy";
-  const nodeStatusText = document.createElement("span");
-  nodeStatusText.textContent = "Checking Node.js…";
-  const nodeStrong = document.createElement("strong");
-  nodeStrong.textContent = "Node.js (for build & preview)";
-  nodeCopy.append(nodeStrong, nodeStatusText);
-
-  const nodeBtns = document.createElement("div");
-  nodeBtns.className = "settings-inline-actions";
-  const nodeBrowseBtn = document.createElement("button");
-  nodeBrowseBtn.className = "btn secondary mini-btn";
-  nodeBrowseBtn.textContent = "Set Custom Location…";
-  const nodeAutoBtn = document.createElement("button");
-  nodeAutoBtn.className = "btn ghost mini-btn";
-  nodeAutoBtn.textContent = "Use Auto-detect";
-  nodeBtns.append(nodeBrowseBtn, nodeAutoBtn);
-
-  nodeRow.append(nodeCopy, nodeBtns);
-  envSec.appendChild(nodeRow);
-
-  const applyNodeStatus = (res: NodeCheckResult): void => {
+  const applyNodeStatus = (
+    res: NodeCheckResult,
+    currentSettings: GlobalSettings,
+  ): void => {
     const label =
       res.status === "ok"
         ? `Node.js ${res.version} detected ✓`
@@ -8493,170 +5687,24 @@ async function renderSettingsInTab(): Promise<void> {
           : res.status === "missing"
             ? "Node.js not found — set a custom location below"
             : "Node.js status could not be determined";
-    const source = settings.customNodePath
-      ? `Custom: ${settings.customNodePath}`
+    const source = currentSettings.customNodePath
+      ? `Custom: ${currentSettings.customNodePath}`
       : "Auto-detect (system PATH)";
-    nodeStatusText.textContent = `${label} · ${source}`;
-    nodeAutoBtn.disabled = !settings.customNodePath;
-  };
-
-  nodeBrowseBtn.onclick = async () => {
-    nodeBrowseBtn.disabled = true;
-    try {
-      const res = await window.zephus.pickNodePath();
-      if (
-        (res.status === "ok" || res.status === "outdated") &&
-        res.usedCustomPath &&
-        res.binaryPath
-      ) {
-        settings.customNodePath = res.binaryPath;
-      }
-      applyNodeStatus(res);
-    } catch {
-      nodeStatusText.textContent = "Could not set Node.js location.";
-    }
-    nodeBrowseBtn.disabled = false;
-  };
-
-  nodeAutoBtn.onclick = async () => {
-    nodeAutoBtn.disabled = true;
-    try {
-      const res = await window.zephus.setNodePath(null);
-      settings.customNodePath = null;
-      applyNodeStatus(res);
-    } catch {
-      nodeStatusText.textContent = "Could not reset Node.js location.";
-    }
+    updateSettingsTabNode(
+      `${label} · ${source}`,
+      !currentSettings.customNodePath,
+    );
   };
 
   window.zephus
     .getNodeStatus()
-    .then(applyNodeStatus)
+    .then((res) => applyNodeStatus(res, settings))
     .catch(() => {
-      nodeStatusText.textContent = "Could not check Node.js.";
+      updateSettingsTabNode(
+        "Could not check Node.js.",
+        !settings.customNodePath,
+      );
     });
-
-  form.appendChild(envSec);
-
-  // --- Appearance Section ---
-  const apSec = document.createElement("div");
-  apSec.className = "settings-section";
-
-  const apHeader = document.createElement("h4");
-  apHeader.className = "settings-section-title";
-  apHeader.textContent = "Appearance";
-  apSec.appendChild(apHeader);
-
-  const theme = selectField(
-    "Theme",
-    [
-      { value: "system", label: "System" },
-      { value: "dark", label: "Dark" },
-      { value: "light", label: "Light" },
-    ],
-    settings.theme,
-  );
-  apSec.appendChild(theme.wrap);
-
-  const fontSize = selectField(
-    "Editor font size",
-    [12, 13, 14, 15, 16, 18].map((n) => ({
-      value: String(n),
-      label: `${n}px`,
-    })),
-    String(settings.codeFontSize),
-  );
-  apSec.appendChild(fontSize.wrap);
-  form.appendChild(apSec);
-
-  // --- Editor Section ---
-  const edSec = document.createElement("div");
-  edSec.className = "settings-section";
-
-  const edHeader = document.createElement("h4");
-  edHeader.className = "settings-section-title";
-  edHeader.textContent = "Editor";
-  edSec.appendChild(edHeader);
-
-  const restore = checkboxRow(
-    "set-restore",
-    "Reopen last project",
-    settings.restoreLastProject,
-  );
-  edSec.appendChild(restore.row);
-
-  const autosave = checkboxRow(
-    "set-autosave",
-    "Autosave changes",
-    settings.autosave,
-  );
-  edSec.appendChild(autosave.row);
-
-  const confirmDel = checkboxRow(
-    "set-confirm-del",
-    "Confirm delete block",
-    settings.confirmBlockDelete,
-  );
-  edSec.appendChild(confirmDel.row);
-  form.appendChild(edSec);
-
-  // --- Actions/Buttons Row ---
-  const actionsRow = document.createElement("div");
-  actionsRow.className = "settings-panel-buttons";
-
-  const resetBtn = document.createElement("button");
-  resetBtn.className = "btn danger";
-  resetBtn.textContent = "Reset to Defaults";
-  resetBtn.onclick = async () => {
-    if (
-      !(await modalController.confirmDestructive(
-        "Reset Settings",
-        "Reset all Zephus settings to defaults?",
-        "Reset",
-      ))
-    )
-      return;
-    const defaults: GlobalSettings = {
-      ...settings,
-      theme: "system",
-      autoCheckUpdates: true,
-      updateChannel: "auto",
-      restoreLastProject: false,
-      confirmBlockDelete: true,
-      autosave: false,
-      codeFontSize: 13,
-      customNodePath: null,
-    };
-    await window.zephus.writeGlobalSettings(defaults);
-    document.documentElement.setAttribute("data-theme", "system");
-    applyCodeFontSize(13);
-    setStatus("Settings reset to defaults.");
-    await renderSettingsInTab();
-  };
-
-  const saveBtn = document.createElement("button");
-  saveBtn.className = "btn primary";
-  saveBtn.textContent = "Save Settings";
-  saveBtn.onclick = async () => {
-    settings.autoCheckUpdates = autoUpd.input.checked;
-    settings.updateChannel = chan.select
-      .value as GlobalSettings["updateChannel"];
-    settings.theme = theme.select.value as GlobalSettings["theme"];
-    settings.codeFontSize = Number(fontSize.select.value);
-    settings.restoreLastProject = restore.input.checked;
-    settings.autosave = autosave.input.checked;
-    settings.confirmBlockDelete = confirmDel.input.checked;
-
-    await window.zephus.writeGlobalSettings(settings);
-    document.documentElement.setAttribute("data-theme", settings.theme);
-    applyCodeFontSize(settings.codeFontSize);
-    appSettings = settings;
-    setStatus("Settings saved.");
-  };
-
-  actionsRow.append(resetBtn, saveBtn);
-  form.appendChild(actionsRow);
-  container.appendChild(form);
 }
 
 async function renderAboutAndLicensesInTab(): Promise<void> {
@@ -8693,61 +5741,40 @@ async function renderAboutAndLicensesInTab(): Promise<void> {
       loadLicensesBtn.disabled = true;
       loadLicensesBtn.textContent = "Loading Licenses…";
       licensesListContainer.classList.remove("hidden");
-      licensesListContainer.innerHTML = `<p class="muted" style="padding: 16px;">Loading bundled production license data…</p>`;
+      updateAboutLicenses({
+        visible: true,
+        loading: true,
+        error: null,
+        entries: [],
+      });
 
       const result = await window.zephus.readProductionLicenses();
       loadLicensesBtn.disabled = false;
       loadLicensesBtn.textContent = "Reload Dependency Licenses";
 
       if (!result.ok) {
-        licensesListContainer.innerHTML = "";
-        const error = document.createElement("p");
-        error.className = "muted";
-        error.style.padding = "16px";
-        error.style.color = "var(--danger)";
-        error.textContent =
-          result.error ?? "Could not load production license data.";
-        licensesListContainer.appendChild(error);
+        updateAboutLicenses({
+          visible: true,
+          loading: false,
+          error: result.error ?? "Could not load production license data.",
+          entries: [],
+        });
         return;
       }
 
-      licensesListContainer.innerHTML = "";
-      const tableWrap = document.createElement("div");
-      tableWrap.className = "licenses-table-wrap";
-
-      const table = document.createElement("table");
-      table.className = "licenses-table";
-      table.innerHTML = `
-        <thead>
-          <tr>
-            <th>Package</th>
-            <th>License</th>
-            <th>Repository</th>
-            <th>License URL</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${result.entries
-            .map(
-              (entry) => `
-                <tr>
-                  <td class="licenses-package-cell">
-                    <div class="licenses-package-name">${escapeHtml(entry.packageId)}</div>
-                    <div class="licenses-package-parents">${escapeHtml(
-                      entry.parents.slice(0, 4).join(" > ") ||
-                        "Direct dependency",
-                    )}</div>
-                  </td>
-                  <td>${escapeHtml(entry.licenses)}</td>
-                  <td class="licenses-link-cell">${renderLicenseValue(entry.repository)}</td>
-                  <td class="licenses-link-cell">${renderLicenseValue(entry.licenseUrl)}</td>
-                </tr>`,
-            )
-            .join("")}
-        </tbody>
-      `;
-      tableWrap.appendChild(table);
-      licensesListContainer.appendChild(tableWrap);
+      updateAboutLicenses({
+        visible: true,
+        loading: false,
+        error: null,
+        entries: result.entries.map((entry) => ({
+          packageId: entry.packageId,
+          licenses: entry.licenses,
+          repository: entry.repository,
+          licenseUrl: entry.licenseUrl,
+          parentsLabel:
+            entry.parents.slice(0, 4).join(" > ") || "Direct dependency",
+        })),
+      });
     };
   }
 }
@@ -8908,6 +5935,7 @@ function installEditorSmokeHook(): void {
 
 function init(): void {
   if (window.location.search.includes("smoke=1")) installEditorSmokeHook();
+  window.refreshIcons = refreshIcons;
   initStartTabs();
 
   // Prevent stray file drops from navigating the window away from the app.
@@ -8969,9 +5997,18 @@ function init(): void {
   $("btn-design-system").onclick = () => void openDesignSystemModal();
   $("mode-visual").onclick = () => setMode("visual");
   $("mode-code").onclick = () => setMode("code");
-  $("btn-undo").onclick = () => doUndo();
-  $("btn-redo").onclick = () => doRedo();
-  $("btn-save").onclick = () => void save();
+  $("btn-undo").onclick = () => {
+    if (state.mode === "code") cm?.undo();
+    else doUndo();
+    updateUndoRedoButtons();
+  };
+  $("btn-redo").onclick = () => {
+    if (state.mode === "code") cm?.redo();
+    else doRedo();
+    updateUndoRedoButtons();
+  };
+  updateUndoRedoButtons();
+  $("btn-save").onclick = () => void performSave();
   $("btn-publish").onclick = () => void publishSite();
   $("btn-preview").onclick = () => void togglePreview();
   $("btn-help").onclick = () => void openHelpModal();
@@ -8989,6 +6026,554 @@ function init(): void {
   renderLayers();
   renderThemePlaceholder();
   refreshGuidancePanels();
+
+  // Mount the SolidJS Next Actions app in the sidebar panel
+  const nextActionsContainer = $("next-actions");
+  if (nextActionsContainer) {
+    try {
+      mountNextActions(nextActionsContainer);
+    } catch (e) {
+      noteMountFailure("Next Actions", e);
+    }
+  }
+
+  // Mount the SolidJS Git Branch and Git Panel in the sidebar panel
+  const gitBranchContainer = $("git-branch");
+  if (gitBranchContainer) {
+    try {
+      mountGitBranch(gitBranchContainer);
+    } catch (e) {
+      noteMountFailure("Git Branch", e);
+    }
+  }
+  const gitPanelContainer = $("git-panel");
+  if (gitPanelContainer) {
+    try {
+      mountGitPanel(gitPanelContainer);
+      registerGitPanelHandlers({
+        onRefresh: () => void editorGit.refreshGit({ fetchRemote: true }),
+        onCommit: (message, paths) =>
+          editorGit.commitGitChanges(message, paths),
+        onPush: () => editorGit.pushGitChanges(),
+        onPull: () => editorGit.pullGitChanges(),
+        onInitRepo: () => editorGit.initGitFromPanel(),
+      });
+    } catch (e) {
+      noteMountFailure("Git Panel", e);
+    }
+  }
+
+  // Mount the SolidJS Block Palette in the left panel
+  const blockPaletteContainer = $("block-palette");
+  if (blockPaletteContainer) {
+    try {
+      mountBlockPalette(blockPaletteContainer);
+      registerInsertBlockCallback((type) => {
+        const sectionId = activeSectionId();
+        const section = findSection(sectionId) ?? state.sections[0];
+        addBlockAt(type, section ? section.children.length : 0, sectionId);
+      });
+    } catch (e) {
+      noteMountFailure("Block Palette", e);
+    }
+  }
+
+  const pageListContainer = $("page-list");
+  if (pageListContainer) {
+    try {
+      mountPageList(pageListContainer);
+      registerPageListHandlers({
+        onOpen: (page) => void loadPage(page),
+        onManage: (page) => void openPageMetaModal(page),
+      });
+    } catch (e) {
+      noteMountFailure("Page List", e);
+    }
+  }
+
+  const navListContainer = $("nav-list");
+  if (navListContainer) {
+    try {
+      mountNavList(navListContainer);
+      registerNavListHandlers({
+        onPageSettings: () => {
+          if (state.page) void openPageMetaModal(state.page);
+        },
+        onReviewNavigation: () => void regenerateNav(),
+      });
+    } catch (e) {
+      noteMountFailure("Nav List", e);
+    }
+  }
+
+  const recentListContainer = $("recent-list");
+  if (recentListContainer) {
+    try {
+      mountRecentProjects(recentListContainer);
+      registerRecentProjectsHandlers({
+        onOpenFolder: () => void chooseFolder(),
+        onExploreTemplates: () => void switchStartTab("create"),
+        onOpenProject: (path) => void openProjectByPath(path),
+        onRemoveProject: async (path) => {
+          await window.zephus.removeRecentProject(path);
+          setStatus("Removed recent project: " + projectBaseName(path));
+          await renderRecent();
+        },
+      });
+    } catch (e) {
+      noteMountFailure("Recent Projects", e);
+    }
+  }
+
+  const themeListContainer = $("theme-list-container");
+  if (themeListContainer) {
+    try {
+      mountThemesTab(themeListContainer);
+      registerThemesTabHandlers({
+        onLoadPreviews: () => void activateHomeSection("create"),
+        onSelect: (themeId) => selectThemeCard(themeId),
+        onPreview: (themeId) => {
+          const theme = startThemes?.find((entry) => entry.id === themeId);
+          if (theme) openThemePreviewModal(theme);
+        },
+        onCreateFromTheme: (themeId) => {
+          selectThemeCard(themeId);
+          void createSiteFromTabFlow();
+        },
+      });
+    } catch (e) {
+      noteMountFailure("Themes Tab", e);
+    }
+  }
+
+  const settingsTabContainer = $("settings-tab-container");
+  if (settingsTabContainer) {
+    try {
+      mountSettingsTab(settingsTabContainer);
+      registerSettingsTabHandlers({
+        onReset: async (settings) => {
+          if (
+            !(await modalController.confirmDestructive(
+              "Reset Settings",
+              "Reset all Zephus settings to defaults?",
+              "Reset",
+            ))
+          ) {
+            return;
+          }
+          const defaults: GlobalSettings = {
+            ...settings,
+            theme: "system",
+            autoCheckUpdates: true,
+            updateChannel: "auto",
+            restoreLastProject: false,
+            confirmBlockDelete: true,
+            autosave: false,
+            codeFontSize: 13,
+            customNodePath: null,
+          };
+          await window.zephus.writeGlobalSettings(defaults);
+          document.documentElement.setAttribute("data-theme", "system");
+          applyCodeFontSize(13);
+          setStatus("Settings reset to defaults.");
+          await renderSettingsInTab();
+        },
+        onSave: async (settings) => {
+          await window.zephus.writeGlobalSettings(settings);
+          document.documentElement.setAttribute("data-theme", settings.theme);
+          applyCodeFontSize(settings.codeFontSize);
+          appSettings = settings;
+          setStatus("Settings saved.");
+          updateSettingsTabSettings(settings);
+        },
+        onPickNodePath: async (settings) => {
+          try {
+            const res = await window.zephus.pickNodePath();
+            const nextSettings = { ...settings };
+            if (
+              (res.status === "ok" || res.status === "outdated") &&
+              res.usedCustomPath &&
+              res.binaryPath
+            ) {
+              nextSettings.customNodePath = res.binaryPath;
+            }
+            updateSettingsTabSettings(nextSettings);
+            const label =
+              res.status === "ok"
+                ? `Node.js ${res.version} detected ✓`
+                : res.status === "outdated"
+                  ? `Node.js ${res.version ?? "?"} — version 22.12+ required`
+                  : res.status === "missing"
+                    ? "Node.js not found — set a custom location below"
+                    : "Node.js status could not be determined";
+            const source = nextSettings.customNodePath
+              ? `Custom: ${nextSettings.customNodePath}`
+              : "Auto-detect (system PATH)";
+            updateSettingsTabNode(
+              `${label} · ${source}`,
+              !nextSettings.customNodePath,
+            );
+          } catch {
+            updateSettingsTabNode(
+              "Could not set Node.js location.",
+              !settings.customNodePath,
+            );
+          }
+        },
+        onAutoNodePath: async (settings) => {
+          try {
+            const res = await window.zephus.setNodePath(null);
+            const nextSettings = { ...settings, customNodePath: null };
+            updateSettingsTabSettings(nextSettings);
+            const label =
+              res.status === "ok"
+                ? `Node.js ${res.version} detected ✓`
+                : res.status === "outdated"
+                  ? `Node.js ${res.version ?? "?"} — version 22.12+ required`
+                  : res.status === "missing"
+                    ? "Node.js not found — set a custom location below"
+                    : "Node.js status could not be determined";
+            updateSettingsTabNode(`${label} · Auto-detect (system PATH)`, true);
+          } catch {
+            updateSettingsTabNode(
+              "Could not reset Node.js location.",
+              !settings.customNodePath,
+            );
+          }
+        },
+        onUpdaterAction: async (actionId) => {
+          if (actionId === "check") {
+            try {
+              await window.zephus.checkForUpdates();
+            } catch {
+              /* status surfaced via updater listener */
+            }
+            return;
+          }
+          if (actionId === "download") {
+            const result = (await window.zephus.downloadUpdate()) as {
+              status?: string;
+              error?: string;
+            };
+            if (result?.status === "error") {
+              showModal("Update Download Failed", friendlyError(result.error), [
+                { label: "OK", kind: "primary", onClick: closeModal },
+              ]);
+            }
+            return;
+          }
+          if (actionId === "restart") {
+            await restartToApplyUpdate();
+            return;
+          }
+          if (actionId === "cancel") {
+            await window.zephus.cancelUpdateDownload();
+          }
+        },
+      });
+    } catch (e) {
+      noteMountFailure("Settings Tab", e);
+    }
+  }
+
+  const homeDraftRecoveryContainer = $maybe("home-recovery-list");
+  if (homeDraftRecoveryContainer) {
+    try {
+      mountHomeDraftRecovery(homeDraftRecoveryContainer);
+      registerHomeDraftRecoveryHandlers({
+        onResumeDraft: (projectPath) => {
+          const draft = homeDraftSummaries.find(
+            (entry) => entry.projectPath === projectPath,
+          );
+          if (!draft) return;
+          pendingHomeDraftResume = draft;
+          void openProjectByPath(draft.projectPath);
+        },
+      });
+    } catch (e) {
+      noteMountFailure("Home Draft Recovery", e);
+    }
+  }
+
+  const aboutLicensesContainer = $("about-licenses-list");
+  if (aboutLicensesContainer) {
+    try {
+      mountAboutLicenses(aboutLicensesContainer);
+    } catch (e) {
+      noteMountFailure("About Licenses", e);
+    }
+  }
+
+  const sidebarUpdateStatusContainer = $("sidebar-update-status");
+  if (sidebarUpdateStatusContainer) {
+    try {
+      mountSidebarUpdateStatus(sidebarUpdateStatusContainer);
+      registerSidebarUpdateStatusHandlers({
+        onClick: () => {
+          if (updaterSnapshot?.status === "downloaded") {
+            promptDownloadedUpdate(true);
+            return;
+          }
+          if (
+            updaterSnapshot?.status === "available" ||
+            updaterSnapshot?.status === "error"
+          ) {
+            void switchStartTab("settings");
+          }
+        },
+      });
+    } catch (e) {
+      noteMountFailure("Sidebar Update Status", e);
+    }
+  }
+
+  const editorStateBannerContainer = $("editor-state-banner");
+  if (editorStateBannerContainer) {
+    try {
+      mountEditorStateBanner(editorStateBannerContainer);
+    } catch (e) {
+      noteMountFailure("Editor State Banner", e);
+    }
+  }
+
+  const layersContainer = $("layers-list");
+  if (layersContainer) {
+    try {
+      mountLayers(layersContainer);
+      registerLayersHandlers({
+        onSelectSection: (id) => {
+          state.selectedId = null;
+          state.selectedSectionId = id;
+          renderLayers();
+          renderCanvas();
+          renderProperties();
+        },
+        onSelectChild: (sectionId, childId) => {
+          state.selectedId = childId;
+          state.selectedSectionId = sectionId;
+          renderLayers();
+          renderCanvas();
+          renderProperties();
+        },
+      });
+    } catch (e) {
+      noteMountFailure("Layers", e);
+    }
+  }
+
+  const canvasContainer = $("canvas");
+  if (canvasContainer) {
+    try {
+      mountCanvas(canvasContainer);
+      registerCanvasHandlers({
+        onInsertBlock: (index, sectionId) =>
+          openBlockInsertModal(index, sectionId),
+        onOpenSectionInsert: (index) => openSectionInsertModal(index),
+        onQuickInsertSection: (index, template) => {
+          if (template === "hero") {
+            addSectionAt(index, TEMPLATES[0]);
+            return;
+          }
+          if (template === "features") {
+            addSectionAt(index, TEMPLATES[1]);
+            return;
+          }
+          addSectionAt(index);
+        },
+        onSectionAction: (section, action) => {
+          if (action === "add-block") {
+            openBlockInsertModal(section.children.length, section.id);
+            return;
+          }
+          if (action === "up") {
+            moveSection(section.id, -1);
+            return;
+          }
+          if (action === "down") {
+            moveSection(section.id, 1);
+            return;
+          }
+          if (action === "duplicate") {
+            duplicateSection(section.id);
+            return;
+          }
+          if (action === "toggle-lock") {
+            toggleSectionLock(section.id);
+            return;
+          }
+          void deleteSection(section.id);
+        },
+        onBlockAction: (block, action) => {
+          if (action === "up") {
+            moveBlock(block, -1);
+            return;
+          }
+          if (action === "down") {
+            moveBlock(block, 1);
+            return;
+          }
+          if (action === "duplicate") {
+            duplicateSelectedBlock(block);
+            return;
+          }
+          if (action === "wrap") {
+            wrapBlockInSection(block);
+            return;
+          }
+          if (action === "toggle-lock") {
+            toggleBlockLock(block);
+            return;
+          }
+          void deleteBlock(block);
+        },
+        onSelectSection: (section) => {
+          state.selectedId = null;
+          state.selectedSectionId = section.id;
+          renderLayers();
+          renderCanvas();
+          renderProperties();
+        },
+        onBlockKeyDown: (event, section, block, preview) => {
+          if (event.target !== event.currentTarget) return;
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            if (
+              block.id === state.selectedId &&
+              TEXT_EDITABLE.includes(block.type) &&
+              !block.locked
+            ) {
+              startFirstInlineEdit(preview, block);
+              return;
+            }
+            state.selectedId = block.id;
+            state.selectedSectionId = section.id;
+            renderLayers();
+            renderCanvas();
+            renderProperties();
+          }
+        },
+        onBlockClick: (event, section, block, preview) => {
+          event.stopPropagation();
+          if (isInlineEditing) return;
+          const now = Date.now();
+          const isSecondClick =
+            lastClickBlockId === block.id &&
+            now - lastClickTime < DOUBLE_CLICK_MS;
+          lastClickBlockId = block.id;
+          lastClickTime = now;
+          if (
+            isSecondClick &&
+            TEXT_EDITABLE.includes(block.type) &&
+            !block.locked
+          ) {
+            startFirstInlineEdit(preview, block);
+            return;
+          }
+          if (state.selectedId === block.id) return;
+          state.selectedId = block.id;
+          state.selectedSectionId = section.id;
+          renderLayers();
+          renderCanvas();
+          renderProperties();
+        },
+        onSectionDragStart: (event, section) => {
+          if (section.locked) {
+            event.preventDefault();
+            return;
+          }
+          draggingSectionId = section.id;
+          event.dataTransfer?.setData("text/zephus-move-section", section.id);
+          if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+        },
+        onSectionDragEnd: () => {
+          draggingSectionId = null;
+          sectionDropIndex = -1;
+          indicator?.remove();
+        },
+        onSectionDragOver: (event, sectionIndex, shell) => {
+          if (!draggingSectionId) return;
+          event.preventDefault();
+          const rect = shell.getBoundingClientRect();
+          const after = event.clientY > rect.top + rect.height / 2;
+          sectionDropIndex = after ? sectionIndex + 1 : sectionIndex;
+          showIndicator($("canvas"), shell, after);
+        },
+        onSectionDrop: (event) => handleDrop(event),
+        onSectionBodyDragOver: (event, sectionId, childCount) => {
+          event.preventDefault();
+          dropSectionId = sectionId;
+          if (childCount === 0) dropIndex = 0;
+        },
+        onBlockDragStart: (event, block) => {
+          if (block.locked) {
+            event.preventDefault();
+            return;
+          }
+          event.dataTransfer?.setData("text/zephus-move-block", block.id);
+        },
+        onBlockDragOver: (event, sectionId, blockIndex, shell, sectionBody) => {
+          if (draggingSectionId) return;
+          event.preventDefault();
+          dropSectionId = sectionId;
+          const rect = shell.getBoundingClientRect();
+          const after = event.clientY > rect.top + rect.height / 2;
+          dropIndex = after ? blockIndex + 1 : blockIndex;
+          showIndicator(sectionBody, shell, after);
+        },
+        onBlockDrop: (event) => handleDrop(event),
+        onPreviewRendered: (preview, block) => {
+          makeCanvasLinksInert(preview);
+          hydrateCanvasAssets(preview);
+          if (TEXT_EDITABLE.includes(block.type) && !block.locked) {
+            attachInlineEditors(preview, block);
+          }
+        },
+        onSyncSectionShell: (shell, section) => {
+          syncResizeHandles(
+            shell,
+            { kind: "section", node: section },
+            () => shell,
+            section.id === state.selectedSectionId &&
+              !state.selectedId &&
+              !section.locked,
+          );
+        },
+        onSyncBlockShell: (shell, block, preview) => {
+          syncResizeHandles(
+            shell,
+            { kind: "block", node: block },
+            () => (preview.firstElementChild as HTMLElement | null) ?? preview,
+            block.id === state.selectedId && !block.locked,
+          );
+        },
+      });
+    } catch (e) {
+      noteMountFailure("Canvas", e);
+    }
+  }
+
+  const templatePaletteContainer = $("template-palette");
+  if (templatePaletteContainer) {
+    try {
+      mountTemplatePalette(templatePaletteContainer);
+      registerInsertTemplateCallback((tpl) => {
+        addSectionAt(state.sections.length, tpl);
+      });
+    } catch (e) {
+      noteMountFailure("Template Palette", e);
+    }
+  }
+
+  const projectOverviewContainer = $("project-overview");
+  if (projectOverviewContainer) {
+    try {
+      mountProjectOverview(projectOverviewContainer);
+    } catch (e) {
+      noteMountFailure("Project Overview", e);
+    }
+  }
+
+  reportPanelMountFailures();
   void bootstrap();
 }
 
@@ -9049,3 +6634,31 @@ async function showOnboardingIfNew(): Promise<void> {
 }
 
 document.addEventListener("DOMContentLoaded", init);
+
+function noteMountFailure(label: string, error: unknown): void {
+  console.error(`Failed to mount SolidJS ${label}:`, error);
+  if (!panelMountFailures.includes(label)) panelMountFailures.push(label);
+}
+
+function reportPanelMountFailures(): void {
+  if (panelMountFailures.length === 0) return;
+  setStatus(formatPanelMountFailureStatus(panelMountFailures));
+  if (panelMountFailures.includes("Canvas")) {
+    showModal(
+      "Canvas Failed to Load",
+      "The visual editor canvas did not start. Reload the window to try again.",
+      [
+        {
+          label: "Reload Window",
+          kind: "primary",
+          onClick: () => {
+            closeModal();
+            window.location.reload();
+          },
+        },
+        { label: "Continue", kind: "ghost", onClick: closeModal },
+      ],
+    );
+  }
+  renderEditorStateBanner();
+}
