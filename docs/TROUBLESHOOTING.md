@@ -268,26 +268,28 @@ You were editing, then Zephus crashed or closed unexpectedly.
 2. Restore from Git: `git checkout src/pages/yourpage.astro`
 
 **Prevention:**
-- Enable **Auto-Save** in Settings (saves every few seconds)
+- Enable **Autosave changes** in Settings if you switch pages without saving
 - Press **Ctrl+S** frequently when editing
 
 ---
 
 ### "Files conflict in Git"
 
-You edited a file in Zephus and in Git simultaneously.
+You edited a file in Zephus and in Git (or on another machine) simultaneously.
 
 **Fix:**
-1. Check Git status: `git status`
-2. Resolve conflicts manually:
+1. Review changes in the editor **Git** panel or run `git status` in a terminal
+2. Commit or stash local work, then pull and resolve conflicts:
    ```bash
-   git pull origin main
+   git pull --ff-only   # or merge/rebase as your team prefers
    # Resolve conflicts
    git add .
    git commit -m "Resolve conflicts"
-   git push origin main
+   git push
    ```
-3. Reopen the project in Zephus to load the merged version
+3. Reopen or **Reload From Disk** in Zephus if page sources changed externally
+
+You can also **commit selected files** from the Git panel before pulling.
 
 ---
 
@@ -401,8 +403,8 @@ Zephus couldn't create a Git repo in your project.
 
 **Fix:**
 1. Install Git if needed
-2. Manually initialize: `git init` in the project folder
-3. Reopen the project in Zephus
+2. Initialize from the editor **Git** panel (**Initialize Git Repository**) or run `git init` in the project folder
+3. Click **Refresh** in the Git panel and confirm the branch tag updates
 
 ---
 

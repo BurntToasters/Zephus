@@ -26,6 +26,7 @@ This guide explains how to create, edit, preview, and publish Astro sites with Z
    - Edit in code mode
    - Handle external file changes
    - Manage auto-saves
+   - Version control with Git (editor panel)
 
 4. **[Settings](./SETTINGS.md)**: Configuration & preferences
    - App theme and appearance
@@ -78,7 +79,7 @@ This guide explains how to create, edit, preview, and publish Astro sites with Z
 ## The Editor Interface
 
 ### Left Sidebar
-Your site's pages listed in a menu. Click to edit, click the eye icon to toggle visibility, use ⋯ menu for more options.
+Your site's pages listed in a menu. Click to edit, click the eye icon to toggle visibility, use ⋯ menu for more options. The **Git** panel shows branch status, changed files, and in-editor commit/push/pull when the project is a Git repository.
 
 ### Center (Canvas)
 Your main editing area. Add blocks with the **+ Add Block** button, then click blocks to edit their content and properties.

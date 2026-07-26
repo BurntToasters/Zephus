@@ -13,6 +13,7 @@ Step-by-step guides for common tasks in Zephus.
 7. [Detach & Reattach Pages](#detach--reattach-pages)
 8. [Handle External Changes](#handle-external-changes)
 9. [Manage Draft Auto-Saves](#manage-draft-auto-saves)
+10. [Version Control with Git](#version-control-with-git)
 
 ---
 
@@ -409,25 +410,24 @@ Zephus automatically saves work-in-progress drafts to `.zephus/drafts/`.
 
 ### Auto-Save Behavior
 
-- **Default:** Off (enable in Settings)
-- **When enabled:** Saves every few seconds as you edit
-- **Location:** `.zephus/drafts/` (one file per page/site)
-- **Restoration:** If Zephus crashes, drafts are available on restart
+- **Default:** Off
+- **When enabled:** Zephus saves the project when you **leave a page** or switch context (instead of prompting to save or discard)
+- **Crash recovery:** Zephus still keeps local recovery drafts under `.zephus/drafts/` even when Auto-Save is off
+- **Disk commits:** Use **Ctrl+S** or **Save** to write pages to disk anytime
 
 ---
 
 ### Enable Auto-Save
 
-1. Click **Settings** on the start screen
-2. Find **Auto-Save**
-3. Toggle **On**
-4. Drafts now save automatically
+1. Click **Settings** on the start screen (or open Settings from the editor)
+2. Enable **Autosave changes**
+3. Read the hint under the toggle for how autosave differs from crash-recovery drafts
 
 ---
 
 ### Resume a Saved Draft
 
-1. If Zephus detects unsaved work on startup, it shows a **Resume Draft** button
+1. If Zephus detects unsaved work on startup, it may offer to resume a draft
 2. Click **Resume** to continue editing
 3. Or click **Discard** to start fresh
 
@@ -439,9 +439,60 @@ Zephus automatically saves work-in-progress drafts to `.zephus/drafts/`.
 |--------|--------|
 | **Ctrl+S** | Saves page to disk immediately |
 | **Click Save** | Same as Ctrl+S |
-| **Auto-Save (if enabled)** | Saves draft every few seconds, doesn't touch disk |
+| **Auto-Save (if enabled)** | Saves when leaving a page or resolving site editor conflicts without a prompt |
+| **Crash-recovery drafts** | Local safety net; not a substitute for **Ctrl+S** before publish |
 
-> 💡 **Tip**: Enable auto-save to prevent losing work if Zephus crashes. Still press Ctrl+S before publishing to ensure changes are written to disk.
+> 💡 **Tip**: Enable auto-save if you often switch pages without saving. Still press **Ctrl+S** before publishing.
+
+---
+
+## Version Control with Git
+
+Zephus projects are ordinary Git repositories on disk. You can use the terminal or the **Git** panel in the editor sidebar.
+
+### Initialize a Repository
+
+**When opening a project:** Zephus may offer to run `git init` if the folder is not yet a repo.
+
+**From the editor:** Open the **Git** panel. If Git is unavailable because the folder is not a repository, click **Initialize Git Repository**, then **Refresh**.
+
+> 💡 **Commit `.zephus/`:** Zephus stores managed page JSON and project state there. If `.zephus` is git-ignored, the panel warns you—remove it from `.gitignore` so the site opens correctly on other machines.
+
+---
+
+### Review Changes
+
+1. Open the **Git** panel in the left sidebar
+2. Click **Refresh** to update the file list
+3. Changed files show badges: **M** (modified), **A** (added), **D** (deleted)
+
+---
+
+### Commit from Zephus
+
+1. Check the files you want to include (use **Select all** / **Clear** as needed)
+2. Enter a **commit message**
+3. Click **Commit All Changes** when every changed file is selected, or **Commit N Selected** for a partial commit
+4. Zephus runs `git add` on the selected paths and `git commit`
+
+For full control (interactive staging, hooks, signing), use your terminal in the project folder.
+
+---
+
+### Push and Pull
+
+When a branch is checked out (not detached HEAD), the Git panel toolbar includes:
+
+- **Pull (Fast-Forward)** — runs `git pull --ff-only` (fails if a merge is required; resolve on the command line)
+- **Push to Remote** — runs `git push` to the configured upstream
+
+After a pull, if Astro sources changed outside Zephus, use **Reload From Disk** on the editor banner when prompted, or reload the page from the page list.
+
+---
+
+### Detached HEAD
+
+If you see **detached HEAD** in the branch tag, check out a branch in your terminal (`git checkout main`) before committing or pushing from Zephus.
 
 ---
 

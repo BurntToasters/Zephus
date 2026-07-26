@@ -26,9 +26,9 @@ Choose how Zephus looks:
 
 **Default:** Off
 
-When enabled, Zephus saves your page work-in-progress every few seconds to `.zephus/drafts/`. This prevents losing work if the app crashes.
+When enabled, Zephus **saves the project when you leave a page** (or auto-persists during site-wide editor conflicts) instead of showing the unsaved-changes dialog. That is separate from **crash-recovery drafts** in `.zephus/drafts/`, which Zephus can still offer after a crash even when Auto-Save is off.
 
-> 💡 **Recommendation:** Enable auto-save for safety, but always use **Ctrl+S** before publishing to ensure changes are committed to disk.
+> 💡 **Recommendation:** Enable auto-save if you switch pages often. Always use **Ctrl+S** before publishing so disk matches what you expect.
 
 ---
 
