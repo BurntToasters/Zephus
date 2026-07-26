@@ -90,6 +90,10 @@ export function HelpModalContent() {
             Page Settings.
           </li>
           <li>
+            Lock a block or section to prevent edits, cuts, moves, and deletes
+            until you unlock it.
+          </li>
+          <li>
             Press <kbd>?</kbd> or <kbd>H</kbd> on the dashboard or editor canvas
             to view this help guide.
           </li>

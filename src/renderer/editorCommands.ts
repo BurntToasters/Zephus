@@ -77,3 +77,22 @@ export function formatPanelMountFailureStatus(failures: string[]): string {
   if (failures.length === 0) return "";
   return `Some editor panels failed to load: ${failures.join(", ")}.`;
 }
+
+export function isNodeLocked(
+  node: { locked?: boolean } | null | undefined,
+): boolean {
+  return !!node?.locked;
+}
+
+export function lockedMutationMessage(
+  scope: "block" | "section" | "target-section",
+): string {
+  switch (scope) {
+    case "block":
+      return "This block is locked. Unlock it to edit.";
+    case "section":
+      return "This section is locked. Unlock it to edit.";
+    case "target-section":
+      return "That section is locked. Unlock it to add or move content there.";
+  }
+}

@@ -798,10 +798,14 @@ export function renderBlockProperties(
           <strong>{state.title}</strong>
           <span class="muted">{state.subtitle}</span>
         </div>
+        {state.locked ? (
+          <p class="muted">This block is locked. Unlock it to edit.</p>
+        ) : null}
 
-        <ContentGroup state={state} />
+        <fieldset disabled={state.locked} class="prop-fieldset">
+          <ContentGroup state={state} />
 
-        <Group title="Layout">
+          <Group title="Layout">
           <SelectField
             label="Alignment"
             value={(state.style?.align as string) ?? "left"}
@@ -965,24 +969,29 @@ export function renderBlockProperties(
             </button>
           ) : null}
         </Group>
+        </fieldset>
 
         <div class="prop-actions">
           <button class="btn" onClick={state.onDuplicate}>
             Duplicate
           </button>
-          <button class="btn" onClick={state.onMoveUp}>
+          <button class="btn" disabled={state.locked} onClick={state.onMoveUp}>
             Move Up
           </button>
-          <button class="btn" onClick={state.onMoveDown}>
+          <button class="btn" disabled={state.locked} onClick={state.onMoveDown}>
             Move Down
           </button>
-          <button class="btn" onClick={state.onWrap}>
+          <button class="btn" disabled={state.locked} onClick={state.onWrap}>
             Wrap
           </button>
           <button class="btn" onClick={state.onToggleLock}>
             {state.locked ? "Unlock" : "Lock"}
           </button>
-          <button class="btn danger" onClick={state.onDelete}>
+          <button
+            class="btn danger"
+            disabled={state.locked}
+            onClick={state.onDelete}
+          >
             Delete
           </button>
         </div>

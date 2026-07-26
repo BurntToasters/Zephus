@@ -396,7 +396,11 @@ export function renderSectionProperties(
           <strong>{state.sectionLabel}</strong>
           <span class="muted">{state.currentPageLabel} / section</span>
         </div>
+        {state.locked ? (
+          <p class="muted">This section is locked. Unlock it to edit.</p>
+        ) : null}
 
+        <fieldset disabled={state.locked} class="prop-fieldset">
         <Group title="Content">
           <TextField
             label="Section label"
@@ -493,24 +497,29 @@ export function renderSectionProperties(
             onBlur={state.onBlur}
           />
         </Group>
+        </fieldset>
 
         <div class="prop-actions">
-          <button class="btn" onClick={state.onAddBlock}>
+          <button class="btn" disabled={state.locked} onClick={state.onAddBlock}>
             Add Block
           </button>
           <button class="btn" onClick={state.onDuplicate}>
             Duplicate
           </button>
-          <button class="btn" onClick={state.onMoveUp}>
+          <button class="btn" disabled={state.locked} onClick={state.onMoveUp}>
             Move Up
           </button>
-          <button class="btn" onClick={state.onMoveDown}>
+          <button class="btn" disabled={state.locked} onClick={state.onMoveDown}>
             Move Down
           </button>
           <button class="btn" onClick={state.onToggleLock}>
             {state.locked ? "Unlock" : "Lock"}
           </button>
-          <button class="btn danger" onClick={state.onDelete}>
+          <button
+            class="btn danger"
+            disabled={state.locked}
+            onClick={state.onDelete}
+          >
             Delete
           </button>
         </div>

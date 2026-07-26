@@ -1866,6 +1866,17 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
+.prop-fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.prop-fieldset:disabled {
+  opacity: 0.72;
+}
+
 .prop-group {
   display: flex;
   flex-direction: column;

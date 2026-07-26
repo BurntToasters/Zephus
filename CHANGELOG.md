@@ -53,6 +53,8 @@
 - **Panel Mount Failures:** SolidJS panel mount errors now surface in status, the editor banner, and a reload prompt when the canvas fails.
 - **HTML Blocks:** Inspector includes a markup textarea so HTML blocks can be edited without leaving Visual mode.
 - **Help Guide:** Documents Code-mode undo/redo and reattach via the editor banner or Page Settings.
+- **Locks:** Locked blocks/sections block cut, delete, move, paste-into, drop, and Inspector edits (Unlock and Duplicate remain available), with clear status messages.
+- **Out-of-sync pages:** Visual-mode messaging points to Reload From Disk / detach in Code instead of incorrectly saying “reattach.”
 
 ### Codebase & Quality
 - **Shared Render Helpers:** Extracted mirrored HTML/CSS helpers into `src/shared/renderHelpers.ts` so the build and editor renderers stay single-sourced.

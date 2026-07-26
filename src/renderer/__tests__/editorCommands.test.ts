@@ -2,6 +2,8 @@ import { describe, it, expect, vi } from "vitest";
 import {
   formatPanelMountFailureStatus,
   isBlockTypeAllowed,
+  isNodeLocked,
+  lockedMutationMessage,
   shouldBlockManagedVisualSwitch,
   tryMountPanel,
 } from "../editorCommands";
@@ -48,6 +50,17 @@ describe("editorCommands", () => {
     expect(formatPanelMountFailureStatus([])).toBe("");
     expect(formatPanelMountFailureStatus(["Canvas", "Layers"])).toBe(
       "Some editor panels failed to load: Canvas, Layers.",
+    );
+  });
+
+  it("reports locked mutation messages", () => {
+    expect(isNodeLocked({ locked: true })).toBe(true);
+    expect(isNodeLocked({ locked: false })).toBe(false);
+    expect(isNodeLocked(null)).toBe(false);
+    expect(lockedMutationMessage("block")).toContain("block is locked");
+    expect(lockedMutationMessage("section")).toContain("section is locked");
+    expect(lockedMutationMessage("target-section")).toContain(
+      "section is locked",
     );
   });
 });

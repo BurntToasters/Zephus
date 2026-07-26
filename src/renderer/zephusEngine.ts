@@ -9,6 +9,8 @@ import {
   formatPanelMountFailureStatus,
   handlePlainTextPaste,
   isBlockTypeAllowed,
+  isNodeLocked,
+  lockedMutationMessage,
   shouldBlockManagedVisualSwitch,
   syncUndoRedoToolbar,
 } from "./editorCommands";
@@ -705,7 +707,7 @@ function syncVisualModeState(): void {
   visualBtn.classList.toggle("disabled", !state.visualEditable);
   visualBtn.title =
     state.managedStatus === "out-of-sync"
-      ? "This page was edited outside Zephus. Reattach it to resume visual editing."
+      ? "This page was edited outside Zephus. Reload from disk or detach in Code mode to continue."
       : state.visualEditable
         ? "Visual"
         : "Detached pages are code-only until reattached.";
@@ -3976,10 +3978,17 @@ function addBlockAt(
   index: number,
   sectionId?: string | null,
 ): void {
-  pushUndo();
   if (state.sections.length === 0) {
     state.sections.push(ensureFallbackSection());
   }
+  const targetSection =
+    findSection(sectionId ?? activeSectionId()) ?? state.sections[0];
+  if (!targetSection) return;
+  if (isNodeLocked(targetSection)) {
+    setStatus(lockedMutationMessage("target-section"));
+    return;
+  }
+  pushUndo();
   const block: Block =
     type === "html"
       ? {
@@ -3999,8 +4008,6 @@ function addBlockAt(
                 ? { columns: "3", gap: "12px" }
                 : undefined,
         };
-  const targetSection =
-    findSection(sectionId ?? activeSectionId()) ?? state.sections[0]!;
   targetSection.children.splice(index, 0, block);
   state.selectedId = block.id;
   state.selectedSectionId = targetSection.id;
@@ -4022,7 +4029,19 @@ function duplicateSelectedBlock(block: Block): void {
 function moveBlock(block: Block, direction: -1 | 1): void {
   const location = findBlockLocation(block.id);
   if (!location) return;
-  if (block.locked) return;
+  if (isNodeLocked(block)) {
+    setStatus(lockedMutationMessage("block"));
+    return;
+  }
+  const nextSection = state.sections[location.sectionIndex + direction];
+  if (
+    (location.blockIndex + direction < 0 ||
+      location.blockIndex + direction >= location.section.children.length) &&
+    isNodeLocked(nextSection)
+  ) {
+    setStatus(lockedMutationMessage("target-section"));
+    return;
+  }
   pushUndo();
   const siblings = location.section.children;
   const next = location.blockIndex + direction;
@@ -4032,7 +4051,6 @@ function moveBlock(block: Block, direction: -1 | 1): void {
     if (!moved) return;
     siblings.splice(next, 0, moved);
   } else {
-    const nextSection = state.sections[location.sectionIndex + direction];
     [moved] = siblings.splice(location.blockIndex, 1) as Block[];
     if (!moved || !nextSection) {
       if (moved) siblings.splice(location.blockIndex, 0, moved);
@@ -4063,6 +4081,10 @@ function toggleBlockLock(block: Block): void {
 }
 
 async function deleteBlock(block: Block): Promise<void> {
+  if (isNodeLocked(block)) {
+    setStatus(lockedMutationMessage("block"));
+    return;
+  }
   if (appSettings?.confirmBlockDelete && !skipDeleteConfirm) {
     const confirmed = await modalController.confirmDestructive(
       "Delete Block",
@@ -4085,6 +4107,10 @@ async function deleteBlock(block: Block): Promise<void> {
 function wrapBlockInSection(block: Block): void {
   const location = findBlockLocation(block.id);
   if (!location) return;
+  if (isNodeLocked(block)) {
+    setStatus(lockedMutationMessage("block"));
+    return;
+  }
   pushUndo();
   const [moved] = location.section.children.splice(location.blockIndex, 1);
   if (!moved) return;
@@ -4105,11 +4131,16 @@ function moveSection(sectionId: string, direction: -1 | 1): void {
   const index = state.sections.findIndex((section) => section.id === sectionId);
   const next = index + direction;
   if (index < 0 || next < 0 || next >= state.sections.length) return;
+  const section = state.sections[index];
+  if (isNodeLocked(section)) {
+    setStatus(lockedMutationMessage("section"));
+    return;
+  }
   pushUndo();
-  const [section] = state.sections.splice(index, 1);
-  if (!section) return;
-  state.sections.splice(next, 0, section);
-  state.selectedSectionId = section.id;
+  const [moved] = state.sections.splice(index, 1);
+  if (!moved) return;
+  state.sections.splice(next, 0, moved);
+  state.selectedSectionId = moved.id;
   commitBlockChange(`Moved section ${direction < 0 ? "up" : "down"}`);
 }
 
@@ -4155,7 +4186,10 @@ function copySelectionToClipboard(): void {
 async function cutSelectionToClipboard(): Promise<void> {
   const block = findSelectedBlock();
   if (block) {
-    if (block.locked) return;
+    if (isNodeLocked(block)) {
+      setStatus(lockedMutationMessage("block"));
+      return;
+    }
     copySelectionToClipboard();
     skipDeleteConfirm = true;
     try {
@@ -4167,7 +4201,11 @@ async function cutSelectionToClipboard(): Promise<void> {
   }
   if (state.selectedSectionId && !state.selectedId) {
     const section = findSection(state.selectedSectionId);
-    if (!section || section.locked) return;
+    if (!section) return;
+    if (isNodeLocked(section)) {
+      setStatus(lockedMutationMessage("section"));
+      return;
+    }
     copySelectionToClipboard();
     skipDeleteConfirm = true;
     try {
@@ -4189,20 +4227,25 @@ function pasteFromClipboard(): void {
       setStatus(`Block type "${source.type}" is not allowed on this site.`);
       return;
     }
+    const location = findBlockLocation(state.selectedId);
+    const targetSection =
+      location?.section ?? findSection(activeSectionId()) ?? state.sections[0];
+    if (!targetSection) return;
+    if (isNodeLocked(targetSection)) {
+      setStatus(lockedMutationMessage("target-section"));
+      return;
+    }
     pushUndo();
     const copy = cloneBlock(source as Block);
     copy.id = uid();
-    const location = findBlockLocation(state.selectedId);
     if (location) {
       location.section.children.splice(location.blockIndex + 1, 0, copy);
       state.selectedId = copy.id;
       state.selectedSectionId = location.section.id;
     } else {
-      const section = findSection(activeSectionId());
-      if (!section) return;
-      section.children.push(copy);
+      targetSection.children.push(copy);
       state.selectedId = copy.id;
-      state.selectedSectionId = section.id;
+      state.selectedSectionId = targetSection.id;
     }
     commitBlockChange(`Pasted ${source.type} block`);
     return;
@@ -4234,6 +4277,10 @@ function toggleSectionLock(sectionId: string): void {
 async function deleteSection(sectionId: string): Promise<void> {
   const section = findSection(sectionId);
   if (!section) return;
+  if (isNodeLocked(section)) {
+    setStatus(lockedMutationMessage("section"));
+    return;
+  }
   if (appSettings?.confirmBlockDelete && !skipDeleteConfirm) {
     const confirmed = await modalController.confirmDestructive(
       "Delete Section",
@@ -4250,6 +4297,11 @@ async function deleteSection(sectionId: string): Promise<void> {
 }
 
 function openBlockInsertModal(index: number, sectionId: string): void {
+  const section = findSection(sectionId);
+  if (isNodeLocked(section)) {
+    setStatus(lockedMutationMessage("target-section"));
+    return;
+  }
   const wrap = document.createElement("div");
   renderInsertModal(
     wrap,
@@ -4639,6 +4691,11 @@ function handleDrop(e: DragEvent): void {
 
   if (moveSectionId) {
     const from = state.sections.findIndex((s) => s.id === moveSectionId);
+    const moving = state.sections[from];
+    if (isNodeLocked(moving)) {
+      setStatus(lockedMutationMessage("section"));
+      return;
+    }
     if (from >= 0 && sectionDropIndex >= 0) {
       let to = sectionDropIndex;
       if (from < to) to -= 1;
@@ -4669,7 +4726,15 @@ function handleDrop(e: DragEvent): void {
     addBlockAt(newType as BlockType, target, targetSection?.id);
   } else if (moveBlockId) {
     const location = findBlockLocation(moveBlockId);
-    if (!location || !targetSection || location.block.locked) return;
+    if (!location || !targetSection) return;
+    if (isNodeLocked(location.block)) {
+      setStatus(lockedMutationMessage("block"));
+      return;
+    }
+    if (isNodeLocked(targetSection)) {
+      setStatus(lockedMutationMessage("target-section"));
+      return;
+    }
     pushUndo();
     const [moved] = location.section.children.splice(location.blockIndex, 1);
     if (!moved) return;
@@ -5410,6 +5475,10 @@ function renderProperties(): void {
 
   if (!block && section) {
     const commitSection = (key: string, value: string) => {
+      if (isNodeLocked(section)) {
+        setStatus(lockedMutationMessage("section"));
+        return;
+      }
       section.props[key] = value;
       if (key === "label") section.label = value || section.label;
       commitInspectorChange(`Updated ${section.label}`);
@@ -5419,6 +5488,10 @@ function renderProperties(): void {
       key: keyof BlockStyle,
       value: string | boolean | string[],
     ) => {
+      if (isNodeLocked(section)) {
+        setStatus(lockedMutationMessage("section"));
+        return;
+      }
       section.style = section.style ?? {};
       (section.style as Record<string, unknown>)[key] = value;
       commitInspectorChange(`Updated ${section.label} style`);
@@ -5441,6 +5514,10 @@ function renderProperties(): void {
       onFocus: beginInspectorEdit,
       onBlur: endInspectorEdit,
       onSectionLabelChange: (value) => {
+        if (isNodeLocked(section)) {
+          setStatus(lockedMutationMessage("section"));
+          return;
+        }
         section.label = value.trim() || "Section";
         commitInspectorChange("Renamed section");
       },
@@ -5506,6 +5583,10 @@ function renderProperties(): void {
       onFocus: beginInspectorEdit,
       onBlur: endInspectorEdit,
       onPropChange: (key, value, rerenderProperties) => {
+        if (isNodeLocked(block)) {
+          setStatus(lockedMutationMessage("block"));
+          return;
+        }
         block.props[key] = value;
         commitInspectorChange(
           `Updated ${block.type} ${key}`,
@@ -5515,11 +5596,19 @@ function renderProperties(): void {
       onRawChange:
         block.type === "html"
           ? (value) => {
+              if (isNodeLocked(block)) {
+                setStatus(lockedMutationMessage("block"));
+                return;
+              }
               block.raw = value;
               commitInspectorChange("Updated HTML markup");
             }
           : undefined,
       onStyleChange: (key, value, rerenderProperties) => {
+        if (isNodeLocked(block)) {
+          setStatus(lockedMutationMessage("block"));
+          return;
+        }
         block.style = block.style ?? {};
         (block.style as Record<string, unknown>)[key] = value;
         commitInspectorChange(
@@ -5529,6 +5618,10 @@ function renderProperties(): void {
       },
       onPickLink: openLinkPicker,
       onResponsiveStyleChange: (key, value) => {
+        if (isNodeLocked(block)) {
+          setStatus(lockedMutationMessage("block"));
+          return;
+        }
         block.style = block.style ?? {};
         block.style.responsive = block.style.responsive ?? {};
         block.style.responsive[state.currentViewport] = {
@@ -5643,7 +5736,7 @@ function setMode(mode: Mode): void {
     showModal(
       "Visual Mode Unavailable",
       state.managedStatus === "out-of-sync"
-        ? "This page was edited outside Zephus. Review it in Code mode, then reattach it from the editor banner or Page Settings to resume GUI editing."
+        ? "This page was edited outside Zephus. Use Reload From Disk on the editor banner, or edit in Code mode and save to detach."
         : "This page was detached from visual mode after a structural code edit. Reattach it from the editor banner or Page Settings to resume GUI editing.",
       [{ label: "OK", kind: "primary", onClick: closeModal }],
     );
