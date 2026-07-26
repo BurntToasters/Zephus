@@ -26,6 +26,18 @@ import { detectAstro, listPages } from "./project";
 import { readRepoSettings } from "./settings";
 import { readJsonSafe, writeFileAtomic } from "./fsSafe";
 import {
+  addCssValue,
+  blockCssValue,
+  encodeDataPayload,
+  escapeAttr,
+  escapeHtml,
+  plainTextToHtml,
+  renderListItems,
+  safeUrl,
+  splitLines,
+  splitPair,
+} from "../../shared/renderHelpers";
+import {
   assertRealpathInside,
   safeResolve as safeResolveString,
 } from "./fsSafe";
@@ -966,15 +978,6 @@ function defaultSectionNode(blocks: BlockNode[]): SectionNode {
   };
 }
 
-/**
- * Encodes a value as a URI-encoded JSON payload for a data-* attribute.
- * encodeURIComponent leaves apostrophes literal, so we encode them too to
- * guarantee the attribute value contains no quote characters.
- */
-function encodeDataPayload(value: unknown): string {
-  return encodeURIComponent(JSON.stringify(value)).replace(/'/g, "%27");
-}
-
 function blockMetadataAttrs(block: BlockNode): string {
   const attrs = [
     `data-zephus-id="${escapeAttr(block.id)}"`,
@@ -990,28 +993,6 @@ function blockMetadataAttrs(block: BlockNode): string {
   return " " + attrs.join(" ");
 }
 
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
-
-function escapeAttr(value: string): string {
-  return escapeHtml(value).replace(/"/g, "&quot;");
-}
-
-/**
- * Blocks dangerous URL schemes for href/src values (mirror of the renderer's
- * safeUrl). Returns "" for javascript:/data:/vbscript:/file: so the built site
- * never emits an executable URL. Keep in sync with zephusEngine.ts.
- */
-function safeUrl(value: string): string {
-  const trimmed = (value ?? "").trim();
-  if (/^(javascript|vbscript|data|file):/i.test(trimmed)) return "";
-  return trimmed;
-}
-
 /**
  * Sanitizes a value destined for a CSS declaration. Strips characters that
  * could break out of the declaration/rule (`;{}<>` and newlines) to prevent
@@ -1024,31 +1005,6 @@ function cssValue(value: string): string {
     .replace(/[\r\n]+/g, " ")
     .trim()
     .slice(0, 200);
-}
-
-function blockCssValue(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  if (!trimmed || /[;{}<>\r\n]/.test(trimmed)) return null;
-  return trimmed.slice(0, 240);
-}
-
-function addCssValue(css: string[], property: string, value: unknown): void {
-  const safe = blockCssValue(value);
-  if (safe) css.push(`${property}:${safe}`);
-}
-
-function plainTextToHtml(text: string): string {
-  return escapeHtml(text).replace(/\n/g, "<br />");
-}
-
-function renderListItems(items: string): string {
-  return items
-    .split(/\r?\n/)
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .map((item) => `<li>${plainTextToHtml(item)}</li>`)
-    .join("");
 }
 
 function styleAttr(block: BlockNode): string {
@@ -1152,20 +1108,6 @@ function structuralCommon(block: BlockNode, fixedClass: string): string {
     ? " " + escapeAttr(block.props["cls"])
     : "";
   return `${blockMetadataAttrs(block)} class="${fixedClass}${userCls}"${styleAttr(block)}`;
-}
-
-function splitLines(raw: string): string[] {
-  return (raw ?? "")
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-}
-
-/** Splits "left :: right" into a tuple; right is "" when no separator. */
-function splitPair(line: string, sep = "::"): [string, string] {
-  const i = line.indexOf(sep);
-  if (i < 0) return [line.trim(), ""];
-  return [line.slice(0, i).trim(), line.slice(i + sep.length).trim()];
 }
 
 export function renderBlockNode(block: BlockNode): string {

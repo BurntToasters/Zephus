@@ -30,7 +30,13 @@ export function HelpModalContent() {
               <td>
                 <kbd>Ctrl/Cmd</kbd> + <kbd>D</kbd>
               </td>
-              <td>Duplicate Selected Block</td>
+              <td>Duplicate Selected Block or Section</td>
+            </tr>
+            <tr>
+              <td>
+                <kbd>Ctrl/Cmd</kbd> + <kbd>C</kbd> / <kbd>X</kbd> / <kbd>V</kbd>
+              </td>
+              <td>Copy, Cut, or Paste Selected Block/Section</td>
             </tr>
             <tr>
               <td>

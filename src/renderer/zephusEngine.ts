@@ -5,6 +5,25 @@
 
 import { createCodeEditor, CodeEditor } from "./codeEditor";
 import {
+  EditorClipboardPayload,
+  handlePlainTextPaste,
+  isBlockTypeAllowed,
+  shouldBlockManagedVisualSwitch,
+  syncUndoRedoToolbar,
+} from "./editorCommands";
+import {
+  addCssValue,
+  blockCssValue,
+  encodeDataPayload,
+  escapeAttr,
+  escapeHtml,
+  plainTextToHtml,
+  renderListItems,
+  safeUrl,
+  splitLines,
+  splitPair,
+} from "../shared/renderHelpers";
+import {
   clearPageChanges,
   clearSiteChanges,
   cloneSiteDocument,
@@ -495,6 +514,9 @@ const editorRules = {
   maxHeadingLevel: 6,
 };
 
+let editorClipboard: EditorClipboardPayload | null = null;
+let skipDeleteConfirm = false;
+
 /** Cache of saved reusable sections, refreshed by renderTemplates(). */
 let reusableSectionsCache: ReusableSection[] = [];
 
@@ -592,10 +614,6 @@ function nodeStatusMessage(res: NodeCheckResult): string {
 
 function uid(): string {
   return "b" + Math.random().toString(36).slice(2, 9);
-}
-
-function escapeAttr(value: string): string {
-  return escapeHtml(value).replace(/"/g, "&quot;");
 }
 
 function cloneBlock(block: Block): Block {
@@ -697,9 +715,14 @@ let settingCode = false;
 
 function ensureCodeEditor(): void {
   if (cm) return;
-  cm = createCodeEditor($("code-editor"), () => {
-    if (state.mode === "code" && !settingCode) markDirty(true);
-  });
+  cm = createCodeEditor(
+    $("code-editor"),
+    () => {
+      if (state.mode === "code" && !settingCode) markDirty(true);
+      updateUndoRedoButtons();
+    },
+    updateUndoRedoButtons,
+  );
 }
 
 function setCode(value: string): void {
@@ -710,13 +733,6 @@ function setCode(value: string): void {
 
 function getCode(): string {
   return cm ? cm.getValue() : state.rawCode;
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
 }
 
 function currentPageLabel(): string {
@@ -3008,6 +3024,7 @@ async function loadPage(
   }
   state.undo = [];
   state.redo = [];
+  updateUndoRedoButtons();
   state.selectedId = null;
   state.selectedSectionId = state.sections[0]?.id ?? null;
   clearChanges();
@@ -3373,15 +3390,6 @@ function styleFromLegacyProps(el: HTMLElement): BlockStyle | undefined {
   return Object.values(style).some(Boolean) ? style : undefined;
 }
 
-/**
- * Encodes a value as a URI-encoded JSON payload for a data-* attribute.
- * Mirrors schema.ts encodeDataPayload exactly (apostrophes encoded too) so the
- * editor serialization is byte-identical to the build renderer output.
- */
-function encodeDataPayload(value: unknown): string {
-  return encodeURIComponent(JSON.stringify(value)).replace(/'/g, "%27");
-}
-
 function metadataAttrs(block: Block): string {
   const attrs = [
     `data-zephus-id="${escapeAttr(block.id)}"`,
@@ -3406,18 +3414,6 @@ function effectiveStyle(
     viewport === "desktop" ? undefined : block.style?.responsive?.[viewport];
   if (responsive) Object.assign(base, responsive);
   return base;
-}
-
-function blockCssValue(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  if (!trimmed || /[;{}<>\r\n]/.test(trimmed)) return null;
-  return trimmed.slice(0, 240);
-}
-
-function addCssValue(css: string[], property: string, value: unknown): void {
-  const safe = blockCssValue(value);
-  if (safe) css.push(`${property}:${safe}`);
 }
 
 function styleAttr(
@@ -3481,44 +3477,6 @@ function structuralCommon(
     ? " " + escapeAttr(block.props["cls"])
     : "";
   return `${metadataAttrs(block)} class="${fixedClass}${userCls}"${styleAttr(block, viewport, forCanvas)}`;
-}
-
-function splitLines(raw: string): string[] {
-  return (raw ?? "")
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-}
-
-function splitPair(line: string, sep = "::"): [string, string] {
-  const i = line.indexOf(sep);
-  if (i < 0) return [line.trim(), ""];
-  return [line.slice(0, i).trim(), line.slice(i + sep.length).trim()];
-}
-
-function plainTextToHtml(text: string): string {
-  return escapeHtml(text).replace(/\n/g, "<br />");
-}
-
-function renderListItems(items: string): string {
-  return items
-    .split(/\r?\n/)
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .map((item) => `<li>${plainTextToHtml(item)}</li>`)
-    .join("");
-}
-
-/**
- * Blocks dangerous URL schemes for href/src values. Allows relative paths,
- * anchors, and ordinary schemes; returns "" for javascript:/data:/vbscript:/
- * file: so neither the live canvas nor the built site can execute them. Mirror
- * of the same helper in schema.ts — keep both in sync.
- */
-function safeUrl(value: string): string {
-  const trimmed = (value ?? "").trim();
-  if (/^(javascript|vbscript|data|file):/i.test(trimmed)) return "";
-  return trimmed;
 }
 
 /**
@@ -3846,6 +3804,7 @@ function pushUndo(): void {
   state.undo.push(captureSnapshot());
   if (state.undo.length > 50) state.undo.shift();
   state.redo = [];
+  updateUndoRedoButtons();
 }
 
 /**
@@ -4084,7 +4043,7 @@ function toggleBlockLock(block: Block): void {
 }
 
 async function deleteBlock(block: Block): Promise<void> {
-  if (appSettings?.confirmBlockDelete) {
+  if (appSettings?.confirmBlockDelete && !skipDeleteConfirm) {
     const confirmed = await modalController.confirmDestructive(
       "Delete Block",
       `Delete this ${block.type} block from ${currentPageLabel()}?`,
@@ -4149,6 +4108,94 @@ function duplicateSection(sectionId: string): void {
   commitBlockChange(`Duplicated ${section.label}`);
 }
 
+function copySelectionToClipboard(): void {
+  const block = findSelectedBlock();
+  if (block) {
+    editorClipboard = { kind: "block", block: cloneBlock(block) };
+    void navigator.clipboard
+      ?.writeText(blockToHtml(block, "desktop"))
+      .catch(() => undefined);
+    setStatus("Copied block.");
+    return;
+  }
+  if (state.selectedSectionId && !state.selectedId) {
+    const section = findSection(state.selectedSectionId);
+    if (section) {
+      editorClipboard = {
+        kind: "section",
+        section: cloneSections([section])[0]!,
+      };
+      setStatus("Copied section.");
+    }
+  }
+}
+
+async function cutSelectionToClipboard(): Promise<void> {
+  const block = findSelectedBlock();
+  if (block) {
+    if (block.locked) return;
+    copySelectionToClipboard();
+    skipDeleteConfirm = true;
+    try {
+      await deleteBlock(block);
+    } finally {
+      skipDeleteConfirm = false;
+    }
+    return;
+  }
+  if (state.selectedSectionId && !state.selectedId) {
+    const section = findSection(state.selectedSectionId);
+    if (!section || section.locked) return;
+    copySelectionToClipboard();
+    skipDeleteConfirm = true;
+    try {
+      await deleteSection(state.selectedSectionId);
+    } finally {
+      skipDeleteConfirm = false;
+    }
+  }
+}
+
+function pasteFromClipboard(): void {
+  if (!editorClipboard) return;
+  if (editorClipboard.kind === "block") {
+    const source = editorClipboard.block;
+    if (!isBlockTypeAllowed(source.type, editorRules.allowedBlocks)) {
+      setStatus(`Block type "${source.type}" is not allowed on this site.`);
+      return;
+    }
+    pushUndo();
+    const copy = cloneBlock(source as Block);
+    copy.id = uid();
+    const location = findBlockLocation(state.selectedId);
+    if (location) {
+      location.section.children.splice(location.blockIndex + 1, 0, copy);
+      state.selectedId = copy.id;
+      state.selectedSectionId = location.section.id;
+    } else {
+      const section = findSection(activeSectionId());
+      if (!section) return;
+      section.children.push(copy);
+      state.selectedId = copy.id;
+      state.selectedSectionId = section.id;
+    }
+    commitBlockChange(`Pasted ${source.type} block`);
+    return;
+  }
+  const sourceSection = editorClipboard.section;
+  const index = state.selectedSectionId
+    ? state.sections.findIndex((section) => section.id === state.selectedSectionId)
+    : state.sections.length - 1;
+  pushUndo();
+  const copy = cloneSections([sourceSection])[0]!;
+  copy.id = uid();
+  copy.children = copy.children.map((child) => ({ ...child, id: uid() }));
+  state.sections.splice(Math.max(0, index) + 1, 0, copy);
+  state.selectedSectionId = copy.id;
+  state.selectedId = null;
+  commitBlockChange(`Pasted ${sourceSection.label}`);
+}
+
 function toggleSectionLock(sectionId: string): void {
   const section = findSection(sectionId);
   if (!section) return;
@@ -4162,7 +4209,7 @@ function toggleSectionLock(sectionId: string): void {
 async function deleteSection(sectionId: string): Promise<void> {
   const section = findSection(sectionId);
   if (!section) return;
-  if (appSettings?.confirmBlockDelete) {
+  if (appSettings?.confirmBlockDelete && !skipDeleteConfirm) {
     const confirmed = await modalController.confirmDestructive(
       "Delete Section",
       `Delete section "${section.label}" from ${currentPageLabel()}?`,
@@ -4412,10 +4459,12 @@ function resizeCanvasTargetByKeyboard(
   subject.style.width = style.width;
   subject.style.height = style.height;
   pushUndo();
+  inspectorUndoActive = true;
   commitInspectorChange(
     `Resized ${target.kind === "block" ? target.node.type : target.node.label}`,
     true,
   );
+  endInspectorEdit();
 }
 
 function beginCanvasResize(
@@ -4819,6 +4868,7 @@ function startInlineEdit(
     el.classList.remove("inline-editing");
     el.removeEventListener("blur", finish);
     el.removeEventListener("keydown", onKeydown);
+    el.removeEventListener("paste", onPaste);
   };
   const finish = () => {
     if (finished) return;
@@ -4842,6 +4892,9 @@ function startInlineEdit(
     renderCanvas();
     renderProperties();
   };
+  const onPaste = (event: ClipboardEvent): void => {
+    handlePlainTextPaste(event);
+  };
   const onKeydown = (event: KeyboardEvent): void => {
     if (event.key === "Escape") {
       event.preventDefault();
@@ -4862,6 +4915,7 @@ function startInlineEdit(
   };
   el.addEventListener("blur", finish);
   el.addEventListener("keydown", onKeydown);
+  el.addEventListener("paste", onPaste);
 }
 
 function defaultProps(type: BlockType): Record<string, string> {
@@ -5562,12 +5616,13 @@ function setMode(mode: Mode): void {
     );
     return;
   }
-  state.mode = mode;
-  $("mode-visual").classList.toggle("active", mode === "visual");
-  $("mode-code").classList.toggle("active", mode === "code");
+
   const codeEl = $("code-editor");
 
   if (mode === "code") {
+    state.mode = mode;
+    $("mode-visual").classList.toggle("active", false);
+    $("mode-code").classList.toggle("active", true);
     state.rawCode =
       state.managedStatus === "detached" ||
       state.managedStatus === "out-of-sync"
@@ -5578,27 +5633,34 @@ function setMode(mode: Mode): void {
     $("canvas").classList.add("hidden");
     $("preview-frame").classList.add("hidden");
     cm?.focus();
-  } else {
-    const codeVal = getCode();
-    if (codeVal !== state.rawCode) {
-      if (state.managedStatus !== "detached") {
-        showModal(
-          "Save Code Changes First",
-          "Managed pages cannot safely round-trip structural Astro edits back into visual mode. Save to detach this page, or discard your code changes first.",
-          [{ label: "OK", kind: "primary", onClick: closeModal }],
-        );
-        return;
-      }
-      state.rawCode = codeVal;
-      parsePage(state.rawCode);
-      markDirty(true);
-    }
-    $("canvas").classList.remove("hidden");
-    codeEl.classList.add("hidden");
-    $("preview-frame").classList.add("hidden");
-    renderCanvas();
-    renderProperties();
+    updateUndoRedoButtons();
+    return;
   }
+
+  const codeVal = getCode();
+  if (shouldBlockManagedVisualSwitch(codeVal, state.rawCode, state.managedStatus)) {
+    showModal(
+      "Save Code Changes First",
+      "Managed pages cannot safely round-trip structural Astro edits back into visual mode. Save to detach this page, or discard your code changes first.",
+      [{ label: "OK", kind: "primary", onClick: closeModal }],
+    );
+    return;
+  }
+  if (codeVal !== state.rawCode) {
+    state.rawCode = codeVal;
+    parsePage(state.rawCode);
+    markDirty(true);
+  }
+
+  state.mode = mode;
+  $("mode-visual").classList.toggle("active", true);
+  $("mode-code").classList.toggle("active", false);
+  $("canvas").classList.remove("hidden");
+  codeEl.classList.add("hidden");
+  $("preview-frame").classList.add("hidden");
+  renderCanvas();
+  renderProperties();
+  updateUndoRedoButtons();
 }
 
 /* ---------- Save ---------- */
@@ -5765,7 +5827,7 @@ async function performSave(): Promise<boolean> {
 
 async function save(): Promise<void> {
   if (!isGlobalDirty(state)) {
-    await performSave();
+    setStatus("Nothing to save.");
     return;
   }
   const wrap = document.createElement("div");
@@ -6040,6 +6102,18 @@ async function closeProject(): Promise<void> {
 
 /* ---------- Undo / redo ---------- */
 
+function updateUndoRedoButtons(): void {
+  syncUndoRedoToolbar({
+    mode: state.mode,
+    visualUndoDepth: state.undo.length,
+    visualRedoDepth: state.redo.length,
+    codeCanUndo: cm?.canUndo() ?? false,
+    codeCanRedo: cm?.canRedo() ?? false,
+    undoButton: $("btn-undo") as HTMLButtonElement,
+    redoButton: $("btn-redo") as HTMLButtonElement,
+  });
+}
+
 function doUndo(): void {
   const prev = state.undo.pop();
   if (!prev) return;
@@ -6054,6 +6128,7 @@ function doUndo(): void {
   renderLayers();
   renderCanvas();
   renderProperties();
+  updateUndoRedoButtons();
 }
 
 function doRedo(): void {
@@ -6070,6 +6145,7 @@ function doRedo(): void {
   renderLayers();
   renderCanvas();
   renderProperties();
+  updateUndoRedoButtons();
 }
 
 function onKeydown(e: KeyboardEvent): void {
@@ -6092,6 +6168,20 @@ function onKeydown(e: KeyboardEvent): void {
     void save();
     e.preventDefault();
     return;
+  }
+  if (state.mode === "code" && mod) {
+    if (e.key === "z" && !e.shiftKey) {
+      cm?.undo();
+      updateUndoRedoButtons();
+      e.preventDefault();
+      return;
+    }
+    if (e.key === "y" || (e.key === "z" && e.shiftKey)) {
+      cm?.redo();
+      updateUndoRedoButtons();
+      e.preventDefault();
+      return;
+    }
   }
   if (state.mode !== "visual") return;
   if (editing) return;
@@ -6121,12 +6211,34 @@ function onKeydown(e: KeyboardEvent): void {
     if (block) {
       duplicateSelectedBlock(block);
       e.preventDefault();
+    } else if (state.selectedSectionId && !state.selectedId) {
+      duplicateSection(state.selectedSectionId);
+      e.preventDefault();
     }
+  } else if (mod && e.key === "c") {
+    copySelectionToClipboard();
+    e.preventDefault();
+  } else if (mod && e.key === "x") {
+    void cutSelectionToClipboard();
+    e.preventDefault();
+  } else if (mod && e.key === "v") {
+    pasteFromClipboard();
+    e.preventDefault();
   } else if (e.key === "Delete" || e.key === "Backspace") {
     const block = findSelectedBlock();
     if (block && !block.locked) {
       void deleteBlock(block);
       e.preventDefault();
+    } else if (
+      !block &&
+      state.selectedSectionId &&
+      !state.selectedId
+    ) {
+      const section = findSection(state.selectedSectionId);
+      if (section && !section.locked) {
+        void deleteSection(state.selectedSectionId);
+        e.preventDefault();
+      }
     }
   }
 }
@@ -6678,8 +6790,17 @@ function init(): void {
   $("btn-design-system").onclick = () => void openDesignSystemModal();
   $("mode-visual").onclick = () => setMode("visual");
   $("mode-code").onclick = () => setMode("code");
-  $("btn-undo").onclick = () => doUndo();
-  $("btn-redo").onclick = () => doRedo();
+  $("btn-undo").onclick = () => {
+    if (state.mode === "code") cm?.undo();
+    else doUndo();
+    updateUndoRedoButtons();
+  };
+  $("btn-redo").onclick = () => {
+    if (state.mode === "code") cm?.redo();
+    else doRedo();
+    updateUndoRedoButtons();
+  };
+  updateUndoRedoButtons();
   $("btn-save").onclick = () => void save();
   $("btn-publish").onclick = () => void publishSite();
   $("btn-preview").onclick = () => void togglePreview();

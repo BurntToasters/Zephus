@@ -43,8 +43,18 @@
 ### SEO Best Practices
 - **SEO Warnings:** Integrated page meta description validation (warning if empty) and duplicate H1 tag checks into the "Next Actions" helper panel list, along with quick actions to navigate directly to Page Settings or focus the duplicate block.
 
+### Editor Stability & Completeness
+- **Visual/Code Mode:** Fixed a desync where switching to Visual on a managed page with unsaved code edits left the CodeMirror editor visible while tabs showed Visual.
+- **Undo Stack:** Keyboard canvas resize no longer pushes duplicate undo snapshots; Undo/Redo toolbar buttons disable when empty (and follow CodeMirror history in Code mode).
+- **Keyboard Shortcuts:** Delete/Backspace removes a selected section (not only blocks); Cmd/Ctrl+D duplicates sections; Cmd/Ctrl+C/X/V copy, cut, and paste blocks or sections.
+- **Inline Editing:** Pasting into contenteditable text now inserts plain text only, matching the innerText commit model.
+- **Code Mode Undo:** Toolbar and keyboard undo/redo work against CodeMirror history while in Code mode.
+- **Save UX:** Save when nothing is dirty shows “Nothing to save” without running a full save pass.
+
 ### Codebase & Quality
-- **Code Quality:** Formatted the renderer assets and scripts with Prettier, and successfully verified that all 178 unit tests, configuration checks, and syntax checks pass.
+- **Shared Render Helpers:** Extracted mirrored HTML/CSS helpers into `src/shared/renderHelpers.ts` so the build and editor renderers stay single-sourced.
+- **Editor Commands:** Pulled mode-guard and clipboard toolbar helpers into `src/renderer/editorCommands.ts`; removed unused Solid demo mount.
+- **Tests:** Added unit coverage for shared helpers and editor command guards; all 178 unit tests pass.
 
 ## ℹ️ Release Info
 

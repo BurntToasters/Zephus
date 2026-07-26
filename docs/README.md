@@ -270,7 +270,7 @@ If you edit a page outside Zephus (in VS Code, Git, etc.), Zephus detects it and
 - **No custom components**: Fixed 20 block types (no component builder)
 - **Single schema version**: Major Zephus updates may require migration
 - **Detach/reattach**: Reattaching overwrites code changes
-- **Design tokens**: Live preview except Google Fonts (which don't load in CSP sandbox)
+- **Design tokens**: Live preview, including Google Fonts loaded in the editor workspace
 
 ---
 

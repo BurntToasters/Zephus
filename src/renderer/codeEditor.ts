@@ -4,17 +4,23 @@ import { EditorView, basicSetup } from "codemirror";
 import { EditorState, Compartment } from "@codemirror/state";
 import { html } from "@codemirror/lang-html";
 import { oneDark } from "@codemirror/theme-one-dark";
+import { redo, redoDepth, undo, undoDepth } from "@codemirror/commands";
 
 export interface CodeEditor {
   getValue(): string;
   setValue(value: string): void;
   focus(): void;
+  undo(): void;
+  redo(): void;
+  canUndo(): boolean;
+  canRedo(): boolean;
 }
 
 /** Mounts a CodeMirror editor into the given container element. */
 export function createCodeEditor(
   container: HTMLElement,
   onChange: () => void,
+  onHistoryChange?: () => void,
 ): CodeEditor {
   const language = new Compartment();
 
@@ -28,6 +34,9 @@ export function createCodeEditor(
         oneDark,
         EditorView.updateListener.of((update) => {
           if (update.docChanged) onChange();
+          if (update.docChanged || update.transactions.some((tr) => tr.isUserEvent("undo") || tr.isUserEvent("redo"))) {
+            onHistoryChange?.();
+          }
         }),
         EditorView.theme({
           "&": { height: "100%", fontSize: "var(--code-font-size, 13px)" },
@@ -47,5 +56,15 @@ export function createCodeEditor(
       });
     },
     focus: () => view.focus(),
+    undo: () => {
+      undo(view);
+      onHistoryChange?.();
+    },
+    redo: () => {
+      redo(view);
+      onHistoryChange?.();
+    },
+    canUndo: () => undoDepth(view.state) > 0,
+    canRedo: () => redoDepth(view.state) > 0,
   };
 }
