@@ -4,6 +4,7 @@
 // TODO: Split UI rendering from state management.
 
 import { createEditorGitActions } from "./editorGit";
+import { assembleManagedPage, splitManagedPageSource } from "./editorSerialize";
 import {
   EditorClipboardPayload,
   formatPanelMountFailureStatus,
@@ -22,7 +23,7 @@ import {
   splitLines,
   splitPair,
 } from "../shared/renderHelpers";
-import { renderBlockHtml, wrapSectionChildren, renderSectionsMarkup } from "../shared/blockRender";
+import { renderBlockHtml, wrapSectionChildren } from "../shared/blockRender";
 import { BUILD_MAX_HEADING_LEVEL } from "../shared/blockRenderFixtures";
 import {
   clearPageChanges,
@@ -3128,39 +3129,10 @@ async function onExternalChange(): Promise<void> {
 // untouched content round-trips. Unknown nodes become verbatim "html" blocks.
 
 function capturePageFrame(raw: string): string {
-  state.frontmatter = "";
-  state.prefix = "";
-  state.suffix = "";
-
-  let rest = raw;
-  const fm = raw.match(/^(---\r?\n[\s\S]*?\r?\n---\r?\n?)/);
-  if (fm && fm[1]) {
-    state.frontmatter = fm[1];
-    rest = raw.slice(fm[1].length);
-  }
-
-  // Prefer a <body> region; otherwise the inner of the single root element.
-  const bodyMatch = rest.match(
-    /([\s\S]*<body[^>]*>)([\s\S]*?)(<\/body>[\s\S]*)/i,
-  );
-  let inner: string;
-  if (bodyMatch) {
-    state.prefix = bodyMatch[1] ?? "";
-    inner = bodyMatch[2] ?? "";
-    state.suffix = bodyMatch[3] ?? "";
-  } else {
-    const rootMatch = rest.match(
-      /^(\s*<([A-Za-z][\w.-]*)\b[^>]*>)([\s\S]*)(<\/\2>\s*)$/,
-    );
-    if (rootMatch) {
-      state.prefix = rootMatch[1] ?? "";
-      inner = rootMatch[3] ?? "";
-      state.suffix = rootMatch[4] ?? "";
-    } else {
-      inner = rest;
-    }
-  }
-
+  const { frame, inner } = splitManagedPageSource(raw);
+  state.frontmatter = frame.frontmatter;
+  state.prefix = frame.prefix;
+  state.suffix = frame.suffix;
   return inner;
 }
 
@@ -3508,14 +3480,15 @@ function appendCappedLog(el: HTMLElement, chunk: string): void {
 }
 
 function serializeBlocks(): string {
-  const core = renderSectionsMarkup(state.sections, (block) =>
-    blockToHtml(block as Block, "desktop", false),
+  return assembleManagedPage(
+    {
+      frontmatter: state.frontmatter,
+      prefix: state.prefix,
+      suffix: state.suffix,
+    },
+    state.sections,
+    (block) => blockToHtml(block as Block, "desktop", false),
   );
-  const body = core
-    .split("\n")
-    .map((line) => (line ? `    ${line}` : line))
-    .join("\n");
-  return `${state.frontmatter}${state.prefix}\n${body}\n${state.suffix}`;
 }
 
 function currentManagedSource(): string {

@@ -67,13 +67,15 @@
 - **Push:** Push the current branch to its configured upstream from the Git panel (hidden on detached HEAD).
 - **Pull:** Fast-forward pull (`git pull --ff-only`) from the Git panel toolbar.
 - **Init:** Initialize a Git repository from the panel when the project folder is not yet a repo.
+- **Docs:** User guide covers Git panel workflows and clarifies autosave vs crash-recovery drafts.
 
 ### Codebase & Quality
 - **Shared Render Helpers:** Extracted mirrored HTML/CSS helpers into `src/shared/renderHelpers.ts` so the build and editor renderers stay single-sourced.
 - **Shared block renderer:** `src/shared/blockRender.ts` unifies `renderBlockNode` / editor `blockToHtml` and section wrappers.
 - **Editor Commands:** Pulled mode-guard and clipboard toolbar helpers into `src/renderer/editorCommands.ts`; removed unused Solid demo mount.
 - **Editor Git:** Git panel IPC actions live in `src/renderer/editorGit.ts` with unit tests.
-- **Tests:** Added unit coverage for shared helpers, block render parity, and editor command guards; **207** unit tests pass.
+- **Editor serialize:** Managed page split/assemble in `src/renderer/editorSerialize.ts`.
+- **Tests:** Added unit coverage for shared helpers, block render parity, and editor command guards; **211** unit tests pass.
 
 ## ℹ️ Release Info
 
