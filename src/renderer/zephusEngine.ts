@@ -6,6 +6,7 @@
 import { createCodeEditor, CodeEditor } from "./codeEditor";
 import {
   EditorClipboardPayload,
+  formatPanelMountFailureStatus,
   handlePlainTextPaste,
   isBlockTypeAllowed,
   shouldBlockManagedVisualSwitch,
@@ -516,6 +517,7 @@ const editorRules = {
 
 let editorClipboard: EditorClipboardPayload | null = null;
 let skipDeleteConfirm = false;
+const panelMountFailures: string[] = [];
 
 /** Cache of saved reusable sections, refreshed by renderTemplates(). */
 let reusableSectionsCache: ReusableSection[] = [];
@@ -2219,6 +2221,24 @@ function renderEditorStateBanner(): void {
     );
   }
 
+  if (panelMountFailures.length > 0) {
+    addBanner(
+      "warning",
+      formatPanelMountFailureStatus(panelMountFailures) +
+        (panelMountFailures.includes("Canvas")
+          ? " Reload the window to retry the canvas."
+          : " Some sidebar panels may be unavailable."),
+      panelMountFailures.includes("Canvas")
+        ? [
+            {
+              label: "Reload Window",
+              onClick: () => window.location.reload(),
+            },
+          ]
+        : [],
+    );
+  }
+
   updateEditorStateBanners(banners);
   host.classList.toggle("hidden", banners.length === 0);
 }
@@ -3047,7 +3067,7 @@ async function loadPage(
     );
   } else if (state.managedStatus === "detached") {
     setStatus(
-      "Detached page loaded in code mode. Reattach it from Page Settings to restore visual editing.",
+      "Detached page loaded in code mode. Reattach it from the editor banner or Page Settings to restore visual editing.",
     );
   } else {
     setStatus("Editing " + page);
@@ -4126,8 +4146,10 @@ function copySelectionToClipboard(): void {
         section: cloneSections([section])[0]!,
       };
       setStatus("Copied section.");
+      return;
     }
   }
+  setStatus("Select a block or section to copy.");
 }
 
 async function cutSelectionToClipboard(): Promise<void> {
@@ -4157,7 +4179,10 @@ async function cutSelectionToClipboard(): Promise<void> {
 }
 
 function pasteFromClipboard(): void {
-  if (!editorClipboard) return;
+  if (!editorClipboard) {
+    setStatus("Clipboard is empty. Copy a block or section first.");
+    return;
+  }
   if (editorClipboard.kind === "block") {
     const source = editorClipboard.block;
     if (!isBlockTypeAllowed(source.type, editorRules.allowedBlocks)) {
@@ -5473,6 +5498,7 @@ function renderProperties(): void {
       blockType: block.type,
       props: block.props,
       style: block.style,
+      raw: block.raw,
       currentViewport: state.currentViewport,
       maxHeadingLevel: editorRules.maxHeadingLevel,
       locked: !!block.locked,
@@ -5486,6 +5512,13 @@ function renderProperties(): void {
           rerenderProperties,
         );
       },
+      onRawChange:
+        block.type === "html"
+          ? (value) => {
+              block.raw = value;
+              commitInspectorChange("Updated HTML markup");
+            }
+          : undefined,
       onStyleChange: (key, value, rerenderProperties) => {
         block.style = block.style ?? {};
         (block.style as Record<string, unknown>)[key] = value;
@@ -5610,8 +5643,8 @@ function setMode(mode: Mode): void {
     showModal(
       "Visual Mode Unavailable",
       state.managedStatus === "out-of-sync"
-        ? "This page was edited outside Zephus. Review it in Code mode, then reattach it from Page Settings to resume GUI editing."
-        : "This page was detached from visual mode after a structural code edit. Reattach it from Page Settings to resume GUI editing.",
+        ? "This page was edited outside Zephus. Review it in Code mode, then reattach it from the editor banner or Page Settings to resume GUI editing."
+        : "This page was detached from visual mode after a structural code edit. Reattach it from the editor banner or Page Settings to resume GUI editing.",
       [{ label: "OK", kind: "primary", onClick: closeModal }],
     );
     return;
@@ -6826,7 +6859,7 @@ function init(): void {
     try {
       mountNextActions(nextActionsContainer);
     } catch (e) {
-      console.error("Failed to mount SolidJS Next Actions:", e);
+      noteMountFailure("Next Actions", e);
     }
   }
 
@@ -6836,7 +6869,7 @@ function init(): void {
     try {
       mountGitBranch(gitBranchContainer);
     } catch (e) {
-      console.error("Failed to mount SolidJS Git Branch:", e);
+      noteMountFailure("Git Branch", e);
     }
   }
   const gitPanelContainer = $("git-panel");
@@ -6844,7 +6877,7 @@ function init(): void {
     try {
       mountGitPanel(gitPanelContainer);
     } catch (e) {
-      console.error("Failed to mount SolidJS Git Panel:", e);
+      noteMountFailure("Git Panel", e);
     }
   }
 
@@ -6859,7 +6892,7 @@ function init(): void {
         addBlockAt(type, section ? section.children.length : 0, sectionId);
       });
     } catch (e) {
-      console.error("Failed to mount SolidJS Block Palette:", e);
+      noteMountFailure("Block Palette", e);
     }
   }
 
@@ -6872,7 +6905,7 @@ function init(): void {
         onManage: (page) => void openPageMetaModal(page),
       });
     } catch (e) {
-      console.error("Failed to mount SolidJS Page List:", e);
+      noteMountFailure("Page List", e);
     }
   }
 
@@ -6887,7 +6920,7 @@ function init(): void {
         onReviewNavigation: () => void regenerateNav(),
       });
     } catch (e) {
-      console.error("Failed to mount SolidJS Nav List:", e);
+      noteMountFailure("Nav List", e);
     }
   }
 
@@ -6906,7 +6939,7 @@ function init(): void {
         },
       });
     } catch (e) {
-      console.error("Failed to mount SolidJS Recent Projects:", e);
+      noteMountFailure("Recent Projects", e);
     }
   }
 
@@ -6927,7 +6960,7 @@ function init(): void {
         },
       });
     } catch (e) {
-      console.error("Failed to mount SolidJS Themes Tab:", e);
+      noteMountFailure("Themes Tab", e);
     }
   }
 
@@ -7057,7 +7090,7 @@ function init(): void {
         },
       });
     } catch (e) {
-      console.error("Failed to mount SolidJS Settings Tab:", e);
+      noteMountFailure("Settings Tab", e);
     }
   }
 
@@ -7076,7 +7109,7 @@ function init(): void {
         },
       });
     } catch (e) {
-      console.error("Failed to mount SolidJS Home Draft Recovery:", e);
+      noteMountFailure("Home Draft Recovery", e);
     }
   }
 
@@ -7085,7 +7118,7 @@ function init(): void {
     try {
       mountAboutLicenses(aboutLicensesContainer);
     } catch (e) {
-      console.error("Failed to mount SolidJS About Licenses:", e);
+      noteMountFailure("About Licenses", e);
     }
   }
 
@@ -7108,7 +7141,7 @@ function init(): void {
         },
       });
     } catch (e) {
-      console.error("Failed to mount SolidJS Sidebar Update Status:", e);
+      noteMountFailure("Sidebar Update Status", e);
     }
   }
 
@@ -7117,7 +7150,7 @@ function init(): void {
     try {
       mountEditorStateBanner(editorStateBannerContainer);
     } catch (e) {
-      console.error("Failed to mount SolidJS Editor State Banner:", e);
+      noteMountFailure("Editor State Banner", e);
     }
   }
 
@@ -7142,7 +7175,7 @@ function init(): void {
         },
       });
     } catch (e) {
-      console.error("Failed to mount SolidJS Layers:", e);
+      noteMountFailure("Layers", e);
     }
   }
 
@@ -7333,7 +7366,7 @@ function init(): void {
         },
       });
     } catch (e) {
-      console.error("Failed to mount SolidJS Canvas:", e);
+      noteMountFailure("Canvas", e);
     }
   }
 
@@ -7345,7 +7378,7 @@ function init(): void {
         addSectionAt(state.sections.length, tpl);
       });
     } catch (e) {
-      console.error("Failed to mount SolidJS Template Palette:", e);
+      noteMountFailure("Template Palette", e);
     }
   }
 
@@ -7354,10 +7387,11 @@ function init(): void {
     try {
       mountProjectOverview(projectOverviewContainer);
     } catch (e) {
-      console.error("Failed to mount SolidJS Project Overview:", e);
+      noteMountFailure("Project Overview", e);
     }
   }
 
+  reportPanelMountFailures();
   void bootstrap();
 }
 
@@ -7418,3 +7452,31 @@ async function showOnboardingIfNew(): Promise<void> {
 }
 
 document.addEventListener("DOMContentLoaded", init);
+
+function noteMountFailure(label: string, error: unknown): void {
+  console.error(`Failed to mount SolidJS ${label}:`, error);
+  if (!panelMountFailures.includes(label)) panelMountFailures.push(label);
+}
+
+function reportPanelMountFailures(): void {
+  if (panelMountFailures.length === 0) return;
+  setStatus(formatPanelMountFailureStatus(panelMountFailures));
+  if (panelMountFailures.includes("Canvas")) {
+    showModal(
+      "Canvas Failed to Load",
+      "The visual editor canvas did not start. Reload the window to try again.",
+      [
+        {
+          label: "Reload Window",
+          kind: "primary",
+          onClick: () => {
+            closeModal();
+            window.location.reload();
+          },
+        },
+        { label: "Continue", kind: "ghost", onClick: closeModal },
+      ],
+    );
+  }
+  renderEditorStateBanner();
+}

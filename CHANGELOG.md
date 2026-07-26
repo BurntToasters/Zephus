@@ -50,6 +50,9 @@
 - **Inline Editing:** Pasting into contenteditable text now inserts plain text only, matching the innerText commit model.
 - **Code Mode Undo:** Toolbar and keyboard undo/redo work against CodeMirror history while in Code mode.
 - **Save UX:** Save when nothing is dirty shows “Nothing to save” without running a full save pass.
+- **Panel Mount Failures:** SolidJS panel mount errors now surface in status, the editor banner, and a reload prompt when the canvas fails.
+- **HTML Blocks:** Inspector includes a markup textarea so HTML blocks can be edited without leaving Visual mode.
+- **Help Guide:** Documents Code-mode undo/redo and reattach via the editor banner or Page Settings.
 
 ### Codebase & Quality
 - **Shared Render Helpers:** Extracted mirrored HTML/CSS helpers into `src/shared/renderHelpers.ts` so the build and editor renderers stay single-sourced.

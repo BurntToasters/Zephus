@@ -52,3 +52,28 @@ export function syncUndoRedoToolbar(options: {
     String(options.redoButton.disabled),
   );
 }
+
+/**
+ * Mounts a Solid panel when its container exists. Missing containers are
+ * treated as optional (success). Thrown mount errors are reported via onError.
+ */
+export function tryMountPanel(
+  label: string,
+  container: HTMLElement | null | undefined,
+  mount: (container: HTMLElement) => void,
+  onError?: (label: string, error: unknown) => void,
+): boolean {
+  if (!container) return true;
+  try {
+    mount(container);
+    return true;
+  } catch (error) {
+    onError?.(label, error);
+    return false;
+  }
+}
+
+export function formatPanelMountFailureStatus(failures: string[]): string {
+  if (failures.length === 0) return "";
+  return `Some editor panels failed to load: ${failures.join(", ")}.`;
+}

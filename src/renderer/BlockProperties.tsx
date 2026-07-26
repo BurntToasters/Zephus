@@ -39,6 +39,8 @@ export interface BlockPropertiesState {
     value: string,
     rerenderProperties?: boolean,
   ) => void;
+  raw?: string;
+  onRawChange?: (value: string) => void;
   onStyleChange: (
     key: keyof BlockStyle,
     value: string | boolean | string[],
@@ -407,8 +409,17 @@ function ContentGroup(props: { state: BlockPropertiesState }) {
     case "html":
       return (
         <Group title="Content">
+          <TextareaField
+            label="Markup"
+            value={state.raw ?? ""}
+            rows={12}
+            onFocus={state.onFocus}
+            onBlur={state.onBlur}
+            onChange={(next) => state.onRawChange?.(next)}
+          />
           <p class="muted">
-            Raw HTML / structural block. Edit the markup in Code mode.
+            Edits update this HTML block in visual mode. Use Code mode for
+            full-page Astro source.
           </p>
         </Group>
       );
