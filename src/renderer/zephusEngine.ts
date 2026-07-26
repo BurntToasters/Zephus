@@ -1,9 +1,13 @@
 // Zephus renderer logic. Talks to the main process exclusively through
 // window.zephus (the preload bridge). No Node APIs are used here.
 
-// TODO: Split UI rendering from state management (see editorCommands, editorGit, editorSerialize).
+// TODO: Split UI rendering from state management (see editorCommands, editorGit, editorSerialize, editorBlockRender).
 
 import { createEditorGitActions } from "./editorGit";
+import {
+  blockToHtmlForEditor,
+  sectionToHtmlForEditor,
+} from "./editorBlockRender";
 import { assembleManagedPage, splitManagedPageSource } from "./editorSerialize";
 import {
   EditorClipboardPayload,
@@ -23,8 +27,6 @@ import {
   splitLines,
   splitPair,
 } from "../shared/renderHelpers";
-import { renderBlockHtml, wrapSectionChildren } from "../shared/blockRender";
-import { BUILD_MAX_HEADING_LEVEL } from "../shared/blockRenderFixtures";
 import {
   clearPageChanges,
   clearSiteChanges,
@@ -3380,52 +3382,19 @@ function styleFromLegacyProps(el: HTMLElement): BlockStyle | undefined {
   return Object.values(style).some(Boolean) ? style : undefined;
 }
 
-/**
- * Defense-in-depth sanitizer for raw `html` blocks shown on the live editor
- * canvas (which runs in the renderer with the preload bridge in scope). The
- * production CSP already blocks inline handlers, but we additionally strip
- * <script>/<object>/<embed>, on* event-handler attributes, and
- * javascript:/vbscript: URLs. Parsing into a <template> is inert (no script
- * execution, no resource loads). Canvas-only: the serialized/built output keeps
- * the user's authored HTML verbatim.
- */
-function sanitizeHtmlForCanvas(html: string): string {
-  const tpl = document.createElement("template");
-  tpl.innerHTML = html;
-  const toRemove: Element[] = [];
-  const walker = document.createTreeWalker(
-    tpl.content,
-    NodeFilter.SHOW_ELEMENT,
-  );
-  let node = walker.nextNode() as Element | null;
-  while (node) {
-    const tag = node.tagName.toLowerCase();
-    if (
-      tag === "script" ||
-      tag === "object" ||
-      tag === "embed" ||
-      tag === "iframe"
-    ) {
-      toRemove.push(node);
-    } else {
-      for (const attr of Array.from(node.attributes)) {
-        const name = attr.name.toLowerCase();
-        if (name.startsWith("on")) {
-          node.removeAttribute(attr.name);
-        } else if (
-          name === "srcdoc" ||
-          name === "formaction" ||
-          ((name === "href" || name === "src" || name === "xlink:href") &&
-            /^\s*(javascript|vbscript|data):/i.test(attr.value))
-        ) {
-          node.removeAttribute(attr.name);
-        }
-      }
-    }
-    node = walker.nextNode() as Element | null;
-  }
-  for (const el of toRemove) el.remove();
-  return tpl.innerHTML;
+function editorRenderOptions(
+  viewport = state.currentViewport,
+  forCanvas = false,
+): {
+  viewport: typeof state.currentViewport;
+  forCanvas: boolean;
+  canvasMaxHeadingLevel: number;
+} {
+  return {
+    viewport,
+    forCanvas,
+    canvasMaxHeadingLevel: editorRules.maxHeadingLevel,
+  };
 }
 
 function blockToHtml(
@@ -3433,14 +3402,7 @@ function blockToHtml(
   viewport = state.currentViewport,
   forCanvas = false,
 ): string {
-  return renderBlockHtml(block, {
-    viewport,
-    forCanvas,
-    maxHeadingLevel: forCanvas
-      ? editorRules.maxHeadingLevel
-      : BUILD_MAX_HEADING_LEVEL,
-    sanitizeHtmlForCanvas: forCanvas ? sanitizeHtmlForCanvas : undefined,
-  });
+  return blockToHtmlForEditor(block, editorRenderOptions(viewport, forCanvas));
 }
 
 function sectionToHtml(
@@ -3448,10 +3410,7 @@ function sectionToHtml(
   viewport = state.currentViewport,
   forCanvas = false,
 ): string {
-  const body = section.children
-    .map((block) => blockToHtml(block as Block, viewport, forCanvas))
-    .join("\n");
-  return wrapSectionChildren(section, body, { viewport, forCanvas });
+  return sectionToHtmlForEditor(section, editorRenderOptions(viewport, forCanvas));
 }
 
 /** Appends to a log element, trimming the front so it can't grow without bound. */
