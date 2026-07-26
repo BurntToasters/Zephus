@@ -43,6 +43,11 @@ This guide explains how to create, edit, preview, and publish Astro sites with Z
    - Save and sync issues
    - Performance tips
 
+6. **[Development](./DEVELOPMENT.md)**: Contributing & architecture
+   - Build/test commands
+   - Render parity between build and editor
+   - Renderer module layout (`editorGit`, `editorSerialize`, …)
+
 ---
 
 ## What is Zephus?
@@ -283,6 +288,7 @@ If you edit a page outside Zephus (in VS Code, Git, etc.), Zephus detects it and
 - 📋 [Workflows](./WORKFLOWS.md): Detailed tutorials
 - ⚙️ [Settings](./SETTINGS.md): Configuration
 - 🐛 [Troubleshooting](./TROUBLESHOOTING.md): Common issues & fixes
+- 🛠️ [Development](./DEVELOPMENT.md): Build, tests, render parity
 
 **External Links:**
 - [Astro Documentation](https://docs.astro.build): The framework Zephus uses

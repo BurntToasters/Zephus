@@ -67,7 +67,7 @@
 - **Push:** Push the current branch to its configured upstream from the Git panel (hidden on detached HEAD).
 - **Pull:** Fast-forward pull (`git pull --ff-only`) from the Git panel toolbar.
 - **Init:** Initialize a Git repository from the panel when the project folder is not yet a repo.
-- **Docs:** User guide covers Git panel workflows and clarifies autosave vs crash-recovery drafts.
+- **Docs:** User guide covers Git panel workflows and clarifies autosave vs crash-recovery drafts; [Development guide](./docs/DEVELOPMENT.md) documents render parity and renderer modules.
 
 ### Codebase & Quality
 - **Shared Render Helpers:** Extracted mirrored HTML/CSS helpers into `src/shared/renderHelpers.ts` so the build and editor renderers stay single-sourced.
