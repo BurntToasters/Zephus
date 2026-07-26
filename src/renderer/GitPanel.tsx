@@ -1,11 +1,13 @@
 import { render } from "solid-js/web";
-import { createSignal, For, Show, createEffect } from "solid-js";
+import { For, Show, createEffect, createSignal } from "solid-js";
 
 export interface GitStatusData {
   available: boolean;
   detachedHead: boolean;
   branch: string | null;
   zephusIgnored?: boolean;
+  notARepository?: boolean;
+  error?: string;
   modified: string[];
   added: string[];
   deleted: string[];
@@ -15,8 +17,15 @@ const [gitStatus, setGitStatus] = createSignal<GitStatusData | null>(null);
 
 let gitPanelHandlers: {
   onRefresh: () => void;
-  onCommit: (message: string) => void | Promise<void>;
+  onCommit: (message: string, paths?: string[]) => void | Promise<void>;
+  onPush: () => void | Promise<void>;
+  onPull: () => void | Promise<void>;
+  onInitRepo: () => void | Promise<void>;
 } | null = null;
+
+function listChangedFiles(status: GitStatusData): string[] {
+  return [...status.modified, ...status.added, ...status.deleted];
+}
 
 function runIconRefresh() {
   setTimeout(() => {
@@ -67,11 +76,41 @@ export function GitBranchTag() {
 export function GitPanelContent() {
   const [commitMessage, setCommitMessage] = createSignal("");
   const [committing, setCommitting] = createSignal(false);
+  const [pushing, setPushing] = createSignal(false);
+  const [pulling, setPulling] = createSignal(false);
+  const [initializing, setInitializing] = createSignal(false);
+  const [selectedFiles, setSelectedFiles] = createSignal<Set<string>>(new Set());
 
   createEffect(() => {
     gitStatus();
     runIconRefresh();
   });
+
+  createEffect(() => {
+    const status = gitStatus();
+    if (!status) {
+      setSelectedFiles(new Set());
+      return;
+    }
+    setSelectedFiles(new Set(listChangedFiles(status)));
+  });
+
+  const toggleFile = (file: string, checked: boolean) => {
+    setSelectedFiles((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(file);
+      else next.delete(file);
+      return next;
+    });
+  };
+
+  const selectAllFiles = () => {
+    const status = gitStatus();
+    if (!status) return;
+    setSelectedFiles(new Set(listChangedFiles(status)));
+  };
+
+  const clearFileSelection = () => setSelectedFiles(new Set<string>());
 
   const hasChanges = () => {
     const status = gitStatus();
@@ -83,24 +122,112 @@ export function GitPanelContent() {
     );
   };
 
+  const canSyncRemote = () => {
+    const status = gitStatus();
+    return !!status?.available && !status.detachedHead && !!status.branch;
+  };
+
   const submitCommit = async () => {
     const message = commitMessage().trim();
     if (!message || !gitPanelHandlers || committing()) return;
+    const paths = [...selectedFiles()];
+    if (paths.length === 0) return;
+    const status = gitStatus();
+    const allPaths = status ? listChangedFiles(status) : [];
+    const commitAll =
+      allPaths.length > 0 && paths.length === allPaths.length;
     setCommitting(true);
     try {
-      await gitPanelHandlers.onCommit(message);
+      await gitPanelHandlers.onCommit(message, commitAll ? undefined : paths);
       setCommitMessage("");
     } finally {
       setCommitting(false);
     }
   };
 
+  const selectedCount = () => selectedFiles().size;
+
+  const commitButtonLabel = () => {
+    const status = gitStatus();
+    if (!status) return "Commit";
+    const all = listChangedFiles(status);
+    const n = selectedCount();
+    if (n === 0) return "Commit";
+    if (n === all.length) return committing() ? "Committing…" : "Commit All Changes";
+    return committing() ? "Committing…" : `Commit ${n} Selected`;
+  };
+
+  const runPull = async () => {
+    if (!gitPanelHandlers || pulling() || pushing() || committing()) return;
+    setPulling(true);
+    try {
+      await gitPanelHandlers.onPull();
+    } finally {
+      setPulling(false);
+    }
+  };
+
+  const runPush = async () => {
+    if (!gitPanelHandlers || pushing() || pulling() || committing()) return;
+    setPushing(true);
+    try {
+      await gitPanelHandlers.onPush();
+    } finally {
+      setPushing(false);
+    }
+  };
+
+  const runInitRepo = async () => {
+    if (!gitPanelHandlers || initializing()) return;
+    setInitializing(true);
+    try {
+      await gitPanelHandlers.onInitRepo();
+    } finally {
+      setInitializing(false);
+    }
+  };
+
   return (
     <Show
-      when={gitStatus() && gitStatus()?.available}
-      fallback={<p class="muted">Git status unavailable.</p>}
+      when={gitStatus()}
+      fallback={<p class="muted">Loading Git status…</p>}
     >
-      <div class="git-status-wrapper">
+      {(status) => (
+        <Show
+          when={status().available}
+          fallback={
+            <div class="git-status-wrapper">
+              <p class="muted">
+                {status().notARepository
+                  ? "This project is not a Git repository yet."
+                  : "Git status unavailable."}
+              </p>
+              <Show when={status().error}>
+                <p class="muted git-error-detail">{status().error}</p>
+              </Show>
+              <div class="git-panel-actions">
+                <button
+                  type="button"
+                  class="btn ghost"
+                  onClick={() => gitPanelHandlers?.onRefresh()}
+                >
+                  Refresh
+                </button>
+                <Show when={status().notARepository}>
+                  <button
+                    type="button"
+                    class="btn primary"
+                    disabled={initializing()}
+                    onClick={() => void runInitRepo()}
+                  >
+                    {initializing() ? "Initializing…" : "Initialize Git Repository"}
+                  </button>
+                </Show>
+              </div>
+            </div>
+          }
+        >
+          <div class="git-status-wrapper">
         <div class="git-panel-actions">
           <button
             type="button"
@@ -109,6 +236,24 @@ export function GitPanelContent() {
           >
             Refresh
           </button>
+          <Show when={canSyncRemote()}>
+            <button
+              type="button"
+              class="btn"
+              disabled={committing() || pushing() || pulling()}
+              onClick={() => void runPull()}
+            >
+              {pulling() ? "Pulling…" : "Pull (Fast-Forward)"}
+            </button>
+            <button
+              type="button"
+              class="btn"
+              disabled={committing() || pushing() || pulling()}
+              onClick={() => void runPush()}
+            >
+              {pushing() ? "Pushing…" : "Push to Remote"}
+            </button>
+          </Show>
         </div>
 
         <Show when={gitStatus()?.detachedHead}>
@@ -130,29 +275,66 @@ export function GitPanelContent() {
         </Show>
 
         <Show when={hasChanges()} fallback={<p class="muted">No changes.</p>}>
+          <div class="git-files-toolbar">
+            <button
+              type="button"
+              class="btn ghost small"
+              onClick={() => selectAllFiles()}
+            >
+              Select all
+            </button>
+            <button
+              type="button"
+              class="btn ghost small"
+              onClick={() => clearFileSelection()}
+            >
+              Clear
+            </button>
+          </div>
           <div class="git-files-list">
             <For each={gitStatus()?.modified}>
               {(file) => (
-                <div class="g-file">
+                <label class="g-file">
+                  <input
+                    type="checkbox"
+                    checked={selectedFiles().has(file)}
+                    onChange={(event) =>
+                      toggleFile(file, event.currentTarget.checked)
+                    }
+                  />
                   <span class="g-badge g-m">M</span>
                   <span>{file}</span>
-                </div>
+                </label>
               )}
             </For>
             <For each={gitStatus()?.added}>
               {(file) => (
-                <div class="g-file">
+                <label class="g-file">
+                  <input
+                    type="checkbox"
+                    checked={selectedFiles().has(file)}
+                    onChange={(event) =>
+                      toggleFile(file, event.currentTarget.checked)
+                    }
+                  />
                   <span class="g-badge g-a">A</span>
                   <span>{file}</span>
-                </div>
+                </label>
               )}
             </For>
             <For each={gitStatus()?.deleted}>
               {(file) => (
-                <div class="g-file">
+                <label class="g-file">
+                  <input
+                    type="checkbox"
+                    checked={selectedFiles().has(file)}
+                    onChange={(event) =>
+                      toggleFile(file, event.currentTarget.checked)
+                    }
+                  />
                   <span class="g-badge g-d">D</span>
                   <span>{file}</span>
-                </div>
+                </label>
               )}
             </For>
           </div>
@@ -170,13 +352,17 @@ export function GitPanelContent() {
           <button
             type="button"
             class="btn primary"
-            disabled={!commitMessage().trim() || committing()}
+            disabled={
+              !commitMessage().trim() || committing() || selectedCount() === 0
+            }
             onClick={() => void submitCommit()}
           >
-            {committing() ? "Committing…" : "Commit All Changes"}
+            {commitButtonLabel()}
           </button>
         </Show>
-      </div>
+          </div>
+        </Show>
+      )}
     </Show>
   );
 }
@@ -187,7 +373,10 @@ export function updateGitStatus(status: GitStatusData | null): void {
 
 export function registerGitPanelHandlers(handlers: {
   onRefresh: () => void;
-  onCommit: (message: string) => void | Promise<void>;
+  onCommit: (message: string, paths?: string[]) => void | Promise<void>;
+  onPush: () => void | Promise<void>;
+  onPull: () => void | Promise<void>;
+  onInitRepo: () => void | Promise<void>;
 }): void {
   gitPanelHandlers = handlers;
 }

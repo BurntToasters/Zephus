@@ -21,6 +21,12 @@ describe("render helper sourcing", () => {
 
   it("zephusEngine.ts imports shared render helpers", () => {
     expect(engineSrc).toContain("shared/renderHelpers");
+    expect(engineSrc).toContain("shared/blockRender");
     expect(engineSrc).not.toMatch(/function escapeHtml\(/);
+  });
+
+  it("schema.ts imports shared block renderer", () => {
+    expect(schemaSrc).toContain("shared/blockRender");
+    expect(schemaSrc).not.toMatch(/case "heading":/);
   });
 });

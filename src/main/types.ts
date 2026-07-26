@@ -44,6 +44,8 @@ export interface GitStatus {
   deleted: string[];
   /** True if .zephus/ is git-ignored (a misconfiguration). */
   zephusIgnored?: boolean;
+  /** True when the project folder is not a git repository. */
+  notARepository?: boolean;
   error?: string;
 }
 

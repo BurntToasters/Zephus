@@ -42,6 +42,7 @@ interface GitStatus {
   added: string[];
   deleted: string[];
   zephusIgnored?: boolean;
+  notARepository?: boolean;
   error?: string;
 }
 
@@ -469,7 +470,10 @@ interface ZephusApi {
   commitGitChanges(
     projectPath: string,
     message: string,
+    paths?: string[],
   ): Promise<OperationResult>;
+  pushGitChanges(projectPath: string): Promise<OperationResult>;
+  pullGitChanges(projectPath: string): Promise<OperationResult>;
   readGlobalSettings(): Promise<GlobalSettings>;
   writeGlobalSettings(settings: GlobalSettings): Promise<OperationResult>;
   removeRecentProject(projectPath: string): Promise<GlobalSettings>;

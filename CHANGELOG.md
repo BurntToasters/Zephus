@@ -58,14 +58,22 @@
 - **Autosave vs drafts:** Settings and Help clarify that Autosave writes on leave, while crash-recovery drafts are kept locally either way.
 - **Shared metadata attrs:** `blockMetadataAttrs` lives in `src/shared/renderHelpers.ts` for both build and editor serializers.
 - **Shared style attrs:** `styleAttr` / `classAttr` are shared too, with viewport/`forCanvas` options for the live canvas preview.
+- **Section serialization:** Visual `serializeBlocks` section markup now includes Zephus metadata attributes to match the build renderer.
+- **Shared block renderer:** Block and section HTML serialization lives in `src/shared/blockRender.ts` for both build and editor paths.
+- **Serialize parity:** Saved page markup uses build heading levels (not canvas caps); tests lock editor serialize output to `renderBlockNode`. Editor `serializeBlocks` now includes the same responsive `<style>` block as the build renderer.
 
 ### Git
-- **Commit from the editor:** Git panel lists working-tree changes, supports Refresh, and can stage all files and commit with a message (via `git add -A`).
+- **Commit from the editor:** Git panel lists working-tree changes, supports Refresh, checkboxes to commit selected paths, or commit all (`git add -A`).
+- **Push:** Push the current branch to its configured upstream from the Git panel (hidden on detached HEAD).
+- **Pull:** Fast-forward pull (`git pull --ff-only`) from the Git panel toolbar.
+- **Init:** Initialize a Git repository from the panel when the project folder is not yet a repo.
 
 ### Codebase & Quality
 - **Shared Render Helpers:** Extracted mirrored HTML/CSS helpers into `src/shared/renderHelpers.ts` so the build and editor renderers stay single-sourced.
+- **Shared block renderer:** `src/shared/blockRender.ts` unifies `renderBlockNode` / editor `blockToHtml` and section wrappers.
 - **Editor Commands:** Pulled mode-guard and clipboard toolbar helpers into `src/renderer/editorCommands.ts`; removed unused Solid demo mount.
-- **Tests:** Added unit coverage for shared helpers and editor command guards; all 178 unit tests pass.
+- **Editor Git:** Git panel IPC actions live in `src/renderer/editorGit.ts` with unit tests.
+- **Tests:** Added unit coverage for shared helpers, block render parity, and editor command guards; **207** unit tests pass.
 
 ## ℹ️ Release Info
 

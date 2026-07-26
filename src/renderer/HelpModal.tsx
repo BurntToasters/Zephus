@@ -94,6 +94,11 @@ export function HelpModalContent() {
             until you unlock it.
           </li>
           <li>
+            Use the Git panel to review changes, commit selected files or
+            everything, pull (fast-forward), or push when a branch is checked
+            out. Initialize Git from the panel if the project is not a repo yet.
+          </li>
+          <li>
             <strong>Autosave</strong> writes the project when you leave a page.
             Crash-recovery drafts are saved locally even when Autosave is off.
           </li>

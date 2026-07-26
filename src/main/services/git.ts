@@ -14,6 +14,11 @@ async function git(projectPath: string, args: string[]): Promise<string> {
   return stdout;
 }
 
+/** True when git failed because the project has no `.git` directory. */
+export function gitErrorLooksLikeMissingRepo(message: string): boolean {
+  return /not a git repository/i.test(message);
+}
+
 /**
  * Reports the git status of a project: branch (or detached HEAD) and the
  * lists of modified, added, and deleted files in the working tree.
@@ -59,9 +64,11 @@ export async function getGitStatus(projectPath: string): Promise<GitStatus> {
     };
   } catch (error) {
     log.warn("Git status unavailable for project", projectPath, error);
+    const detail = error instanceof Error ? error.message : String(error);
     return {
       ...empty,
-      error: error instanceof Error ? error.message : String(error),
+      error: detail,
+      notARepository: gitErrorLooksLikeMissingRepo(detail),
     };
   }
 }
@@ -76,9 +83,7 @@ export function normalizeCommitMessage(message: string): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-/**
- * Stages all changes and creates a commit. Requires a non-empty message.
- */
+/** Stages all changes and creates a commit. Requires a non-empty message. */
 export async function commitAllChanges(
   projectPath: string,
   message: string,
@@ -94,6 +99,81 @@ export async function commitAllChanges(
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     log.warn("Git commit failed", projectPath, error);
+    return { ok: false, error: detail };
+  }
+}
+
+/**
+ * Stages the given paths (repo-relative) and commits. Empty list is an error.
+ */
+export async function commitProjectPaths(
+  projectPath: string,
+  message: string,
+  paths: string[],
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const normalized = normalizeCommitMessage(message);
+  if (!normalized) {
+    return { ok: false, error: "Commit message is required." };
+  }
+  const unique = [...new Set(paths.map((p) => p.trim()).filter(Boolean))];
+  if (unique.length === 0) {
+    return { ok: false, error: "Select at least one file to commit." };
+  }
+  try {
+    await git(projectPath, ["add", "--", ...unique]);
+    await git(projectPath, ["commit", "-m", normalized]);
+    return { ok: true };
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    log.warn("Git commit failed", projectPath, error);
+    return { ok: false, error: detail };
+  }
+}
+
+/** Pushes the current branch to its configured upstream (git push). */
+export async function pushCurrentBranch(
+  projectPath: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const status = await getGitStatus(projectPath);
+    if (!status.available) {
+      return { ok: false, error: "Git is not available for this project." };
+    }
+    if (status.detachedHead) {
+      return {
+        ok: false,
+        error: "Cannot push while in detached HEAD. Check out a branch first.",
+      };
+    }
+    await git(projectPath, ["push"]);
+    return { ok: true };
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    log.warn("Git push failed", projectPath, error);
+    return { ok: false, error: detail };
+  }
+}
+
+/** Fast-forward pull from the configured upstream (git pull --ff-only). */
+export async function pullCurrentBranch(
+  projectPath: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const status = await getGitStatus(projectPath);
+    if (!status.available) {
+      return { ok: false, error: "Git is not available for this project." };
+    }
+    if (status.detachedHead) {
+      return {
+        ok: false,
+        error: "Cannot pull while in detached HEAD. Check out a branch first.",
+      };
+    }
+    await git(projectPath, ["pull", "--ff-only"]);
+    return { ok: true };
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    log.warn("Git pull failed", projectPath, error);
     return { ok: false, error: detail };
   }
 }

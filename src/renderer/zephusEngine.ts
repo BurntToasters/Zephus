@@ -3,7 +3,7 @@
 
 // TODO: Split UI rendering from state management.
 
-import { createCodeEditor, CodeEditor } from "./codeEditor";
+import { createEditorGitActions } from "./editorGit";
 import {
   EditorClipboardPayload,
   formatPanelMountFailureStatus,
@@ -15,18 +15,15 @@ import {
   syncUndoRedoToolbar,
 } from "./editorCommands";
 import {
-  blockMetadataAttrs,
-  classAttr,
-  encodeDataPayload,
   escapeAttr,
   escapeHtml,
   plainTextToHtml,
-  renderListItems,
   safeUrl,
   splitLines,
   splitPair,
-  styleAttr,
 } from "../shared/renderHelpers";
+import { renderBlockHtml, wrapSectionChildren, renderSectionsMarkup } from "../shared/blockRender";
+import { BUILD_MAX_HEADING_LEVEL } from "../shared/blockRenderFixtures";
 import {
   clearPageChanges,
   clearSiteChanges,
@@ -1931,22 +1928,12 @@ async function refreshGit(): Promise<void> {
   }
 }
 
-async function commitGitChanges(message: string): Promise<void> {
-  if (!state.project) {
-    setStatus("No project open to commit.");
-    return;
-  }
-  const result = await window.zephus.commitGitChanges(
-    state.project.path,
-    message,
-  );
-  if (!result.ok) {
-    setStatus("Git commit failed: " + (result.error ?? "unknown"));
-    return;
-  }
-  setStatus("Committed changes.");
-  await refreshGit();
-}
+const editorGit = createEditorGitActions({
+  getProjectPath: () => state.project?.path ?? null,
+  setStatus,
+  refreshGit,
+  zephus: window.zephus,
+});
 
 function renderPalette(): void {
   updateAllowedBlocks(editorRules.allowedBlocks);
@@ -3435,21 +3422,6 @@ function styleFromLegacyProps(el: HTMLElement): BlockStyle | undefined {
   return Object.values(style).some(Boolean) ? style : undefined;
 }
 
-function structuralCommon(
-  block: Block,
-  fixedClass: string,
-  viewport = state.currentViewport,
-  forCanvas = false,
-): string {
-  const userCls = block.props["cls"]
-    ? " " + escapeAttr(block.props["cls"])
-    : "";
-  return `${blockMetadataAttrs(block)} class="${fixedClass}${userCls}"${styleAttr(
-    block,
-    { viewport, forCanvas },
-  )}`;
-}
-
 /**
  * Defense-in-depth sanitizer for raw `html` blocks shown on the live editor
  * canvas (which runs in the renderer with the preload bridge in scope). The
@@ -3498,6 +3470,32 @@ function sanitizeHtmlForCanvas(html: string): string {
   return tpl.innerHTML;
 }
 
+function blockToHtml(
+  block: Block,
+  viewport = state.currentViewport,
+  forCanvas = false,
+): string {
+  return renderBlockHtml(block, {
+    viewport,
+    forCanvas,
+    maxHeadingLevel: forCanvas
+      ? editorRules.maxHeadingLevel
+      : BUILD_MAX_HEADING_LEVEL,
+    sanitizeHtmlForCanvas: forCanvas ? sanitizeHtmlForCanvas : undefined,
+  });
+}
+
+function sectionToHtml(
+  section: SectionNode,
+  viewport = state.currentViewport,
+  forCanvas = false,
+): string {
+  const body = section.children
+    .map((block) => blockToHtml(block as Block, viewport, forCanvas))
+    .join("\n");
+  return wrapSectionChildren(section, body, { viewport, forCanvas });
+}
+
 /** Appends to a log element, trimming the front so it can't grow without bound. */
 const MAX_LOG_CHARS = 100_000;
 function appendCappedLog(el: HTMLElement, chunk: string): void {
@@ -3509,230 +3507,13 @@ function appendCappedLog(el: HTMLElement, chunk: string): void {
   el.scrollTop = el.scrollHeight;
 }
 
-function blockToHtml(
-  block: Block,
-  viewport = state.currentViewport,
-  forCanvas = false,
-): string {
-  const common = `${blockMetadataAttrs(block)}${classAttr(block)}${styleAttr(
-    block,
-    { viewport, forCanvas },
-  )}`;
-  switch (block.type) {
-    case "heading": {
-      const level = Math.max(
-        1,
-        Math.min(
-          editorRules.maxHeadingLevel,
-          Number(block.props["level"] ?? 2),
-        ),
-      );
-      return `<h${level}${common}>${plainTextToHtml(
-        block.props["text"] ?? "",
-      )}</h${level}>`;
-    }
-    case "text":
-      return `<p${common}>${plainTextToHtml(block.props["text"] ?? "")}</p>`;
-    case "image": {
-      const src = block.props["src"] ?? "";
-      if (!src && forCanvas) {
-        return `<figure${common}><div class="canvas-empty">Missing image. Choose one in Properties.</div></figure>`;
-      }
-      const isProjectAsset = forCanvas && src.startsWith("/");
-      const srcAttr = isProjectAsset
-        ? ` src="" data-asset-src="${escapeAttr(src)}"`
-        : ` src="${escapeAttr(safeUrl(src))}"`;
-      return `<img${common}${srcAttr} alt="${escapeAttr(block.props["alt"] ?? "")}" />`;
-    }
-    case "button":
-      return `<a${common} href="${escapeAttr(safeUrl(block.props["href"] ?? "#") || "#")}">${plainTextToHtml(block.props["text"] ?? "")}</a>`;
-    case "section":
-      return `<section${common}>${plainTextToHtml(block.props["text"] ?? "")}</section>`;
-    case "divider":
-      return `<hr${common} />`;
-    case "spacer":
-      return `<div${common}></div>`;
-    case "columns": {
-      const cols = Number(block.style?.columns ?? block.props["count"] ?? 2);
-      const parts = Array.from(
-        { length: Math.max(2, Math.min(cols || 2, 4)) },
-        (_, index) => {
-          const key = `col${index + 1}`;
-          return `<div class="zephus-column">${plainTextToHtml(
-            block.props[key] ?? `Column ${index + 1}`,
-          )}</div>`;
-        },
-      ).join("");
-      return `<section${common}>${parts}</section>`;
-    }
-    case "card":
-      return `<article${common}><h3>${plainTextToHtml(
-        block.props["title"] ?? "Card title",
-      )}</h3><p>${plainTextToHtml(block.props["text"] ?? "Card body")}</p></article>`;
-    case "gallery": {
-      const images = (block.props["images"] ?? "")
-        .split(/\r?\n|,/)
-        .map((item) => item.trim())
-        .filter(Boolean);
-      const galleryCommon = structuralCommon(
-        block,
-        "zephus-gallery",
-        viewport,
-        forCanvas,
-      );
-      if (images.length === 0 && forCanvas) {
-        return `<section${galleryCommon}><div class="canvas-empty">No gallery images yet.</div></section>`;
-      }
-      return `<section${galleryCommon}>${images
-        .map((src, index) => {
-          const isProjectAsset = forCanvas && src.startsWith("/");
-          const srcAttr = isProjectAsset
-            ? ` src="" data-asset-src="${escapeAttr(src)}"`
-            : ` src="${escapeAttr(safeUrl(src))}"`;
-          return `<img${srcAttr} alt="${escapeAttr(
-            block.props[`alt${index + 1}`] ?? "",
-          )}" />`;
-        })
-        .join("")}</section>`;
-    }
-    case "quote":
-      return `<blockquote${common}><p>${plainTextToHtml(
-        block.props["text"] ?? "",
-      )}</p>${
-        block.props["cite"]
-          ? `<cite>${plainTextToHtml(block.props["cite"])}</cite>`
-          : ""
-      }</blockquote>`;
-    case "list": {
-      const tag = block.props["ordered"] === "true" ? "ol" : "ul";
-      return `<${tag}${common}>${renderListItems(
-        block.props["items"] ?? "",
-      )}</${tag}>`;
-    }
-    case "embed":
-      if (!block.props["src"] && forCanvas) {
-        return `<section${common}><div class="canvas-empty">Missing embed URL.</div></section>`;
-      }
-      return `<iframe${common} src="${escapeAttr(safeUrl(block.props["src"] ?? ""))}" title="${escapeAttr(block.props["title"] ?? "Embed")}" loading="lazy"></iframe>`;
-    case "html":
-      return forCanvas
-        ? sanitizeHtmlForCanvas(block.raw ?? "")
-        : (block.raw ?? "");
-    case "feature":
-      return `<div${structuralCommon(block, "zephus-feature", viewport, forCanvas)}><div class="zephus-feature-icon">${plainTextToHtml(
-        block.props["icon"] ?? "★",
-      )}</div><h3>${plainTextToHtml(
-        block.props["title"] ?? "Feature",
-      )}</h3><p>${plainTextToHtml(block.props["text"] ?? "")}</p></div>`;
-    case "testimonial":
-      return `<figure${structuralCommon(block, "zephus-testimonial", viewport, forCanvas)}><blockquote>${plainTextToHtml(
-        block.props["quote"] ?? "",
-      )}</blockquote><figcaption><strong>${plainTextToHtml(
-        block.props["author"] ?? "",
-      )}</strong>${
-        block.props["role"]
-          ? ` <span>${plainTextToHtml(block.props["role"])}</span>`
-          : ""
-      }</figcaption></figure>`;
-    case "accordion": {
-      const items = splitLines(block.props["items"] ?? "")
-        .map((line) => splitPair(line))
-        .map(
-          ([q, a]) =>
-            `<details><summary>${plainTextToHtml(q)}</summary><p>${plainTextToHtml(a)}</p></details>`,
-        )
-        .join("");
-      return `<div${structuralCommon(block, "zephus-accordion", viewport, forCanvas)}>${items}</div>`;
-    }
-    case "stats": {
-      const items = splitLines(block.props["items"] ?? "")
-        .map((line) => splitPair(line))
-        .map(
-          ([n, l]) =>
-            `<div class="zephus-stat"><span class="zephus-stat-num">${plainTextToHtml(
-              n,
-            )}</span><span class="zephus-stat-label">${plainTextToHtml(l)}</span></div>`,
-        )
-        .join("");
-      return `<div${structuralCommon(block, "zephus-stats", viewport, forCanvas)}>${items}</div>`;
-    }
-    case "pricing": {
-      const features = splitLines(block.props["features"] ?? "")
-        .map((f) => `<li>${plainTextToHtml(f)}</li>`)
-        .join("");
-      const cta = block.props["ctaText"]
-        ? `<a class="button" href="${escapeAttr(safeUrl(block.props["ctaHref"] ?? "#") || "#")}">${plainTextToHtml(
-            block.props["ctaText"],
-          )}</a>`
-        : "";
-      return `<div${structuralCommon(block, "zephus-pricing", viewport, forCanvas)}><h3>${plainTextToHtml(
-        block.props["plan"] ?? "Plan",
-      )}</h3><div class="zephus-price"><span class="zephus-price-amount">${plainTextToHtml(
-        block.props["price"] ?? "",
-      )}</span>${
-        block.props["period"]
-          ? `<span class="zephus-price-period">${plainTextToHtml(block.props["period"])}</span>`
-          : ""
-      }</div><ul>${features}</ul>${cta}</div>`;
-    }
-    case "cta": {
-      const cta = block.props["buttonText"]
-        ? `<a class="button" href="${escapeAttr(safeUrl(block.props["buttonHref"] ?? "#") || "#")}">${plainTextToHtml(
-            block.props["buttonText"],
-          )}</a>`
-        : "";
-      return `<div${structuralCommon(block, "zephus-cta", viewport, forCanvas)}><h2>${plainTextToHtml(
-        block.props["heading"] ?? "",
-      )}</h2>${
-        block.props["text"]
-          ? `<p>${plainTextToHtml(block.props["text"])}</p>`
-          : ""
-      }${cta}</div>`;
-    }
-    default: {
-      const unknownType = (block as { type: string }).type;
-      // Canvas: show a visible placeholder. Serialization: mirror schema.ts so
-      // the unknown block round-trips byte-identically and is not lost.
-      if (forCanvas) {
-        return `<div${common} class="canvas-unknown-block">Unknown block: ${escapeHtml(unknownType)}</div>`;
-      }
-      const payload = encodeDataPayload(block.props);
-      return `<div data-zephus-block="${escapeAttr(unknownType)}" data-zephus-props="${escapeAttr(payload)}" class="zephus-unknown-block"><!-- Unknown block type: ${escapeHtml(unknownType)} --></div>`;
-    }
-  }
-}
-
-function sectionToHtml(
-  section: SectionNode,
-  viewport = state.currentViewport,
-  forCanvas = false,
-): string {
-  const body = section.children
-    .map((block) => blockToHtml(block as Block, viewport, forCanvas))
-    .join("\n");
-  const cls = section.props["cls"]
-    ? ` class="${escapeAttr(section.props["cls"])}"`
-    : "";
-  const wrapper = section.props["wrapper"] ?? "none";
-  const hasSectionSurface =
-    Boolean(section.style && Object.keys(section.style).length > 0) ||
-    Boolean(section.locked) ||
-    Boolean(section.props["cls"]);
-  if (wrapper === "none" && !hasSectionSurface) return body;
-  const styleBlock = {
-    id: section.id,
-    type: "section",
-    props: { cls: section.props["cls"] ?? "", text: "" },
-    style: section.style,
-  } as Block;
-  return `<section${cls}${styleAttr(styleBlock, { viewport, forCanvas })}>\n${body}\n</section>`;
-}
-
 function serializeBlocks(): string {
-  const body = state.sections
-    .map((section) => sectionToHtml(section, "desktop"))
-    .filter(Boolean)
-    .map((entry) => "    " + entry)
+  const core = renderSectionsMarkup(state.sections, (block) =>
+    blockToHtml(block as Block, "desktop", false),
+  );
+  const body = core
+    .split("\n")
+    .map((line) => (line ? `    ${line}` : line))
     .join("\n");
   return `${state.frontmatter}${state.prefix}\n${body}\n${state.suffix}`;
 }
@@ -6919,7 +6700,10 @@ function init(): void {
       mountGitPanel(gitPanelContainer);
       registerGitPanelHandlers({
         onRefresh: () => void refreshGit(),
-        onCommit: (message) => commitGitChanges(message),
+        onCommit: (message, paths) => editorGit.commitGitChanges(message, paths),
+        onPush: () => editorGit.pushGitChanges(),
+        onPull: () => editorGit.pullGitChanges(),
+        onInitRepo: () => editorGit.initGitFromPanel(),
       });
     } catch (e) {
       noteMountFailure("Git Panel", e);

@@ -157,8 +157,15 @@ const api = {
   commitGitChanges: (
     projectPath: string,
     message: string,
+    paths?: string[],
   ): Promise<OperationResult> =>
-    ipcRenderer.invoke(IPC.gitCommit, projectPath, message),
+    ipcRenderer.invoke(IPC.gitCommit, projectPath, message, paths),
+
+  pushGitChanges: (projectPath: string): Promise<OperationResult> =>
+    ipcRenderer.invoke(IPC.gitPush, projectPath),
+
+  pullGitChanges: (projectPath: string): Promise<OperationResult> =>
+    ipcRenderer.invoke(IPC.gitPull, projectPath),
 
   readGlobalSettings: (): Promise<GlobalSettings> =>
     ipcRenderer.invoke(IPC.settingsReadGlobal),

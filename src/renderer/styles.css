@@ -2252,11 +2252,17 @@ body {
 
 .git-panel .g-file {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
   padding: 4px 0;
   font-family: var(--font-mono);
   font-size: 11px;
+  cursor: pointer;
+}
+
+.git-panel .g-file input[type="checkbox"] {
+  margin-top: 2px;
+  flex-shrink: 0;
 }
 
 .git-panel .g-left {
@@ -2318,7 +2324,15 @@ body {
 
 .git-panel-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.git-error-detail {
+  font-size: 12px;
+  word-break: break-word;
   margin-bottom: 8px;
 }
 
@@ -2330,6 +2344,17 @@ body {
   width: 100%;
   resize: vertical;
   min-height: 56px;
+}
+
+.git-files-toolbar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.git-files-toolbar .btn.small {
+  padding: 4px 8px;
+  font-size: 12px;
 }
 
 .git-detached-note {

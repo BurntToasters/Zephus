@@ -24,6 +24,8 @@ export const IPC = {
   gitStatus: "git:status",
   gitInit: "git:init",
   gitCommit: "git:commit",
+  gitPush: "git:push",
+  gitPull: "git:pull",
   settingsReadGlobal: "settings:readGlobal",
   settingsWriteGlobal: "settings:writeGlobal",
   settingsRemoveRecent: "settings:removeRecent",
