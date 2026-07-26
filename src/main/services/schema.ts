@@ -28,6 +28,7 @@ import { readJsonSafe, writeFileAtomic } from "./fsSafe";
 import {
   addCssValue,
   blockCssValue,
+  blockMetadataAttrs,
   encodeDataPayload,
   escapeAttr,
   escapeHtml,
@@ -976,21 +977,6 @@ function defaultSectionNode(blocks: BlockNode[]): SectionNode {
     props: { wrapper: "none" },
     children: blocks,
   };
-}
-
-function blockMetadataAttrs(block: BlockNode): string {
-  const attrs = [
-    `data-zephus-id="${escapeAttr(block.id)}"`,
-    `data-zephus-block="${escapeAttr(block.type)}"`,
-    `data-zephus-props="${escapeAttr(encodeDataPayload(block.props))}"`,
-  ];
-  if (block.style) {
-    attrs.push(
-      `data-zephus-style="${escapeAttr(encodeDataPayload(block.style))}"`,
-    );
-  }
-  if (block.locked) attrs.push(`data-zephus-locked="true"`);
-  return " " + attrs.join(" ");
 }
 
 /**

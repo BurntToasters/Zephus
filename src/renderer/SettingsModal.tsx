@@ -196,6 +196,10 @@ export function renderSettingsModalBody(
               }
             />
           </div>
+          <p class="settings-hint muted">
+            Autosave writes the project when you leave a page. Unsaved crash
+            recovery drafts are still kept locally either way.
+          </p>
 
           <div class="settings-row">
             <label for="set-confirm-del-modal">Confirm delete block</label>

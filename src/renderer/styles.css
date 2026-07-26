@@ -2885,6 +2885,12 @@ body {
   cursor: pointer;
 }
 
+.settings-hint {
+  margin: -4px 0 8px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .settings-row select {
   width: 100%;
   background: var(--bg-alt);

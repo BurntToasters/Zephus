@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   addCssValue,
   blockCssValue,
+  blockMetadataAttrs,
   encodeDataPayload,
   escapeAttr,
   escapeHtml,
@@ -49,5 +50,19 @@ describe("renderHelpers", () => {
     expect(splitLines(" a \n\n b ")).toEqual(["a", "b"]);
     expect(splitPair("left :: right")).toEqual(["left", "right"]);
     expect(splitPair("solo")).toEqual(["solo", ""]);
+  });
+
+  it("builds block metadata attributes", () => {
+    const attrs = blockMetadataAttrs({
+      id: "b1",
+      type: "heading",
+      props: { text: "Hi" },
+      locked: true,
+    });
+    expect(attrs.startsWith(" ")).toBe(true);
+    expect(attrs).toContain('data-zephus-id="b1"');
+    expect(attrs).toContain('data-zephus-block="heading"');
+    expect(attrs).toContain('data-zephus-locked="true"');
+    expect(attrs).toContain("data-zephus-props=");
   });
 });

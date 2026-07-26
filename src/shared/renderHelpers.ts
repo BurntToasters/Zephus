@@ -68,3 +68,28 @@ export function renderListItems(items: string): string {
     .map((item) => `<li>${plainTextToHtml(item)}</li>`)
     .join("");
 }
+
+/** Minimal block shape needed for Zephus data-* metadata attributes. */
+export interface BlockMetadataSource {
+  id: string;
+  type: string;
+  props: Record<string, string>;
+  style?: unknown;
+  locked?: boolean;
+}
+
+/** Emits leading-space data-zephus-* attributes for a block or section node. */
+export function blockMetadataAttrs(block: BlockMetadataSource): string {
+  const attrs = [
+    `data-zephus-id="${escapeAttr(block.id)}"`,
+    `data-zephus-block="${escapeAttr(block.type)}"`,
+    `data-zephus-props="${escapeAttr(encodeDataPayload(block.props))}"`,
+  ];
+  if (block.style) {
+    attrs.push(
+      `data-zephus-style="${escapeAttr(encodeDataPayload(block.style))}"`,
+    );
+  }
+  if (block.locked) attrs.push(`data-zephus-locked="true"`);
+  return " " + attrs.join(" ");
+}

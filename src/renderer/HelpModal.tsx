@@ -94,6 +94,10 @@ export function HelpModalContent() {
             until you unlock it.
           </li>
           <li>
+            <strong>Autosave</strong> writes the project when you leave a page.
+            Crash-recovery drafts are saved locally even when Autosave is off.
+          </li>
+          <li>
             Press <kbd>?</kbd> or <kbd>H</kbd> on the dashboard or editor canvas
             to view this help guide.
           </li>

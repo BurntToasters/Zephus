@@ -17,6 +17,7 @@ import {
 import {
   addCssValue,
   blockCssValue,
+  blockMetadataAttrs,
   encodeDataPayload,
   escapeAttr,
   escapeHtml,
@@ -3412,21 +3413,6 @@ function styleFromLegacyProps(el: HTMLElement): BlockStyle | undefined {
   return Object.values(style).some(Boolean) ? style : undefined;
 }
 
-function metadataAttrs(block: Block): string {
-  const attrs = [
-    `data-zephus-id="${escapeAttr(block.id)}"`,
-    `data-zephus-block="${escapeAttr(block.type)}"`,
-    `data-zephus-props="${escapeAttr(encodeDataPayload(block.props))}"`,
-  ];
-  if (block.style) {
-    attrs.push(
-      `data-zephus-style="${escapeAttr(encodeDataPayload(block.style))}"`,
-    );
-  }
-  if (block.locked) attrs.push(`data-zephus-locked="true"`);
-  return " " + attrs.join(" ");
-}
-
 function effectiveStyle(
   block: Block,
   viewport = state.currentViewport,
@@ -3498,7 +3484,7 @@ function structuralCommon(
   const userCls = block.props["cls"]
     ? " " + escapeAttr(block.props["cls"])
     : "";
-  return `${metadataAttrs(block)} class="${fixedClass}${userCls}"${styleAttr(block, viewport, forCanvas)}`;
+  return `${blockMetadataAttrs(block)} class="${fixedClass}${userCls}"${styleAttr(block, viewport, forCanvas)}`;
 }
 
 /**
@@ -3565,7 +3551,7 @@ function blockToHtml(
   viewport = state.currentViewport,
   forCanvas = false,
 ): string {
-  const common = `${metadataAttrs(block)}${classAttr(block)}${styleAttr(
+  const common = `${blockMetadataAttrs(block)}${classAttr(block)}${styleAttr(
     block,
     viewport,
     forCanvas,
