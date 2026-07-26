@@ -466,6 +466,10 @@ interface ZephusApi {
   ): Promise<PageDocumentResult>;
   getGitStatus(projectPath: string): Promise<GitStatus>;
   initGitRepo(projectPath: string): Promise<OperationResult>;
+  commitGitChanges(
+    projectPath: string,
+    message: string,
+  ): Promise<OperationResult>;
   readGlobalSettings(): Promise<GlobalSettings>;
   writeGlobalSettings(settings: GlobalSettings): Promise<OperationResult>;
   removeRecentProject(projectPath: string): Promise<GlobalSettings>;

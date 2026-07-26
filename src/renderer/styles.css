@@ -2316,6 +2316,28 @@ body {
   margin-top: 1px;
 }
 
+.git-panel-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+
+.git-commit-field {
+  margin-top: 12px;
+}
+
+.git-commit-field textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 56px;
+}
+
+.git-detached-note {
+  margin: 0 0 8px;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 .publish-hosts {
   margin: 8px 0;
   padding-left: 18px;

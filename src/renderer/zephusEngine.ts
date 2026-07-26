@@ -119,7 +119,12 @@ import {
   updateSettingsTabUpdater,
 } from "./SettingsTab";
 import { renderSettingsModalBody } from "./SettingsModal";
-import { mountGitBranch, mountGitPanel, updateGitStatus } from "./GitPanel";
+import {
+  mountGitBranch,
+  mountGitPanel,
+  registerGitPanelHandlers,
+  updateGitStatus,
+} from "./GitPanel";
 import {
   mountHomeDraftRecovery,
   registerHomeDraftRecoveryHandlers,
@@ -1924,6 +1929,23 @@ async function refreshGit(): Promise<void> {
     console.error("Failed to refresh Git status:", e);
     updateGitStatus(null);
   }
+}
+
+async function commitGitChanges(message: string): Promise<void> {
+  if (!state.project) {
+    setStatus("No project open to commit.");
+    return;
+  }
+  const result = await window.zephus.commitGitChanges(
+    state.project.path,
+    message,
+  );
+  if (!result.ok) {
+    setStatus("Git commit failed: " + (result.error ?? "unknown"));
+    return;
+  }
+  setStatus("Committed changes.");
+  await refreshGit();
 }
 
 function renderPalette(): void {
@@ -6895,6 +6917,10 @@ function init(): void {
   if (gitPanelContainer) {
     try {
       mountGitPanel(gitPanelContainer);
+      registerGitPanelHandlers({
+        onRefresh: () => void refreshGit(),
+        onCommit: (message) => commitGitChanges(message),
+      });
     } catch (e) {
       noteMountFailure("Git Panel", e);
     }

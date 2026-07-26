@@ -23,6 +23,7 @@ export const IPC = {
   pageDocumentReattach: "schema:pageReattach",
   gitStatus: "git:status",
   gitInit: "git:init",
+  gitCommit: "git:commit",
   settingsReadGlobal: "settings:readGlobal",
   settingsWriteGlobal: "settings:writeGlobal",
   settingsRemoveRecent: "settings:removeRecent",

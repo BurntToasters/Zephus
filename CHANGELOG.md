@@ -59,6 +59,9 @@
 - **Shared metadata attrs:** `blockMetadataAttrs` lives in `src/shared/renderHelpers.ts` for both build and editor serializers.
 - **Shared style attrs:** `styleAttr` / `classAttr` are shared too, with viewport/`forCanvas` options for the live canvas preview.
 
+### Git
+- **Commit from the editor:** Git panel lists working-tree changes, supports Refresh, and can stage all files and commit with a message (via `git add -A`).
+
 ### Codebase & Quality
 - **Shared Render Helpers:** Extracted mirrored HTML/CSS helpers into `src/shared/renderHelpers.ts` so the build and editor renderers stay single-sourced.
 - **Editor Commands:** Pulled mode-guard and clipboard toolbar helpers into `src/renderer/editorCommands.ts`; removed unused Solid demo mount.

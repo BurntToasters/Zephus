@@ -70,6 +70,34 @@ export async function initGitRepo(projectPath: string): Promise<void> {
   await git(projectPath, ["init"]);
 }
 
+/** Returns trimmed message or null when empty/whitespace-only. */
+export function normalizeCommitMessage(message: string): string | null {
+  const trimmed = message.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+/**
+ * Stages all changes and creates a commit. Requires a non-empty message.
+ */
+export async function commitAllChanges(
+  projectPath: string,
+  message: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const normalized = normalizeCommitMessage(message);
+  if (!normalized) {
+    return { ok: false, error: "Commit message is required." };
+  }
+  try {
+    await git(projectPath, ["add", "-A"]);
+    await git(projectPath, ["commit", "-m", normalized]);
+    return { ok: true };
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    log.warn("Git commit failed", projectPath, error);
+    return { ok: false, error: detail };
+  }
+}
+
 /**
  * Returns true if `.zephus/` is excluded by git in this project. That would be
  * a misconfiguration: the .zephus directory is the Zephus project save state

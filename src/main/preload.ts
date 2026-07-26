@@ -154,6 +154,12 @@ const api = {
   initGitRepo: (projectPath: string): Promise<OperationResult> =>
     ipcRenderer.invoke(IPC.gitInit, projectPath),
 
+  commitGitChanges: (
+    projectPath: string,
+    message: string,
+  ): Promise<OperationResult> =>
+    ipcRenderer.invoke(IPC.gitCommit, projectPath, message),
+
   readGlobalSettings: (): Promise<GlobalSettings> =>
     ipcRenderer.invoke(IPC.settingsReadGlobal),
 

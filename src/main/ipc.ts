@@ -17,7 +17,7 @@ import {
   removeRecentProject,
   writeGlobalSettings,
 } from "./services/settings";
-import { getGitStatus, initGitRepo } from "./services/git";
+import { getGitStatus, initGitRepo, commitAllChanges } from "./services/git";
 import { createPage, createSite } from "./services/wizard";
 import { listThemes } from "./themes";
 import { readProjectFile, writeProjectFile } from "./services/files";
@@ -296,6 +296,22 @@ export function registerIpcHandlers(
 
   ipcMain.handle(IPC.gitStatus, (_e, projectPath: string) =>
     approved(projectPath, () => getGitStatus(projectPath)),
+  );
+
+  ipcMain.handle(
+    IPC.gitCommit,
+    async (_e, projectPath: string, message: string): Promise<OperationResult> => {
+      try {
+        assertApprovedProject(projectPath);
+        const result = await commitAllChanges(projectPath, message);
+        return result.ok ? { ok: true } : { ok: false, error: result.error };
+      } catch (error) {
+        return {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    },
   );
 
   ipcMain.handle(

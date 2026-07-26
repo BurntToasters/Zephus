@@ -13,6 +13,11 @@ export interface GitStatusData {
 
 const [gitStatus, setGitStatus] = createSignal<GitStatusData | null>(null);
 
+let gitPanelHandlers: {
+  onRefresh: () => void;
+  onCommit: (message: string) => void | Promise<void>;
+} | null = null;
+
 function runIconRefresh() {
   setTimeout(() => {
     if (typeof window.refreshIcons === "function") {
@@ -60,6 +65,9 @@ export function GitBranchTag() {
 }
 
 export function GitPanelContent() {
+  const [commitMessage, setCommitMessage] = createSignal("");
+  const [committing, setCommitting] = createSignal(false);
+
   createEffect(() => {
     gitStatus();
     runIconRefresh();
@@ -75,12 +83,41 @@ export function GitPanelContent() {
     );
   };
 
+  const submitCommit = async () => {
+    const message = commitMessage().trim();
+    if (!message || !gitPanelHandlers || committing()) return;
+    setCommitting(true);
+    try {
+      await gitPanelHandlers.onCommit(message);
+      setCommitMessage("");
+    } finally {
+      setCommitting(false);
+    }
+  };
+
   return (
     <Show
       when={gitStatus() && gitStatus()?.available}
       fallback={<p class="muted">Git status unavailable.</p>}
     >
       <div class="git-status-wrapper">
+        <div class="git-panel-actions">
+          <button
+            type="button"
+            class="btn ghost"
+            onClick={() => gitPanelHandlers?.onRefresh()}
+          >
+            Refresh
+          </button>
+        </div>
+
+        <Show when={gitStatus()?.detachedHead}>
+          <p class="muted git-detached-note">
+            Detached HEAD — commits won't update a branch until you check one
+            out.
+          </p>
+        </Show>
+
         <Show when={gitStatus()?.zephusIgnored}>
           <div class="g-warning">
             <i data-lucide="alert-triangle" aria-hidden="true"></i>{" "}
@@ -119,6 +156,25 @@ export function GitPanelContent() {
               )}
             </For>
           </div>
+
+          <label class="meta-field git-commit-field">
+            <span>Commit message</span>
+            <textarea
+              rows={3}
+              value={commitMessage()}
+              placeholder="Describe your changes"
+              disabled={committing()}
+              onInput={(event) => setCommitMessage(event.currentTarget.value)}
+            />
+          </label>
+          <button
+            type="button"
+            class="btn primary"
+            disabled={!commitMessage().trim() || committing()}
+            onClick={() => void submitCommit()}
+          >
+            {committing() ? "Committing…" : "Commit All Changes"}
+          </button>
         </Show>
       </div>
     </Show>
@@ -127,6 +183,13 @@ export function GitPanelContent() {
 
 export function updateGitStatus(status: GitStatusData | null): void {
   setGitStatus(status);
+}
+
+export function registerGitPanelHandlers(handlers: {
+  onRefresh: () => void;
+  onCommit: (message: string) => void | Promise<void>;
+}): void {
+  gitPanelHandlers = handlers;
 }
 
 export function mountGitBranch(container: HTMLElement): void {
