@@ -2,15 +2,54 @@ import { describe, it, expect, vi } from "vitest";
 import { createEditorGitActions } from "../editorGit";
 
 describe("editorGit", () => {
+  it("refreshes git status for the open project", async () => {
+    const setGitStatus = vi.fn();
+    const getGitStatus = vi.fn(async () => ({
+      available: true,
+      detachedHead: false,
+      branch: "main",
+      modified: [],
+      added: [],
+      deleted: [],
+    }));
+    const actions = createEditorGitActions({
+      getProjectPath: () => "/proj",
+      setStatus: vi.fn(),
+      setGitStatus,
+      zephus: {
+        getGitStatus,
+        commitGitChanges: vi.fn(),
+        pushGitChanges: vi.fn(),
+        pullGitChanges: vi.fn(),
+        initGitRepo: vi.fn(),
+      },
+    });
+
+    await actions.refreshGit();
+
+    expect(getGitStatus).toHaveBeenCalledWith("/proj");
+    expect(setGitStatus).toHaveBeenCalledWith(
+      expect.objectContaining({ branch: "main" }),
+    );
+  });
+
   it("commits selected paths and refreshes", async () => {
-    const refreshGit = vi.fn(async () => {});
+    const setGitStatus = vi.fn();
     const commitGitChanges = vi.fn(async () => ({ ok: true as const }));
     const setStatus = vi.fn();
     const actions = createEditorGitActions({
       getProjectPath: () => "/proj",
       setStatus,
-      refreshGit,
+      setGitStatus,
       zephus: {
+        getGitStatus: vi.fn(async () => ({
+          available: true,
+          detachedHead: false,
+          branch: "main",
+          modified: [],
+          added: [],
+          deleted: [],
+        })),
         commitGitChanges,
         pushGitChanges: vi.fn(),
         pullGitChanges: vi.fn(),
@@ -22,7 +61,7 @@ describe("editorGit", () => {
 
     expect(commitGitChanges).toHaveBeenCalledWith("/proj", "save", ["a.ts", "b.ts"]);
     expect(setStatus).toHaveBeenCalledWith("Committed 2 file(s).");
-    expect(refreshGit).toHaveBeenCalled();
+    expect(setGitStatus).toHaveBeenCalled();
   });
 
   it("surfaces commit failures", async () => {
@@ -30,8 +69,9 @@ describe("editorGit", () => {
     const actions = createEditorGitActions({
       getProjectPath: () => "/proj",
       setStatus,
-      refreshGit: vi.fn(),
+      setGitStatus: vi.fn(),
       zephus: {
+        getGitStatus: vi.fn(),
         commitGitChanges: vi.fn(async () => ({
           ok: false as const,
           error: "nothing to commit",

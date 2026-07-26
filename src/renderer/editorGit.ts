@@ -2,17 +2,48 @@
  * Git panel actions for the editor. Keeps IPC wiring out of zephusEngine.
  */
 
+export interface GitStatusSnapshot {
+  available: boolean;
+  detachedHead: boolean;
+  branch: string | null;
+  zephusIgnored?: boolean;
+  notARepository?: boolean;
+  error?: string;
+  modified: string[];
+  added: string[];
+  deleted: string[];
+}
+
 export interface EditorGitDeps {
   getProjectPath: () => string | null;
   setStatus: (message: string) => void;
-  refreshGit: () => Promise<void>;
+  setGitStatus: (status: GitStatusSnapshot | null) => void;
   zephus: Pick<
     Window["zephus"],
-    "commitGitChanges" | "pushGitChanges" | "pullGitChanges" | "initGitRepo"
+    | "getGitStatus"
+    | "commitGitChanges"
+    | "pushGitChanges"
+    | "pullGitChanges"
+    | "initGitRepo"
   >;
 }
 
 export function createEditorGitActions(deps: EditorGitDeps) {
+  async function refreshGit(): Promise<void> {
+    const projectPath = deps.getProjectPath();
+    if (!projectPath) {
+      deps.setGitStatus(null);
+      return;
+    }
+    try {
+      const git = await deps.zephus.getGitStatus(projectPath);
+      deps.setGitStatus(git);
+    } catch (error) {
+      console.error("Failed to refresh Git status:", error);
+      deps.setGitStatus(null);
+    }
+  }
+
   async function commitGitChanges(
     message: string,
     paths?: string[],
@@ -36,7 +67,7 @@ export function createEditorGitActions(deps: EditorGitDeps) {
         ? `Committed ${paths.length} file(s).`
         : "Committed changes.",
     );
-    await deps.refreshGit();
+    await refreshGit();
   }
 
   async function pushGitChanges(): Promise<void> {
@@ -51,7 +82,7 @@ export function createEditorGitActions(deps: EditorGitDeps) {
       return;
     }
     deps.setStatus("Pushed to remote.");
-    await deps.refreshGit();
+    await refreshGit();
   }
 
   async function pullGitChanges(): Promise<void> {
@@ -68,7 +99,7 @@ export function createEditorGitActions(deps: EditorGitDeps) {
     deps.setStatus(
       "Pulled from remote (fast-forward). Reload from disk if page sources changed outside Zephus.",
     );
-    await deps.refreshGit();
+    await refreshGit();
   }
 
   async function initGitFromPanel(): Promise<void> {
@@ -83,10 +114,11 @@ export function createEditorGitActions(deps: EditorGitDeps) {
       return;
     }
     deps.setStatus("Git repository initialized.");
-    await deps.refreshGit();
+    await refreshGit();
   }
 
   return {
+    refreshGit,
     commitGitChanges,
     pushGitChanges,
     pullGitChanges,

@@ -1,7 +1,7 @@
 // Zephus renderer logic. Talks to the main process exclusively through
 // window.zephus (the preload bridge). No Node APIs are used here.
 
-// TODO: Split UI rendering from state management.
+// TODO: Split UI rendering from state management (see editorCommands, editorGit, editorSerialize).
 
 import { createEditorGitActions } from "./editorGit";
 import { assembleManagedPage, splitManagedPageSource } from "./editorSerialize";
@@ -1875,7 +1875,7 @@ async function enterEditor(result: ProjectOpenResult): Promise<void> {
   markSiteDirty(state, false);
   ensureCodeEditor();
   await maybeRestoreSiteDraft();
-  void refreshGit();
+  void editorGit.refreshGit();
   void applyRepoRules();
   void applyMergedTheme();
   renderPalette();
@@ -1915,24 +1915,10 @@ async function enterEditor(result: ProjectOpenResult): Promise<void> {
   }
 }
 
-async function refreshGit(): Promise<void> {
-  if (!state.project) {
-    updateGitStatus(null);
-    return;
-  }
-  try {
-    const git = await window.zephus.getGitStatus(state.project.path);
-    updateGitStatus(git);
-  } catch (e) {
-    console.error("Failed to refresh Git status:", e);
-    updateGitStatus(null);
-  }
-}
-
 const editorGit = createEditorGitActions({
   getProjectPath: () => state.project?.path ?? null,
   setStatus,
-  refreshGit,
+  setGitStatus: updateGitStatus,
   zephus: window.zephus,
 });
 
@@ -5648,7 +5634,7 @@ async function performSave(): Promise<boolean> {
   } else {
     setStatus("Nothing to save.");
   }
-  void refreshGit();
+  void editorGit.refreshGit();
   await reloadPages();
   return true;
 }
@@ -6672,7 +6658,7 @@ function init(): void {
     try {
       mountGitPanel(gitPanelContainer);
       registerGitPanelHandlers({
-        onRefresh: () => void refreshGit(),
+        onRefresh: () => void editorGit.refreshGit(),
         onCommit: (message, paths) => editorGit.commitGitChanges(message, paths),
         onPush: () => editorGit.pushGitChanges(),
         onPull: () => editorGit.pullGitChanges(),

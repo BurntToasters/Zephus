@@ -73,9 +73,9 @@
 - **Shared Render Helpers:** Extracted mirrored HTML/CSS helpers into `src/shared/renderHelpers.ts` so the build and editor renderers stay single-sourced.
 - **Shared block renderer:** `src/shared/blockRender.ts` unifies `renderBlockNode` / editor `blockToHtml` and section wrappers.
 - **Editor Commands:** Pulled mode-guard and clipboard toolbar helpers into `src/renderer/editorCommands.ts`; removed unused Solid demo mount.
-- **Editor Git:** Git panel IPC actions live in `src/renderer/editorGit.ts` with unit tests.
+- **Editor Git:** Git panel IPC actions live in `src/renderer/editorGit.ts` with unit tests (including status refresh).
 - **Editor serialize:** Managed page split/assemble in `src/renderer/editorSerialize.ts`.
-- **Tests:** Added unit coverage for shared helpers, block render parity, and editor command guards; **211** unit tests pass.
+- **Tests:** Added unit coverage for shared helpers, block render parity, and editor command guards; **212** unit tests pass.
 
 ## ℹ️ Release Info
 
