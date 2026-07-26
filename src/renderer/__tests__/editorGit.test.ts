@@ -27,10 +27,37 @@ describe("editorGit", () => {
 
     await actions.refreshGit();
 
-    expect(getGitStatus).toHaveBeenCalledWith("/proj");
+    expect(getGitStatus).toHaveBeenCalledWith("/proj", { fetchRemote: false });
     expect(setGitStatus).toHaveBeenCalledWith(
       expect.objectContaining({ branch: "main" }),
     );
+  });
+
+  it("requests remote fetch when asked", async () => {
+    const getGitStatus = vi.fn(async () => ({
+      available: true,
+      detachedHead: false,
+      branch: "main",
+      modified: [],
+      added: [],
+      deleted: [],
+    }));
+    const actions = createEditorGitActions({
+      getProjectPath: () => "/proj",
+      setStatus: vi.fn(),
+      setGitStatus: vi.fn(),
+      zephus: {
+        getGitStatus,
+        commitGitChanges: vi.fn(),
+        pushGitChanges: vi.fn(),
+        pullGitChanges: vi.fn(),
+        initGitRepo: vi.fn(),
+      },
+    });
+
+    await actions.refreshGit({ fetchRemote: true });
+
+    expect(getGitStatus).toHaveBeenCalledWith("/proj", { fetchRemote: true });
   });
 
   it("commits selected paths and refreshes", async () => {

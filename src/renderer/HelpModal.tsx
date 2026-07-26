@@ -11,7 +11,7 @@ export function HelpModalContent() {
               <td>
                 <kbd>Ctrl/Cmd</kbd> + <kbd>S</kbd>
               </td>
-              <td>Save Changes</td>
+              <td>Save page to disk</td>
             </tr>
             <tr>
               <td>
@@ -68,7 +68,7 @@ export function HelpModalContent() {
               <td>
                 <kbd>Ctrl/Cmd</kbd> + <kbd>S</kbd>
               </td>
-              <td>Save Changes</td>
+              <td>Save page to disk</td>
             </tr>
           </tbody>
         </table>

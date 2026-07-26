@@ -323,6 +323,25 @@ import BaseLayout from '../layouts/BaseLayout.astro';
     expect(astro).toContain('[data-zephus-id="styled-section"]{width:320px}');
   });
 
+  it("defaults omitted section wrapper to none when parsing managed HTML", () => {
+    ensureVisualSchema(tmpDir, pagesDir);
+    const created = createSchemaPage(tmpDir, pagesDir, "wrap-default");
+    expect(created.ok).toBe(true);
+    const page = pagePathFromSlug(pagesDir, "wrap-default");
+    const pageFile = path.join(tmpDir, page);
+    const source = fs.readFileSync(pageFile, "utf8");
+    const withoutWrapper = source.replace(
+      /%22wrapper%22%3A%22(?:none|box)%22%2C/g,
+      "",
+    );
+    fs.writeFileSync(pageFile, withoutWrapper, "utf8");
+
+    const reread = readPageDocument(tmpDir, page, pagesDir);
+
+    expect(reread.ok).toBe(true);
+    expect(reread.pageDocument?.sections[0]?.props.wrapper).toBe("none");
+  });
+
   it("writes managed shell and design artifacts when site settings change", () => {
     ensureVisualSchema(tmpDir, pagesDir);
     fs.mkdirSync(path.join(tmpDir, "public", "scripts"), { recursive: true });

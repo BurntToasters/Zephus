@@ -17,7 +17,15 @@ import {
   removeRecentProject,
   writeGlobalSettings,
 } from "./services/settings";
-import { getGitStatus, initGitRepo, commitAllChanges, commitProjectPaths, pushCurrentBranch, pullCurrentBranch } from "./services/git";
+import {
+  getGitStatus,
+  initGitRepo,
+  commitAllChanges,
+  commitProjectPaths,
+  pushCurrentBranch,
+  pullCurrentBranch,
+  type GetGitStatusOptions,
+} from "./services/git";
 import { createPage, createSite } from "./services/wizard";
 import { listThemes } from "./themes";
 import { readProjectFile, writeProjectFile } from "./services/files";
@@ -294,8 +302,10 @@ export function registerIpcHandlers(
       ),
   );
 
-  ipcMain.handle(IPC.gitStatus, (_e, projectPath: string) =>
-    approved(projectPath, () => getGitStatus(projectPath)),
+  ipcMain.handle(
+    IPC.gitStatus,
+    (_e, projectPath: string, options?: GetGitStatusOptions) =>
+      approved(projectPath, () => getGitStatus(projectPath, options)),
   );
 
   ipcMain.handle(

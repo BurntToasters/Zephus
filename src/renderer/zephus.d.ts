@@ -44,6 +44,8 @@ interface GitStatus {
   zephusIgnored?: boolean;
   notARepository?: boolean;
   error?: string;
+  ahead?: number;
+  behind?: number;
 }
 
 interface GlobalSettings {
@@ -465,7 +467,10 @@ interface ZephusApi {
     page: string,
     pagesDir: string,
   ): Promise<PageDocumentResult>;
-  getGitStatus(projectPath: string): Promise<GitStatus>;
+  getGitStatus(
+    projectPath: string,
+    options?: { fetchRemote?: boolean },
+  ): Promise<GitStatus>;
   initGitRepo(projectPath: string): Promise<OperationResult>;
   commitGitChanges(
     projectPath: string,

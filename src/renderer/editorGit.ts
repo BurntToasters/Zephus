@@ -9,6 +9,8 @@ export interface GitStatusSnapshot {
   zephusIgnored?: boolean;
   notARepository?: boolean;
   error?: string;
+  ahead?: number;
+  behind?: number;
   modified: string[];
   added: string[];
   deleted: string[];
@@ -29,14 +31,18 @@ export interface EditorGitDeps {
 }
 
 export function createEditorGitActions(deps: EditorGitDeps) {
-  async function refreshGit(): Promise<void> {
+  async function refreshGit(options?: {
+    fetchRemote?: boolean;
+  }): Promise<void> {
     const projectPath = deps.getProjectPath();
     if (!projectPath) {
       deps.setGitStatus(null);
       return;
     }
     try {
-      const git = await deps.zephus.getGitStatus(projectPath);
+      const git = await deps.zephus.getGitStatus(projectPath, {
+        fetchRemote: options?.fetchRemote ?? false,
+      });
       deps.setGitStatus(git);
     } catch (error) {
       console.error("Failed to refresh Git status:", error);
@@ -67,7 +73,7 @@ export function createEditorGitActions(deps: EditorGitDeps) {
         ? `Committed ${paths.length} file(s).`
         : "Committed changes.",
     );
-    await refreshGit();
+    await refreshGit({ fetchRemote: true });
   }
 
   async function pushGitChanges(): Promise<void> {
@@ -82,7 +88,7 @@ export function createEditorGitActions(deps: EditorGitDeps) {
       return;
     }
     deps.setStatus("Pushed to remote.");
-    await refreshGit();
+    await refreshGit({ fetchRemote: true });
   }
 
   async function pullGitChanges(): Promise<void> {
@@ -99,7 +105,7 @@ export function createEditorGitActions(deps: EditorGitDeps) {
     deps.setStatus(
       "Pulled from remote (fast-forward). Reload from disk if page sources changed outside Zephus.",
     );
-    await refreshGit();
+    await refreshGit({ fetchRemote: true });
   }
 
   async function initGitFromPanel(): Promise<void> {
@@ -114,7 +120,7 @@ export function createEditorGitActions(deps: EditorGitDeps) {
       return;
     }
     deps.setStatus("Git repository initialized.");
-    await refreshGit();
+    await refreshGit({ fetchRemote: false });
   }
 
   return {

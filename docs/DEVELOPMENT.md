@@ -65,6 +65,16 @@ If you change `renderBlockHtml`, update snapshots deliberately and mirror behavi
 |--------|----------------|
 | `editorCommands.ts` | Mode guard, clipboard rules, paste, toolbar undo state |
 | `editorGit.ts` | Git panel IPC (status, commit, push, pull, init) |
+| `editorSave.ts` | Page/site save flow, status messages, draft clear on save |
+| `editorParse.ts` | DOM parse of managed inner HTML → sections/blocks (code/visual load) |
+| `editorPageModel.ts` | Clone sections, flatten blocks, build page document snapshots |
+| `editorUndo.ts` | Unified page + site undo snapshots, stack limit, restore |
+| `editorDraft.ts` | Debounced crash-recovery draft writes (`site-shell` target) |
+| `editorInspector.ts` | Inspector undo latch + debounced canvas repaint while typing |
+| `editorUnsavedWork.ts` | Unsaved page/site summary lines for confirm modals |
+| `editorLog.ts` | Capped install/dev log append helper |
+| `editorSiteSave.ts` | Persist or discard pending site shell/design changes |
+| `editorDraftRestore.ts` | Page/site crash-recovery draft restore prompts |
 | `editorSerialize.ts` | Split/assemble managed page source (frontmatter + frame) |
 | `editorBlockRender.ts` | Canvas HTML sanitization, heading caps, section/block HTML for editor |
 | `editorSession.ts` | Dirty tracking, site/page session snapshots |
@@ -74,7 +84,7 @@ New editor features should follow the same pattern: pure helpers + Vitest in `sr
 
 ## Git panel (manual QA)
 
-With a Zephus project open: sidebar **Git** panel — refresh, selective commit, push, pull (`--ff-only`), init when not a repo. See [Workflows — Version Control with Git](./WORKFLOWS.md#version-control-with-git).
+With a Zephus project open: sidebar **Git** panel — **Refresh** (fetches remote), selective commit, push, pull (`--ff-only`), init when not a repo. When the branch has an upstream, the top bar and panel show **↑ahead** / **↓behind** counts. See [Workflows — Version Control with Git](./WORKFLOWS.md#version-control-with-git).
 
 ## User-facing docs
 

@@ -1,9 +1,40 @@
 // Zephus renderer logic. Talks to the main process exclusively through
 // window.zephus (the preload bridge). No Node APIs are used here.
 
-// TODO: Split UI rendering from state management (see editorCommands, editorGit, editorSerialize, editorBlockRender).
+// TODO: Split UI rendering from state management (see editorCommands, editorGit, editorSerialize, editorBlockRender, editorSave, editorParse, editorPageModel, editorUndo, editorDraft, editorInspector).
 
+import { appendCappedLog } from "./editorLog";
+import { collectUnsavedWorkSummaryLines } from "./editorUnsavedWork";
 import { createEditorGitActions } from "./editorGit";
+import { createEditorSaveActions } from "./editorSave";
+import { createEditorSiteSaveActions } from "./editorSiteSave";
+import { createEditorDraftRestoreActions } from "./editorDraftRestore";
+import { createEditorPageParser } from "./editorParse";
+import {
+  blocksFromSections,
+  buildPageDocumentFromSections,
+  cloneSections,
+} from "./editorPageModel";
+import {
+  cancelScheduledEditorDraftWrite,
+  scheduleEditorDraftWrite,
+  SITE_DRAFT_TARGET,
+} from "./editorDraft";
+import {
+  createDebouncedCanvasRepaint,
+  createInspectorUndoLatch,
+  isInspectorTextInputFocused,
+} from "./editorInspector";
+import {
+  captureEditorSnapshot,
+  editorSnapshotSectionsChanged,
+  popEditorRedoEntry,
+  popEditorUndoEntry,
+  pushEditorRedoFromCurrent,
+  pushEditorUndo,
+  pushEditorUndoFromCurrent,
+  restoreEditorSnapshot,
+} from "./editorUndo";
 import {
   blockToHtmlForEditor,
   sectionToHtmlForEditor,
@@ -231,24 +262,6 @@ const PALETTE_ICONS: Record<BlockType, string> = {
 const KNOWN_BLOCK_TYPES: ReadonlySet<string> = new Set(
   Object.keys(PALETTE_ICONS),
 );
-
-const DANGEROUS_KEYS = new Set(["__proto__", "constructor", "prototype"]);
-
-/** Coerces an arbitrary decoded object into a flat string-prop record, dropping
- * prototype-pollution keys and non-primitive values. */
-function sanitizeStringRecord(
-  input: Record<string, unknown> | undefined,
-): Record<string, string> {
-  const out: Record<string, string> = {};
-  if (!input || typeof input !== "object") return out;
-  for (const [key, value] of Object.entries(input)) {
-    if (DANGEROUS_KEYS.has(key)) continue;
-    if (typeof value === "string") out[key] = value;
-    else if (typeof value === "number" || typeof value === "boolean")
-      out[key] = String(value);
-  }
-  return out;
-}
 
 function refreshIcons(): void {
   createIcons({
@@ -665,29 +678,12 @@ function cloneBlock(block: Block): Block {
   return copy;
 }
 
-function cloneSections(sections: SectionNode[]): SectionNode[] {
-  return JSON.parse(JSON.stringify(sections)) as SectionNode[];
-}
-
 function trackChange(label: string): void {
   trackPageChange(state, label);
 }
 
 function clearChanges(): void {
   clearPageChanges(state);
-}
-
-function blocksFromSections(sections: SectionNode[]): Block[] {
-  return sections.flatMap((section) =>
-    section.children.map((child) => ({
-      id: child.id,
-      type: child.type,
-      props: { ...child.props },
-      style: child.style ? JSON.parse(JSON.stringify(child.style)) : undefined,
-      locked: child.locked,
-      raw: child.raw,
-    })),
-  );
 }
 
 function syncBlocksFromSections(): void {
@@ -700,11 +696,11 @@ function sectionsFromPageDocument(doc: PageDocument): SectionNode[] {
 
 function pageDocumentFromState(): PageDocument | null {
   if (!state.pageDocument || !state.page) return null;
-  return {
-    ...state.pageDocument,
-    page: state.page,
-    sections: cloneSections(state.sections),
-  };
+  return buildPageDocumentFromSections(
+    state.pageDocument,
+    state.page,
+    state.sections,
+  );
 }
 
 function syncVisualModeState(): void {
@@ -1259,7 +1255,9 @@ function renderNextActions(): void {
   }
 
   if (state.siteDirty || state.pageDirty) {
-    const actionsList = [{ label: "Save All", onClick: () => void save() }];
+    const actionsList = [
+      { label: "Save All", onClick: () => void performSave() },
+    ];
     if (state.siteDirty) {
       actionsList.push({
         label: "Discard Site",
@@ -1334,6 +1332,12 @@ function ensureFallbackSection(): SectionNode {
   };
 }
 
+const { parseSections } = createEditorPageParser({
+  uid,
+  createFallbackSection: ensureFallbackSection,
+  knownBlockTypes: KNOWN_BLOCK_TYPES,
+});
+
 function syncSelectionState(): void {
   if (state.selectedId && !findBlockLocation(state.selectedId)) {
     state.selectedId = null;
@@ -1350,10 +1354,6 @@ function draftContentForCurrentState(): string {
   return state.mode === "code" ? getCode() : serializeBlocks();
 }
 
-function siteDraftTarget(): string {
-  return "site-shell";
-}
-
 function siteDraftContentForCurrentState(): string {
   return JSON.stringify(
     effectiveSiteDocument(state) ?? state.siteDocument,
@@ -1363,29 +1363,11 @@ function siteDraftContentForCurrentState(): string {
 }
 
 function scheduleDraftWrite(): void {
-  if (!state.project) return;
-  if (state.draftTimer !== null) {
-    window.clearTimeout(state.draftTimer);
-  }
-  state.draftTimer = window.setTimeout(() => {
-    if (!state.project || !isGlobalDirty(state)) return;
-    if (state.pageDirty && state.page) {
-      void window.zephus.writeDraft(
-        state.project.path,
-        "page",
-        state.page,
-        draftContentForCurrentState(),
-      );
-    }
-    if (state.siteDirty && effectiveSiteDocument(state)) {
-      void window.zephus.writeDraft(
-        state.project.path,
-        "site",
-        siteDraftTarget(),
-        siteDraftContentForCurrentState(),
-      );
-    }
-  }, 800);
+  scheduleEditorDraftWrite(state, {
+    writeDraft: window.zephus.writeDraft.bind(window.zephus),
+    pageDraftContent: draftContentForCurrentState,
+    siteDraftContent: siteDraftContentForCurrentState,
+  });
 }
 
 function renderDirtyIndicators(): void {
@@ -2828,56 +2810,34 @@ async function openPageMetaModal(page: string): Promise<void> {
 }
 
 function buildUnsavedWorkSummary(): HTMLElement {
-  const pageItems = state.pageChangeSummary.length
-    ? state.pageChangeSummary
-    : state.pageDirty
-      ? [`Unsaved page edits for ${currentPageLabel()}`]
-      : [];
-  const siteItems = state.siteChangeSummary.length
-    ? state.siteChangeSummary
-    : state.siteDirty
-      ? ["Unsaved site shell or design edits"]
-      : [];
-
   const wrap = document.createElement("div");
-  renderUnsavedWorkSummaryModalBody(wrap, [...pageItems, ...siteItems]);
+  renderUnsavedWorkSummaryModalBody(
+    wrap,
+    collectUnsavedWorkSummaryLines({
+      pageDirty: state.pageDirty,
+      pageChangeSummary: state.pageChangeSummary,
+      pageFallbackLabel: `Unsaved page edits for ${currentPageLabel()}`,
+      siteDirty: state.siteDirty,
+      siteChangeSummary: state.siteChangeSummary,
+    }),
+  );
   return wrap;
 }
 
+let editorSiteSave!: ReturnType<typeof createEditorSiteSaveActions>;
+
 async function discardPendingSiteChanges(): Promise<void> {
-  if (!state.project) return;
-  await window.zephus.clearDraft(state.project.path, "site", siteDraftTarget());
-  clearSiteChanges(state);
-  markSiteDirty(state, false);
-  renderDirtyIndicators();
-  if (state.project) {
-    renderNavEditor(state.project);
-  }
+  return editorSiteSave.discardPendingSiteChanges();
 }
 
 async function persistPendingSiteDocument(): Promise<boolean> {
-  if (!state.project || !state.pendingSiteDocument) return true;
-  const result = await window.zephus.writeSiteDocument(
-    state.project.path,
-    state.pendingSiteDocument,
-    state.project.astro.pagesDir,
-  );
-  if (!result.ok) {
-    setStatus("Could not save site settings: " + (result.error ?? "unknown"));
-    return false;
-  }
-  const refreshed = await window.zephus.readSiteDocument(state.project.path);
-  if (refreshed.ok && refreshed.site) {
-    state.siteDocument = refreshed.site;
-  }
-  await window.zephus.clearDraft(state.project.path, "site", siteDraftTarget());
-  clearSiteChanges(state);
-  markSiteDirty(state, false);
-  renderDirtyIndicators();
-  if (state.project) {
-    renderNavEditor(state.project);
-  }
-  return true;
+  return editorSiteSave.persistPendingSiteDocument();
+}
+
+let editorDraftRestore!: ReturnType<typeof createEditorDraftRestoreActions>;
+
+async function maybeRestoreSiteDraft(): Promise<void> {
+  return editorDraftRestore.maybeRestoreSiteDraft();
 }
 
 async function maybeResolveUnsavedWork(options?: {
@@ -2933,54 +2893,6 @@ async function resolveSiteEditorConflict(
   return true;
 }
 
-async function maybeRestoreSiteDraft(): Promise<void> {
-  if (!state.project || !state.siteDocument) return;
-  const draft = await window.zephus.readDraft(
-    state.project.path,
-    "site",
-    siteDraftTarget(),
-  );
-  if (!draft.ok || !draft.draft?.content) return;
-  if (draft.draft.content === JSON.stringify(state.siteDocument, null, 2)) {
-    return;
-  }
-  const choice = await modalController.confirmRestoreDraft(
-    "Restore Site Draft",
-    `Zephus found unsaved site-level changes from ${new Date(
-      draft.draft.savedAt,
-    ).toLocaleString()}. Restore them?`,
-  );
-  if (choice === "discard") {
-    await window.zephus.clearDraft(
-      state.project.path,
-      "site",
-      siteDraftTarget(),
-    );
-    return;
-  }
-  if (choice !== "restore") return;
-  try {
-    const restored = JSON.parse(draft.draft.content) as SiteDocument;
-    state.pendingSiteDocument = restored;
-    state.pendingSiteEditorKind = "shell";
-    state.recoveredSiteDraft = draft.draft;
-    trackSiteChange(state, "Recovered unsaved site settings");
-    markSiteDirty(state, true);
-    renderDirtyIndicators();
-    scheduleDraftWrite();
-    renderNavEditor(state.project);
-    setStatus(
-      `Recovered site settings draft from ${new Date(draft.draft.savedAt).toLocaleString()}.`,
-    );
-  } catch {
-    await window.zephus.clearDraft(
-      state.project.path,
-      "site",
-      siteDraftTarget(),
-    );
-  }
-}
-
 async function loadPage(
   page: string,
   options?: { skipUnsavedGuard?: boolean; skipDraftRestore?: boolean },
@@ -3013,35 +2925,15 @@ async function loadPage(
   state.rawCode = state.visualEditable ? state.generatedCode : initialSource;
   state.recoveredPageDraft = null;
   if (!options?.skipDraftRestore) {
-    const draft = await window.zephus.readDraft(
-      state.project.path,
-      "page",
+    await editorDraftRestore.maybeRestorePageDraft(
       page,
+      findPageMeta(page)?.navLabel ?? page,
+      state.rawCode,
+      {
+        visualEditable: state.visualEditable,
+        applyRestoredSource: (content) => parsePage(content),
+      },
     );
-    if (
-      draft.ok &&
-      draft.draft?.content &&
-      draft.draft.content !== state.rawCode
-    ) {
-      const choice = await modalController.confirmRestoreDraft(
-        "Restore Page Draft",
-        `Zephus found an unsaved draft for ${
-          findPageMeta(page)?.navLabel ?? page
-        } from ${new Date(draft.draft.savedAt).toLocaleString()}. Restore it?`,
-      );
-      if (choice === "discard") {
-        await window.zephus.clearDraft(state.project.path, "page", page);
-      } else if (choice === "restore") {
-        state.rawCode = draft.draft.content;
-        state.recoveredPageDraft = draft.draft;
-        if (state.visualEditable) {
-          parsePage(state.rawCode);
-        }
-        setStatus(
-          `Recovered draft from ${new Date(draft.draft.savedAt).toLocaleString()}.`,
-        );
-      }
-    }
   }
   state.undo = [];
   state.redo = [];
@@ -3124,262 +3016,11 @@ function capturePageFrame(raw: string): string {
   return inner;
 }
 
-/**
- * Parses the managed inner HTML into SectionNodes, reconstructing section
- * wrappers emitted by sectionToHtml as editable SectionNodes rather than
- * collapsing them into opaque html blocks (Code→Visual round-trip safety).
- *
- * Top-level <section> elements without data-zephus-block are wrappers produced
- * by sectionToHtml when a section has a surface (wrapper, style, or cls).
- * All other top-level content is collected into a default fallback section.
- */
-function parseSections(inner: string): SectionNode[] {
-  const doc = new DOMParser().parseFromString(
-    `<div id="z-root">${inner}</div>`,
-    "text/html",
-  );
-  const root = doc.getElementById("z-root");
-  if (!root) return [ensureFallbackSection()];
-
-  // Fast path: no un-annotated <section> wrappers — single fallback section
-  // (original behaviour, avoids duplicate parsing).
-  const hasWrapper = Array.from(root.children).some(
-    (el) =>
-      el.tagName.toLowerCase() === "section" &&
-      !el.getAttribute("data-zephus-block"),
-  );
-  if (!hasWrapper) {
-    const sec = ensureFallbackSection();
-    sec.children = parseInner(inner);
-    return [sec];
-  }
-
-  // Multi-section path: each wrapper <section> becomes an editable SectionNode.
-  const sections: SectionNode[] = [];
-  let looseBlocks: Block[] = [];
-
-  const flushLoose = (): void => {
-    if (looseBlocks.length === 0) return;
-    const sec = ensureFallbackSection();
-    sec.label =
-      sections.length === 0 ? "Main Content" : `Section ${sections.length + 1}`;
-    sec.children = looseBlocks;
-    looseBlocks = [];
-    sections.push(sec);
-  };
-
-  for (const node of Array.from(root.childNodes)) {
-    if (node.nodeType === Node.TEXT_NODE) {
-      const text = node.textContent ?? "";
-      if (text.trim())
-        looseBlocks.push({ id: uid(), type: "html", props: {}, raw: text });
-      continue;
-    }
-    if (node.nodeType !== Node.ELEMENT_NODE) {
-      const raw = (node as ChildNode).textContent ?? "";
-      if (raw.trim())
-        looseBlocks.push({ id: uid(), type: "html", props: {}, raw });
-      continue;
-    }
-    const el = node as HTMLElement;
-    const tag = el.tagName.toLowerCase();
-    if (tag === "section" && !el.dataset["zephusBlock"]) {
-      // Un-annotated wrapper from sectionToHtml: reconstruct as SectionNode.
-      flushLoose();
-      const cls = el.getAttribute("class") ?? "";
-      sections.push({
-        id: uid(),
-        type: "section",
-        label: `Section ${sections.length + 1}`,
-        props: { wrapper: "box", cls },
-        children: parseInner(el.innerHTML),
-      });
-    } else {
-      // Regular block or typed element: delegate to parseInner.
-      looseBlocks.push(...parseInner(el.outerHTML));
-    }
-  }
-
-  flushLoose();
-  return sections.length > 0 ? sections : [ensureFallbackSection()];
-}
-
 function parsePage(raw: string): void {
   const inner = capturePageFrame(raw);
   state.sections = parseSections(inner);
   syncBlocksFromSections();
   state.selectedSectionId = state.sections[0]?.id ?? null;
-}
-
-function parseInner(inner: string): Block[] {
-  const doc = new DOMParser().parseFromString(
-    `<div id="z-root">${inner}</div>`,
-    "text/html",
-  );
-  const root = doc.getElementById("z-root");
-  const blocks: Block[] = [];
-  if (!root) return blocks;
-
-  for (const node of Array.from(root.childNodes)) {
-    if (node.nodeType === Node.TEXT_NODE) {
-      const text = node.textContent ?? "";
-      if (text.trim().length > 0) {
-        blocks.push({ id: uid(), type: "html", props: {}, raw: text });
-      }
-      continue;
-    }
-    if (node.nodeType !== Node.ELEMENT_NODE) {
-      // Comments and others preserved verbatim.
-      const raw = (node as ChildNode).textContent ?? "";
-      if (raw.trim()) blocks.push({ id: uid(), type: "html", props: {}, raw });
-      continue;
-    }
-    const el = node as HTMLElement;
-    const tag = el.tagName.toLowerCase();
-    const cls = el.getAttribute("class") ?? "";
-    const storedType = el.dataset["zephusBlock"];
-    const storedProps = parseJsonAttr<Record<string, unknown>>(
-      el.dataset["zephusProps"] ?? null,
-    );
-    const storedStyle = parseJsonAttr<BlockStyle>(
-      el.dataset["zephusStyle"] ?? null,
-    );
-    // Only trust the stored type if it is a known block type; otherwise fall
-    // through to structural tag parsing / verbatim preservation. Props are
-    // coerced to a flat string record (prototype-pollution keys dropped).
-    if (storedType && KNOWN_BLOCK_TYPES.has(storedType) && storedProps) {
-      blocks.push({
-        id: uid(),
-        type: storedType as BlockType,
-        props: sanitizeStringRecord(storedProps),
-        style: storedStyle,
-        locked: el.dataset["zephusLocked"] === "true",
-        raw: storedType === "html" ? el.outerHTML : undefined,
-      });
-      continue;
-    }
-
-    if (/^h[1-6]$/.test(tag)) {
-      blocks.push({
-        id: uid(),
-        type: "heading",
-        props: { text: el.textContent ?? "", level: tag[1] ?? "2", cls },
-        style: styleFromLegacyProps(el),
-      });
-    } else if (tag === "p") {
-      blocks.push({
-        id: uid(),
-        type: "text",
-        props: { text: el.textContent ?? "", cls },
-        style: styleFromLegacyProps(el),
-      });
-    } else if (tag === "a") {
-      blocks.push({
-        id: uid(),
-        type: "button",
-        props: {
-          text: el.textContent ?? "",
-          href: el.getAttribute("href") ?? "#",
-          cls,
-        },
-        style: styleFromLegacyProps(el),
-      });
-    } else if (tag === "img") {
-      blocks.push({
-        id: uid(),
-        type: "image",
-        props: {
-          src: el.getAttribute("src") ?? "",
-          alt: el.getAttribute("alt") ?? "",
-          cls,
-        },
-        style: styleFromLegacyProps(el),
-      });
-    } else if (tag === "hr") {
-      blocks.push({
-        id: uid(),
-        type: "divider",
-        props: { cls },
-        style: styleFromLegacyProps(el),
-      });
-    } else if (tag === "blockquote") {
-      blocks.push({
-        id: uid(),
-        type: "quote",
-        props: {
-          text:
-            el.querySelector("p")?.textContent?.trim() ??
-            el.textContent?.trim() ??
-            "",
-          cite: el.querySelector("cite")?.textContent?.trim() ?? "",
-          cls,
-        },
-        style: styleFromLegacyProps(el),
-      });
-    } else if (tag === "ul" || tag === "ol") {
-      blocks.push({
-        id: uid(),
-        type: "list",
-        props: {
-          items: Array.from(el.querySelectorAll("li"))
-            .map((item) => item.textContent?.trim() ?? "")
-            .filter(Boolean)
-            .join("\n"),
-          ordered: tag === "ol" ? "true" : "false",
-          cls,
-        },
-        style: styleFromLegacyProps(el),
-      });
-    } else if (tag === "iframe") {
-      blocks.push({
-        id: uid(),
-        type: "embed",
-        props: {
-          src: el.getAttribute("src") ?? "",
-          title: el.getAttribute("title") ?? "Embed",
-          cls,
-        },
-        style: styleFromLegacyProps(el),
-      });
-    } else {
-      // Unknown / structural element: preserve verbatim so nothing is lost.
-      blocks.push({ id: uid(), type: "html", props: {}, raw: el.outerHTML });
-    }
-  }
-  return blocks;
-}
-
-function parseJsonAttr<T>(value: string | null): T | undefined {
-  if (!value) return undefined;
-  try {
-    const parsed = JSON.parse(decodeURIComponent(value)) as unknown;
-    // Strip prototype-pollution keys from any decoded object before use.
-    if (parsed && typeof parsed === "object") {
-      for (const key of DANGEROUS_KEYS) {
-        if (Object.prototype.hasOwnProperty.call(parsed, key)) {
-          delete (parsed as Record<string, unknown>)[key];
-        }
-      }
-    }
-    return parsed as T;
-  } catch {
-    return undefined;
-  }
-}
-
-function styleFromLegacyProps(el: HTMLElement): BlockStyle | undefined {
-  const style = {
-    color: el.style.color || undefined,
-    background: el.style.background || undefined,
-    padding: el.style.padding || undefined,
-    margin: el.style.margin || undefined,
-    width: el.style.width || undefined,
-    height: el.style.height || undefined,
-    maxWidth: el.style.maxWidth || undefined,
-    radius: el.style.borderRadius || undefined,
-    gap: el.style.gap || undefined,
-  } satisfies BlockStyle;
-  return Object.values(style).some(Boolean) ? style : undefined;
 }
 
 function editorRenderOptions(
@@ -3413,16 +3054,7 @@ function sectionToHtml(
   return sectionToHtmlForEditor(section, editorRenderOptions(viewport, forCanvas));
 }
 
-/** Appends to a log element, trimming the front so it can't grow without bound. */
-const MAX_LOG_CHARS = 100_000;
-function appendCappedLog(el: HTMLElement, chunk: string): void {
-  const next = (el.textContent ?? "") + chunk;
-  el.textContent =
-    next.length > MAX_LOG_CHARS
-      ? next.slice(next.length - MAX_LOG_CHARS)
-      : next;
-  el.scrollTop = el.scrollHeight;
-}
+/* ---------- Page structure parse / serialize ---------- */
 
 function serializeBlocks(): string {
   return assembleManagedPage(
@@ -3462,49 +3094,41 @@ const DOUBLE_CLICK_MS = 400;
 // double-clicking a word to highlight it).
 let isInlineEditing = false;
 
+const undoSnapshotEffects = {
+  syncBlocksFromSections,
+  syncSelectionState,
+  applyDesignPreview,
+  renderDirtyIndicators,
+};
+
 function captureSnapshot(): EditorSnapshot {
-  return {
-    sections: cloneSections(state.sections),
-    site: cloneSiteDocument(effectiveSiteDocument(state)),
-  };
+  return captureEditorSnapshot(state);
 }
 
 function pushUndo(): void {
-  state.undo.push(captureSnapshot());
-  if (state.undo.length > 50) state.undo.shift();
-  state.redo = [];
-  updateUndoRedoButtons();
+  pushEditorUndo(state, updateUndoRedoButtons);
 }
 
-/**
- * Restores sections + (if changed) the site design/shell from a snapshot.
- * Page sections and the site document are restored together so a single
- * undo/redo reverts visual edits AND design/theme/shell changes.
- */
 function restoreSnapshot(snap: EditorSnapshot): void {
-  state.sections = cloneSections(snap.sections);
-  syncBlocksFromSections();
-  syncSelectionState();
+  restoreEditorSnapshot(state, snap, undoSnapshotEffects);
+}
 
-  const currentSite = effectiveSiteDocument(state);
-  if (JSON.stringify(snap.site) !== JSON.stringify(currentSite)) {
-    if (
-      snap.site &&
-      state.siteDocument &&
-      JSON.stringify(snap.site) === JSON.stringify(state.siteDocument)
-    ) {
-      // Snapshot matches the last-saved site: drop the pending change.
-      state.pendingSiteDocument = null;
-      state.pendingSiteEditorKind = null;
-      markSiteDirty(state, false);
-    } else if (snap.site) {
-      state.pendingSiteDocument = cloneSiteDocument(snap.site);
-      trackSiteChange(state, "Reverted a design change");
-      markSiteDirty(state, true);
-    }
-    applyDesignPreview();
-    renderDirtyIndicators();
-  }
+const inspectorCanvasRepaint = createDebouncedCanvasRepaint(() => {
+  renderLayers();
+  renderCanvas();
+});
+const inspectorEditLatch = createInspectorUndoLatch(pushUndo);
+
+function scheduleCanvasRepaint(debounce: boolean): void {
+  inspectorCanvasRepaint.schedule(debounce);
+}
+
+function beginInspectorEdit(): void {
+  inspectorEditLatch.begin();
+}
+
+function endInspectorEdit(): void {
+  inspectorEditLatch.end(() => inspectorCanvasRepaint.flush());
 }
 
 function blockLabel(block: Block): string {
@@ -3522,52 +3146,6 @@ function commitBlockChange(summary: string): void {
   renderProperties();
 }
 
-let inspectorUndoActive = false;
-// Debounce timer for canvas repaints triggered by rapid property edits.
-let inspectorRepaintTimer: number | null = null;
-
-/**
- * Repaints the canvas + layers. While the user is actively typing in a text
- * field, repaints are debounced so a long page doesn't re-render on every
- * keystroke (the model is already updated synchronously, so save/serialize
- * stay correct). A pending repaint is flushed on blur via endInspectorEdit.
- */
-function scheduleCanvasRepaint(debounce: boolean): void {
-  if (inspectorRepaintTimer !== null) {
-    window.clearTimeout(inspectorRepaintTimer);
-    inspectorRepaintTimer = null;
-  }
-  if (!debounce) {
-    renderLayers();
-    renderCanvas();
-    return;
-  }
-  inspectorRepaintTimer = window.setTimeout(() => {
-    inspectorRepaintTimer = null;
-    renderLayers();
-    renderCanvas();
-  }, 140);
-}
-
-function flushCanvasRepaint(): void {
-  if (inspectorRepaintTimer === null) return;
-  window.clearTimeout(inspectorRepaintTimer);
-  inspectorRepaintTimer = null;
-  renderLayers();
-  renderCanvas();
-}
-
-function beginInspectorEdit(): void {
-  if (inspectorUndoActive) return;
-  pushUndo();
-  inspectorUndoActive = true;
-}
-
-function endInspectorEdit(): void {
-  inspectorUndoActive = false;
-  flushCanvasRepaint();
-}
-
 function commitInspectorChange(
   summary: string,
   rerenderProperties = false,
@@ -3577,13 +3155,9 @@ function commitInspectorChange(
   syncSelectionState();
   trackChange(summary);
   markDirty(true);
-  // Debounce the (potentially expensive) repaint only while typing in a text
-  // field; everything else repaints immediately for snappy feedback.
-  const active = document.activeElement as HTMLElement | null;
   const typing =
     !rerenderProperties &&
-    !!active &&
-    (active.tagName === "INPUT" || active.tagName === "TEXTAREA");
+    isInspectorTextInputFocused(document.activeElement);
   scheduleCanvasRepaint(typing);
   if (rerenderProperties) {
     endInspectorEdit();
@@ -4183,7 +3757,7 @@ function resizeCanvasTargetByKeyboard(
   subject.style.width = style.width;
   subject.style.height = style.height;
   pushUndo();
-  inspectorUndoActive = true;
+  inspectorEditLatch.markActive();
   commitInspectorChange(
     `Resized ${target.kind === "block" ? target.node.type : target.node.label}`,
     true,
@@ -4199,7 +3773,7 @@ function beginCanvasResize(
   handle: HTMLElement,
 ): void {
   pushUndo();
-  inspectorUndoActive = true;
+  inspectorEditLatch.markActive();
   const startX = event.clientX;
   const startY = event.clientY;
   const rect = subject.getBoundingClientRect();
@@ -5438,186 +5012,49 @@ function setMode(mode: Mode): void {
 
 /* ---------- Save ---------- */
 
-async function performSave(): Promise<boolean> {
-  if (!state.project) {
-    setStatus("No project open to save.");
-    return false;
-  }
-  if (state.draftTimer !== null) {
-    window.clearTimeout(state.draftTimer);
-    state.draftTimer = null;
-  }
-  let savedPage = false;
-  let savedSite = false;
+let performSave: () => Promise<boolean>;
 
-  if (state.pageDirty) {
-    if (!state.page) {
-      setStatus("No page open to save.");
-      return false;
-    }
-    const content = state.mode === "code" ? getCode() : serializeBlocks();
-    if (state.mode === "code") {
-      if (state.managedStatus === "detached") {
-        const detached = await window.zephus.detachPageDocument(
-          state.project.path,
-          state.page,
-          state.project.astro.pagesDir,
-          content,
-        );
-        if (!detached.ok || !detached.pageDocument) {
-          setStatus("Save failed: " + (detached.error ?? "unknown"));
-          return false;
-        }
-        state.pageDocument = detached.pageDocument;
-        state.siteDocument = detached.site;
-        state.managedStatus = detached.pageDocument.managedFileStatus;
-        state.visualEditable = false;
-        state.generatedCode =
-          detached.generatedSource ?? detached.source ?? content;
-        state.rawCode = content;
-      } else if (state.managedStatus === "out-of-sync") {
-        const detached = await window.zephus.detachPageDocument(
-          state.project.path,
-          state.page,
-          state.project.astro.pagesDir,
-          content,
-        );
-        if (!detached.ok || !detached.pageDocument) {
-          setStatus("Save failed: " + (detached.error ?? "unknown"));
-          return false;
-        }
-        state.pageDocument = detached.pageDocument;
-        state.siteDocument = detached.site;
-        state.managedStatus = detached.pageDocument.managedFileStatus;
-        state.visualEditable = false;
-        state.generatedCode =
-          detached.generatedSource ?? detached.source ?? content;
-        state.rawCode = content;
-        setStatus(
-          "Page saved as hand-authored Astro. Reattach when you want visual editing again.",
-        );
-      } else {
-        const visualDoc = pageDocumentFromState();
-        if (!visualDoc) {
-          setStatus("Save failed: missing page document.");
-          return false;
-        }
-        const generated = await window.zephus.writePageDocument(
-          state.project.path,
-          state.project.astro.pagesDir,
-          visualDoc,
-        );
-        if (!generated.ok || !generated.pageDocument) {
-          setStatus("Save failed: " + (generated.error ?? "unknown"));
-          return false;
-        }
-        const normalizedGenerated = generated.source ?? "";
-        if (content !== normalizedGenerated) {
-          const detached = await window.zephus.detachPageDocument(
-            state.project.path,
-            state.page,
-            state.project.astro.pagesDir,
-            content,
-          );
-          if (!detached.ok || !detached.pageDocument) {
-            setStatus("Detach failed: " + (detached.error ?? "unknown"));
-            return false;
-          }
-          state.pageDocument = detached.pageDocument;
-          state.siteDocument = detached.site;
-          state.managedStatus = detached.pageDocument.managedFileStatus;
-          state.visualEditable = false;
-          state.generatedCode = normalizedGenerated;
-          state.rawCode = content;
-          setStatus(
-            "Page detached from visual mode and saved as hand-authored Astro.",
-          );
-        } else {
-          state.pageDocument = generated.pageDocument;
-          state.siteDocument = generated.site;
-          state.managedStatus = generated.pageDocument.managedFileStatus;
-          state.visualEditable = true;
-          state.generatedCode = normalizedGenerated;
-          state.rawCode = normalizedGenerated;
-        }
-      }
-    } else {
-      const doc = pageDocumentFromState();
-      if (!doc) {
-        setStatus("Save failed: missing page document.");
-        return false;
-      }
-      const saved = await window.zephus.writePageDocument(
-        state.project.path,
-        state.project.astro.pagesDir,
-        doc,
-      );
-      if (!saved.ok || !saved.pageDocument) {
-        setStatus("Save failed: " + (saved.error ?? "unknown"));
-        return false;
-      }
-      state.pageDocument = saved.pageDocument;
-      state.siteDocument = saved.site;
-      state.managedStatus = saved.pageDocument.managedFileStatus;
-      state.visualEditable = true;
-      state.generatedCode = saved.generatedSource ?? saved.source ?? content;
-      state.rawCode = state.generatedCode;
-    }
-    syncVisualModeState();
-    if (state.mode === "code" && state.visualEditable) {
-      const currentDoc = pageDocumentFromState();
-      if (currentDoc) {
-        state.sections = sectionsFromPageDocument(currentDoc);
-        syncBlocksFromSections();
-      }
-    }
-    await window.zephus.clearDraft(state.project.path, "page", state.page);
-    clearChanges();
-    markDirty(false);
-    savedPage = true;
-  }
+editorSiteSave = createEditorSiteSaveActions({
+  getState: () => state,
+  setStatus,
+  onSiteStateChanged: () => {
+    renderDirtyIndicators();
+    if (state.project) renderNavEditor(state.project);
+  },
+  zephus: window.zephus,
+});
 
-  if (state.siteDirty) {
-    const saved = await persistPendingSiteDocument();
-    if (!saved) return false;
-    savedSite = true;
-  }
+editorDraftRestore = createEditorDraftRestoreActions({
+  getState: () => state,
+  setStatus,
+  confirmRestoreDraft: (title, message) =>
+    modalController.confirmRestoreDraft(title, message),
+  onSiteDraftRestored: () => {
+    renderDirtyIndicators();
+    scheduleDraftWrite();
+    if (state.project) renderNavEditor(state.project);
+  },
+  zephus: window.zephus,
+});
 
-  renderDirtyIndicators();
-  if (savedPage && savedSite) {
-    setStatus(`Saved ${state.page ?? "page"} and site settings.`);
-  } else if (savedPage) {
-    setStatus("Saved " + state.page);
-  } else if (savedSite) {
-    setStatus("Saved site settings.");
-  } else {
-    setStatus("Nothing to save.");
-  }
-  void editorGit.refreshGit();
-  await reloadPages();
-  return true;
-}
-
-async function save(): Promise<void> {
-  if (!isGlobalDirty(state)) {
-    setStatus("Nothing to save.");
-    return;
-  }
-  const wrap = document.createElement("div");
-  wrap.className = "save-summary";
-  wrap.appendChild(buildUnsavedWorkSummary());
-  showModalNode("Save Changes", wrap, [
-    { label: "Cancel", kind: "ghost", onClick: closeModal },
-    {
-      label: "Save",
-      kind: "primary",
-      onClick: async () => {
-        closeModal();
-        await performSave();
-      },
-    },
-  ]);
-}
+const editorSave = createEditorSaveActions({
+  getState: () => state,
+  setStatus,
+  getCode,
+  serializeBlocks,
+  pageDocumentFromState,
+  syncVisualModeState,
+  sectionsFromPageDocument,
+  syncBlocksFromSections,
+  clearChanges,
+  markDirty,
+  renderDirtyIndicators,
+  reloadPages,
+  persistPendingSiteDocument,
+  afterSave: () => void editorGit.refreshGit(),
+  zephus: window.zephus,
+});
+performSave = () => editorSave.performSave();
 
 /* ---------- Preview + responsive viewport ---------- */
 
@@ -5852,10 +5289,7 @@ async function closeProject(): Promise<void> {
   state.selectedSectionId = null;
   state.recoveredPageDraft = null;
   state.recoveredSiteDraft = null;
-  if (state.draftTimer !== null) {
-    window.clearTimeout(state.draftTimer);
-    state.draftTimer = null;
-  }
+  cancelScheduledEditorDraftWrite(state);
   clearChanges();
   clearSiteChanges(state);
   markSiteDirty(state, false);
@@ -5888,11 +5322,13 @@ function updateUndoRedoButtons(): void {
 }
 
 function doUndo(): void {
-  const prev = state.undo.pop();
+  const prev = popEditorUndoEntry(state);
   if (!prev) return;
-  const sectionsChanged =
-    JSON.stringify(prev.sections) !== JSON.stringify(state.sections);
-  state.redo.push(captureSnapshot());
+  const sectionsChanged = editorSnapshotSectionsChanged(
+    prev,
+    state.sections,
+  );
+  pushEditorRedoFromCurrent(state);
   restoreSnapshot(prev);
   if (sectionsChanged) {
     trackChange("Undid a change");
@@ -5905,11 +5341,13 @@ function doUndo(): void {
 }
 
 function doRedo(): void {
-  const next = state.redo.pop();
+  const next = popEditorRedoEntry(state);
   if (!next) return;
-  const sectionsChanged =
-    JSON.stringify(next.sections) !== JSON.stringify(state.sections);
-  state.undo.push(captureSnapshot());
+  const sectionsChanged = editorSnapshotSectionsChanged(
+    next,
+    state.sections,
+  );
+  pushEditorUndoFromCurrent(state);
   restoreSnapshot(next);
   if (sectionsChanged) {
     trackChange("Redid a change");
@@ -5938,7 +5376,7 @@ function onKeydown(e: KeyboardEvent): void {
 
   const mod = e.ctrlKey || e.metaKey;
   if (mod && e.key === "s") {
-    void save();
+    void performSave();
     e.preventDefault();
     return;
   }
@@ -6574,7 +6012,7 @@ function init(): void {
     updateUndoRedoButtons();
   };
   updateUndoRedoButtons();
-  $("btn-save").onclick = () => void save();
+  $("btn-save").onclick = () => void performSave();
   $("btn-publish").onclick = () => void publishSite();
   $("btn-preview").onclick = () => void togglePreview();
   $("btn-help").onclick = () => void openHelpModal();
@@ -6617,7 +6055,7 @@ function init(): void {
     try {
       mountGitPanel(gitPanelContainer);
       registerGitPanelHandlers({
-        onRefresh: () => void editorGit.refreshGit(),
+        onRefresh: () => void editorGit.refreshGit({ fetchRemote: true }),
         onCommit: (message, paths) => editorGit.commitGitChanges(message, paths),
         onPush: () => editorGit.pushGitChanges(),
         onPull: () => editorGit.pullGitChanges(),

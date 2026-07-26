@@ -148,8 +148,11 @@ const api = {
   ): Promise<PageDocumentResult> =>
     ipcRenderer.invoke(IPC.pageDocumentReattach, projectPath, page, pagesDir),
 
-  getGitStatus: (projectPath: string): Promise<GitStatus> =>
-    ipcRenderer.invoke(IPC.gitStatus, projectPath),
+  getGitStatus: (
+    projectPath: string,
+    options?: { fetchRemote?: boolean },
+  ): Promise<GitStatus> =>
+    ipcRenderer.invoke(IPC.gitStatus, projectPath, options),
 
   initGitRepo: (projectPath: string): Promise<OperationResult> =>
     ipcRenderer.invoke(IPC.gitInit, projectPath),

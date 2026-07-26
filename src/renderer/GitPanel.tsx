@@ -1,5 +1,6 @@
 import { render } from "solid-js/web";
 import { For, Show, createEffect, createSignal } from "solid-js";
+import { formatGitUpstreamLabel, formatGitUpstreamPanelNote } from "./gitUpstreamLabel";
 
 export interface GitStatusData {
   available: boolean;
@@ -8,6 +9,8 @@ export interface GitStatusData {
   zephusIgnored?: boolean;
   notARepository?: boolean;
   error?: string;
+  ahead?: number;
+  behind?: number;
   modified: string[];
   added: string[];
   deleted: string[];
@@ -64,7 +67,10 @@ export function GitBranchTag() {
           >
             <>
               <i data-lucide="git-branch" aria-hidden="true"></i>{" "}
-              <span>{status().branch ?? ""}</span>
+              <span>
+                {status().branch ?? ""}
+                {formatGitUpstreamLabel(status().ahead, status().behind)}
+              </span>
             </>
           </Show>
         </Show>
@@ -233,6 +239,7 @@ export function GitPanelContent() {
             type="button"
             class="btn ghost"
             onClick={() => gitPanelHandlers?.onRefresh()}
+            title="Fetch remote and refresh working tree status"
           >
             Refresh
           </button>
@@ -261,6 +268,16 @@ export function GitPanelContent() {
             Detached HEAD — commits won't update a branch until you check one
             out.
           </p>
+        </Show>
+
+        <Show
+          when={(() => {
+            const s = gitStatus();
+            if (s?.ahead == null || s?.behind == null) return false;
+            return formatGitUpstreamPanelNote(s.ahead, s.behind);
+          })()}
+        >
+          {(note) => <p class="muted git-upstream-note">{note()}</p>}
         </Show>
 
         <Show when={gitStatus()?.zephusIgnored}>

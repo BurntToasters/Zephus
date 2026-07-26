@@ -486,6 +486,8 @@ When a branch is checked out (not detached HEAD), the Git panel toolbar includes
 - **Pull (Fast-Forward)** — runs `git pull --ff-only` (fails if a merge is required; resolve on the command line)
 - **Push to Remote** — runs `git push` to the configured upstream
 
+When the branch tracks a remote (`@{upstream}`), the branch label shows **↑N** / **↓N** (local commits to push / remote commits to pull), and the panel explains what to do next. Click **Refresh** to run a quiet `git fetch` and update those counts; routine status updates (e.g. after save) use the last fetch only.
+
 After a pull, if Astro sources changed outside Zephus, use **Reload From Disk** on the editor banner when prompted, or reload the page from the page list.
 
 ---

@@ -23,8 +23,9 @@ import {
 } from "./renderHelpers";
 import type { BlockNode, BlockStyle, SectionNode } from "../main/types";
 
-export interface RenderBlockInput extends BlockMetadataSource {
+export interface RenderBlockInput extends Omit<BlockMetadataSource, "style"> {
   raw?: string;
+  style?: BlockStyle;
 }
 
 export interface RenderBlockOptions extends StyleAttrOptions {

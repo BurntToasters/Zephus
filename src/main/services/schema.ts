@@ -903,7 +903,7 @@ function parseSectionsFromSource(raw: string): SectionNode[] {
         type: "section",
         label: stored.props["label"] || "Section",
         props: {
-          wrapper: stored.props["wrapper"] ?? "box",
+          wrapper: stored.props["wrapper"] ?? "none",
           cls: stored.props["cls"] ?? "",
         },
         style: stored.style,
