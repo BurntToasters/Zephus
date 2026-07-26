@@ -342,6 +342,43 @@ import BaseLayout from '../layouts/BaseLayout.astro';
     expect(reread.pageDocument?.sections[0]?.props.wrapper).toBe("none");
   });
 
+  it("does not rewrite Astro on open when on-disk file matches stored hash", () => {
+    ensureVisualSchema(tmpDir, pagesDir);
+    const created = createSchemaPage(tmpDir, pagesDir, "renderer-stable");
+    expect(created.ok).toBe(true);
+    const page = pagePathFromSlug(pagesDir, "renderer-stable");
+    const pageFile = path.join(tmpDir, page);
+    const onDiskBefore = fs.readFileSync(pageFile, "utf8");
+    const sidecarPath = path.join(
+      tmpDir,
+      ".zephus",
+      "pages",
+      "renderer-stable.json",
+    );
+    const sidecar = JSON.parse(fs.readFileSync(sidecarPath, "utf8")) as {
+      generatedHash: string;
+      sections: unknown[];
+    };
+    expect(sidecar.generatedHash).toBeTruthy();
+
+    // Change the visual model in the sidecar without touching the Astro file.
+    sidecar.sections = [
+      {
+        ...(sidecar.sections[0] as object),
+        style: { padding: "99px" },
+      },
+    ];
+    fs.writeFileSync(sidecarPath, JSON.stringify(sidecar, null, 2), "utf8");
+
+    const ensured = ensureVisualSchema(tmpDir, pagesDir);
+    expect(ensured.ok).toBe(true);
+    expect(fs.readFileSync(pageFile, "utf8")).toBe(onDiskBefore);
+
+    const reread = readPageDocument(tmpDir, page, pagesDir);
+    expect(reread.ok).toBe(true);
+    expect(reread.pageDocument?.managedFileStatus).toBe("managed");
+  });
+
   it("writes managed shell and design artifacts when site settings change", () => {
     ensureVisualSchema(tmpDir, pagesDir);
     fs.mkdirSync(path.join(tmpDir, "public", "scripts"), { recursive: true });

@@ -2914,8 +2914,8 @@ async function loadPage(
   state.siteDocument = res.site;
   state.pageDocument = res.pageDocument;
   state.managedStatus = res.pageDocument.managedFileStatus;
-  state.visualEditable =
-    state.managedStatus !== "detached" && state.managedStatus !== "out-of-sync";
+  // Visual editing uses the JSON sidecar; disk drift is surfaced via banner + save.
+  state.visualEditable = state.managedStatus !== "detached";
   const initialSource = res.source ?? "";
   capturePageFrame(initialSource);
   syncCurrentMeta();

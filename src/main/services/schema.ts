@@ -1348,18 +1348,56 @@ export function ensureVisualSchema(
         actualSource,
         generatedSource,
       );
+      const normalizedGenerated = normalizeHashText(generatedSource);
+      const normalizedActual =
+        actualSource !== null ? normalizeHashText(actualSource) : null;
+      const onDiskMatchesGenerated =
+        normalizedActual !== null &&
+        normalizedActual === normalizedGenerated;
+      const onDiskMatchesStoredHash =
+        actualSource !== null &&
+        Boolean(doc.generatedHash) &&
+        hashText(actualSource) === doc.generatedHash;
+
+      let nextGeneratedHash = doc.generatedHash ?? hashText(generatedSource);
+      if (actualSource === null) {
+        nextGeneratedHash = hashText(generatedSource);
+      } else if (onDiskMatchesGenerated) {
+        nextGeneratedHash = hashText(generatedSource);
+      } else if (onDiskMatchesStoredHash) {
+        nextGeneratedHash = doc.generatedHash!;
+      }
+
+      const shouldWriteAstro =
+        managedFileStatus !== "out-of-sync" &&
+        (actualSource === null ||
+          onDiskMatchesGenerated ||
+          !doc.generatedHash);
+
+      if (
+        shouldWriteAstro &&
+        actualSource !== null &&
+        !onDiskMatchesGenerated &&
+        !onDiskMatchesStoredHash
+      ) {
+        nextGeneratedHash = hashText(generatedSource);
+      }
+
       const nextDoc = {
         ...doc,
-        generatedHash: hashText(generatedSource),
+        generatedHash: nextGeneratedHash,
         managedFileStatus:
           managedFileStatus === "missing"
             ? ("managed" as const)
             : managedFileStatus,
       };
       writePageDocumentFile(projectPath, nextDoc);
-      if (managedFileStatus !== "out-of-sync") {
+
+      if (shouldWriteAstro) {
         fs.mkdirSync(path.dirname(pageFile), { recursive: true });
-        fs.writeFileSync(pageFile, generatedSource, "utf8");
+        if (actualSource === null || !onDiskMatchesGenerated) {
+          fs.writeFileSync(pageFile, generatedSource, "utf8");
+        }
       }
     }
     updateAssetsIndex(projectPath, astro.publicDir);
