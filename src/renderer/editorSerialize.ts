@@ -56,10 +56,7 @@ export function splitManagedPageSource(raw: string): SplitManagedPage {
 }
 
 /** Indents each non-empty line of managed inner HTML (default: 4 spaces). */
-export function indentManagedBody(
-  core: string,
-  indent = "    ",
-): string {
+export function indentManagedBody(core: string, indent = "    "): string {
   return core
     .split("\n")
     .map((line) => (line ? `${indent}${line}` : line))

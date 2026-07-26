@@ -241,7 +241,12 @@ export function createEditorPageParser(deps: EditorParseDeps) {
       if (node.nodeType === Node.TEXT_NODE) {
         const text = node.textContent ?? "";
         if (text.trim()) {
-          looseBlocks.push({ id: deps.uid(), type: "html", props: {}, raw: text });
+          looseBlocks.push({
+            id: deps.uid(),
+            type: "html",
+            props: {},
+            raw: text,
+          });
         }
         continue;
       }

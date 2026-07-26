@@ -84,9 +84,7 @@ export function sectionHasSurface(
 export function shouldUnwrapSectionChildren(
   section: SectionSerializeSource,
 ): boolean {
-  return (
-    sectionWrapperIsNone(section.props) && !sectionHasSurface(section)
-  );
+  return sectionWrapperIsNone(section.props) && !sectionHasSurface(section);
 }
 
 export function renderSectionWrapperOpen(
@@ -123,7 +121,9 @@ export function wrapSectionChildren(
   return `${renderSectionWrapperOpen(section, options)}\n${body}\n</section>`;
 }
 
-function responsiveCssDeclarations(style: BlockStyle | undefined): string | null {
+function responsiveCssDeclarations(
+  style: BlockStyle | undefined,
+): string | null {
   if (!style) return null;
   const css: string[] = [];
   if (["left", "center", "right"].includes(String(style.align))) {

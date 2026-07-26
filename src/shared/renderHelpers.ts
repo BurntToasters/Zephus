@@ -147,9 +147,9 @@ export function mergeViewportStyle(
   style: StyleAttrBlock["style"] | undefined,
   viewport: StyleViewport = "desktop",
 ): NonNullable<StyleAttrBlock["style"]> {
-  const base = (
-    style ? JSON.parse(JSON.stringify(style)) : {}
-  ) as NonNullable<StyleAttrBlock["style"]>;
+  const base = (style ? JSON.parse(JSON.stringify(style)) : {}) as NonNullable<
+    StyleAttrBlock["style"]
+  >;
   if (viewport !== "desktop") {
     const override = style?.responsive?.[viewport];
     if (override) Object.assign(base, override);

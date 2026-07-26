@@ -21,7 +21,9 @@ describe("editorParse helpers", () => {
   });
 
   it("parses encoded zephus JSON attrs", () => {
-    const encoded = encodeURIComponent(JSON.stringify({ text: "Title", cls: "" }));
+    const encoded = encodeURIComponent(
+      JSON.stringify({ text: "Title", cls: "" }),
+    );
     expect(parseZephusJsonAttr<Record<string, string>>(encoded)).toEqual({
       text: "Title",
       cls: "",

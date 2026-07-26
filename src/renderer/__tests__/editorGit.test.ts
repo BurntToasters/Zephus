@@ -86,7 +86,10 @@ describe("editorGit", () => {
 
     await actions.commitGitChanges("save", ["a.ts", "b.ts"]);
 
-    expect(commitGitChanges).toHaveBeenCalledWith("/proj", "save", ["a.ts", "b.ts"]);
+    expect(commitGitChanges).toHaveBeenCalledWith("/proj", "save", [
+      "a.ts",
+      "b.ts",
+    ]);
     expect(setStatus).toHaveBeenCalledWith("Committed 2 file(s).");
     expect(setGitStatus).toHaveBeenCalled();
   });

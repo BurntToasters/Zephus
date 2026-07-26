@@ -401,106 +401,110 @@ export function renderSectionProperties(
         ) : null}
 
         <fieldset disabled={state.locked} class="prop-fieldset">
-        <Group title="Content">
-          <TextField
-            label="Section label"
-            value={state.sectionLabel}
-            onChange={state.onSectionLabelChange}
-            onFocus={state.onFocus}
-            onBlur={state.onBlur}
-          />
-          <SelectField
-            label="Background container"
-            value={state.wrapper}
-            options={[
-              { value: "none", label: "None (transparent)" },
-              { value: "box", label: "Boxed surface" },
-            ]}
-            onChange={state.onWrapperChange}
-            onFocus={state.onFocus}
-            onBlur={state.onBlur}
-          />
-          <TextField
-            label="CSS class (optional)"
-            value={state.cssClass}
-            onChange={state.onCssClassChange}
-            onFocus={state.onFocus}
-            onBlur={state.onBlur}
-          />
-        </Group>
+          <Group title="Content">
+            <TextField
+              label="Section label"
+              value={state.sectionLabel}
+              onChange={state.onSectionLabelChange}
+              onFocus={state.onFocus}
+              onBlur={state.onBlur}
+            />
+            <SelectField
+              label="Background container"
+              value={state.wrapper}
+              options={[
+                { value: "none", label: "None (transparent)" },
+                { value: "box", label: "Boxed surface" },
+              ]}
+              onChange={state.onWrapperChange}
+              onFocus={state.onFocus}
+              onBlur={state.onBlur}
+            />
+            <TextField
+              label="CSS class (optional)"
+              value={state.cssClass}
+              onChange={state.onCssClassChange}
+              onFocus={state.onFocus}
+              onBlur={state.onBlur}
+            />
+          </Group>
 
-        <Group title="Layout">
-          <LengthField
-            label="Width"
-            value={state.width}
-            onChange={state.onWidthChange}
-            onFocus={state.onFocus}
-            onBlur={state.onBlur}
-          />
-          <LengthField
-            label="Height"
-            value={state.height}
-            onChange={state.onHeightChange}
-            onFocus={state.onFocus}
-            onBlur={state.onBlur}
-          />
-          <LengthField
-            label="Padding"
-            value={state.padding}
-            onChange={state.onPaddingChange}
-            onFocus={state.onFocus}
-            onBlur={state.onBlur}
-          />
-          <LengthField
-            label="Margin"
-            value={state.margin}
-            onChange={state.onMarginChange}
-            onFocus={state.onFocus}
-            onBlur={state.onBlur}
-          />
-          <LengthField
-            label="Max width"
-            value={state.maxWidth}
-            onChange={state.onMaxWidthChange}
-            onFocus={state.onFocus}
-            onBlur={state.onBlur}
-          />
-          <LengthField
-            label="Gap"
-            value={state.gap}
-            onChange={state.onGapChange}
-            onFocus={state.onFocus}
-            onBlur={state.onBlur}
-          />
-        </Group>
+          <Group title="Layout">
+            <LengthField
+              label="Width"
+              value={state.width}
+              onChange={state.onWidthChange}
+              onFocus={state.onFocus}
+              onBlur={state.onBlur}
+            />
+            <LengthField
+              label="Height"
+              value={state.height}
+              onChange={state.onHeightChange}
+              onFocus={state.onFocus}
+              onBlur={state.onBlur}
+            />
+            <LengthField
+              label="Padding"
+              value={state.padding}
+              onChange={state.onPaddingChange}
+              onFocus={state.onFocus}
+              onBlur={state.onBlur}
+            />
+            <LengthField
+              label="Margin"
+              value={state.margin}
+              onChange={state.onMarginChange}
+              onFocus={state.onFocus}
+              onBlur={state.onBlur}
+            />
+            <LengthField
+              label="Max width"
+              value={state.maxWidth}
+              onChange={state.onMaxWidthChange}
+              onFocus={state.onFocus}
+              onBlur={state.onBlur}
+            />
+            <LengthField
+              label="Gap"
+              value={state.gap}
+              onChange={state.onGapChange}
+              onFocus={state.onFocus}
+              onBlur={state.onBlur}
+            />
+          </Group>
 
-        <Group title="Style">
-          <ColorField
-            label="Background"
-            value={state.background}
-            onChange={state.onBackgroundChange}
-            onFocus={state.onFocus}
-            onBlur={state.onBlur}
-          />
-          <ColorField
-            label="Text color"
-            value={state.color}
-            onChange={state.onColorChange}
-            onFocus={state.onFocus}
-            onBlur={state.onBlur}
-          />
-          <LengthField
-            label="Radius"
-            value={state.radius}
-            onChange={state.onRadiusChange}
-            onFocus={state.onFocus}
-            onBlur={state.onBlur}
-          />
-        </Group>
+          <Group title="Style">
+            <ColorField
+              label="Background"
+              value={state.background}
+              onChange={state.onBackgroundChange}
+              onFocus={state.onFocus}
+              onBlur={state.onBlur}
+            />
+            <ColorField
+              label="Text color"
+              value={state.color}
+              onChange={state.onColorChange}
+              onFocus={state.onFocus}
+              onBlur={state.onBlur}
+            />
+            <LengthField
+              label="Radius"
+              value={state.radius}
+              onChange={state.onRadiusChange}
+              onFocus={state.onFocus}
+              onBlur={state.onBlur}
+            />
+          </Group>
         </fieldset>
 
         <div class="prop-actions">
-          <button class="btn" disabled={state.locked} onClick={state.onAddBlock}>
+          <button
+            class="btn"
+            disabled={state.locked}
+            onClick={state.onAddBlock}
+          >
             Add Block
           </button>
           <button class="btn" onClick={state.onDuplicate}>
@@ -509,7 +513,11 @@ export function renderSectionProperties(
           <button class="btn" disabled={state.locked} onClick={state.onMoveUp}>
             Move Up
           </button>
-          <button class="btn" disabled={state.locked} onClick={state.onMoveDown}>
+          <button
+            class="btn"
+            disabled={state.locked}
+            onClick={state.onMoveDown}
+          >
             Move Down
           </button>
           <button class="btn" onClick={state.onToggleLock}>

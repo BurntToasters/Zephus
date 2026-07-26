@@ -23,11 +23,7 @@ export function createEditorSiteSaveActions(deps: EditorSiteSaveDeps) {
   async function discardPendingSiteChanges(): Promise<void> {
     const state = deps.getState();
     if (!state.project) return;
-    await deps.zephus.clearDraft(
-      state.project.path,
-      "site",
-      SITE_DRAFT_TARGET,
-    );
+    await deps.zephus.clearDraft(state.project.path, "site", SITE_DRAFT_TARGET);
     clearSiteChanges(state);
     markSiteDirty(state, false);
     deps.onSiteStateChanged();
@@ -51,11 +47,7 @@ export function createEditorSiteSaveActions(deps: EditorSiteSaveDeps) {
     if (refreshed.ok && refreshed.site) {
       state.siteDocument = refreshed.site;
     }
-    await deps.zephus.clearDraft(
-      state.project.path,
-      "site",
-      SITE_DRAFT_TARGET,
-    );
+    await deps.zephus.clearDraft(state.project.path, "site", SITE_DRAFT_TARGET);
     clearSiteChanges(state);
     markSiteDirty(state, false);
     deps.onSiteStateChanged();

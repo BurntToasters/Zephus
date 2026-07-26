@@ -34,7 +34,12 @@ export function createCodeEditor(
         oneDark,
         EditorView.updateListener.of((update) => {
           if (update.docChanged) onChange();
-          if (update.docChanged || update.transactions.some((tr) => tr.isUserEvent("undo") || tr.isUserEvent("redo"))) {
+          if (
+            update.docChanged ||
+            update.transactions.some(
+              (tr) => tr.isUserEvent("undo") || tr.isUserEvent("redo"),
+            )
+          ) {
             onHistoryChange?.();
           }
         }),

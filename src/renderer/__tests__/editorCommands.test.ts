@@ -10,15 +10,13 @@ import {
 
 describe("editorCommands", () => {
   it("blocks managed visual switch when code diverges", () => {
-    expect(
-      shouldBlockManagedVisualSwitch("new", "old", "managed"),
-    ).toBe(true);
-    expect(
-      shouldBlockManagedVisualSwitch("same", "same", "managed"),
-    ).toBe(false);
-    expect(
-      shouldBlockManagedVisualSwitch("new", "old", "detached"),
-    ).toBe(false);
+    expect(shouldBlockManagedVisualSwitch("new", "old", "managed")).toBe(true);
+    expect(shouldBlockManagedVisualSwitch("same", "same", "managed")).toBe(
+      false,
+    );
+    expect(shouldBlockManagedVisualSwitch("new", "old", "detached")).toBe(
+      false,
+    );
   });
 
   it("respects allowed block lists", () => {

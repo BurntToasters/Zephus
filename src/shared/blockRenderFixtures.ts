@@ -10,9 +10,17 @@ export function blockRenderFixture(
 }
 
 export const BLOCK_RENDER_FIXTURES: BlockNode[] = [
-  blockRenderFixture("heading", { text: "Hello & <world>", level: "2", cls: "" }),
+  blockRenderFixture("heading", {
+    text: "Hello & <world>",
+    level: "2",
+    cls: "",
+  }),
   blockRenderFixture("text", { text: "Line one\nLine two", cls: "lead" }),
-  blockRenderFixture("image", { src: "/assets/images/x.svg", alt: "Alt", cls: "" }),
+  blockRenderFixture("image", {
+    src: "/assets/images/x.svg",
+    alt: "Alt",
+    cls: "",
+  }),
   blockRenderFixture("button", { text: "Go", href: "/contact", cls: "" }),
   blockRenderFixture("button", {
     text: "Bad",
@@ -31,9 +39,18 @@ export const BLOCK_RENDER_FIXTURES: BlockNode[] = [
   blockRenderFixture("gallery", { images: "/a.svg\n/b.svg", cls: "" }),
   blockRenderFixture("quote", { text: "Quoted", cite: "Author", cls: "" }),
   blockRenderFixture("list", { items: "One\nTwo", ordered: "true", cls: "" }),
-  blockRenderFixture("embed", { src: "https://example.com", title: "Map", cls: "" }),
+  blockRenderFixture("embed", {
+    src: "https://example.com",
+    title: "Map",
+    cls: "",
+  }),
   blockRenderFixture("html", {}, { raw: "<div>raw <b>html</b></div>" }),
-  blockRenderFixture("feature", { icon: "⚡", title: "Fast", text: "Body", cls: "" }),
+  blockRenderFixture("feature", {
+    icon: "⚡",
+    title: "Fast",
+    text: "Body",
+    cls: "",
+  }),
   blockRenderFixture("testimonial", {
     quote: "Great",
     author: "Sam",

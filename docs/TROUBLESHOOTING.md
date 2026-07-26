@@ -420,6 +420,26 @@ Zephus stores error logs you can review:
 
 ---
 
+## Development / tests
+
+### Electron failed to install correctly
+
+You see this when running `npm test` or `npm run test:all` (or when starting the app):
+
+`Electron failed to install correctly. Please delete node_modules/electron and run "npx install-electron --no" manually.`
+
+**Cause:** The Electron binary was not downloaded (network interrupt, partial `npm install`, or antivirus blocking the postinstall script).
+
+**Fix (to run the app):**
+
+1. Remove the broken package: `rm -rf node_modules/electron`
+2. Reinstall: `npm install` (or `node node_modules/electron/install.js` after `npm install electron`)
+3. Confirm: `npx electron --version`
+
+**Note:** Unit tests use Vitest stubs for `electron` and should pass even when the binary is missing. If tests still fail after pulling latest, run `npm test` again; only `npm run dev` / `electron .` need a working Electron install.
+
+---
+
 ### Common Resources
 
 - [Block Reference](./BLOCK_REFERENCE.md): What each block type does

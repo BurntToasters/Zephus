@@ -3051,7 +3051,10 @@ function sectionToHtml(
   viewport = state.currentViewport,
   forCanvas = false,
 ): string {
-  return sectionToHtmlForEditor(section, editorRenderOptions(viewport, forCanvas));
+  return sectionToHtmlForEditor(
+    section,
+    editorRenderOptions(viewport, forCanvas),
+  );
 }
 
 /* ---------- Page structure parse / serialize ---------- */
@@ -3156,8 +3159,7 @@ function commitInspectorChange(
   trackChange(summary);
   markDirty(true);
   const typing =
-    !rerenderProperties &&
-    isInspectorTextInputFocused(document.activeElement);
+    !rerenderProperties && isInspectorTextInputFocused(document.activeElement);
   scheduleCanvasRepaint(typing);
   if (rerenderProperties) {
     endInspectorEdit();
@@ -3473,7 +3475,9 @@ function pasteFromClipboard(): void {
   }
   const sourceSection = editorClipboard.section;
   const index = state.selectedSectionId
-    ? state.sections.findIndex((section) => section.id === state.selectedSectionId)
+    ? state.sections.findIndex(
+        (section) => section.id === state.selectedSectionId,
+      )
     : state.sections.length - 1;
   pushUndo();
   const copy = cloneSections([sourceSection])[0]!;
@@ -4985,7 +4989,9 @@ function setMode(mode: Mode): void {
   }
 
   const codeVal = getCode();
-  if (shouldBlockManagedVisualSwitch(codeVal, state.rawCode, state.managedStatus)) {
+  if (
+    shouldBlockManagedVisualSwitch(codeVal, state.rawCode, state.managedStatus)
+  ) {
     showModal(
       "Save Code Changes First",
       "Managed pages cannot safely round-trip structural Astro edits back into visual mode. Save to detach this page, or discard your code changes first.",
@@ -5324,10 +5330,7 @@ function updateUndoRedoButtons(): void {
 function doUndo(): void {
   const prev = popEditorUndoEntry(state);
   if (!prev) return;
-  const sectionsChanged = editorSnapshotSectionsChanged(
-    prev,
-    state.sections,
-  );
+  const sectionsChanged = editorSnapshotSectionsChanged(prev, state.sections);
   pushEditorRedoFromCurrent(state);
   restoreSnapshot(prev);
   if (sectionsChanged) {
@@ -5343,10 +5346,7 @@ function doUndo(): void {
 function doRedo(): void {
   const next = popEditorRedoEntry(state);
   if (!next) return;
-  const sectionsChanged = editorSnapshotSectionsChanged(
-    next,
-    state.sections,
-  );
+  const sectionsChanged = editorSnapshotSectionsChanged(next, state.sections);
   pushEditorUndoFromCurrent(state);
   restoreSnapshot(next);
   if (sectionsChanged) {
@@ -5440,11 +5440,7 @@ function onKeydown(e: KeyboardEvent): void {
     if (block && !block.locked) {
       void deleteBlock(block);
       e.preventDefault();
-    } else if (
-      !block &&
-      state.selectedSectionId &&
-      !state.selectedId
-    ) {
+    } else if (!block && state.selectedSectionId && !state.selectedId) {
       const section = findSection(state.selectedSectionId);
       if (section && !section.locked) {
         void deleteSection(state.selectedSectionId);
@@ -6056,7 +6052,8 @@ function init(): void {
       mountGitPanel(gitPanelContainer);
       registerGitPanelHandlers({
         onRefresh: () => void editorGit.refreshGit({ fetchRemote: true }),
-        onCommit: (message, paths) => editorGit.commitGitChanges(message, paths),
+        onCommit: (message, paths) =>
+          editorGit.commitGitChanges(message, paths),
         onPush: () => editorGit.pushGitChanges(),
         onPull: () => editorGit.pullGitChanges(),
         onInitRepo: () => editorGit.initGitFromPanel(),

@@ -22,6 +22,8 @@ After changing **renderer TypeScript**, run `npm run compile:renderer` before ma
 
 Some tests touch `.git` in a temp directory (`files.test.ts`); run the full suite outside restricted sandboxes if that test fails with `EPERM`.
 
+Vitest aliases `electron` and `electron-log` to stubs in `src/test/mocks/` so `npm test` does not require a working Electron binary download. Running the desktop app (`npm run dev` / `electron .`) still needs Electron installed correctly (see [Troubleshooting — Electron install](./TROUBLESHOOTING.md#electron-failed-to-install-correctly)).
+
 ## Architecture overview
 
 ```

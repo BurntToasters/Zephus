@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { renderBlockNode } from "../schema";
-import { blockRenderFixture, BLOCK_RENDER_FIXTURES } from "../../../shared/blockRenderFixtures";
+import {
+  blockRenderFixture,
+  BLOCK_RENDER_FIXTURES,
+} from "../../../shared/blockRenderFixtures";
 
 /**
  * Golden snapshot of the build-side block renderer (`renderBlockHtml` in

@@ -806,169 +806,169 @@ export function renderBlockProperties(
           <ContentGroup state={state} />
 
           <Group title="Layout">
-          <SelectField
-            label="Alignment"
-            value={(state.style?.align as string) ?? "left"}
-            options={["left", "center", "right"].map((value) => ({
-              value,
-              label: value,
-            }))}
-            onFocus={state.onFocus}
-            onBlur={state.onBlur}
-            onChange={(next) => state.onStyleChange("align", next)}
-          />
-          <LengthField
-            label="Width"
-            value={state.style?.width ?? ""}
-            onFocus={state.onFocus}
-            onBlur={state.onBlur}
-            onChange={(next) => state.onStyleChange("width", next)}
-          />
-          <LengthField
-            label="Height"
-            value={state.style?.height ?? ""}
-            onFocus={state.onFocus}
-            onBlur={state.onBlur}
-            onChange={(next) => state.onStyleChange("height", next)}
-          />
-          <LengthField
-            label="Max width"
-            value={state.style?.maxWidth ?? ""}
-            onFocus={state.onFocus}
-            onBlur={state.onBlur}
-            onChange={(next) => state.onStyleChange("maxWidth", next)}
-          />
-          <LengthField
-            label="Gap"
-            value={state.style?.gap ?? ""}
-            onFocus={state.onFocus}
-            onBlur={state.onBlur}
-            onChange={(next) => state.onStyleChange("gap", next)}
-          />
-          {state.blockType === "gallery" ? (
-            <TextField
-              label="Columns"
-              value={state.style?.columns ?? ""}
+            <SelectField
+              label="Alignment"
+              value={(state.style?.align as string) ?? "left"}
+              options={["left", "center", "right"].map((value) => ({
+                value,
+                label: value,
+              }))}
               onFocus={state.onFocus}
               onBlur={state.onBlur}
-              onChange={(next) => state.onStyleChange("columns", next)}
+              onChange={(next) => state.onStyleChange("align", next)}
             />
-          ) : null}
-          <ToggleField
-            label="Stack on mobile"
-            checked={state.style?.stackOnMobile ?? false}
-            onFocus={state.onFocus}
-            onBlur={state.onBlur}
-            onChange={(next) => state.onStyleChange("stackOnMobile", next)}
-          />
-        </Group>
+            <LengthField
+              label="Width"
+              value={state.style?.width ?? ""}
+              onFocus={state.onFocus}
+              onBlur={state.onBlur}
+              onChange={(next) => state.onStyleChange("width", next)}
+            />
+            <LengthField
+              label="Height"
+              value={state.style?.height ?? ""}
+              onFocus={state.onFocus}
+              onBlur={state.onBlur}
+              onChange={(next) => state.onStyleChange("height", next)}
+            />
+            <LengthField
+              label="Max width"
+              value={state.style?.maxWidth ?? ""}
+              onFocus={state.onFocus}
+              onBlur={state.onBlur}
+              onChange={(next) => state.onStyleChange("maxWidth", next)}
+            />
+            <LengthField
+              label="Gap"
+              value={state.style?.gap ?? ""}
+              onFocus={state.onFocus}
+              onBlur={state.onBlur}
+              onChange={(next) => state.onStyleChange("gap", next)}
+            />
+            {state.blockType === "gallery" ? (
+              <TextField
+                label="Columns"
+                value={state.style?.columns ?? ""}
+                onFocus={state.onFocus}
+                onBlur={state.onBlur}
+                onChange={(next) => state.onStyleChange("columns", next)}
+              />
+            ) : null}
+            <ToggleField
+              label="Stack on mobile"
+              checked={state.style?.stackOnMobile ?? false}
+              onFocus={state.onFocus}
+              onBlur={state.onBlur}
+              onChange={(next) => state.onStyleChange("stackOnMobile", next)}
+            />
+          </Group>
 
-        <Group title="Style">
-          <ColorField
-            label="Background"
-            value={state.style?.background ?? ""}
-            onFocus={state.onFocus}
-            onBlur={state.onBlur}
-            onChange={(next) => state.onStyleChange("background", next)}
-          />
-          <ColorField
-            label="Text color"
-            value={state.style?.color ?? ""}
-            onFocus={state.onFocus}
-            onBlur={state.onBlur}
-            onChange={(next) => state.onStyleChange("color", next)}
-          />
-          <LengthField
-            label="Padding"
-            value={state.style?.padding ?? ""}
-            onFocus={state.onFocus}
-            onBlur={state.onBlur}
-            onChange={(next) => state.onStyleChange("padding", next)}
-          />
-          <LengthField
-            label="Margin"
-            value={state.style?.margin ?? ""}
-            onFocus={state.onFocus}
-            onBlur={state.onBlur}
-            onChange={(next) => state.onStyleChange("margin", next)}
-          />
-          <LengthField
-            label="Radius"
-            value={state.style?.radius ?? ""}
-            onFocus={state.onFocus}
-            onBlur={state.onBlur}
-            onChange={(next) => state.onStyleChange("radius", next)}
-          />
-          <SelectField
-            label="Shadow"
-            value={(state.style?.shadow as string) ?? "none"}
-            options={["none", "sm", "md", "lg"].map((value) => ({
-              value,
-              label: value,
-            }))}
-            onFocus={state.onFocus}
-            onBlur={state.onBlur}
-            onChange={(next) => state.onStyleChange("shadow", next)}
-          />
-        </Group>
+          <Group title="Style">
+            <ColorField
+              label="Background"
+              value={state.style?.background ?? ""}
+              onFocus={state.onFocus}
+              onBlur={state.onBlur}
+              onChange={(next) => state.onStyleChange("background", next)}
+            />
+            <ColorField
+              label="Text color"
+              value={state.style?.color ?? ""}
+              onFocus={state.onFocus}
+              onBlur={state.onBlur}
+              onChange={(next) => state.onStyleChange("color", next)}
+            />
+            <LengthField
+              label="Padding"
+              value={state.style?.padding ?? ""}
+              onFocus={state.onFocus}
+              onBlur={state.onBlur}
+              onChange={(next) => state.onStyleChange("padding", next)}
+            />
+            <LengthField
+              label="Margin"
+              value={state.style?.margin ?? ""}
+              onFocus={state.onFocus}
+              onBlur={state.onBlur}
+              onChange={(next) => state.onStyleChange("margin", next)}
+            />
+            <LengthField
+              label="Radius"
+              value={state.style?.radius ?? ""}
+              onFocus={state.onFocus}
+              onBlur={state.onBlur}
+              onChange={(next) => state.onStyleChange("radius", next)}
+            />
+            <SelectField
+              label="Shadow"
+              value={(state.style?.shadow as string) ?? "none"}
+              options={["none", "sm", "md", "lg"].map((value) => ({
+                value,
+                label: value,
+              }))}
+              onFocus={state.onFocus}
+              onBlur={state.onBlur}
+              onChange={(next) => state.onStyleChange("shadow", next)}
+            />
+          </Group>
 
-        <Group title="Advanced">
-          <TextField
-            label="CSS class (optional)"
-            value={state.props["cls"] ?? ""}
-            onFocus={state.onFocus}
-            onBlur={state.onBlur}
-            onChange={(next) => state.onPropChange("cls", next)}
-          />
-          {state.currentViewport !== "desktop" ? (
-            <>
-              <div class="responsive-note">
-                <strong>{state.currentViewport}</strong> override
-              </div>
-              <LengthField
-                label="Viewport width"
-                value={state.responsive.width ?? ""}
-                onFocus={state.onFocus}
-                onBlur={state.onBlur}
-                onChange={(next) =>
-                  state.onResponsiveStyleChange("width", next)
-                }
-              />
-              <LengthField
-                label="Viewport height"
-                value={state.responsive.height ?? ""}
-                onFocus={state.onFocus}
-                onBlur={state.onBlur}
-                onChange={(next) =>
-                  state.onResponsiveStyleChange("height", next)
-                }
-              />
-              <LengthField
-                label="Viewport padding"
-                value={state.responsive.padding ?? ""}
-                onFocus={state.onFocus}
-                onBlur={state.onBlur}
-                onChange={(next) =>
-                  state.onResponsiveStyleChange("padding", next)
-                }
-              />
-              <LengthField
-                label="Viewport margin"
-                value={state.responsive.margin ?? ""}
-                onFocus={state.onFocus}
-                onBlur={state.onBlur}
-                onChange={(next) =>
-                  state.onResponsiveStyleChange("margin", next)
-                }
-              />
-            </>
-          ) : null}
-          {state.onSaveReusable ? (
-            <button class="btn" onClick={state.onSaveReusable}>
-              Save as Reusable Section
-            </button>
-          ) : null}
-        </Group>
+          <Group title="Advanced">
+            <TextField
+              label="CSS class (optional)"
+              value={state.props["cls"] ?? ""}
+              onFocus={state.onFocus}
+              onBlur={state.onBlur}
+              onChange={(next) => state.onPropChange("cls", next)}
+            />
+            {state.currentViewport !== "desktop" ? (
+              <>
+                <div class="responsive-note">
+                  <strong>{state.currentViewport}</strong> override
+                </div>
+                <LengthField
+                  label="Viewport width"
+                  value={state.responsive.width ?? ""}
+                  onFocus={state.onFocus}
+                  onBlur={state.onBlur}
+                  onChange={(next) =>
+                    state.onResponsiveStyleChange("width", next)
+                  }
+                />
+                <LengthField
+                  label="Viewport height"
+                  value={state.responsive.height ?? ""}
+                  onFocus={state.onFocus}
+                  onBlur={state.onBlur}
+                  onChange={(next) =>
+                    state.onResponsiveStyleChange("height", next)
+                  }
+                />
+                <LengthField
+                  label="Viewport padding"
+                  value={state.responsive.padding ?? ""}
+                  onFocus={state.onFocus}
+                  onBlur={state.onBlur}
+                  onChange={(next) =>
+                    state.onResponsiveStyleChange("padding", next)
+                  }
+                />
+                <LengthField
+                  label="Viewport margin"
+                  value={state.responsive.margin ?? ""}
+                  onFocus={state.onFocus}
+                  onBlur={state.onBlur}
+                  onChange={(next) =>
+                    state.onResponsiveStyleChange("margin", next)
+                  }
+                />
+              </>
+            ) : null}
+            {state.onSaveReusable ? (
+              <button class="btn" onClick={state.onSaveReusable}>
+                Save as Reusable Section
+              </button>
+            ) : null}
+          </Group>
         </fieldset>
 
         <div class="prop-actions">
@@ -978,7 +978,11 @@ export function renderBlockProperties(
           <button class="btn" disabled={state.locked} onClick={state.onMoveUp}>
             Move Up
           </button>
-          <button class="btn" disabled={state.locked} onClick={state.onMoveDown}>
+          <button
+            class="btn"
+            disabled={state.locked}
+            onClick={state.onMoveDown}
+          >
             Move Down
           </button>
           <button class="btn" disabled={state.locked} onClick={state.onWrap}>

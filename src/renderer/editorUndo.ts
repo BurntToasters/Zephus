@@ -14,7 +14,9 @@ import { cloneSections } from "./editorPageModel";
 
 export const EDITOR_UNDO_LIMIT = 50;
 
-export function captureEditorSnapshot(state: EditorSessionState): EditorSnapshot {
+export function captureEditorSnapshot(
+  state: EditorSessionState,
+): EditorSnapshot {
   return {
     sections: cloneSections(state.sections),
     site: cloneSiteDocument(effectiveSiteDocument(state)),
@@ -89,9 +91,7 @@ export function popEditorRedoEntry(
   return state.redo.pop();
 }
 
-export function pushEditorRedoFromCurrent(
-  state: EditorSessionState,
-): void {
+export function pushEditorRedoFromCurrent(state: EditorSessionState): void {
   state.redo.push(captureEditorSnapshot(state));
 }
 

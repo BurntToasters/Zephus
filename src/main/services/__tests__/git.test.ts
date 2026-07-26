@@ -15,7 +15,9 @@ describe("git helpers", () => {
 
   it("detects missing-repo errors", () => {
     expect(
-      gitErrorLooksLikeMissingRepo("fatal: not a git repository (or any of the parent directories): .git"),
+      gitErrorLooksLikeMissingRepo(
+        "fatal: not a git repository (or any of the parent directories): .git",
+      ),
     ).toBe(true);
     expect(gitErrorLooksLikeMissingRepo("git: command not found")).toBe(false);
   });

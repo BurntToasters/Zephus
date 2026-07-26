@@ -43,9 +43,7 @@ describe("renderHelpers", () => {
 
   it("formats plain text and lists", () => {
     expect(plainTextToHtml("line1\nline2")).toBe("line1<br />line2");
-    expect(renderListItems("one\ntwo")).toBe(
-      "<li>one</li><li>two</li>",
-    );
+    expect(renderListItems("one\ntwo")).toBe("<li>one</li><li>two</li>");
   });
 
   it("splits lines and pairs", () => {

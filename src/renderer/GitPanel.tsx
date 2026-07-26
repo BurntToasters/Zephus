@@ -1,6 +1,9 @@
 import { render } from "solid-js/web";
 import { For, Show, createEffect, createSignal } from "solid-js";
-import { formatGitUpstreamLabel, formatGitUpstreamPanelNote } from "./gitUpstreamLabel";
+import {
+  formatGitUpstreamLabel,
+  formatGitUpstreamPanelNote,
+} from "./gitUpstreamLabel";
 
 export interface GitStatusData {
   available: boolean;
@@ -85,7 +88,9 @@ export function GitPanelContent() {
   const [pushing, setPushing] = createSignal(false);
   const [pulling, setPulling] = createSignal(false);
   const [initializing, setInitializing] = createSignal(false);
-  const [selectedFiles, setSelectedFiles] = createSignal<Set<string>>(new Set());
+  const [selectedFiles, setSelectedFiles] = createSignal<Set<string>>(
+    new Set(),
+  );
 
   createEffect(() => {
     gitStatus();
@@ -140,8 +145,7 @@ export function GitPanelContent() {
     if (paths.length === 0) return;
     const status = gitStatus();
     const allPaths = status ? listChangedFiles(status) : [];
-    const commitAll =
-      allPaths.length > 0 && paths.length === allPaths.length;
+    const commitAll = allPaths.length > 0 && paths.length === allPaths.length;
     setCommitting(true);
     try {
       await gitPanelHandlers.onCommit(message, commitAll ? undefined : paths);
@@ -159,7 +163,8 @@ export function GitPanelContent() {
     const all = listChangedFiles(status);
     const n = selectedCount();
     if (n === 0) return "Commit";
-    if (n === all.length) return committing() ? "Committing…" : "Commit All Changes";
+    if (n === all.length)
+      return committing() ? "Committing…" : "Commit All Changes";
     return committing() ? "Committing…" : `Commit ${n} Selected`;
   };
 
@@ -226,7 +231,9 @@ export function GitPanelContent() {
                     disabled={initializing()}
                     onClick={() => void runInitRepo()}
                   >
-                    {initializing() ? "Initializing…" : "Initialize Git Repository"}
+                    {initializing()
+                      ? "Initializing…"
+                      : "Initialize Git Repository"}
                   </button>
                 </Show>
               </div>
@@ -234,149 +241,156 @@ export function GitPanelContent() {
           }
         >
           <div class="git-status-wrapper">
-        <div class="git-panel-actions">
-          <button
-            type="button"
-            class="btn ghost"
-            onClick={() => gitPanelHandlers?.onRefresh()}
-            title="Fetch remote and refresh working tree status"
-          >
-            Refresh
-          </button>
-          <Show when={canSyncRemote()}>
-            <button
-              type="button"
-              class="btn"
-              disabled={committing() || pushing() || pulling()}
-              onClick={() => void runPull()}
+            <div class="git-panel-actions">
+              <button
+                type="button"
+                class="btn ghost"
+                onClick={() => gitPanelHandlers?.onRefresh()}
+                title="Fetch remote and refresh working tree status"
+              >
+                Refresh
+              </button>
+              <Show when={canSyncRemote()}>
+                <button
+                  type="button"
+                  class="btn"
+                  disabled={committing() || pushing() || pulling()}
+                  onClick={() => void runPull()}
+                >
+                  {pulling() ? "Pulling…" : "Pull (Fast-Forward)"}
+                </button>
+                <button
+                  type="button"
+                  class="btn"
+                  disabled={committing() || pushing() || pulling()}
+                  onClick={() => void runPush()}
+                >
+                  {pushing() ? "Pushing…" : "Push to Remote"}
+                </button>
+              </Show>
+            </div>
+
+            <Show when={gitStatus()?.detachedHead}>
+              <p class="muted git-detached-note">
+                Detached HEAD — commits won't update a branch until you check
+                one out.
+              </p>
+            </Show>
+
+            <Show
+              when={(() => {
+                const s = gitStatus();
+                if (s?.ahead == null || s?.behind == null) return false;
+                return formatGitUpstreamPanelNote(s.ahead, s.behind);
+              })()}
             >
-              {pulling() ? "Pulling…" : "Pull (Fast-Forward)"}
-            </button>
-            <button
-              type="button"
-              class="btn"
-              disabled={committing() || pushing() || pulling()}
-              onClick={() => void runPush()}
+              {(note) => <p class="muted git-upstream-note">{note()}</p>}
+            </Show>
+
+            <Show when={gitStatus()?.zephusIgnored}>
+              <div class="g-warning">
+                <i data-lucide="alert-triangle" aria-hidden="true"></i>{" "}
+                <span>
+                  <strong>.zephus is git-ignored.</strong> Commit it — it stores
+                  this project's Zephus save state and is required to open the
+                  site on other machines.
+                </span>
+              </div>
+            </Show>
+
+            <Show
+              when={hasChanges()}
+              fallback={<p class="muted">No changes.</p>}
             >
-              {pushing() ? "Pushing…" : "Push to Remote"}
-            </button>
-          </Show>
-        </div>
+              <div class="git-files-toolbar">
+                <button
+                  type="button"
+                  class="btn ghost small"
+                  onClick={() => selectAllFiles()}
+                >
+                  Select all
+                </button>
+                <button
+                  type="button"
+                  class="btn ghost small"
+                  onClick={() => clearFileSelection()}
+                >
+                  Clear
+                </button>
+              </div>
+              <div class="git-files-list">
+                <For each={gitStatus()?.modified}>
+                  {(file) => (
+                    <label class="g-file">
+                      <input
+                        type="checkbox"
+                        checked={selectedFiles().has(file)}
+                        onChange={(event) =>
+                          toggleFile(file, event.currentTarget.checked)
+                        }
+                      />
+                      <span class="g-badge g-m">M</span>
+                      <span>{file}</span>
+                    </label>
+                  )}
+                </For>
+                <For each={gitStatus()?.added}>
+                  {(file) => (
+                    <label class="g-file">
+                      <input
+                        type="checkbox"
+                        checked={selectedFiles().has(file)}
+                        onChange={(event) =>
+                          toggleFile(file, event.currentTarget.checked)
+                        }
+                      />
+                      <span class="g-badge g-a">A</span>
+                      <span>{file}</span>
+                    </label>
+                  )}
+                </For>
+                <For each={gitStatus()?.deleted}>
+                  {(file) => (
+                    <label class="g-file">
+                      <input
+                        type="checkbox"
+                        checked={selectedFiles().has(file)}
+                        onChange={(event) =>
+                          toggleFile(file, event.currentTarget.checked)
+                        }
+                      />
+                      <span class="g-badge g-d">D</span>
+                      <span>{file}</span>
+                    </label>
+                  )}
+                </For>
+              </div>
 
-        <Show when={gitStatus()?.detachedHead}>
-          <p class="muted git-detached-note">
-            Detached HEAD — commits won't update a branch until you check one
-            out.
-          </p>
-        </Show>
-
-        <Show
-          when={(() => {
-            const s = gitStatus();
-            if (s?.ahead == null || s?.behind == null) return false;
-            return formatGitUpstreamPanelNote(s.ahead, s.behind);
-          })()}
-        >
-          {(note) => <p class="muted git-upstream-note">{note()}</p>}
-        </Show>
-
-        <Show when={gitStatus()?.zephusIgnored}>
-          <div class="g-warning">
-            <i data-lucide="alert-triangle" aria-hidden="true"></i>{" "}
-            <span>
-              <strong>.zephus is git-ignored.</strong> Commit it — it stores
-              this project's Zephus save state and is required to open the site
-              on other machines.
-            </span>
-          </div>
-        </Show>
-
-        <Show when={hasChanges()} fallback={<p class="muted">No changes.</p>}>
-          <div class="git-files-toolbar">
-            <button
-              type="button"
-              class="btn ghost small"
-              onClick={() => selectAllFiles()}
-            >
-              Select all
-            </button>
-            <button
-              type="button"
-              class="btn ghost small"
-              onClick={() => clearFileSelection()}
-            >
-              Clear
-            </button>
-          </div>
-          <div class="git-files-list">
-            <For each={gitStatus()?.modified}>
-              {(file) => (
-                <label class="g-file">
-                  <input
-                    type="checkbox"
-                    checked={selectedFiles().has(file)}
-                    onChange={(event) =>
-                      toggleFile(file, event.currentTarget.checked)
-                    }
-                  />
-                  <span class="g-badge g-m">M</span>
-                  <span>{file}</span>
-                </label>
-              )}
-            </For>
-            <For each={gitStatus()?.added}>
-              {(file) => (
-                <label class="g-file">
-                  <input
-                    type="checkbox"
-                    checked={selectedFiles().has(file)}
-                    onChange={(event) =>
-                      toggleFile(file, event.currentTarget.checked)
-                    }
-                  />
-                  <span class="g-badge g-a">A</span>
-                  <span>{file}</span>
-                </label>
-              )}
-            </For>
-            <For each={gitStatus()?.deleted}>
-              {(file) => (
-                <label class="g-file">
-                  <input
-                    type="checkbox"
-                    checked={selectedFiles().has(file)}
-                    onChange={(event) =>
-                      toggleFile(file, event.currentTarget.checked)
-                    }
-                  />
-                  <span class="g-badge g-d">D</span>
-                  <span>{file}</span>
-                </label>
-              )}
-            </For>
-          </div>
-
-          <label class="meta-field git-commit-field">
-            <span>Commit message</span>
-            <textarea
-              rows={3}
-              value={commitMessage()}
-              placeholder="Describe your changes"
-              disabled={committing()}
-              onInput={(event) => setCommitMessage(event.currentTarget.value)}
-            />
-          </label>
-          <button
-            type="button"
-            class="btn primary"
-            disabled={
-              !commitMessage().trim() || committing() || selectedCount() === 0
-            }
-            onClick={() => void submitCommit()}
-          >
-            {commitButtonLabel()}
-          </button>
-        </Show>
+              <label class="meta-field git-commit-field">
+                <span>Commit message</span>
+                <textarea
+                  rows={3}
+                  value={commitMessage()}
+                  placeholder="Describe your changes"
+                  disabled={committing()}
+                  onInput={(event) =>
+                    setCommitMessage(event.currentTarget.value)
+                  }
+                />
+              </label>
+              <button
+                type="button"
+                class="btn primary"
+                disabled={
+                  !commitMessage().trim() ||
+                  committing() ||
+                  selectedCount() === 0
+                }
+                onClick={() => void submitCommit()}
+              >
+                {commitButtonLabel()}
+              </button>
+            </Show>
           </div>
         </Show>
       )}

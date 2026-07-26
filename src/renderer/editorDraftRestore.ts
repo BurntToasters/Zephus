@@ -54,9 +54,7 @@ export function createEditorDraftRestoreActions(deps: EditorDraftRestoreDeps) {
       SITE_DRAFT_TARGET,
     );
     if (!draft.ok || !draft.draft?.content) return;
-    if (
-      siteDraftContentMatchesSaved(draft.draft.content, state.siteDocument)
-    ) {
+    if (siteDraftContentMatchesSaved(draft.draft.content, state.siteDocument)) {
       return;
     }
     const choice = await deps.confirmRestoreDraft(
@@ -103,11 +101,7 @@ export function createEditorDraftRestoreActions(deps: EditorDraftRestoreDeps) {
   ): Promise<boolean> {
     const state = deps.getState();
     if (!state.project) return false;
-    const draft = await deps.zephus.readDraft(
-      state.project.path,
-      "page",
-      page,
-    );
+    const draft = await deps.zephus.readDraft(state.project.path, "page", page);
     if (!draft.ok || !draft.draft?.content) return false;
     if (draft.draft.content === rawCode) return false;
 

@@ -193,9 +193,7 @@ export function createEditorSaveActions(deps: EditorSaveDeps) {
     }
 
     deps.renderDirtyIndicators();
-    deps.setStatus(
-      formatSaveStatusMessage(savedPage, savedSite, state.page),
-    );
+    deps.setStatus(formatSaveStatusMessage(savedPage, savedSite, state.page));
     deps.afterSave();
     await deps.reloadPages();
     return true;

@@ -4,9 +4,7 @@
 
 export const INSPECTOR_CANVAS_REPAINT_MS = 140;
 
-export function isInspectorTextInputFocused(
-  active: Element | null,
-): boolean {
+export function isInspectorTextInputFocused(active: Element | null): boolean {
   if (!active || !(active instanceof HTMLElement)) return false;
   const tag = active.tagName;
   return tag === "INPUT" || tag === "TEXTAREA";

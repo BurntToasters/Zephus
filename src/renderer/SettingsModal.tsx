@@ -20,7 +20,9 @@ export interface SettingsModalState {
     key: K,
     value: GlobalSettings[K],
   ) => void;
-  onUpdaterAction: (actionId: SettingsModalAction["id"]) => void | Promise<void>;
+  onUpdaterAction: (
+    actionId: SettingsModalAction["id"],
+  ) => void | Promise<void>;
   onPickNodePath: () => void | Promise<void>;
   onAutoNodePath: () => void | Promise<void>;
   onOpenProductionLicenses: () => void;
@@ -238,10 +240,7 @@ export function renderSettingsModalBody(
 
         <div class="settings-footer">
           <span class="version-info-text">{state.versionText}</span>
-          <button
-            class="btn ghost mini-btn"
-            onClick={state.onOpenConfigFolder}
-          >
+          <button class="btn ghost mini-btn" onClick={state.onOpenConfigFolder}>
             Open Config
           </button>
         </div>

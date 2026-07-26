@@ -98,10 +98,7 @@ export async function getGitStatus(
     }
 
     const upstream = !detachedHead
-      ? await readUpstreamAheadBehind(
-          projectPath,
-          options.fetchRemote ?? false,
-        )
+      ? await readUpstreamAheadBehind(projectPath, options.fetchRemote ?? false)
       : null;
 
     return {
@@ -112,9 +109,7 @@ export async function getGitStatus(
       added,
       deleted,
       zephusIgnored: await isZephusIgnored(projectPath),
-      ...(upstream
-        ? { ahead: upstream.ahead, behind: upstream.behind }
-        : {}),
+      ...(upstream ? { ahead: upstream.ahead, behind: upstream.behind } : {}),
     };
   } catch (error) {
     log.warn("Git status unavailable for project", projectPath, error);
