@@ -3,6 +3,7 @@ import {
   addCssValue,
   blockCssValue,
   blockMetadataAttrs,
+  classAttr,
   encodeDataPayload,
   escapeAttr,
   escapeHtml,
@@ -11,6 +12,7 @@ import {
   safeUrl,
   splitLines,
   splitPair,
+  styleAttr,
 } from "../renderHelpers";
 
 describe("renderHelpers", () => {
@@ -64,5 +66,42 @@ describe("renderHelpers", () => {
     expect(attrs).toContain('data-zephus-block="heading"');
     expect(attrs).toContain('data-zephus-locked="true"');
     expect(attrs).toContain("data-zephus-props=");
+  });
+
+  it("builds style and class attributes", () => {
+    expect(classAttr({ props: { cls: "hero" } })).toBe(' class="hero"');
+    expect(classAttr({ props: {} })).toBe("");
+
+    const desktop = styleAttr({
+      type: "columns",
+      props: {},
+      style: {
+        width: "100%",
+        columns: "2",
+        stackOnMobile: true,
+        responsive: { mobile: { width: "50%" } },
+      },
+    });
+    expect(desktop).toContain("width:100%");
+    expect(desktop).toContain("grid-template-columns:repeat(2");
+    expect(desktop).not.toContain("grid-template-columns:1fr");
+
+    const mobile = styleAttr(
+      {
+        type: "columns",
+        props: {},
+        style: {
+          width: "100%",
+          columns: "2",
+          stackOnMobile: true,
+          hideOn: ["mobile"],
+          responsive: { mobile: { width: "50%" } },
+        },
+      },
+      { viewport: "mobile", forCanvas: true },
+    );
+    expect(mobile).toContain("width:50%");
+    expect(mobile).toContain("grid-template-columns:1fr");
+    expect(mobile).toContain("display:none");
   });
 });

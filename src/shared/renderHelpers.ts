@@ -93,3 +93,123 @@ export function blockMetadataAttrs(block: BlockMetadataSource): string {
   if (block.locked) attrs.push(`data-zephus-locked="true"`);
   return " " + attrs.join(" ");
 }
+
+export type StyleViewport = "desktop" | "tablet" | "mobile";
+
+export interface StyleAttrBlock {
+  type: string;
+  props: Record<string, string>;
+  style?: {
+    align?: string;
+    width?: string;
+    height?: string;
+    maxWidth?: string;
+    background?: string;
+    color?: string;
+    padding?: string;
+    margin?: string;
+    radius?: string;
+    shadow?: string;
+    columns?: string;
+    gap?: string;
+    aspectRatio?: string;
+    objectFit?: string;
+    objectPosition?: string;
+    stackOnMobile?: boolean;
+    hideOn?: string[];
+    responsive?: Partial<
+      Record<
+        StyleViewport,
+        {
+          align?: string;
+          width?: string;
+          height?: string;
+          maxWidth?: string;
+          padding?: string;
+          margin?: string;
+          columns?: string;
+          gap?: string;
+        }
+      >
+    >;
+  };
+}
+
+export interface StyleAttrOptions {
+  /** Canvas viewport preview. Build output should leave this as desktop. */
+  viewport?: StyleViewport;
+  /** When true, honor hideOn for the active viewport (editor canvas only). */
+  forCanvas?: boolean;
+}
+
+/** Merges tablet/mobile responsive overrides onto a cloned base style. */
+export function mergeViewportStyle(
+  style: StyleAttrBlock["style"] | undefined,
+  viewport: StyleViewport = "desktop",
+): NonNullable<StyleAttrBlock["style"]> {
+  const base = (
+    style ? JSON.parse(JSON.stringify(style)) : {}
+  ) as NonNullable<StyleAttrBlock["style"]>;
+  if (viewport !== "desktop") {
+    const override = style?.responsive?.[viewport];
+    if (override) Object.assign(base, override);
+  }
+  return base;
+}
+
+/**
+ * Builds an inline style="" attribute for a block/section. Build uses desktop
+ * base styles (+ separate media queries); the editor can pass viewport/forCanvas
+ * to preview responsive and hideOn behavior on the canvas.
+ */
+export function styleAttr(
+  block: StyleAttrBlock,
+  options: StyleAttrOptions = {},
+): string {
+  const viewport = options.viewport ?? "desktop";
+  const forCanvas = options.forCanvas ?? false;
+  const style = mergeViewportStyle(block.style, viewport);
+  const css: string[] = [];
+  if (["left", "center", "right"].includes(String(style.align))) {
+    css.push(`text-align:${style.align}`);
+  }
+  addCssValue(css, "width", style.width);
+  addCssValue(css, "height", style.height);
+  addCssValue(css, "max-width", style.maxWidth);
+  addCssValue(css, "background", style.background);
+  addCssValue(css, "color", style.color);
+  addCssValue(css, "padding", style.padding);
+  addCssValue(css, "margin", style.margin);
+  addCssValue(css, "border-radius", style.radius);
+  addCssValue(css, "gap", style.gap);
+  addCssValue(css, "aspect-ratio", style.aspectRatio);
+  addCssValue(css, "object-fit", style.objectFit);
+  addCssValue(css, "object-position", style.objectPosition);
+  if (style.columns && (block.type === "columns" || block.type === "gallery")) {
+    css.push(
+      `grid-template-columns:repeat(${Math.max(1, Number(style.columns) || 1)}, minmax(0, 1fr))`,
+    );
+  }
+  if (style.shadow === "sm") css.push(`box-shadow:var(--shadow-sm)`);
+  if (style.shadow === "md") css.push(`box-shadow:var(--shadow-md)`);
+  if (style.shadow === "lg") css.push(`box-shadow:var(--shadow-lg)`);
+  if (
+    style.stackOnMobile &&
+    viewport === "mobile" &&
+    block.type === "columns"
+  ) {
+    css.push(`grid-template-columns:1fr`);
+  }
+  if (style.hideOn?.includes(viewport) && forCanvas) {
+    css.push(`display:none`);
+  }
+  if (block.type === "spacer" && !style.height) {
+    addCssValue(css, "height", block.props["height"] || "48px");
+  }
+  return css.length ? ` style="${escapeAttr(css.join(";"))}"` : "";
+}
+
+export function classAttr(block: { props: Record<string, string> }): string {
+  const cls = block.props["cls"];
+  return cls ? ` class="${escapeAttr(cls)}"` : "";
+}

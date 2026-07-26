@@ -27,8 +27,8 @@ import { readRepoSettings } from "./settings";
 import { readJsonSafe, writeFileAtomic } from "./fsSafe";
 import {
   addCssValue,
-  blockCssValue,
   blockMetadataAttrs,
+  classAttr,
   encodeDataPayload,
   escapeAttr,
   escapeHtml,
@@ -37,6 +37,7 @@ import {
   safeUrl,
   splitLines,
   splitPair,
+  styleAttr,
 } from "../../shared/renderHelpers";
 import {
   assertRealpathInside,
@@ -993,38 +994,6 @@ function cssValue(value: string): string {
     .slice(0, 200);
 }
 
-function styleAttr(block: BlockNode): string {
-  const style = block.style ?? {};
-  const css: string[] = [];
-  if (["left", "center", "right"].includes(String(style.align))) {
-    css.push(`text-align:${style.align}`);
-  }
-  addCssValue(css, "width", style.width);
-  addCssValue(css, "height", style.height);
-  addCssValue(css, "max-width", style.maxWidth);
-  addCssValue(css, "background", style.background);
-  addCssValue(css, "color", style.color);
-  addCssValue(css, "padding", style.padding);
-  addCssValue(css, "margin", style.margin);
-  addCssValue(css, "border-radius", style.radius);
-  addCssValue(css, "gap", style.gap);
-  addCssValue(css, "aspect-ratio", style.aspectRatio);
-  addCssValue(css, "object-fit", style.objectFit);
-  addCssValue(css, "object-position", style.objectPosition);
-  if (style.columns && (block.type === "columns" || block.type === "gallery")) {
-    css.push(
-      `grid-template-columns:repeat(${Math.max(1, Number(style.columns) || 1)}, minmax(0, 1fr))`,
-    );
-  }
-  if (style.shadow === "sm") css.push(`box-shadow:var(--shadow-sm)`);
-  if (style.shadow === "md") css.push(`box-shadow:var(--shadow-md)`);
-  if (style.shadow === "lg") css.push(`box-shadow:var(--shadow-lg)`);
-  if (block.type === "spacer" && !style.height) {
-    addCssValue(css, "height", block.props["height"] || "48px");
-  }
-  return css.length ? ` style="${escapeAttr(css.join(";"))}"` : "";
-}
-
 function responsiveCssDeclarations(
   style: BlockStyle | undefined,
 ): string | null {
@@ -1081,11 +1050,6 @@ function collectResponsiveCss(sections: SectionNode[]): string {
     chunks.push(`@media (max-width: 720px){${mobileRules.join("")}}`);
   }
   return chunks.join("\n");
-}
-
-function classAttr(block: BlockNode): string {
-  const cls = block.props["cls"];
-  return cls ? ` class="${escapeAttr(cls)}"` : "";
 }
 
 /** Metadata + style + a fixed structural class merged with the user's class. */

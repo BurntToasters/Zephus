@@ -15,9 +15,8 @@ import {
   syncUndoRedoToolbar,
 } from "./editorCommands";
 import {
-  addCssValue,
-  blockCssValue,
   blockMetadataAttrs,
+  classAttr,
   encodeDataPayload,
   escapeAttr,
   escapeHtml,
@@ -26,6 +25,7 @@ import {
   safeUrl,
   splitLines,
   splitPair,
+  styleAttr,
 } from "../shared/renderHelpers";
 import {
   clearPageChanges,
@@ -3413,68 +3413,6 @@ function styleFromLegacyProps(el: HTMLElement): BlockStyle | undefined {
   return Object.values(style).some(Boolean) ? style : undefined;
 }
 
-function effectiveStyle(
-  block: Block,
-  viewport = state.currentViewport,
-): BlockStyle {
-  const base = block.style ? JSON.parse(JSON.stringify(block.style)) : {};
-  const responsive =
-    viewport === "desktop" ? undefined : block.style?.responsive?.[viewport];
-  if (responsive) Object.assign(base, responsive);
-  return base;
-}
-
-function styleAttr(
-  block: Block,
-  viewport = state.currentViewport,
-  forCanvas = false,
-): string {
-  const style = effectiveStyle(block, viewport);
-  const css: string[] = [];
-  if (["left", "center", "right"].includes(String(style.align))) {
-    css.push(`text-align:${style.align}`);
-  }
-  addCssValue(css, "width", style.width);
-  addCssValue(css, "height", style.height);
-  addCssValue(css, "max-width", style.maxWidth);
-  addCssValue(css, "background", style.background);
-  addCssValue(css, "color", style.color);
-  addCssValue(css, "padding", style.padding);
-  addCssValue(css, "margin", style.margin);
-  addCssValue(css, "border-radius", style.radius);
-  addCssValue(css, "gap", style.gap);
-  addCssValue(css, "aspect-ratio", style.aspectRatio);
-  addCssValue(css, "object-fit", style.objectFit);
-  addCssValue(css, "object-position", style.objectPosition);
-  if (style.columns && (block.type === "columns" || block.type === "gallery")) {
-    css.push(
-      `grid-template-columns:repeat(${Math.max(1, Number(style.columns) || 1)}, minmax(0, 1fr))`,
-    );
-  }
-  if (style.shadow === "sm") css.push(`box-shadow:var(--shadow-sm)`);
-  if (style.shadow === "md") css.push(`box-shadow:var(--shadow-md)`);
-  if (style.shadow === "lg") css.push(`box-shadow:var(--shadow-lg)`);
-  if (
-    style.stackOnMobile &&
-    viewport === "mobile" &&
-    block.type === "columns"
-  ) {
-    css.push(`grid-template-columns:1fr`);
-  }
-  if (style.hideOn?.includes(viewport) && forCanvas) {
-    css.push(`display:none`);
-  }
-  if (block.type === "spacer" && !style.height) {
-    addCssValue(css, "height", block.props["height"] || "48px");
-  }
-  return css.length ? ` style="${escapeAttr(css.join(";"))}"` : "";
-}
-
-function classAttr(block: Block): string {
-  const cls = block.props["cls"];
-  return cls ? ` class="${escapeAttr(cls)}"` : "";
-}
-
 function structuralCommon(
   block: Block,
   fixedClass: string,
@@ -3484,7 +3422,10 @@ function structuralCommon(
   const userCls = block.props["cls"]
     ? " " + escapeAttr(block.props["cls"])
     : "";
-  return `${blockMetadataAttrs(block)} class="${fixedClass}${userCls}"${styleAttr(block, viewport, forCanvas)}`;
+  return `${blockMetadataAttrs(block)} class="${fixedClass}${userCls}"${styleAttr(
+    block,
+    { viewport, forCanvas },
+  )}`;
 }
 
 /**
@@ -3553,8 +3494,7 @@ function blockToHtml(
 ): string {
   const common = `${blockMetadataAttrs(block)}${classAttr(block)}${styleAttr(
     block,
-    viewport,
-    forCanvas,
+    { viewport, forCanvas },
   )}`;
   switch (block.type) {
     case "heading": {
@@ -3763,7 +3703,7 @@ function sectionToHtml(
     props: { cls: section.props["cls"] ?? "", text: "" },
     style: section.style,
   } as Block;
-  return `<section${cls}${styleAttr(styleBlock, viewport, forCanvas)}>\n${body}\n</section>`;
+  return `<section${cls}${styleAttr(styleBlock, { viewport, forCanvas })}>\n${body}\n</section>`;
 }
 
 function serializeBlocks(): string {

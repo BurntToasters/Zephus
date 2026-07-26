@@ -57,6 +57,7 @@
 - **Out-of-sync pages:** Visual-mode messaging points to Reload From Disk / detach in Code instead of incorrectly saying “reattach.”
 - **Autosave vs drafts:** Settings and Help clarify that Autosave writes on leave, while crash-recovery drafts are kept locally either way.
 - **Shared metadata attrs:** `blockMetadataAttrs` lives in `src/shared/renderHelpers.ts` for both build and editor serializers.
+- **Shared style attrs:** `styleAttr` / `classAttr` are shared too, with viewport/`forCanvas` options for the live canvas preview.
 
 ### Codebase & Quality
 - **Shared Render Helpers:** Extracted mirrored HTML/CSS helpers into `src/shared/renderHelpers.ts` so the build and editor renderers stay single-sourced.
