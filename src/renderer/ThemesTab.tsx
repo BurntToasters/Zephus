@@ -1,4 +1,11 @@
-import { createEffect, createSignal, onCleanup } from "solid-js";
+import {
+  For,
+  Match,
+  Switch,
+  createEffect,
+  createSignal,
+  onCleanup,
+} from "solid-js";
 import { render } from "solid-js/web";
 
 interface ThemeHeaderDetails {
@@ -140,49 +147,50 @@ function ThemeCard(props: { theme: ThemeCardEntry }) {
 }
 
 export function ThemesTabPanel() {
-  const current = () => state();
-
   createEffect(() => {
-    current();
+    state();
     runIconRefresh();
   });
 
-  if (current().mode === "placeholder") {
-    return (
-      <article class="theme-card">
-        <div class="theme-card-preview">
-          <div class="theme-card-preview-empty">
-            Theme previews load on demand
+  return (
+    <Switch>
+      <Match when={state().mode === "placeholder"}>
+        <article class="theme-card">
+          <div class="theme-card-preview">
+            <div class="theme-card-preview-empty">
+              Theme previews load on demand
+            </div>
           </div>
-        </div>
-        <div class="theme-card-body">
-          <span class="t-name">Bundled starter themes</span>
-          <span class="t-desc">
-            Open Get Started to lazy-load live previews for each bundled Zephus
-            theme.
-          </span>
-        </div>
-        <div class="theme-card-actions">
-          <button
-            class="btn primary"
-            onClick={() => handlers?.onLoadPreviews()}
-          >
-            Load Theme Previews
-          </button>
-        </div>
-      </article>
-    );
-  }
-
-  if (current().mode === "loading") {
-    return <p class="muted">Loading theme previews…</p>;
-  }
-
-  if (current().mode === "error") {
-    return <p class="muted">Could not load themes: {current().error}</p>;
-  }
-
-  return current().themes.map((theme) => <ThemeCard theme={theme} />);
+          <div class="theme-card-body">
+            <span class="t-name">Bundled starter themes</span>
+            <span class="t-desc">
+              Open Get Started to lazy-load live previews for each bundled
+              Zephus theme.
+            </span>
+          </div>
+          <div class="theme-card-actions">
+            <button
+              class="btn primary"
+              onClick={() => handlers?.onLoadPreviews()}
+            >
+              Load Theme Previews
+            </button>
+          </div>
+        </article>
+      </Match>
+      <Match when={state().mode === "loading"}>
+        <p class="muted">Loading theme previews…</p>
+      </Match>
+      <Match when={state().mode === "error"}>
+        <p class="muted">Could not load themes: {state().error}</p>
+      </Match>
+      <Match when={state().mode === "ready"}>
+        <For each={state().themes}>
+          {(theme) => <ThemeCard theme={theme} />}
+        </For>
+      </Match>
+    </Switch>
+  );
 }
 
 export function updateThemesTab(nextState: ThemesTabState): void {
