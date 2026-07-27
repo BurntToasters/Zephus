@@ -2,6 +2,16 @@
  * Parses managed page inner HTML into section/block trees (visual editor load path).
  */
 
+import type {
+  BlockStyle,
+  EditorBlock,
+  EditorBlockType,
+  SectionNode,
+} from "../main/types";
+
+type Block = EditorBlock;
+type BlockType = EditorBlockType;
+
 const DANGEROUS_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
 /** Coerces decoded dataset props to a flat string record. */
@@ -213,10 +223,7 @@ export function createEditorPageParser(deps: EditorParseDeps) {
    * Parses managed inner HTML into SectionNodes, reconstructing section
    * wrappers from sectionToHtml as editable SectionNodes.
    */
-  function sectionNodeFromElement(
-    el: HTMLElement,
-    index: number,
-  ): SectionNode {
+  function sectionNodeFromElement(el: HTMLElement, index: number): SectionNode {
     const storedType = el.dataset["zephusBlock"];
     const storedProps = parseZephusJsonAttr<Record<string, unknown>>(
       el.dataset["zephusProps"] ?? null,
@@ -258,10 +265,9 @@ export function createEditorPageParser(deps: EditorParseDeps) {
     const root = doc.getElementById("z-root");
     if (!root) return [deps.createFallbackSection()];
 
-    const topElements = Array.from(root.children).filter((el) => {
-      const tag = el.tagName.toLowerCase();
-      return !(tag === "style");
-    });
+    const topElements = Array.from(root.children)
+      .map((element) => element as HTMLElement)
+      .filter((element) => element.tagName.toLowerCase() !== "style");
 
     const hasManagedSection = topElements.some(
       (el) => el.dataset["zephusBlock"] === "section",

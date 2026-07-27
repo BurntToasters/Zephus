@@ -1,5 +1,6 @@
+import { For, Show } from "solid-js";
+import { createStore, reconcile } from "solid-js/store";
 import { render } from "solid-js/web";
-import { For, Show, createSignal } from "solid-js";
 
 export interface LayerChildEntry {
   id: string;
@@ -19,16 +20,16 @@ export interface LayersHandlers {
   onSelectChild: (sectionId: string, childId: string) => void;
 }
 
-const [sections, setSections] = createSignal<LayerSectionEntry[]>([]);
+const [sections, setSections] = createStore<LayerSectionEntry[]>([]);
 let handlers: LayersHandlers | null = null;
 
 export function LayersPanel() {
   return (
     <Show
-      when={sections().length > 0}
+      when={sections.length > 0}
       fallback={<li class="muted">No sections yet.</li>}
     >
-      <For each={sections()}>
+      <For each={sections}>
         {(section) => (
           <li classList={{ active: section.active }}>
             <button
@@ -65,7 +66,7 @@ export function LayersPanel() {
 }
 
 export function updateLayers(nextSections: LayerSectionEntry[]): void {
-  setSections(nextSections);
+  setSections(reconcile(nextSections, { key: "id" }));
 }
 
 export function registerLayersHandlers(nextHandlers: LayersHandlers): void {

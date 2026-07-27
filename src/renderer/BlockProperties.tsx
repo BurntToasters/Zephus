@@ -270,7 +270,9 @@ function ImageContentGroup(props: {
           <div class="meta-field">
             <span>Focus point (drag)</span>
             <div
-              ref={focalBox}
+              ref={(element) => {
+                focalBox = element;
+              }}
               class="focal-box"
               onPointerDown={(event) => {
                 dragging = true;

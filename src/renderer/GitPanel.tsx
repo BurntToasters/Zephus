@@ -100,7 +100,7 @@ export function GitPanelContent() {
   createEffect(() => {
     const status = gitStatus();
     if (!status) {
-      setSelectedFiles(new Set());
+      setSelectedFiles(new Set<string>());
       return;
     }
     setSelectedFiles(new Set(listChangedFiles(status)));

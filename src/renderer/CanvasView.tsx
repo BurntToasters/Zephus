@@ -1,4 +1,5 @@
-import { For, Show, createEffect, createSignal } from "solid-js";
+import { For, Show, createEffect } from "solid-js";
+import { createStore, reconcile, unwrap } from "solid-js/store";
 import { render } from "solid-js/web";
 
 type SectionAction =
@@ -8,6 +9,7 @@ type BlockAction =
   "up" | "down" | "duplicate" | "wrap" | "toggle-lock" | "delete";
 
 export interface CanvasBlockEntry {
+  id: string;
   block: EditorBlock;
   label: string;
   breadcrumb: string;
@@ -20,6 +22,7 @@ export interface CanvasBlockEntry {
 }
 
 export interface CanvasSectionEntry {
+  id: string;
   section: SectionNode;
   selected: boolean;
   breadcrumb: string;
@@ -67,6 +70,7 @@ export interface CanvasHandlers {
     childCount: number,
   ) => void;
   onBlockDragStart: (event: DragEvent, block: EditorBlock) => void;
+  onBlockDragEnd: () => void;
   onBlockDragOver: (
     event: DragEvent,
     sectionId: string,
@@ -84,7 +88,7 @@ export interface CanvasHandlers {
   ) => void;
 }
 
-const [canvasState, setCanvasState] = createSignal<CanvasState>({
+const [canvasState, setCanvasState] = createStore<CanvasState>({
   sections: [],
 });
 let handlers: CanvasHandlers | null = null;
@@ -107,9 +111,47 @@ function boxStyle(style?: BlockStyle): Record<string, string> {
   return next;
 }
 
+function sectionNode(entry: CanvasSectionEntry): SectionNode {
+  return unwrap(entry.section);
+}
+
+function blockNode(entry: CanvasBlockEntry): EditorBlock {
+  return unwrap(entry.block);
+}
+
+function observeCanvasEntry(...values: unknown[]): void {
+  // Reading reactive store fields inside an effect keeps DOM enhancement and
+  // resize handles synchronized without forcing shell remounts.
+  void values;
+}
+
 function stopAndRun(event: MouseEvent, fn: () => void): void {
   event.stopPropagation();
   fn();
+}
+
+function CanvasActionButton(props: {
+  label: string;
+  icon: string;
+  danger?: boolean;
+  disabled?: boolean;
+  onRun: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      classList={{
+        "canvas-action-button": true,
+        danger: !!props.danger,
+      }}
+      title={props.label}
+      aria-label={props.label}
+      disabled={props.disabled}
+      onClick={(event) => stopAndRun(event, props.onRun)}
+    >
+      <i data-lucide={props.icon}></i>
+    </button>
+  );
 }
 
 function InsertBlockButton(props: { index: number; sectionId: string }) {
@@ -117,14 +159,16 @@ function InsertBlockButton(props: { index: number; sectionId: string }) {
     <div class="canvas-insert">
       <button
         type="button"
-        class="mini-btn"
+        class="canvas-insert-button"
+        aria-label="Add block here"
         onClick={(event) =>
           stopAndRun(event, () =>
             handlers?.onInsertBlock(props.index, props.sectionId),
           )
         }
       >
-        + Add Block
+        <i data-lucide="plus"></i>
+        <span>Add block</span>
       </button>
     </div>
   );
@@ -135,12 +179,14 @@ function InsertSectionButton(props: { index: number }) {
     <div class="canvas-insert section-insert">
       <button
         type="button"
-        class="mini-btn"
+        class="canvas-insert-button"
+        aria-label="Add section here"
         onClick={(event) =>
           stopAndRun(event, () => handlers?.onOpenSectionInsert(props.index))
         }
       >
-        + Add Section
+        <i data-lucide="plus"></i>
+        <span>Add section</span>
       </button>
     </div>
   );
@@ -151,10 +197,13 @@ function SectionShell(props: { entry: CanvasSectionEntry; index: number }) {
   let bodyRef: HTMLDivElement | undefined;
 
   createEffect(() => {
-    props.entry.selected;
-    props.entry.section.locked;
-    props.entry.effectiveStyle;
-    if (shellRef) handlers?.onSyncSectionShell(shellRef, props.entry.section);
+    const entry = props.entry;
+    observeCanvasEntry(
+      entry.selected,
+      entry.section.locked,
+      entry.effectiveStyle,
+    );
+    if (shellRef) handlers?.onSyncSectionShell(shellRef, sectionNode(entry));
   });
 
   return (
@@ -162,7 +211,9 @@ function SectionShell(props: { entry: CanvasSectionEntry; index: number }) {
       <InsertSectionButton index={props.index} />
 
       <div
-        ref={shellRef}
+        ref={(element) => {
+          shellRef = element;
+        }}
         classList={{
           "canvas-section": true,
           selected: props.entry.selected,
@@ -170,104 +221,95 @@ function SectionShell(props: { entry: CanvasSectionEntry; index: number }) {
         }}
         style={boxStyle(props.entry.effectiveStyle)}
         onDragOver={(event) =>
-          handlers?.onSectionDragOver(event, props.index, shellRef!)
+          shellRef && handlers?.onSectionDragOver(event, props.index, shellRef)
         }
         onDrop={(event) => handlers?.onSectionDrop(event)}
       >
-        <span
+        <button
+          type="button"
           class="section-grip"
           title="Drag to reorder section"
-          aria-hidden="true"
+          aria-label={`Reorder ${props.entry.section.label}`}
+          disabled={!!props.entry.section.locked}
           draggable={!props.entry.section.locked}
+          onClick={(event) => event.stopPropagation()}
           onDragStart={(event) =>
-            handlers?.onSectionDragStart(event, props.entry.section)
+            handlers?.onSectionDragStart(event, sectionNode(props.entry))
           }
           onDragEnd={() => handlers?.onSectionDragEnd()}
         >
-          ⠿
-        </span>
+          <i data-lucide="grip-vertical"></i>
+        </button>
 
         <div class="section-chrome">
           <span class="block-chip">
             {props.index + 1}. {props.entry.section.label}
           </span>
           <span class="block-breadcrumb">{props.entry.breadcrumb}</span>
-          <div class="block-actions">
-            <button
-              type="button"
-              class="mini-btn"
-              onClick={(event) =>
-                stopAndRun(event, () =>
-                  handlers?.onSectionAction(props.entry.section, "add-block"),
+          <div
+            class="block-actions"
+            role="toolbar"
+            aria-label="Section actions"
+          >
+            <CanvasActionButton
+              label="Add block"
+              icon="plus"
+              onRun={() =>
+                handlers?.onSectionAction(sectionNode(props.entry), "add-block")
+              }
+            />
+            <CanvasActionButton
+              label="Move section up"
+              icon="arrow-up"
+              onRun={() =>
+                handlers?.onSectionAction(sectionNode(props.entry), "up")
+              }
+            />
+            <CanvasActionButton
+              label="Move section down"
+              icon="arrow-down"
+              onRun={() =>
+                handlers?.onSectionAction(sectionNode(props.entry), "down")
+              }
+            />
+            <CanvasActionButton
+              label="Duplicate section"
+              icon="copy"
+              onRun={() =>
+                handlers?.onSectionAction(sectionNode(props.entry), "duplicate")
+              }
+            />
+            <CanvasActionButton
+              label={
+                props.entry.section.locked ? "Unlock section" : "Lock section"
+              }
+              icon="lock-keyhole"
+              onRun={() =>
+                handlers?.onSectionAction(
+                  sectionNode(props.entry),
+                  "toggle-lock",
                 )
               }
-            >
-              Add Block
-            </button>
-            <button
-              type="button"
-              class="mini-btn"
-              onClick={(event) =>
-                stopAndRun(event, () =>
-                  handlers?.onSectionAction(props.entry.section, "up"),
-                )
+            />
+            <CanvasActionButton
+              label="Delete section"
+              icon="trash-2"
+              danger
+              onRun={() =>
+                handlers?.onSectionAction(sectionNode(props.entry), "delete")
               }
-            >
-              Up
-            </button>
-            <button
-              type="button"
-              class="mini-btn"
-              onClick={(event) =>
-                stopAndRun(event, () =>
-                  handlers?.onSectionAction(props.entry.section, "down"),
-                )
-              }
-            >
-              Down
-            </button>
-            <button
-              type="button"
-              class="mini-btn"
-              onClick={(event) =>
-                stopAndRun(event, () =>
-                  handlers?.onSectionAction(props.entry.section, "duplicate"),
-                )
-              }
-            >
-              Dup
-            </button>
-            <button
-              type="button"
-              class="mini-btn"
-              onClick={(event) =>
-                stopAndRun(event, () =>
-                  handlers?.onSectionAction(props.entry.section, "toggle-lock"),
-                )
-              }
-            >
-              {props.entry.section.locked ? "Unlock" : "Lock"}
-            </button>
-            <button
-              type="button"
-              class="mini-btn"
-              onClick={(event) =>
-                stopAndRun(event, () =>
-                  handlers?.onSectionAction(props.entry.section, "delete"),
-                )
-              }
-            >
-              Delete
-            </button>
+            />
           </div>
         </div>
 
         <div
-          ref={bodyRef}
+          ref={(element) => {
+            bodyRef = element;
+          }}
           class="section-body"
           onClick={(event) =>
             stopAndRun(event, () =>
-              handlers?.onSelectSection(props.entry.section),
+              handlers?.onSelectSection(sectionNode(props.entry)),
             )
           }
           onDragOver={(event) =>
@@ -325,36 +367,40 @@ function BlockShell(props: {
   let previewRef: HTMLDivElement | undefined;
 
   createEffect(() => {
-    props.blockEntry.html;
-    props.blockEntry.selected;
-    props.blockEntry.block.locked;
-    if (previewRef)
-      handlers?.onPreviewRendered(previewRef, props.blockEntry.block);
+    const entry = props.blockEntry;
+    observeCanvasEntry(
+      entry.html,
+      entry.selected,
+      entry.block.locked,
+      entry.effectiveStyle,
+    );
+    if (previewRef) handlers?.onPreviewRendered(previewRef, blockNode(entry));
     if (shellRef && previewRef) {
-      handlers?.onSyncBlockShell(shellRef, props.blockEntry.block, previewRef);
+      handlers?.onSyncBlockShell(shellRef, blockNode(entry), previewRef);
     }
   });
 
   return (
     <div
-      ref={shellRef}
+      ref={(element) => {
+        shellRef = element;
+      }}
       classList={{
         block: true,
         selected: props.blockEntry.selected,
         "html-block": props.blockEntry.htmlBlock,
         locked: !!props.blockEntry.block.locked,
       }}
-      draggable={!props.blockEntry.block.locked}
       title={props.blockEntry.label}
       tabIndex={0}
-      role="button"
+      role="group"
       aria-label={props.blockEntry.shellAriaLabel}
       onKeyDown={(event) =>
         previewRef &&
         handlers?.onBlockKeyDown(
           event,
-          props.section,
-          props.blockEntry.block,
+          unwrap(props.section),
+          blockNode(props.blockEntry),
           previewRef,
         )
       }
@@ -362,102 +408,101 @@ function BlockShell(props: {
         previewRef &&
         handlers?.onBlockClick(
           event,
-          props.section,
-          props.blockEntry.block,
+          unwrap(props.section),
+          blockNode(props.blockEntry),
           previewRef,
         )
       }
-      onDragStart={(event) =>
-        handlers?.onBlockDragStart(event, props.blockEntry.block)
-      }
-      onDragOver={(event) =>
-        handlers?.onBlockDragOver(
-          event,
-          props.section.id,
-          props.blockIndex,
-          shellRef!,
-          props.sectionBody()!,
-        )
-      }
+      onDragOver={(event) => {
+        const sectionBody = props.sectionBody();
+        if (shellRef && sectionBody) {
+          handlers?.onBlockDragOver(
+            event,
+            props.section.id,
+            props.blockIndex,
+            shellRef,
+            sectionBody,
+          );
+        }
+      }}
       onDrop={(event) => handlers?.onBlockDrop(event)}
     >
       <div class="block-chrome">
+        <button
+          type="button"
+          class="block-grip"
+          title="Drag to reorder block"
+          aria-label={`Reorder ${props.blockEntry.label} block`}
+          disabled={!!props.blockEntry.block.locked}
+          draggable={!props.blockEntry.block.locked}
+          onClick={(event) => event.stopPropagation()}
+          onDragStart={(event) =>
+            handlers?.onBlockDragStart(event, blockNode(props.blockEntry))
+          }
+          onDragEnd={() => handlers?.onBlockDragEnd()}
+        >
+          <i data-lucide="grip-vertical"></i>
+        </button>
         <span class="block-chip">
           {props.blockIndex + 1}. {props.blockEntry.label}
         </span>
         <span class="block-breadcrumb">{props.blockEntry.breadcrumb}</span>
-        <div class="block-actions">
-          <button
-            type="button"
-            class="mini-btn"
-            onClick={(event) =>
-              stopAndRun(event, () =>
-                handlers?.onBlockAction(props.blockEntry.block, "up"),
+        <div class="block-actions" role="toolbar" aria-label="Block actions">
+          <CanvasActionButton
+            label="Move block up"
+            icon="arrow-up"
+            onRun={() =>
+              handlers?.onBlockAction(blockNode(props.blockEntry), "up")
+            }
+          />
+          <CanvasActionButton
+            label="Move block down"
+            icon="arrow-down"
+            onRun={() =>
+              handlers?.onBlockAction(blockNode(props.blockEntry), "down")
+            }
+          />
+          <CanvasActionButton
+            label="Duplicate block"
+            icon="copy"
+            onRun={() =>
+              handlers?.onBlockAction(blockNode(props.blockEntry), "duplicate")
+            }
+          />
+          <CanvasActionButton
+            label="Move block into a new section"
+            icon="panel-top-open"
+            onRun={() =>
+              handlers?.onBlockAction(blockNode(props.blockEntry), "wrap")
+            }
+          />
+          <CanvasActionButton
+            label={
+              props.blockEntry.block.locked ? "Unlock block" : "Lock block"
+            }
+            icon="lock-keyhole"
+            onRun={() =>
+              handlers?.onBlockAction(
+                blockNode(props.blockEntry),
+                "toggle-lock",
               )
             }
-          >
-            Up
-          </button>
-          <button
-            type="button"
-            class="mini-btn"
-            onClick={(event) =>
-              stopAndRun(event, () =>
-                handlers?.onBlockAction(props.blockEntry.block, "down"),
-              )
+          />
+          <CanvasActionButton
+            label="Delete block"
+            icon="trash-2"
+            danger
+            onRun={() =>
+              handlers?.onBlockAction(blockNode(props.blockEntry), "delete")
             }
-          >
-            Down
-          </button>
-          <button
-            type="button"
-            class="mini-btn"
-            onClick={(event) =>
-              stopAndRun(event, () =>
-                handlers?.onBlockAction(props.blockEntry.block, "duplicate"),
-              )
-            }
-          >
-            Dup
-          </button>
-          <button
-            type="button"
-            class="mini-btn"
-            onClick={(event) =>
-              stopAndRun(event, () =>
-                handlers?.onBlockAction(props.blockEntry.block, "wrap"),
-              )
-            }
-          >
-            Wrap
-          </button>
-          <button
-            type="button"
-            class="mini-btn"
-            onClick={(event) =>
-              stopAndRun(event, () =>
-                handlers?.onBlockAction(props.blockEntry.block, "toggle-lock"),
-              )
-            }
-          >
-            {props.blockEntry.block.locked ? "Unlock" : "Lock"}
-          </button>
-          <button
-            type="button"
-            class="mini-btn"
-            onClick={(event) =>
-              stopAndRun(event, () =>
-                handlers?.onBlockAction(props.blockEntry.block, "delete"),
-              )
-            }
-          >
-            Delete
-          </button>
+          />
         </div>
       </div>
 
       <div
-        ref={previewRef}
+        ref={(element) => {
+          previewRef = element;
+        }}
         classList={{
           "block-preview": true,
           "editable-text": props.blockEntry.editableText,
@@ -470,7 +515,7 @@ function BlockShell(props: {
 }
 
 export function CanvasPanel() {
-  const sections = () => canvasState().sections;
+  const sections = () => canvasState.sections;
 
   return (
     <Show
@@ -525,8 +570,20 @@ export function CanvasPanel() {
   );
 }
 
+let iconRefreshScheduled = false;
+
+function scheduleIconRefresh(): void {
+  if (iconRefreshScheduled) return;
+  iconRefreshScheduled = true;
+  setTimeout(() => {
+    iconRefreshScheduled = false;
+    window.refreshIcons?.();
+  }, 0);
+}
+
 export function updateCanvas(nextState: CanvasState): void {
-  setCanvasState(nextState);
+  setCanvasState(reconcile(nextState, { key: "id" }));
+  scheduleIconRefresh();
 }
 
 export function registerCanvasHandlers(nextHandlers: CanvasHandlers): void {
@@ -536,4 +593,5 @@ export function registerCanvasHandlers(nextHandlers: CanvasHandlers): void {
 export function mountCanvas(container: HTMLElement): void {
   container.innerHTML = "";
   render(() => <CanvasPanel />, container);
+  scheduleIconRefresh();
 }

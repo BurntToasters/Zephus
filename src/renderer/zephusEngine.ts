@@ -3,6 +3,11 @@
 
 // TODO: Split UI rendering from state management (see editorCommands, editorGit, editorSerialize, editorBlockRender, editorSave, editorParse, editorPageModel, editorUndo, editorDraft, editorInspector).
 
+import { createCodeEditor, type CodeEditor } from "./codeEditor";
+import {
+  activateWorkspaceTab,
+  initEditorWorkspaceTabs,
+} from "./editorWorkspace";
 import { appendCappedLog } from "./editorLog";
 import { collectUnsavedWorkSummaryLines } from "./editorUnsavedWork";
 import { createEditorGitActions } from "./editorGit";
@@ -589,17 +594,6 @@ function setStatus(message: string): void {
     }, 6000);
   }
 }
-
-const TOOLBAR_TIPS: Record<string, string> = {
-  Up: "Move up",
-  Down: "Move down",
-  Dup: "Duplicate",
-  Wrap: "Wrap in a section",
-  Lock: "Lock (prevent edits)",
-  Unlock: "Unlock",
-  Delete: "Delete",
-  "Add Block": "Add a block inside",
-};
 
 /**
  * Maps raw build/preview/install errors to plain-language guidance for
@@ -1313,6 +1307,15 @@ function findSelectedBlock(): Block | null {
   return findBlockLocation(state.selectedId)?.block ?? null;
 }
 
+/** Resolve reactive canvas view models back to the mutable session objects. */
+function liveCanvasBlock(block: EditorBlock): Block {
+  return findBlockLocation(block.id)?.block ?? (block as Block);
+}
+
+function liveCanvasSection(section: SectionNode): SectionNode {
+  return findSection(section.id) ?? section;
+}
+
 function activeSectionId(): string | null {
   return (
     state.selectedSectionId ??
@@ -1786,6 +1789,8 @@ async function openProjectByPath(folder: string): Promise<void> {
     return;
   }
 
+  latestPageLoadRequest += 1;
+  ignoredExternalChange = null;
   state.project = result;
   clearAssetCache();
   await renderRecent();
@@ -1833,6 +1838,7 @@ async function openProjectByPath(folder: string): Promise<void> {
 /* ---------- Editor ---------- */
 
 async function enterEditor(result: ProjectOpenResult): Promise<void> {
+  editorSessionGeneration += 1;
   $("view-start").classList.add("hidden");
   const editorView = $("view-editor");
   editorView.classList.remove("hidden");
@@ -1840,6 +1846,11 @@ async function enterEditor(result: ProjectOpenResult): Promise<void> {
   editorView.setAttribute("tabindex", "-1");
   editorView.focus();
   $("project-name").textContent = result.name;
+  // A fresh editor session has no page open yet. Clearing it matters when a
+  // second project is opened without closing the first: both can contain the
+  // same page path, and a stale value would make the load look redundant.
+  state.page = null;
+  state.currentMeta = null;
   const ensured = await window.zephus.ensureVisualSchema(
     result.path,
     result.astro.pagesDir,
@@ -1858,7 +1869,7 @@ async function enterEditor(result: ProjectOpenResult): Promise<void> {
   state.pendingSiteEditorKind = null;
   markSiteDirty(state, false);
   ensureCodeEditor();
-  await maybeRestoreSiteDraft();
+  const siteDraftCleanupWarning = await maybeRestoreSiteDraft();
   void editorGit.refreshGit();
   void applyRepoRules();
   void applyMergedTheme();
@@ -1878,9 +1889,10 @@ async function enterEditor(result: ProjectOpenResult): Promise<void> {
 
   const integrity = ensured.status?.integrity ?? result.schema.integrity;
   setStatus(
-    integrity === "legacy"
-      ? "Migrated project into schema-backed visual mode."
-      : "Ready — " + result.path,
+    siteDraftCleanupWarning ??
+      (integrity === "legacy"
+        ? "Migrated project into schema-backed visual mode."
+        : "Ready — " + result.path),
   );
   const pendingDraft =
     pendingHomeDraftResume?.projectPath === result.path
@@ -2109,6 +2121,7 @@ function renderEditorStateBanner(): void {
               await loadPage(state.page, {
                 skipUnsavedGuard: true,
                 skipDraftRestore: true,
+                forceReload: true,
               });
             })();
           },
@@ -2126,15 +2139,16 @@ function renderEditorStateBanner(): void {
           label: "Reload From Disk",
           onClick: () => {
             const page = state.page;
-            if (!page || !state.project) return;
-            void window.zephus
-              .clearDraft(state.project.path, "page", page)
-              .then(() =>
-                loadPage(page, {
-                  skipUnsavedGuard: true,
-                  skipDraftRestore: true,
-                }),
-              );
+            const projectPath = state.project?.path;
+            if (!page || !projectPath) return;
+            void loadPage(page, {
+              skipUnsavedGuard: true,
+              skipDraftRestore: true,
+              forceReload: true,
+              afterLoad: async () => {
+                await clearPageDraftAfterReload(projectPath, page);
+              },
+            });
           },
         },
         {
@@ -2168,13 +2182,14 @@ function renderEditorStateBanner(): void {
             const page = state.page;
             const projectPath = state.project?.path;
             if (!page || !projectPath) return;
-            void (async () => {
-              await window.zephus.clearDraft(projectPath, "page", page);
-              await loadPage(page, {
-                skipUnsavedGuard: true,
-                skipDraftRestore: true,
-              });
-            })();
+            void loadPage(page, {
+              skipUnsavedGuard: true,
+              skipDraftRestore: true,
+              forceReload: true,
+              afterLoad: async () => {
+                await clearPageDraftAfterReload(projectPath, page);
+              },
+            });
           },
         },
       ],
@@ -2530,6 +2545,8 @@ function renderPageList(result: ProjectOpenResult): void {
       navLabel: entry.navLabel,
       navVisible: entry.navVisible,
       active: entry.page === state.page,
+      loading: entry.page === loadingPage,
+      interactionDisabled: loadingPage !== null,
     })),
   );
 }
@@ -2543,24 +2560,24 @@ function openHelpModal(): void {
 }
 
 async function reloadPages(): Promise<void> {
-  if (!state.project) return;
-  const pages = await window.zephus.listPages(
-    state.project.path,
-    state.project.astro.pagesDir,
-  );
-  const meta = await window.zephus.listPageMeta(
-    state.project.path,
-    state.project.astro.pagesDir,
-  );
-  state.project.pages = pages;
+  const project = state.project;
+  if (!project) return;
+  const projectPath = project.path;
+  const pagesDir = project.astro.pagesDir;
+  const [pages, meta, site] = await Promise.all([
+    window.zephus.listPages(projectPath, pagesDir),
+    window.zephus.listPageMeta(projectPath, pagesDir),
+    window.zephus.readSiteDocument(projectPath),
+  ]);
+  if (state.project?.path !== projectPath) return;
+  project.pages = pages;
   state.pageMeta = meta.ok ? meta.entries : [];
-  const site = await window.zephus.readSiteDocument(state.project.path);
   if (site.ok && site.site) {
     state.siteDocument = site.site;
   }
   syncCurrentMeta();
-  renderPageList(state.project);
-  renderNavEditor(state.project);
+  renderPageList(project);
+  renderNavEditor(project);
   refreshGuidancePanels();
 }
 
@@ -2728,7 +2745,7 @@ async function openPageMetaModal(page: string): Promise<void> {
             return;
           }
           closeModal();
-          await loadPage(entry.page);
+          await loadPage(entry.page, { forceReload: true });
           setStatus(`Reattached ${entry.navLabel} to visual mode.`);
           return;
         }
@@ -2747,7 +2764,7 @@ async function openPageMetaModal(page: string): Promise<void> {
         }
         closeModal();
         if (state.page === entry.page) {
-          await loadPage(entry.page);
+          await loadPage(entry.page, { forceReload: true });
         }
         setStatus(`Detached ${entry.navLabel} from visual mode.`);
       },
@@ -2824,8 +2841,6 @@ function buildUnsavedWorkSummary(): HTMLElement {
   return wrap;
 }
 
-let editorSiteSave!: ReturnType<typeof createEditorSiteSaveActions>;
-
 async function discardPendingSiteChanges(): Promise<void> {
   return editorSiteSave.discardPendingSiteChanges();
 }
@@ -2834,10 +2849,25 @@ async function persistPendingSiteDocument(): Promise<boolean> {
   return editorSiteSave.persistPendingSiteDocument();
 }
 
-let editorDraftRestore!: ReturnType<typeof createEditorDraftRestoreActions>;
-
-async function maybeRestoreSiteDraft(): Promise<void> {
+async function maybeRestoreSiteDraft(): Promise<string | null> {
   return editorDraftRestore.maybeRestoreSiteDraft();
+}
+
+async function saveUnsavedWorkAndVerify(): Promise<boolean> {
+  const projectPath = state.project?.path ?? null;
+  const page = state.page;
+  const saved = await performSave();
+  if (!saved) return false;
+  const safeToLeave =
+    state.project?.path === projectPath &&
+    state.page === page &&
+    !isGlobalDirty(state);
+  if (!safeToLeave) {
+    setStatus(
+      "The saved snapshot is safe, but newer edits are still unsaved. Finish saving or discard them before leaving.",
+    );
+  }
+  return safeToLeave;
 }
 
 async function maybeResolveUnsavedWork(options?: {
@@ -2845,29 +2875,83 @@ async function maybeResolveUnsavedWork(options?: {
 }): Promise<boolean> {
   if (!isGlobalDirty(state)) return true;
   if (appSettings?.autosave) {
-    return performSave();
+    return saveUnsavedWorkAndVerify();
   }
   const choice = await modalController.confirmUnsavedWork(
     "Unsaved Changes",
     buildUnsavedWorkSummary(),
   );
   if (choice === "cancel") return false;
-  if (choice === "save") return performSave();
-  if (state.project && state.pageDirty && state.page) {
-    await window.zephus.clearDraft(state.project.path, "page", state.page);
+  if (choice === "save") return saveUnsavedWorkAndVerify();
+
+  const projectPath = state.project?.path ?? null;
+  const page = state.page;
+  const pageRevision = state.pageRevision;
+  const siteRevision = state.siteRevision;
+  if (projectPath && state.pageDirty && page) {
+    const cleared = await window.zephus.clearDraft(projectPath, "page", page);
+    if (!cleared.ok) {
+      setStatus(
+        "Could not discard page changes: " +
+          (cleared.error ?? "recovery draft cleanup failed"),
+      );
+      return false;
+    }
+    if (
+      state.project?.path !== projectPath ||
+      state.page !== page ||
+      state.pageRevision !== pageRevision ||
+      state.siteRevision !== siteRevision
+    ) {
+      setStatus("New edits were made while discarding; they were kept.");
+      scheduleDraftWrite();
+      return false;
+    }
+    clearChanges();
+    markDirty(false);
   }
   if (state.project && state.siteDirty) {
     await discardPendingSiteChanges();
   }
-  clearChanges();
-  markDirty(false);
+  if (
+    state.project?.path !== projectPath ||
+    state.page !== page ||
+    state.pageRevision !== pageRevision ||
+    state.siteRevision !== siteRevision ||
+    isGlobalDirty(state)
+  ) {
+    setStatus("New edits were made while discarding; they were kept.");
+    scheduleDraftWrite();
+    return false;
+  }
   if (options?.reloadCurrentPageOnDiscard && state.project && state.page) {
     await loadPage(state.page, {
       skipUnsavedGuard: true,
       skipDraftRestore: true,
+      forceReload: true,
     });
+    if (
+      state.project?.path !== projectPath ||
+      state.page !== page ||
+      isGlobalDirty(state)
+    ) {
+      return false;
+    }
   }
   return true;
+}
+
+async function persistSiteChangesAndVerify(): Promise<boolean> {
+  const projectPath = state.project?.path ?? null;
+  const saved = await persistPendingSiteDocument();
+  const safeToSwitch =
+    saved && state.project?.path === projectPath && !state.siteDirty;
+  if (saved && !safeToSwitch) {
+    setStatus(
+      "Newer site edits are still unsaved. Save or discard them before switching editors.",
+    );
+  }
+  return safeToSwitch;
 }
 
 async function resolveSiteEditorConflict(
@@ -2881,60 +2965,210 @@ async function resolveSiteEditorConflict(
     return true;
   }
   if (appSettings?.autosave) {
-    return persistPendingSiteDocument();
+    return persistSiteChangesAndVerify();
   }
   const choice = await modalController.confirmUnsavedWork(
     "Unsaved Site Settings",
     buildUnsavedWorkSummary(),
   );
   if (choice === "cancel") return false;
-  if (choice === "save") return persistPendingSiteDocument();
+  if (choice === "save") return persistSiteChangesAndVerify();
   await discardPendingSiteChanges();
-  return true;
+  return !state.siteDirty;
 }
 
-async function loadPage(
+async function clearPageDraftAfterReload(
+  projectPath: string,
   page: string,
-  options?: { skipUnsavedGuard?: boolean; skipDraftRestore?: boolean },
 ): Promise<void> {
-  if (!state.project) return;
+  const cleared = await window.zephus.clearDraft(projectPath, "page", page);
+  if (!cleared.ok) {
+    throw new Error(cleared.error ?? "recovery draft cleanup failed");
+  }
+}
+
+interface PageLoadOptions {
+  skipUnsavedGuard?: boolean;
+  skipDraftRestore?: boolean;
+  forceReload?: boolean;
+  afterLoad?: () => void | Promise<void>;
+}
+
+let editorSessionGeneration = 0;
+let latestPageLoadRequest = 0;
+let loadingPage: string | null = null;
+let closingProject = false;
+let pageLoadChain: Promise<void> = Promise.resolve();
+let externalChangeInFlight: Promise<void> | null = null;
+let externalChangeQueued = false;
+let ignoredExternalChange: {
+  projectPath: string;
+  page: string;
+  content: string;
+} | null = null;
+
+function setPageLoading(page: string | null): void {
+  loadingPage = page;
+  const canvas = $("canvas");
+  const busy = page !== null;
+  canvas.classList.toggle("loading", busy);
+  if (busy) {
+    canvas.setAttribute("aria-busy", "true");
+    canvas.dataset["loadingLabel"] =
+      `Loading ${findPageMeta(page)?.navLabel ?? page}…`;
+  } else {
+    canvas.removeAttribute("aria-busy");
+    delete canvas.dataset["loadingLabel"];
+  }
+
+  const interactionSurfaces = [
+    canvas,
+    $("code-editor"),
+    $("workspace-left-build"),
+    $("workspace-left-layers"),
+    $("nav-list"),
+    document.querySelector<HTMLElement>(".panel.right"),
+  ];
+  for (const surface of interactionSurfaces) {
+    surface?.toggleAttribute("inert", busy);
+  }
+  for (const id of [
+    "mode-visual",
+    "mode-code",
+    "btn-save",
+    "btn-new-page",
+    "btn-regen-nav",
+    "btn-site-shell",
+    "btn-design-system",
+  ] as const) {
+    ($(id) as HTMLButtonElement).disabled = busy;
+  }
+  if (!busy) syncVisualModeState();
+  updateUndoRedoButtons();
+  if (state.project) renderPageList(state.project);
+}
+
+function loadPage(page: string, options?: PageLoadOptions): Promise<void> {
+  const projectPath = state.project?.path;
+  if (!projectPath) return Promise.resolve();
+  const requestId = ++latestPageLoadRequest;
+  setPageLoading(page);
+  const run = pageLoadChain.then(() =>
+    loadPageNow(page, projectPath, requestId, options),
+  );
+  const handled = run.catch((error: unknown) => {
+    if (
+      requestId === latestPageLoadRequest &&
+      state.project?.path === projectPath
+    ) {
+      setStatus(
+        `Could not load ${page}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  });
+  pageLoadChain = handled.finally(() => {
+    if (requestId === latestPageLoadRequest) setPageLoading(null);
+  });
+  return pageLoadChain;
+}
+
+async function loadPageNow(
+  page: string,
+  projectPath: string,
+  requestId: number,
+  options?: PageLoadOptions,
+): Promise<void> {
+  const isCurrentRequest = (): boolean =>
+    requestId === latestPageLoadRequest && state.project?.path === projectPath;
+
+  await editorSave.waitForIdle();
+  if (!isCurrentRequest()) return;
+  if (page === state.page && !options?.forceReload) return;
   if (!options?.skipUnsavedGuard && !(await maybeResolveUnsavedWork())) {
     return;
   }
+  if (!isCurrentRequest()) return;
+
+  const sourcePage = state.page;
+  const pageRevisionAtRead = state.pageRevision;
+  const siteRevisionAtRead = state.siteRevision;
+  const codeAtRead = state.mode === "code" ? getCode() : null;
+  const sourceChangedDuringRead = (): boolean =>
+    state.page !== sourcePage ||
+    state.pageRevision !== pageRevisionAtRead ||
+    state.siteRevision !== siteRevisionAtRead ||
+    (codeAtRead !== null && getCode() !== codeAtRead);
+
+  const project = state.project;
+  if (!project) return;
+  setStatus(`Loading ${findPageMeta(page)?.navLabel ?? page}…`);
   const res = await window.zephus.readPageDocument(
-    state.project.path,
+    projectPath,
     page,
-    state.project.astro.pagesDir,
+    project.astro.pagesDir,
   );
+  if (!isCurrentRequest()) return;
+  if (sourceChangedDuringRead()) {
+    setStatus(
+      "Page switch canceled because the open page changed while the next page was loading.",
+    );
+    return;
+  }
   if (!res.ok || !res.pageDocument) {
     setStatus("Could not load " + page + ": " + (res.error ?? "unknown"));
     return;
   }
+
+  const nextManagedStatus = res.pageDocument.managedFileStatus;
+  const nextVisualEditable = nextManagedStatus !== "detached";
+  const initialSource = res.source ?? "";
+  const generatedSource = res.generatedSource ?? initialSource;
+  let pageDraftCleanupWarning: string | undefined;
+  let restoredPageContent: string | undefined;
+  let restoredPageDraft: DraftData | undefined;
+  if (!options?.skipDraftRestore) {
+    const draftOutcome = await editorDraftRestore.maybeRestorePageDraft(
+      page,
+      findPageMeta(page)?.navLabel ?? page,
+      nextVisualEditable ? generatedSource : initialSource,
+    );
+    pageDraftCleanupWarning = draftOutcome.cleanupWarning;
+    restoredPageContent = draftOutcome.restoredContent;
+    restoredPageDraft = draftOutcome.restoredDraft;
+  }
+  if (!isCurrentRequest()) return;
+
+  // Commit the complete page in one synchronous step. Until draft resolution
+  // finishes, the current editor session remains untouched, so a superseding
+  // request can safely abandon this candidate without leaving partial state.
+  const frameSource =
+    restoredPageContent && nextVisualEditable
+      ? restoredPageContent
+      : initialSource;
+  const { frame, inner } = splitManagedPageSource(frameSource);
+  const nextSections =
+    restoredPageContent && nextVisualEditable
+      ? parseSections(inner)
+      : sectionsFromPageDocument(res.pageDocument);
+
+  ignoredExternalChange = null;
   state.page = page;
   state.siteDocument = res.site;
   state.pageDocument = res.pageDocument;
-  state.managedStatus = res.pageDocument.managedFileStatus;
-  // Visual editing uses the JSON sidecar; disk drift is surfaced via banner + save.
-  state.visualEditable = state.managedStatus !== "detached";
-  const initialSource = res.source ?? "";
-  capturePageFrame(initialSource);
+  state.managedStatus = nextManagedStatus;
+  state.visualEditable = nextVisualEditable;
+  state.frontmatter = frame.frontmatter;
+  state.prefix = frame.prefix;
+  state.suffix = frame.suffix;
   syncCurrentMeta();
-  state.sections = sectionsFromPageDocument(res.pageDocument);
+  state.sections = nextSections;
   syncBlocksFromSections();
   state.generatedCode = res.generatedSource ?? currentManagedSource();
-  state.rawCode = state.visualEditable ? state.generatedCode : initialSource;
-  state.recoveredPageDraft = null;
-  if (!options?.skipDraftRestore) {
-    await editorDraftRestore.maybeRestorePageDraft(
-      page,
-      findPageMeta(page)?.navLabel ?? page,
-      state.rawCode,
-      {
-        visualEditable: state.visualEditable,
-        applyRestoredSource: (content) => parsePage(content),
-      },
-    );
-  }
+  state.rawCode =
+    restoredPageContent ??
+    (state.visualEditable ? state.generatedCode : initialSource);
+  state.recoveredPageDraft = restoredPageDraft ?? null;
+
   state.undo = [];
   state.redo = [];
   updateUndoRedoButtons();
@@ -2942,6 +3176,8 @@ async function loadPage(
   state.selectedSectionId = state.sections[0]?.id ?? null;
   clearChanges();
   markDirty(Boolean(state.recoveredPageDraft));
+  const loadedPageRevision = state.pageRevision;
+  const loadedSiteRevision = state.siteRevision;
   renderLayers();
 
   for (const li of Array.from($("page-list").children) as HTMLElement[]) {
@@ -2952,9 +3188,14 @@ async function loadPage(
   setMode(state.visualEditable ? "visual" : "code");
   renderDirtyIndicators();
 
-  // Watch the open file for external changes.
-  await window.zephus.watchFile(state.project.path, page);
-  if (state.managedStatus === "out-of-sync") {
+  // Watch the open file for external changes. Serialized page loads guarantee
+  // that an older request cannot replace the watcher for a newer page.
+  if (!isCurrentRequest()) return;
+  await window.zephus.watchFile(projectPath, page);
+  if (!isCurrentRequest()) return;
+  if (pageDraftCleanupWarning) {
+    setStatus(pageDraftCleanupWarning);
+  } else if (state.managedStatus === "out-of-sync") {
     setStatus(
       "Managed page drift detected. Save visually to overwrite or edit in code and detach.",
     );
@@ -2965,27 +3206,66 @@ async function loadPage(
   } else {
     setStatus("Editing " + page);
   }
-}
 
-async function onExternalChange(): Promise<void> {
-  if (!state.project || !state.page) return;
-
-  // Ignore change events caused by Zephus's own writes: if the on-disk content
-  // matches what we last generated/loaded, there is nothing external to merge.
-  try {
-    const onDisk = await window.zephus.readFile(state.project.path, state.page);
+  if (options?.afterLoad) {
     if (
-      onDisk.ok &&
-      typeof onDisk.content === "string" &&
-      (onDisk.content === state.rawCode ||
-        onDisk.content === state.generatedCode)
+      state.pageRevision !== loadedPageRevision ||
+      state.siteRevision !== loadedSiteRevision
     ) {
+      setStatus(
+        `Editing ${page}; recovery cleanup was postponed because newer edits exist.`,
+      );
       return;
     }
+    try {
+      await options.afterLoad();
+    } catch (error) {
+      setStatus(
+        `Editing ${page}, but recovery cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+}
+
+async function handleExternalChange(): Promise<void> {
+  const project = state.project;
+  const page = state.page;
+  if (!project || !page) return;
+  const projectPath = project.path;
+  const sessionGeneration = editorSessionGeneration;
+  const isCurrentPage = (): boolean =>
+    state.project?.path === projectPath &&
+    state.page === page &&
+    editorSessionGeneration === sessionGeneration;
+
+  await editorSave.waitForIdle();
+  if (!isCurrentPage()) return;
+
+  let diskContent: string | null = null;
+  try {
+    const onDisk = await window.zephus.readFile(projectPath, page);
+    if (!isCurrentPage()) return;
+    if (onDisk.ok && typeof onDisk.content === "string") {
+      diskContent = onDisk.content;
+      if (
+        diskContent === state.rawCode ||
+        diskContent === state.generatedCode
+      ) {
+        return;
+      }
+      if (
+        ignoredExternalChange?.projectPath === projectPath &&
+        ignoredExternalChange.page === page &&
+        ignoredExternalChange.content === diskContent
+      ) {
+        return;
+      }
+    }
   } catch {
-    // If we cannot read the file, fall through to the prompt.
+    // If the file cannot be read, still let the user decide how to proceed.
   }
 
+  if (!isCurrentPage()) return;
   const choice = await modalController.choose<"keep" | "reload">(
     "File Changed on Disk",
     "The current page was modified outside Zephus. Reload it from disk or keep your in-app version?",
@@ -2994,14 +3274,45 @@ async function onExternalChange(): Promise<void> {
       { label: "Reload", value: "reload", kind: "primary" },
     ],
   );
-  if (choice !== "reload") return;
-  const page = state.page;
-  const projectPath = state.project?.path;
-  if (page && projectPath) {
-    markDirty(false);
-    await window.zephus.clearDraft(projectPath, "page", page);
-    await loadPage(page, { skipUnsavedGuard: true, skipDraftRestore: true });
+  if (!isCurrentPage()) return;
+  if (choice === "keep") {
+    if (diskContent !== null) {
+      ignoredExternalChange = { projectPath, page, content: diskContent };
+    }
+    trackChange("Kept in-app version after an external file change");
+    markDirty(true);
+    setStatus(
+      "Keeping your in-app version. Save to overwrite the disk change.",
+    );
+    return;
   }
+
+  ignoredExternalChange = null;
+  await loadPage(page, {
+    skipUnsavedGuard: true,
+    skipDraftRestore: true,
+    forceReload: true,
+    afterLoad: async () => {
+      await clearPageDraftAfterReload(projectPath, page);
+    },
+  });
+}
+
+function onExternalChange(): Promise<void> {
+  if (externalChangeInFlight) {
+    externalChangeQueued = true;
+    return externalChangeInFlight;
+  }
+  const pending = handleExternalChange();
+  externalChangeInFlight = pending;
+  void pending.finally(() => {
+    if (externalChangeInFlight === pending) externalChangeInFlight = null;
+    if (externalChangeQueued) {
+      externalChangeQueued = false;
+      void onExternalChange();
+    }
+  });
+  return pending;
 }
 
 /* ---------- Page structure parse / serialize ---------- */
@@ -3082,6 +3393,19 @@ let indicator: HTMLElement | null = null;
 let dropSectionId: string | null = null;
 let draggingSectionId: string | null = null;
 let sectionDropIndex = -1;
+
+function resetDropTargetState(): void {
+  dropIndex = -1;
+  dropSectionId = null;
+  sectionDropIndex = -1;
+  indicator?.remove();
+  indicator = null;
+}
+
+function resetDragState(): void {
+  resetDropTargetState();
+  draggingSectionId = null;
+}
 
 // Manual double-click tracking. The canvas rebuilds on every selection change,
 // so a block's DOM node is replaced between the two clicks of a native
@@ -3683,6 +4007,9 @@ function effectiveNodeStyle(node: { style?: BlockStyle }): BlockStyle {
 }
 
 function makeCanvasLinksInert(root: HTMLElement): void {
+  root.querySelectorAll<HTMLIFrameElement>("iframe").forEach((frame) => {
+    frame.tabIndex = -1;
+  });
   if (root.dataset["canvasLinksInert"] === "true") return;
   root.dataset["canvasLinksInert"] = "true";
   root.addEventListener(
@@ -3844,29 +4171,41 @@ function beginCanvasResize(
 function renderCanvas(): void {
   const canvas = $("canvas");
   canvas.setAttribute("data-viewport", state.currentViewport);
-  indicator?.remove();
-  indicator = null;
+  resetDragState();
   updateCanvas({
-    sections: state.sections.map((section) => ({
-      section,
-      selected: section.id === state.selectedSectionId && !state.selectedId,
-      breadcrumb: `${currentPageLabel()} / section`,
-      effectiveStyle: effectiveNodeStyle(section),
-      children: section.children.map((blockNode) => {
-        const block = blockNode as Block;
-        return {
-          block,
-          label: blockLabel(block),
-          breadcrumb: `${currentPageLabel()} / ${section.label} / ${block.type}`,
-          html: blockToHtml(block, state.currentViewport, true),
-          selected: block.id === state.selectedId,
-          editableText: TEXT_EDITABLE.includes(block.type) && !block.locked,
-          shellAriaLabel: `${blockLabel(block)} block${block.id === state.selectedId ? ", selected" : ""}`,
-          htmlBlock: block.type === "html",
-          effectiveStyle: effectiveNodeStyle(block),
-        };
-      }),
-    })),
+    sections: state.sections.map((section) => {
+      // Canvas entries are immutable view snapshots. Session nodes are mutated
+      // in place by editor commands, so passing those same object identities
+      // through keyed reconciliation would hide nested lock/label changes from
+      // Solid. Event handlers resolve snapshots back to live nodes by id.
+      const sectionView: SectionNode = {
+        ...section,
+        children: [...section.children],
+      };
+      return {
+        id: section.id,
+        section: sectionView,
+        selected: section.id === state.selectedSectionId && !state.selectedId,
+        breadcrumb: `${currentPageLabel()} / section`,
+        effectiveStyle: effectiveNodeStyle(section),
+        children: section.children.map((blockNode) => {
+          const block = blockNode as Block;
+          const blockView: Block = { ...block };
+          return {
+            id: block.id,
+            block: blockView,
+            label: blockLabel(block),
+            breadcrumb: `${currentPageLabel()} / ${section.label} / ${block.type}`,
+            html: blockToHtml(block, state.currentViewport, true),
+            selected: block.id === state.selectedId,
+            editableText: TEXT_EDITABLE.includes(block.type) && !block.locked,
+            shellAriaLabel: `${blockLabel(block)} block${block.id === state.selectedId ? ", selected" : ""}`,
+            htmlBlock: block.type === "html",
+            effectiveStyle: effectiveNodeStyle(block),
+          };
+        }),
+      };
+    }),
   });
   applyDesignPreview();
 
@@ -3875,6 +4214,12 @@ function renderCanvas(): void {
     if (state.sections.length === 0) {
       dropIndex = 0;
       dropSectionId = null;
+    }
+  };
+  canvas.ondragleave = (event) => {
+    const nextTarget = event.relatedTarget;
+    if (!(nextTarget instanceof Node) || !canvas.contains(nextTarget)) {
+      resetDropTargetState();
     }
   };
   canvas.ondrop = (e) => handleDrop(e);
@@ -3903,80 +4248,99 @@ function showIndicator(
 function handleDrop(e: DragEvent): void {
   e.preventDefault();
   e.stopPropagation();
-  const newType = e.dataTransfer?.getData("text/zephus-new");
-  const moveBlockId = e.dataTransfer?.getData("text/zephus-move-block");
-  const templateId = e.dataTransfer?.getData("text/zephus-template");
-  const moveSectionId = e.dataTransfer?.getData("text/zephus-move-section");
-  const targetSection =
-    findSection(dropSectionId ?? activeSectionId()) ??
-    state.sections[0] ??
-    null;
-  const target =
-    dropIndex < 0 ? (targetSection?.children.length ?? 0) : dropIndex;
 
-  if (moveSectionId) {
-    const from = state.sections.findIndex((s) => s.id === moveSectionId);
-    const moving = state.sections[from];
-    if (isNodeLocked(moving)) {
-      setStatus(lockedMutationMessage("section"));
-      return;
-    }
-    if (from >= 0 && sectionDropIndex >= 0) {
-      let to = sectionDropIndex;
-      if (from < to) to -= 1;
-      if (to !== from) {
-        pushUndo();
-        const [sec] = state.sections.splice(from, 1);
-        if (sec) {
-          state.sections.splice(to, 0, sec);
-          state.selectedSectionId = sec.id;
-          state.selectedId = null;
-          commitBlockChange("Moved section");
+  try {
+    const newType = e.dataTransfer?.getData("text/zephus-new");
+    const moveBlockId = e.dataTransfer?.getData("text/zephus-move-block");
+    const templateId = e.dataTransfer?.getData("text/zephus-template");
+    const moveSectionId = e.dataTransfer?.getData("text/zephus-move-section");
+    const targetSection =
+      findSection(dropSectionId ?? activeSectionId()) ??
+      state.sections[0] ??
+      null;
+    const target =
+      dropIndex < 0 ? (targetSection?.children.length ?? 0) : dropIndex;
+
+    if (moveSectionId) {
+      const from = state.sections.findIndex(
+        (section) => section.id === moveSectionId,
+      );
+      const moving = state.sections[from];
+      if (isNodeLocked(moving)) {
+        setStatus(lockedMutationMessage("section"));
+        return;
+      }
+      if (from >= 0 && sectionDropIndex >= 0) {
+        let to = sectionDropIndex;
+        if (from < to) to -= 1;
+        if (to !== from) {
+          pushUndo();
+          const [section] = state.sections.splice(from, 1);
+          if (section) {
+            state.sections.splice(to, 0, section);
+            state.selectedSectionId = section.id;
+            state.selectedId = null;
+            commitBlockChange("Moved section");
+          }
         }
       }
-    }
-  } else if (templateId) {
-    const tpl =
-      TEMPLATES.find((t) => t.id === templateId) ??
-      resolveSavedSectionTemplate(templateId);
-    if (!tpl) return;
-    // Honor the drop position: insert after the section dropped onto, or
-    // append when dropped on empty canvas space.
-    const overSection = dropSectionId ? findSection(dropSectionId) : null;
-    const insertAt = overSection
-      ? state.sections.indexOf(overSection) + 1
-      : state.sections.length;
-    addSectionAt(insertAt, tpl);
-  } else if (newType) {
-    addBlockAt(newType as BlockType, target, targetSection?.id);
-  } else if (moveBlockId) {
-    const location = findBlockLocation(moveBlockId);
-    if (!location || !targetSection) return;
-    if (isNodeLocked(location.block)) {
-      setStatus(lockedMutationMessage("block"));
       return;
     }
-    if (isNodeLocked(targetSection)) {
-      setStatus(lockedMutationMessage("target-section"));
+
+    if (templateId) {
+      const template =
+        TEMPLATES.find((entry) => entry.id === templateId) ??
+        resolveSavedSectionTemplate(templateId);
+      if (!template) return;
+      // Honor the drop position: insert after the section dropped onto, or
+      // append when dropped on empty canvas space.
+      const overSection = dropSectionId ? findSection(dropSectionId) : null;
+      const insertAt = overSection
+        ? state.sections.indexOf(overSection) + 1
+        : state.sections.length;
+      addSectionAt(insertAt, template);
       return;
     }
-    pushUndo();
-    const [moved] = location.section.children.splice(location.blockIndex, 1);
-    if (!moved) return;
-    const adjusted =
-      location.section.id === targetSection.id && location.blockIndex < target
-        ? target - 1
-        : target;
-    targetSection.children.splice(adjusted, 0, moved);
-    state.selectedId = moved.id;
-    state.selectedSectionId = targetSection.id;
-    commitBlockChange(`Reordered ${moved.type} block`);
+
+    if (newType) {
+      if (!KNOWN_BLOCK_TYPES.has(newType as BlockType)) return;
+      addBlockAt(newType as BlockType, target, targetSection?.id);
+      return;
+    }
+
+    if (moveBlockId) {
+      const location = findBlockLocation(moveBlockId);
+      if (!location || !targetSection) return;
+      if (isNodeLocked(location.block)) {
+        setStatus(lockedMutationMessage("block"));
+        return;
+      }
+      if (isNodeLocked(targetSection)) {
+        setStatus(lockedMutationMessage("target-section"));
+        return;
+      }
+      const adjusted =
+        location.section.id === targetSection.id && location.blockIndex < target
+          ? target - 1
+          : target;
+      if (
+        location.section.id === targetSection.id &&
+        adjusted === location.blockIndex
+      ) {
+        return;
+      }
+
+      pushUndo();
+      const [moved] = location.section.children.splice(location.blockIndex, 1);
+      if (!moved) return;
+      targetSection.children.splice(adjusted, 0, moved);
+      state.selectedId = moved.id;
+      state.selectedSectionId = targetSection.id;
+      commitBlockChange(`Reordered ${moved.type} block`);
+    }
+  } finally {
+    resetDragState();
   }
-  dropIndex = -1;
-  dropSectionId = null;
-  draggingSectionId = null;
-  sectionDropIndex = -1;
-  indicator?.remove();
 }
 
 interface InlineEditTarget {
@@ -4062,7 +4426,12 @@ function attachInlineEditors(root: HTMLElement, block: Block): HTMLElement[] {
     case "text":
     case "button":
     case "section":
-      add(":scope > *", { prop: "text", multiline: block.type !== "button" });
+      // Headings and buttons are single-line labels, so Enter commits the edit.
+      // Body copy keeps Enter as a line break (Cmd/Ctrl+Enter or blur commits).
+      add(":scope > *", {
+        prop: "text",
+        multiline: block.type === "text" || block.type === "section",
+      });
       break;
     case "columns":
       root.querySelectorAll<HTMLElement>(".zephus-column").forEach((_, i) =>
@@ -4683,12 +5052,30 @@ function openAssetBrowser(options: AssetBrowserOptions): void {
   ]);
 }
 
+let lastInspectorSelectionKey = "none";
+
 function renderProperties(): void {
   const panel = $("properties");
+  if (state.mode === "code") {
+    lastInspectorSelectionKey = "none";
+    renderPropertiesEmpty(panel, !!state.page, () => {
+      if (state.page) void openPageMetaModal(state.page);
+    });
+    return;
+  }
   const block = findSelectedBlock();
   const section =
     (block ? findBlockLocation(block.id)?.section : null) ??
     findSection(state.selectedSectionId);
+  const selectionKey = block
+    ? `block:${block.id}`
+    : section
+      ? `section:${section.id}`
+      : "none";
+  if (selectionKey !== lastInspectorSelectionKey && selectionKey !== "none") {
+    activateWorkspaceTab("right", "inspect");
+  }
+  lastInspectorSelectionKey = selectionKey;
   panel.innerHTML = "";
 
   if (!block && !section) {
@@ -4956,6 +5343,15 @@ function renderProperties(): void {
 
 /* ---------- Mode switching ---------- */
 
+function syncModeToggle(mode: Mode): void {
+  const visual = $("mode-visual");
+  const code = $("mode-code");
+  visual.classList.toggle("active", mode === "visual");
+  code.classList.toggle("active", mode === "code");
+  visual.setAttribute("aria-pressed", String(mode === "visual"));
+  code.setAttribute("aria-pressed", String(mode === "code"));
+}
+
 function setMode(mode: Mode): void {
   if (mode === "visual" && !state.visualEditable) {
     showModal(
@@ -4970,10 +5366,27 @@ function setMode(mode: Mode): void {
 
   const codeEl = $("code-editor");
 
+  // Re-selecting the active mode should only restore its view. In particular,
+  // never refill CodeMirror here: doing so would discard unsaved code edits.
+  if (mode === state.mode) {
+    syncModeToggle(mode);
+    codeEl.classList.toggle("hidden", mode !== "code");
+    $("canvas").classList.toggle("hidden", mode !== "visual");
+    $("preview-frame").classList.add("hidden");
+    if (mode === "code") {
+      cm?.focus();
+      renderProperties();
+    } else {
+      renderCanvas();
+      renderProperties();
+    }
+    updateUndoRedoButtons();
+    return;
+  }
+
   if (mode === "code") {
     state.mode = mode;
-    $("mode-visual").classList.toggle("active", false);
-    $("mode-code").classList.toggle("active", true);
+    syncModeToggle(mode);
     state.rawCode =
       state.managedStatus === "detached" ||
       state.managedStatus === "out-of-sync"
@@ -4984,6 +5397,7 @@ function setMode(mode: Mode): void {
     $("canvas").classList.add("hidden");
     $("preview-frame").classList.add("hidden");
     cm?.focus();
+    renderProperties();
     updateUndoRedoButtons();
     return;
   }
@@ -5006,8 +5420,7 @@ function setMode(mode: Mode): void {
   }
 
   state.mode = mode;
-  $("mode-visual").classList.toggle("active", true);
-  $("mode-code").classList.toggle("active", false);
+  syncModeToggle(mode);
   $("canvas").classList.remove("hidden");
   codeEl.classList.add("hidden");
   $("preview-frame").classList.add("hidden");
@@ -5018,19 +5431,18 @@ function setMode(mode: Mode): void {
 
 /* ---------- Save ---------- */
 
-let performSave: () => Promise<boolean>;
-
-editorSiteSave = createEditorSiteSaveActions({
+const editorSiteSave = createEditorSiteSaveActions({
   getState: () => state,
   setStatus,
   onSiteStateChanged: () => {
     renderDirtyIndicators();
+    if (state.siteDirty) scheduleDraftWrite();
     if (state.project) renderNavEditor(state.project);
   },
   zephus: window.zephus,
 });
 
-editorDraftRestore = createEditorDraftRestoreActions({
+const editorDraftRestore = createEditorDraftRestoreActions({
   getState: () => state,
   setStatus,
   confirmRestoreDraft: (title, message) =>
@@ -5047,6 +5459,7 @@ const editorSave = createEditorSaveActions({
   getState: () => state,
   setStatus,
   getCode,
+  setCode,
   serializeBlocks,
   pageDocumentFromState,
   syncVisualModeState,
@@ -5054,13 +5467,38 @@ const editorSave = createEditorSaveActions({
   syncBlocksFromSections,
   clearChanges,
   markDirty,
+  scheduleDraftWrite,
   renderDirtyIndicators,
   reloadPages,
   persistPendingSiteDocument,
   afterSave: () => void editorGit.refreshGit(),
   zephus: window.zephus,
 });
-performSave = () => editorSave.performSave();
+const performSave = async (): Promise<boolean> => {
+  const saveButton = $("btn-save") as HTMLButtonElement;
+  const saveLabel = $("save-label");
+  const startedSave = !editorSave.isSaving();
+  const wasSavingPage = state.pageDirty;
+  if (startedSave) setStatus("Saving…");
+  saveLabel.textContent = "Saving…";
+  saveButton.disabled = true;
+  saveButton.setAttribute("aria-busy", "true");
+  saveButton.setAttribute("aria-label", "Saving changes");
+  saveButton.classList.add("saving");
+  try {
+    const saved = await editorSave.performSave();
+    if (saved && wasSavingPage && !state.pageDirty) {
+      ignoredExternalChange = null;
+    }
+    return saved;
+  } finally {
+    saveLabel.textContent = "Save";
+    saveButton.disabled = loadingPage !== null;
+    saveButton.removeAttribute("aria-busy");
+    saveButton.setAttribute("aria-label", "Save changes");
+    saveButton.classList.remove("saving");
+  }
+};
 
 /* ---------- Preview + responsive viewport ---------- */
 
@@ -5071,9 +5509,15 @@ function setViewport(vp: "desktop" | "tablet" | "mobile"): void {
   wrap.classList.remove("vp-tablet", "vp-mobile");
   if (vp === "tablet") wrap.classList.add("vp-tablet");
   if (vp === "mobile") wrap.classList.add("vp-mobile");
-  $("vp-desktop").classList.toggle("active", vp === "desktop");
-  $("vp-tablet").classList.toggle("active", vp === "tablet");
-  $("vp-mobile").classList.toggle("active", vp === "mobile");
+  for (const [id, value] of [
+    ["vp-desktop", "desktop"],
+    ["vp-tablet", "tablet"],
+    ["vp-mobile", "mobile"],
+  ] as const) {
+    const button = $(id);
+    button.classList.toggle("active", vp === value);
+    button.setAttribute("aria-pressed", String(vp === value));
+  }
   if (state.mode === "visual" && !state.previewUrl) {
     renderCanvas();
     renderProperties();
@@ -5268,63 +5712,97 @@ async function publishSite(): Promise<void> {
 /* ---------- Close ---------- */
 
 async function closeProject(): Promise<void> {
-  if (!(await maybeResolveUnsavedWork())) {
-    return;
+  if (closingProject || !(await maybeResolveUnsavedWork())) return;
+
+  const editorView = $("view-editor");
+  closingProject = true;
+  editorView.setAttribute("inert", "");
+  setStatus("Closing project…");
+  updateUndoRedoButtons();
+
+  try {
+    editorSessionGeneration += 1;
+    latestPageLoadRequest += 1;
+    setPageLoading(null);
+    externalChangeQueued = false;
+    ignoredExternalChange = null;
+    if (state.previewUrl) {
+      await window.zephus.closePreviewWindow();
+      resetPreviewState();
+    }
+    await window.zephus.stopWatch();
+    state.unsubExternal?.();
+    state.unsubExternal = null;
+    state.project = null;
+    clearAssetCache();
+    state.siteDocument = null;
+    state.pendingSiteDocument = null;
+    state.pendingSiteEditorKind = null;
+    state.pageDocument = null;
+    state.page = null;
+    state.pageMeta = [];
+    state.currentMeta = null;
+    state.managedStatus = "missing";
+    state.visualEditable = true;
+    state.generatedCode = "";
+    state.rawCode = "";
+    state.frontmatter = "";
+    state.prefix = "";
+    state.suffix = "";
+    state.mode = "visual";
+    state.sections = [];
+    state.blocks = [];
+    state.selectedId = null;
+    state.selectedSectionId = null;
+    state.undo = [];
+    state.redo = [];
+    state.recoveredPageDraft = null;
+    state.recoveredSiteDraft = null;
+    cancelScheduledEditorDraftWrite(state);
+    clearChanges();
+    clearSiteChanges(state);
+    markSiteDirty(state, false);
+    markDirty(false);
+    editorView.classList.add("hidden");
+    $("view-start").classList.remove("hidden");
+    // Return focus to the active start tab rather than leaving it on <body>.
+    document.querySelector<HTMLElement>(".start-nav-item.active")?.focus();
+    renderLayers();
+    renderProjectOverview();
+    renderNextActions();
+    await refreshHomeDraftSummaries();
+    renderThemePlaceholder();
+    await renderRecent();
+    setStatus("");
+  } catch (error) {
+    setStatus(
+      `Could not close project: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  } finally {
+    closingProject = false;
+    editorView.removeAttribute("inert");
+    updateUndoRedoButtons();
   }
-  if (state.previewUrl) {
-    await window.zephus.closePreviewWindow();
-    resetPreviewState();
-  }
-  await window.zephus.stopWatch();
-  state.unsubExternal?.();
-  state.unsubExternal = null;
-  state.project = null;
-  clearAssetCache();
-  state.siteDocument = null;
-  state.pendingSiteDocument = null;
-  state.pendingSiteEditorKind = null;
-  state.pageDocument = null;
-  state.page = null;
-  state.pageMeta = [];
-  state.currentMeta = null;
-  state.managedStatus = "missing";
-  state.visualEditable = true;
-  state.generatedCode = "";
-  state.sections = [];
-  state.blocks = [];
-  state.selectedSectionId = null;
-  state.recoveredPageDraft = null;
-  state.recoveredSiteDraft = null;
-  cancelScheduledEditorDraftWrite(state);
-  clearChanges();
-  clearSiteChanges(state);
-  markSiteDirty(state, false);
-  markDirty(false);
-  $("view-editor").classList.add("hidden");
-  $("view-start").classList.remove("hidden");
-  // Return focus to the active start tab rather than leaving it on <body>.
-  document.querySelector<HTMLElement>(".start-nav-item.active")?.focus();
-  renderLayers();
-  renderProjectOverview();
-  renderNextActions();
-  await refreshHomeDraftSummaries();
-  renderThemePlaceholder();
-  await renderRecent();
-  setStatus("");
 }
 
 /* ---------- Undo / redo ---------- */
 
 function updateUndoRedoButtons(): void {
+  const undoButton = $("btn-undo") as HTMLButtonElement;
+  const redoButton = $("btn-redo") as HTMLButtonElement;
   syncUndoRedoToolbar({
     mode: state.mode,
     visualUndoDepth: state.undo.length,
     visualRedoDepth: state.redo.length,
     codeCanUndo: cm?.canUndo() ?? false,
     codeCanRedo: cm?.canRedo() ?? false,
-    undoButton: $("btn-undo") as HTMLButtonElement,
-    redoButton: $("btn-redo") as HTMLButtonElement,
+    undoButton,
+    redoButton,
   });
+  if (loadingPage || closingProject) {
+    undoButton.disabled = true;
+    redoButton.disabled = true;
+  }
 }
 
 function doUndo(): void {
@@ -5367,6 +5845,18 @@ function onKeydown(e: KeyboardEvent): void {
       active.tagName === "INPUT" ||
       active.tagName === "TEXTAREA" ||
       active.tagName === "SELECT");
+  const mod = e.ctrlKey || e.metaKey;
+
+  if (
+    (loadingPage || closingProject) &&
+    ((mod &&
+      ["s", "z", "y", "d", "c", "x", "v"].includes(e.key.toLowerCase())) ||
+      e.key === "Delete" ||
+      e.key === "Backspace")
+  ) {
+    e.preventDefault();
+    return;
+  }
 
   if ((e.key === "?" || e.key === "h" || e.key === "H") && !editing) {
     openHelpModal();
@@ -5374,7 +5864,8 @@ function onKeydown(e: KeyboardEvent): void {
     return;
   }
 
-  const mod = e.ctrlKey || e.metaKey;
+  if (!state.project) return;
+
   if (mod && e.key === "s") {
     void performSave();
     e.preventDefault();
@@ -5937,6 +6428,7 @@ function init(): void {
   if (window.location.search.includes("smoke=1")) installEditorSmokeHook();
   window.refreshIcons = refreshIcons;
   initStartTabs();
+  initEditorWorkspaceTabs();
 
   // Prevent stray file drops from navigating the window away from the app.
   // Specific dropzones call preventDefault + stopPropagation to handle drops.
@@ -6403,7 +6895,8 @@ function init(): void {
           }
           void deleteSection(section.id);
         },
-        onBlockAction: (block, action) => {
+        onBlockAction: (blockView, action) => {
+          const block = liveCanvasBlock(blockView);
           if (action === "up") {
             moveBlock(block, -1);
             return;
@@ -6433,7 +6926,9 @@ function init(): void {
           renderCanvas();
           renderProperties();
         },
-        onBlockKeyDown: (event, section, block, preview) => {
+        onBlockKeyDown: (event, sectionView, blockView, preview) => {
+          const section = liveCanvasSection(sectionView);
+          const block = liveCanvasBlock(blockView);
           if (event.target !== event.currentTarget) return;
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
@@ -6452,7 +6947,9 @@ function init(): void {
             renderProperties();
           }
         },
-        onBlockClick: (event, section, block, preview) => {
+        onBlockClick: (event, sectionView, blockView, preview) => {
+          const section = liveCanvasSection(sectionView);
+          const block = liveCanvasBlock(blockView);
           event.stopPropagation();
           if (isInlineEditing) return;
           const now = Date.now();
@@ -6477,6 +6974,7 @@ function init(): void {
           renderProperties();
         },
         onSectionDragStart: (event, section) => {
+          resetDragState();
           if (section.locked) {
             event.preventDefault();
             return;
@@ -6485,11 +6983,7 @@ function init(): void {
           event.dataTransfer?.setData("text/zephus-move-section", section.id);
           if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
         },
-        onSectionDragEnd: () => {
-          draggingSectionId = null;
-          sectionDropIndex = -1;
-          indicator?.remove();
-        },
+        onSectionDragEnd: resetDragState,
         onSectionDragOver: (event, sectionIndex, shell) => {
           if (!draggingSectionId) return;
           event.preventDefault();
@@ -6500,17 +6994,21 @@ function init(): void {
         },
         onSectionDrop: (event) => handleDrop(event),
         onSectionBodyDragOver: (event, sectionId, childCount) => {
+          if (draggingSectionId) return;
           event.preventDefault();
           dropSectionId = sectionId;
           if (childCount === 0) dropIndex = 0;
         },
         onBlockDragStart: (event, block) => {
+          resetDragState();
           if (block.locked) {
             event.preventDefault();
             return;
           }
           event.dataTransfer?.setData("text/zephus-move-block", block.id);
+          if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
         },
+        onBlockDragEnd: resetDragState,
         onBlockDragOver: (event, sectionId, blockIndex, shell, sectionBody) => {
           if (draggingSectionId) return;
           event.preventDefault();
@@ -6521,14 +7019,16 @@ function init(): void {
           showIndicator(sectionBody, shell, after);
         },
         onBlockDrop: (event) => handleDrop(event),
-        onPreviewRendered: (preview, block) => {
+        onPreviewRendered: (preview, blockView) => {
+          const block = liveCanvasBlock(blockView);
           makeCanvasLinksInert(preview);
           hydrateCanvasAssets(preview);
           if (TEXT_EDITABLE.includes(block.type) && !block.locked) {
             attachInlineEditors(preview, block);
           }
         },
-        onSyncSectionShell: (shell, section) => {
+        onSyncSectionShell: (shell, sectionView) => {
+          const section = liveCanvasSection(sectionView);
           syncResizeHandles(
             shell,
             { kind: "section", node: section },
@@ -6538,7 +7038,8 @@ function init(): void {
               !section.locked,
           );
         },
-        onSyncBlockShell: (shell, block, preview) => {
+        onSyncBlockShell: (shell, blockView, preview) => {
+          const block = liveCanvasBlock(blockView);
           syncResizeHandles(
             shell,
             { kind: "block", node: block },

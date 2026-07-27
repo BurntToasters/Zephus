@@ -238,36 +238,54 @@
           <span id="git-branch" class="git-branch"></span>
         </div>
         <div class="topbar-center">
-          <div class="mode-toggle">
-            <button id="mode-visual" class="mode-btn active">
+          <div class="mode-toggle" role="group" aria-label="Editor mode">
+            <button
+              id="mode-visual"
+              type="button"
+              class="mode-btn active"
+              title="Visual editor"
+              aria-pressed="true"
+            >
               <i data-lucide="eye"></i> Visual
             </button>
-            <button id="mode-code" class="mode-btn">
+            <button
+              id="mode-code"
+              type="button"
+              class="mode-btn"
+              title="Code editor"
+              aria-pressed="false"
+            >
               <i data-lucide="code-xml"></i> Code
             </button>
           </div>
-          <div class="vp-toggle">
+          <div class="vp-toggle" role="group" aria-label="Canvas viewport">
             <button
               id="vp-desktop"
+              type="button"
               class="vp-btn active"
               title="Desktop"
               aria-label="Desktop view"
+              aria-pressed="true"
             >
               <i data-lucide="monitor"></i>
             </button>
             <button
               id="vp-tablet"
+              type="button"
               class="vp-btn"
               title="Tablet"
               aria-label="Tablet view"
+              aria-pressed="false"
             >
               <i data-lucide="tablet"></i>
             </button>
             <button
               id="vp-mobile"
+              type="button"
               class="vp-btn"
               title="Mobile"
               aria-label="Mobile view"
+              aria-pressed="false"
             >
               <i data-lucide="smartphone"></i>
             </button>
@@ -301,7 +319,7 @@
             <i data-lucide="globe"></i> Publish
           </button>
           <button id="btn-save" class="btn primary" aria-label="Save Changes">
-            <i data-lucide="save"></i> Save
+            <i data-lucide="save"></i><span id="save-label">Save</span>
           </button>
           <button
             id="btn-help"
@@ -323,53 +341,133 @@
       </header>
 
       <div class="editor-body">
-        <aside class="panel left" aria-label="Pages, blocks and site tools">
-          <div class="panel-section">
-            <h3>
-              Pages
-              <button
-                id="btn-new-page"
-                class="mini-btn"
-                title="New page"
-                aria-label="New page"
-              >
-                <i data-lucide="plus"></i>
-              </button>
-            </h3>
-            <ul id="page-list" class="list"></ul>
+        <aside
+          class="panel left"
+          data-workspace-side="left"
+          aria-label="Pages, blocks and site tools"
+        >
+          <div class="workspace-rail-title">
+            <span>Build</span>
+            <strong>Site tools</strong>
           </div>
-          <div class="panel-section">
-            <h3>Blocks</h3>
-            <ul id="block-palette" class="palette"></ul>
+          <div
+            class="workspace-tabs"
+            role="tablist"
+            aria-label="Site editing tools"
+          >
+            <button
+              id="workspace-left-pages-tab"
+              type="button"
+              class="workspace-tab active"
+              role="tab"
+              aria-selected="true"
+              aria-controls="workspace-left-pages"
+              data-workspace-tab="pages"
+            >
+              <i data-lucide="files"></i><span>Pages</span>
+            </button>
+            <button
+              id="workspace-left-build-tab"
+              type="button"
+              class="workspace-tab"
+              role="tab"
+              aria-selected="false"
+              aria-controls="workspace-left-build"
+              data-workspace-tab="build"
+              tabindex="-1"
+            >
+              <i data-lucide="blocks"></i><span>Build</span>
+            </button>
+            <button
+              id="workspace-left-layers-tab"
+              type="button"
+              class="workspace-tab"
+              role="tab"
+              aria-selected="false"
+              aria-controls="workspace-left-layers"
+              data-workspace-tab="layers"
+              tabindex="-1"
+            >
+              <i data-lucide="layers-3"></i><span>Layers</span>
+            </button>
           </div>
-          <div class="panel-section">
-            <h3>Site</h3>
-            <div class="site-controls">
-              <button id="btn-site-shell" class="btn">Site Shell</button>
-              <button id="btn-design-system" class="btn">Design System</button>
+
+          <div
+            id="workspace-left-pages"
+            class="workspace-tab-panel active"
+            role="tabpanel"
+            aria-labelledby="workspace-left-pages-tab"
+            data-workspace-panel="pages"
+          >
+            <div class="panel-section">
+              <h3>
+                Pages
+                <button
+                  id="btn-new-page"
+                  class="mini-btn"
+                  title="New page"
+                  aria-label="New page"
+                >
+                  <i data-lucide="plus"></i>
+                </button>
+              </h3>
+              <ul id="page-list" class="list"></ul>
+            </div>
+            <div class="panel-section">
+              <h3>Navigation</h3>
+              <ul id="nav-list" class="list"></ul>
+              <div class="panel-action-row">
+                <button
+                  id="btn-regen-nav"
+                  class="mini-btn"
+                  title="Regenerate nav from pages"
+                  aria-label="Regenerate navigation from pages"
+                >
+                  <i data-lucide="refresh-cw"></i> Refresh
+                </button>
+              </div>
+            </div>
+            <div class="panel-section">
+              <h3>Site</h3>
+              <div class="site-controls">
+                <button id="btn-site-shell" class="btn">Site Shell</button>
+                <button id="btn-design-system" class="btn">
+                  Design System
+                </button>
+              </div>
             </div>
           </div>
-          <div class="panel-section">
-            <h3>Navigation</h3>
-            <ul id="nav-list" class="list"></ul>
-            <div style="margin-top: 8px">
-              <button
-                id="btn-regen-nav"
-                class="mini-btn"
-                title="Regenerate nav from pages"
-                aria-label="Regenerate navigation from pages"
-              >
-                <i data-lucide="refresh-cw"></i> Regen
-              </button>
+
+          <div
+            id="workspace-left-build"
+            class="workspace-tab-panel"
+            role="tabpanel"
+            aria-labelledby="workspace-left-build-tab"
+            data-workspace-panel="build"
+            hidden
+          >
+            <div class="panel-section">
+              <h3>Blocks</h3>
+              <ul id="block-palette" class="palette"></ul>
+            </div>
+            <div class="panel-section">
+              <h3>Sections</h3>
+              <ul id="template-palette" class="palette"></ul>
             </div>
           </div>
-          <div class="panel-section">
-            <h3>Sections</h3>
-            <ul id="template-palette" class="palette"></ul>
-          </div>
-          <div class="panel-section">
-            <h3>Layers</h3>
-            <ul id="layers-list" class="list layers-list"></ul>
+
+          <div
+            id="workspace-left-layers"
+            class="workspace-tab-panel"
+            role="tabpanel"
+            aria-labelledby="workspace-left-layers-tab"
+            data-workspace-panel="layers"
+            hidden
+          >
+            <div class="panel-section">
+              <h3>Page Structure</h3>
+              <ul id="layers-list" class="list layers-list"></ul>
+            </div>
           </div>
         </aside>
 
@@ -378,43 +476,148 @@
             id="editor-state-banner"
             class="editor-state-banner hidden"
           ></div>
-          <div id="canvas" class="canvas"></div>
+          <div
+            id="canvas"
+            class="canvas"
+            role="region"
+            aria-label="Visual page canvas"
+          ></div>
           <div id="code-editor" class="code-editor hidden"></div>
           <iframe id="preview-frame" class="preview-frame hidden"></iframe>
         </main>
 
-        <aside class="panel right" aria-label="Properties and project status">
-          <div class="panel-section">
-            <h3>Project Overview</h3>
-            <div id="project-overview" class="properties">
-              <p class="muted">
-                Open a Zephus site to see page and project status.
-              </p>
+        <aside
+          class="panel right"
+          data-workspace-side="right"
+          aria-label="Properties and project status"
+        >
+          <div class="workspace-rail-title">
+            <span>Edit</span>
+            <strong>Details</strong>
+          </div>
+          <div
+            class="workspace-tabs workspace-tabs-right"
+            role="tablist"
+            aria-label="Editor details"
+          >
+            <button
+              id="workspace-right-inspect-tab"
+              type="button"
+              class="workspace-tab active"
+              role="tab"
+              aria-selected="true"
+              aria-controls="workspace-right-inspect"
+              data-workspace-tab="inspect"
+            >
+              <i data-lucide="sliders-horizontal"></i><span>Inspect</span>
+            </button>
+            <button
+              id="workspace-right-guide-tab"
+              type="button"
+              class="workspace-tab"
+              role="tab"
+              aria-selected="false"
+              aria-controls="workspace-right-guide"
+              data-workspace-tab="guide"
+              tabindex="-1"
+            >
+              <i data-lucide="compass"></i><span>Guide</span>
+            </button>
+            <button
+              id="workspace-right-git-tab"
+              type="button"
+              class="workspace-tab"
+              role="tab"
+              aria-selected="false"
+              aria-controls="workspace-right-git"
+              data-workspace-tab="git"
+              tabindex="-1"
+            >
+              <i data-lucide="git-branch"></i><span>Git</span>
+            </button>
+            <button
+              id="workspace-right-logs-tab"
+              type="button"
+              class="workspace-tab"
+              role="tab"
+              aria-selected="false"
+              aria-controls="workspace-right-logs"
+              data-workspace-tab="logs"
+              tabindex="-1"
+            >
+              <i data-lucide="terminal"></i><span>Logs</span>
+            </button>
+          </div>
+
+          <div
+            id="workspace-right-inspect"
+            class="workspace-tab-panel active"
+            role="tabpanel"
+            aria-labelledby="workspace-right-inspect-tab"
+            data-workspace-panel="inspect"
+          >
+            <div class="panel-section properties-section">
+              <h3>Properties</h3>
+              <div id="properties" class="properties">
+                <p class="muted">Select a block to edit its properties.</p>
+              </div>
             </div>
           </div>
-          <div class="panel-section">
-            <h3>Next Actions</h3>
-            <div id="next-actions" class="properties">
-              <p class="muted">
-                Guided actions will appear here while you edit.
-              </p>
+
+          <div
+            id="workspace-right-guide"
+            class="workspace-tab-panel"
+            role="tabpanel"
+            aria-labelledby="workspace-right-guide-tab"
+            data-workspace-panel="guide"
+            hidden
+          >
+            <div class="panel-section">
+              <h3>Project Overview</h3>
+              <div id="project-overview" class="properties">
+                <p class="muted">
+                  Open a Zephus site to see page and project status.
+                </p>
+              </div>
+            </div>
+            <div class="panel-section">
+              <h3>Next Actions</h3>
+              <div id="next-actions" class="properties">
+                <p class="muted">
+                  Guided actions will appear here while you edit.
+                </p>
+              </div>
             </div>
           </div>
-          <div class="panel-section">
-            <h3>Properties</h3>
-            <div id="properties" class="properties">
-              <p class="muted">Select a block to edit its properties.</p>
+
+          <div
+            id="workspace-right-git"
+            class="workspace-tab-panel"
+            role="tabpanel"
+            aria-labelledby="workspace-right-git-tab"
+            data-workspace-panel="git"
+            hidden
+          >
+            <div class="panel-section">
+              <h3>Git Changes</h3>
+              <div id="git-panel" class="git-panel">
+                <p class="muted">No changes.</p>
+              </div>
             </div>
           </div>
-          <div class="panel-section">
-            <h3>Git Changes</h3>
-            <div id="git-panel" class="git-panel">
-              <p class="muted">No changes.</p>
+
+          <div
+            id="workspace-right-logs"
+            class="workspace-tab-panel"
+            role="tabpanel"
+            aria-labelledby="workspace-right-logs-tab"
+            data-workspace-panel="logs"
+            hidden
+          >
+            <div class="panel-section panel-section-fill">
+              <h3>Dev Server Log</h3>
+              <pre id="dev-log" class="dev-log"></pre>
             </div>
-          </div>
-          <div class="panel-section">
-            <h3>Dev Server Log</h3>
-            <pre id="dev-log" class="dev-log"></pre>
           </div>
         </aside>
       </div>

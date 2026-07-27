@@ -1352,8 +1352,7 @@ export function ensureVisualSchema(
       const normalizedActual =
         actualSource !== null ? normalizeHashText(actualSource) : null;
       const onDiskMatchesGenerated =
-        normalizedActual !== null &&
-        normalizedActual === normalizedGenerated;
+        normalizedActual !== null && normalizedActual === normalizedGenerated;
       const onDiskMatchesStoredHash =
         actualSource !== null &&
         Boolean(doc.generatedHash) &&
@@ -1370,9 +1369,7 @@ export function ensureVisualSchema(
 
       const shouldWriteAstro =
         managedFileStatus !== "out-of-sync" &&
-        (actualSource === null ||
-          onDiskMatchesGenerated ||
-          !doc.generatedHash);
+        (actualSource === null || onDiskMatchesGenerated || !doc.generatedHash);
 
       if (
         shouldWriteAstro &&
