@@ -8,6 +8,14 @@ export interface ModalOptions {
   size?: "default" | "wide";
 }
 
+interface ModalFrame {
+  title: string;
+  bodyNodes: Node[];
+  actionNodes: Node[];
+  wide: boolean;
+  focused: HTMLElement | null;
+}
+
 function modalElement<T extends HTMLElement>(id: string): T {
   const el = document.getElementById(id);
   if (!el) throw new Error(`Missing modal element #${id}`);
@@ -17,6 +25,8 @@ function modalElement<T extends HTMLElement>(id: string): T {
 export function createModalController(refreshIcons: () => void) {
   let lastFocused: HTMLElement | null = null;
   let keyHandler: ((e: KeyboardEvent) => void) | null = null;
+  let focusTimer: number | null = null;
+  let focusGeneration = 0;
 
   function isModalOpen(): boolean {
     return !modalElement("modal-overlay").classList.contains("hidden");
@@ -35,6 +45,28 @@ export function createModalController(refreshIcons: () => void) {
     );
   }
 
+  function cancelPendingFocus(): void {
+    focusGeneration += 1;
+    if (focusTimer !== null) {
+      window.clearTimeout(focusTimer);
+      focusTimer = null;
+    }
+  }
+
+  function scheduleModalFocus(preferred?: HTMLElement | null): void {
+    cancelPendingFocus();
+    const generation = focusGeneration;
+    focusTimer = window.setTimeout(() => {
+      focusTimer = null;
+      if (generation !== focusGeneration || !isModalOpen()) return;
+      const target =
+        preferred && document.contains(preferred)
+          ? preferred
+          : (focusableInModal()[0] ?? modalElement("modal-shell"));
+      target.focus();
+    }, 0);
+  }
+
   /** Esc activates a Cancel/Close button if present, else just closes. */
   function escapeClose(): void {
     const buttons = Array.from(
@@ -43,8 +75,9 @@ export function createModalController(refreshIcons: () => void) {
       ),
     );
     const cancel =
-      buttons.find((b) => /cancel|close|done/i.test(b.textContent ?? "")) ??
-      buttons.find((b) => b.classList.contains("ghost"));
+      buttons.find((button) =>
+        /cancel|close|done/i.test(button.textContent ?? ""),
+      ) ?? buttons.find((button) => button.classList.contains("ghost"));
     if (cancel) cancel.click();
     else closeModal();
   }
@@ -81,18 +114,16 @@ export function createModalController(refreshIcons: () => void) {
     }
   }
 
-  function activateFocusTrap(): void {
-    lastFocused = document.activeElement as HTMLElement | null;
-    setBackgroundInert(true);
+  function activateFocusTrap(wasOpen: boolean): void {
+    if (!wasOpen) {
+      lastFocused = document.activeElement as HTMLElement | null;
+      setBackgroundInert(true);
+    }
     if (!keyHandler) {
       keyHandler = onModalKeydown;
       document.addEventListener("keydown", keyHandler, true);
     }
-    // Focus the first interactive element (defer to allow render).
-    setTimeout(() => {
-      const f = focusableInModal();
-      (f[0] ?? modalElement("modal-shell")).focus();
-    }, 0);
+    scheduleModalFocus();
   }
 
   function applyModalOptions(options?: ModalOptions): void {
@@ -106,12 +137,19 @@ export function createModalController(refreshIcons: () => void) {
     const container = modalElement("modal-actions");
     container.innerHTML = "";
     for (const action of actions) {
-      const btn = document.createElement("button");
-      btn.className = "btn " + (action.kind ?? "");
-      btn.textContent = action.label;
-      btn.onclick = action.onClick;
-      container.appendChild(btn);
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "btn " + (action.kind ?? "");
+      button.textContent = action.label;
+      button.onclick = action.onClick;
+      container.appendChild(button);
     }
+  }
+
+  function finishShowing(wasOpen: boolean): void {
+    modalElement("modal-overlay").classList.remove("hidden");
+    refreshIcons();
+    activateFocusTrap(wasOpen);
   }
 
   function showModal(
@@ -120,13 +158,12 @@ export function createModalController(refreshIcons: () => void) {
     actions: ModalAction[],
     options?: ModalOptions,
   ): void {
+    const wasOpen = isModalOpen();
     modalElement("modal-title").textContent = title;
     modalElement("modal-body").textContent = body;
     applyModalOptions(options);
     buildActions(actions);
-    modalElement("modal-overlay").classList.remove("hidden");
-    refreshIcons();
-    activateFocusTrap();
+    finishShowing(wasOpen);
   }
 
   function showModalNode(
@@ -135,18 +172,41 @@ export function createModalController(refreshIcons: () => void) {
     actions: ModalAction[],
     options?: ModalOptions,
   ): void {
+    const wasOpen = isModalOpen();
     modalElement("modal-title").textContent = title;
     const body = modalElement("modal-body");
     body.innerHTML = "";
     body.appendChild(content);
     applyModalOptions(options);
     buildActions(actions);
+    finishShowing(wasOpen);
+  }
+
+  function captureFrame(): ModalFrame {
+    const shell = modalElement("modal-shell");
+    const active = document.activeElement;
+    return {
+      title: modalElement("modal-title").textContent ?? "",
+      bodyNodes: Array.from(modalElement("modal-body").childNodes),
+      actionNodes: Array.from(modalElement("modal-actions").childNodes),
+      wide: shell.classList.contains("modal-wide"),
+      focused:
+        active instanceof HTMLElement && shell.contains(active) ? active : null,
+    };
+  }
+
+  function restoreFrame(frame: ModalFrame): void {
+    modalElement("modal-title").textContent = frame.title;
+    modalElement("modal-body").replaceChildren(...frame.bodyNodes);
+    modalElement("modal-actions").replaceChildren(...frame.actionNodes);
+    modalElement("modal-shell").classList.toggle("modal-wide", frame.wide);
     modalElement("modal-overlay").classList.remove("hidden");
     refreshIcons();
-    activateFocusTrap();
+    scheduleModalFocus(frame.focused);
   }
 
   function closeModal(): void {
+    cancelPendingFocus();
     applyModalOptions();
     modalElement("modal-overlay").classList.add("hidden");
     setBackgroundInert(false);
@@ -154,10 +214,9 @@ export function createModalController(refreshIcons: () => void) {
       document.removeEventListener("keydown", keyHandler, true);
       keyHandler = null;
     }
-    if (lastFocused && document.contains(lastFocused)) {
-      lastFocused.focus();
-    }
+    const returnFocus = lastFocused;
     lastFocused = null;
+    if (returnFocus && document.contains(returnFocus)) returnFocus.focus();
   }
 
   function choose<T>(
@@ -169,37 +228,29 @@ export function createModalController(refreshIcons: () => void) {
       kind?: "primary" | "danger" | "ghost";
     }>,
     options?: ModalOptions,
+    restoreParentWhen: (value: T) => boolean = () => true,
   ): Promise<T> {
+    const parent = isModalOpen() ? captureFrame() : null;
     return new Promise((resolve) => {
-      const finish = (value: T) => {
-        closeModal();
+      let settled = false;
+      const finish = (value: T): void => {
+        if (settled) return;
+        settled = true;
+        if (parent && restoreParentWhen(value)) restoreFrame(parent);
+        else closeModal();
         resolve(value);
       };
+      const modalActions = actions.map((action) => ({
+        label: action.label,
+        kind: action.kind,
+        onClick: () => finish(action.value),
+      }));
 
       if (typeof content === "string") {
-        showModal(
-          title,
-          content,
-          actions.map((action) => ({
-            label: action.label,
-            kind: action.kind,
-            onClick: () => finish(action.value),
-          })),
-          options,
-        );
-        return;
+        showModal(title, content, modalActions, options);
+      } else {
+        showModalNode(title, content, modalActions, options);
       }
-
-      showModalNode(
-        title,
-        content,
-        actions.map((action) => ({
-          label: action.label,
-          kind: action.kind,
-          onClick: () => finish(action.value),
-        })),
-        options,
-      );
     });
   }
 
@@ -211,11 +262,23 @@ export function createModalController(refreshIcons: () => void) {
       placeholder?: string;
       value?: string;
       confirmLabel?: string;
+      /** Extra context shown above the field (e.g. what the change affects). */
+      description?: string;
     } = {},
   ): Promise<string | null> {
+    const parent = isModalOpen() ? captureFrame() : null;
     return new Promise((resolve) => {
+      const container = document.createElement("div");
+      container.className = "meta-form";
+      if (opts.description) {
+        const note = document.createElement("p");
+        note.className = "muted";
+        note.textContent = opts.description;
+        container.appendChild(note);
+      }
       const wrap = document.createElement("label");
       wrap.className = "meta-field";
+      container.appendChild(wrap);
       if (opts.label) {
         const span = document.createElement("span");
         span.textContent = opts.label;
@@ -232,7 +295,8 @@ export function createModalController(refreshIcons: () => void) {
       const finish = (value: string | null): void => {
         if (settled) return;
         settled = true;
-        closeModal();
+        if (parent) restoreFrame(parent);
+        else closeModal();
         resolve(value);
       };
       input.addEventListener("keydown", (e) => {
@@ -241,7 +305,7 @@ export function createModalController(refreshIcons: () => void) {
           finish(input.value.trim() || null);
         }
       });
-      showModalNode(title, wrap, [
+      showModalNode(title, container, [
         { label: "Cancel", kind: "ghost", onClick: () => finish(null) },
         {
           label: opts.confirmLabel ?? "OK",
@@ -257,10 +321,16 @@ export function createModalController(refreshIcons: () => void) {
     body: string | HTMLElement,
     confirmLabel = "Delete",
   ): Promise<boolean> {
-    return choose<boolean>(title, body, [
-      { label: "Cancel", value: false, kind: "ghost" },
-      { label: confirmLabel, value: true, kind: "danger" },
-    ]);
+    return choose<boolean>(
+      title,
+      body,
+      [
+        { label: "Cancel", value: false, kind: "ghost" },
+        { label: confirmLabel, value: true, kind: "danger" },
+      ],
+      undefined,
+      (confirmed) => !confirmed,
+    );
   }
 
   async function confirmRestoreDraft(

@@ -1,5 +1,6 @@
+import { For, Show } from "solid-js";
+import { createStore, reconcile } from "solid-js/store";
 import { render } from "solid-js/web";
-import { For, Show, createEffect, createSignal } from "solid-js";
 
 export interface PageListEntry {
   page: string;
@@ -7,6 +8,8 @@ export interface PageListEntry {
   navLabel: string;
   navVisible: boolean;
   active?: boolean;
+  loading?: boolean;
+  interactionDisabled?: boolean;
 }
 
 export interface PageListActionHandlers {
@@ -14,56 +17,69 @@ export interface PageListActionHandlers {
   onManage: (page: string) => void;
 }
 
-const [entries, setEntries] = createSignal<PageListEntry[]>([]);
+const [entries, setEntries] = createStore<PageListEntry[]>([]);
 let handlers: PageListActionHandlers | null = null;
 
-function runIconRefresh() {
+function runIconRefresh(): void {
   setTimeout(() => {
-    if (typeof window.refreshIcons === "function") {
-      window.refreshIcons();
-    }
+    window.refreshIcons?.();
   }, 0);
 }
 
 export function PageListPanel() {
-  createEffect(() => {
-    entries();
-    runIconRefresh();
-  });
-
   return (
     <Show
-      when={entries().length > 0}
+      when={entries.length > 0}
       fallback={<li class="muted">No pages found.</li>}
     >
-      <For each={entries()}>
+      <For each={entries}>
         {(entry) => (
           <li
             classList={{
               "page-item": true,
               "hidden-page": !entry.navVisible,
               active: !!entry.active,
+              loading: !!entry.loading,
             }}
             data-page={entry.page}
+            aria-busy={entry.loading ? "true" : undefined}
           >
             <button
               class="page-main"
+              aria-current={entry.active ? "page" : undefined}
+              disabled={entry.loading}
               onClick={() => handlers?.onOpen(entry.page)}
             >
-              <i data-lucide="file-code"></i>
+              <span
+                class="page-file-icon"
+                aria-hidden="true"
+                hidden={!!entry.loading}
+              >
+                <i data-lucide="file-code"></i>
+              </span>
+              <span
+                class="page-loading-icon"
+                aria-hidden="true"
+                hidden={!entry.loading}
+              >
+                <i data-lucide="loader-circle"></i>
+              </span>
               <span>
                 <strong>{entry.navLabel}</strong>
-                <small>{entry.route}</small>
+                <small>{entry.loading ? "Loading…" : entry.route}</small>
               </span>
             </button>
             <button
-              class="mini-btn"
+              class="mini-btn page-manage-button"
+              title={`Manage ${entry.navLabel}`}
+              aria-label={`Manage ${entry.navLabel} page`}
+              disabled={entry.loading || entry.interactionDisabled}
               onClick={(event) => {
                 event.stopPropagation();
                 handlers?.onManage(entry.page);
               }}
             >
-              Manage
+              <i data-lucide="ellipsis"></i>
             </button>
           </li>
         )}
@@ -73,7 +89,8 @@ export function PageListPanel() {
 }
 
 export function updatePageList(list: PageListEntry[]): void {
-  setEntries(list);
+  setEntries(reconcile(list, { key: "page" }));
+  runIconRefresh();
 }
 
 export function registerPageListHandlers(
@@ -85,4 +102,5 @@ export function registerPageListHandlers(
 export function mountPageList(container: HTMLElement): void {
   container.innerHTML = "";
   render(() => <PageListPanel />, container);
+  runIconRefresh();
 }

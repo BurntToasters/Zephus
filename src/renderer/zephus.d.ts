@@ -152,7 +152,8 @@ type EditorBlockType =
   | "accordion"
   | "stats"
   | "pricing"
-  | "cta";
+  | "cta"
+  | "postlist";
 
 interface EditorBlock {
   id: string;
@@ -268,6 +269,19 @@ interface PageMeta {
   metaDescription: string;
   navVisible: boolean;
   isHome: boolean;
+  /** Social share image (web path like `/assets/images/x.png`, or absolute URL). */
+  socialImage: string;
+  /** Overrides the canonical URL derived from the site URL + route. */
+  canonicalUrl: string;
+  /** Emits `robots: noindex` and excludes the page from sitemap.xml. */
+  noindex: boolean;
+  /**
+   * Publish date as `YYYY-MM-DD`. Set on posts; empty for ordinary pages.
+   * Post List blocks and rss.xml use it for ordering and dates.
+   */
+  publishDate: string;
+  /** Display name of the author, shown by Post List blocks. */
+  author: string;
 }
 
 interface PageDocument extends PageMeta {
@@ -288,6 +302,15 @@ interface SiteDocument {
   design: DesignTokenSet;
   shell: ShellConfig;
   templates: TemplateDefinition[];
+  /**
+   * Public base URL (e.g. `https://example.com`). Required for canonical tags,
+   * absolute Open Graph image URLs, and sitemap.xml generation.
+   */
+  siteUrl: string;
+  /** BCP 47 language tag emitted as `<html lang>`. */
+  language: string;
+  /** Web-root-relative favicon path (e.g. `/assets/images/favicon.png`). */
+  faviconPath: string;
 }
 
 interface VisualSchemaStatus {
@@ -313,6 +336,51 @@ interface AssetEntry {
 interface AssetListResult {
   ok: boolean;
   assets: AssetEntry[];
+  error?: string;
+}
+
+interface AssetUsagePage {
+  page: string;
+  label: string;
+  count: number;
+}
+
+interface AssetUsageResult {
+  ok: boolean;
+  pages: AssetUsagePage[];
+  /** Human-readable site-level places referencing the asset. */
+  siteReferences: string[];
+  error?: string;
+}
+
+interface AssetMutationResult {
+  ok: boolean;
+  /** Web path after the operation (rename only). */
+  webPath?: string;
+  /** References repointed to the new path (rename only). */
+  updatedReferences?: number;
+  error?: string;
+}
+
+interface SearchMatch {
+  page: string;
+  label: string;
+  count: number;
+  /** Short context snippets around the first matches. */
+  excerpts: string[];
+}
+
+interface FindReplaceResult {
+  ok: boolean;
+  matches: SearchMatch[];
+  totalMatches: number;
+  error?: string;
+}
+
+interface ReplaceAllResult {
+  ok: boolean;
+  replaced: number;
+  pagesChanged: number;
   error?: string;
 }
 
@@ -527,6 +595,37 @@ interface ZephusApi {
   }>;
   getDroppedFilePath(file: File): string;
   listAssets(projectPath: string, publicDir: string): Promise<AssetListResult>;
+  searchPages(
+    projectPath: string,
+    pagesDir: string,
+    query: string,
+    options: { caseSensitive?: boolean; wholeWord?: boolean },
+  ): Promise<FindReplaceResult>;
+  replaceAllInPages(
+    projectPath: string,
+    pagesDir: string,
+    query: string,
+    replacement: string,
+    options: { caseSensitive?: boolean; wholeWord?: boolean },
+    onlyPages?: string[],
+  ): Promise<ReplaceAllResult>;
+  deleteAsset(
+    projectPath: string,
+    publicDir: string,
+    webPath: string,
+  ): Promise<AssetMutationResult>;
+  renameAsset(
+    projectPath: string,
+    publicDir: string,
+    pagesDir: string,
+    webPath: string,
+    nextName: string,
+  ): Promise<AssetMutationResult>;
+  findAssetUsage(
+    projectPath: string,
+    pagesDir: string,
+    webPath: string,
+  ): Promise<AssetUsageResult>;
   readAssetDataUrl(
     projectPath: string,
     publicDir: string,

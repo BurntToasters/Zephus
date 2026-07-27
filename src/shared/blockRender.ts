@@ -11,6 +11,7 @@ import {
   escapeAttr,
   escapeHtml,
   plainTextToHtml,
+  richTextToHtml,
   renderListItems,
   safeUrl,
   splitLines,
@@ -28,11 +29,78 @@ export interface RenderBlockInput extends Omit<BlockMetadataSource, "style"> {
   style?: BlockStyle;
 }
 
+/**
+ * A page as seen by a Post List block. Built from the same page sidecars in
+ * both processes, so the canvas and the build render identical lists.
+ */
+export interface RenderPostEntry {
+  route: string;
+  title: string;
+  description: string;
+  /** `YYYY-MM-DD`, or empty for pages that are not posts. */
+  date: string;
+  author: string;
+  image: string;
+}
+
 export interface RenderBlockOptions extends StyleAttrOptions {
   /** Editor caps heading level; build uses 6. */
   maxHeadingLevel?: number;
   sanitizeHtmlForCanvas?: (html: string) => string;
   onUnknownBlockType?: (type: string) => void;
+  /** Candidate pages for Post List blocks. */
+  posts?: RenderPostEntry[];
+}
+
+/** Formats an ISO date for display without pulling in a date library. */
+function formatPostDate(value: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (!match) return value.trim();
+  const [, year, month, day] = match;
+  const monthName = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+  ][Number(month) - 1];
+  if (!monthName) return value.trim();
+  return `${monthName} ${Number(day)}, ${year}`;
+}
+
+/**
+ * Selects the pages a Post List block shows: everything under the configured
+ * route prefix, newest first, dated posts before undated pages.
+ */
+export function selectPostEntries(
+  props: Record<string, string>,
+  posts: RenderPostEntry[],
+): RenderPostEntry[] {
+  const prefix = (props["folder"] ?? "/posts").trim().replace(/\/+$/, "");
+  const limitValue = Number(props["limit"] ?? "5");
+  const limit =
+    Number.isFinite(limitValue) && limitValue > 0 ? Math.floor(limitValue) : 0;
+
+  const matching = posts.filter((post) => {
+    if (!prefix || prefix === "/") return post.route !== "/";
+    return post.route === prefix || post.route.startsWith(`${prefix}/`);
+  });
+
+  const sorted = [...matching].sort((a, b) => {
+    if (a.date && b.date && a.date !== b.date) return a.date < b.date ? 1 : -1;
+    if (a.date && !b.date) return -1;
+    if (!a.date && b.date) return 1;
+    return a.title.localeCompare(b.title);
+  });
+
+  return limit > 0 ? sorted.slice(0, limit) : sorted;
 }
 
 export interface SectionSerializeSource {
@@ -209,12 +277,12 @@ export function renderBlockHtml(
         1,
         Math.min(maxHeading, Number(block.props["level"] ?? 2)),
       );
-      return `<h${level}${common}>${plainTextToHtml(
+      return `<h${level}${common}>${richTextToHtml(
         block.props["text"] ?? "",
       )}</h${level}>`;
     }
     case "text":
-      return `<p${common}>${plainTextToHtml(block.props["text"] ?? "")}</p>`;
+      return `<p${common}>${richTextToHtml(block.props["text"] ?? "")}</p>`;
     case "image": {
       const src = block.props["src"] ?? "";
       if (!src && forCanvas) {
@@ -227,9 +295,14 @@ export function renderBlockHtml(
       return `<img${common}${srcAttr} alt="${escapeAttr(block.props["alt"] ?? "")}" />`;
     }
     case "button":
-      return `<a${common} href="${escapeAttr(safeUrl(block.props["href"] ?? "#") || "#")}">${plainTextToHtml(block.props["text"] ?? "")}</a>`;
+      return `<a${common} href="${escapeAttr(safeUrl(block.props["href"] ?? "#") || "#")}">${richTextToHtml(
+        block.props["text"] ?? "",
+        {
+          allowLinks: false,
+        },
+      )}</a>`;
     case "section":
-      return `<section${common}>${plainTextToHtml(block.props["text"] ?? "")}</section>`;
+      return `<section${common}>${richTextToHtml(block.props["text"] ?? "")}</section>`;
     case "divider":
       return `<hr${common} />`;
     case "spacer":
@@ -240,7 +313,7 @@ export function renderBlockHtml(
         { length: Math.max(2, Math.min(cols || 2, 4)) },
         (_, index) => {
           const key = `col${index + 1}`;
-          return `<div class="zephus-column">${plainTextToHtml(
+          return `<div class="zephus-column">${richTextToHtml(
             block.props[key] ?? `Column ${index + 1}`,
           )}</div>`;
         },
@@ -248,9 +321,9 @@ export function renderBlockHtml(
       return `<section${common}>${parts}</section>`;
     }
     case "card":
-      return `<article${common}><h3>${plainTextToHtml(
+      return `<article${common}><h3>${richTextToHtml(
         block.props["title"] ?? "Card title",
-      )}</h3><p>${plainTextToHtml(block.props["text"] ?? "Card body")}</p></article>`;
+      )}</h3><p>${richTextToHtml(block.props["text"] ?? "Card body")}</p></article>`;
     case "gallery": {
       const images = (block.props["images"] ?? "")
         .split(/\r?\n|,/)
@@ -273,11 +346,11 @@ export function renderBlockHtml(
         .join("")}</section>`;
     }
     case "quote":
-      return `<blockquote${common}><p>${plainTextToHtml(
+      return `<blockquote${common}><p>${richTextToHtml(
         block.props["text"] ?? "",
       )}</p>${
         block.props["cite"]
-          ? `<cite>${plainTextToHtml(block.props["cite"])}</cite>`
+          ? `<cite>${richTextToHtml(block.props["cite"])}</cite>`
           : ""
       }</blockquote>`;
     case "list": {
@@ -299,17 +372,17 @@ export function renderBlockHtml(
     case "feature":
       return `<div${structuralCommon(block, "zephus-feature", options)}><div class="zephus-feature-icon">${plainTextToHtml(
         block.props["icon"] ?? "★",
-      )}</div><h3>${plainTextToHtml(
+      )}</div><h3>${richTextToHtml(
         block.props["title"] ?? "Feature",
-      )}</h3><p>${plainTextToHtml(block.props["text"] ?? "")}</p></div>`;
+      )}</h3><p>${richTextToHtml(block.props["text"] ?? "")}</p></div>`;
     case "testimonial":
-      return `<figure${structuralCommon(block, "zephus-testimonial", options)}><blockquote>${plainTextToHtml(
+      return `<figure${structuralCommon(block, "zephus-testimonial", options)}><blockquote>${richTextToHtml(
         block.props["quote"] ?? "",
-      )}</blockquote><figcaption><strong>${plainTextToHtml(
+      )}</blockquote><figcaption><strong>${richTextToHtml(
         block.props["author"] ?? "",
       )}</strong>${
         block.props["role"]
-          ? ` <span>${plainTextToHtml(block.props["role"])}</span>`
+          ? ` <span>${richTextToHtml(block.props["role"])}</span>`
           : ""
       }</figcaption></figure>`;
     case "accordion": {
@@ -317,7 +390,7 @@ export function renderBlockHtml(
         .map((line) => splitPair(line))
         .map(
           ([q, a]) =>
-            `<details><summary>${plainTextToHtml(q)}</summary><p>${plainTextToHtml(a)}</p></details>`,
+            `<details><summary>${richTextToHtml(q)}</summary><p>${richTextToHtml(a)}</p></details>`,
         )
         .join("");
       return `<div${structuralCommon(block, "zephus-accordion", options)}>${items}</div>`;
@@ -327,43 +400,94 @@ export function renderBlockHtml(
         .map((line) => splitPair(line))
         .map(
           ([n, l]) =>
-            `<div class="zephus-stat"><span class="zephus-stat-num">${plainTextToHtml(
+            `<div class="zephus-stat"><span class="zephus-stat-num">${richTextToHtml(
               n,
-            )}</span><span class="zephus-stat-label">${plainTextToHtml(l)}</span></div>`,
+            )}</span><span class="zephus-stat-label">${richTextToHtml(l)}</span></div>`,
         )
         .join("");
       return `<div${structuralCommon(block, "zephus-stats", options)}>${items}</div>`;
     }
     case "pricing": {
       const features = splitLines(block.props["features"] ?? "")
-        .map((f) => `<li>${plainTextToHtml(f)}</li>`)
+        .map((f) => `<li>${richTextToHtml(f)}</li>`)
         .join("");
       const cta = block.props["ctaText"]
-        ? `<a class="button" href="${escapeAttr(safeUrl(block.props["ctaHref"] ?? "#") || "#")}">${plainTextToHtml(
+        ? `<a class="button" href="${escapeAttr(safeUrl(block.props["ctaHref"] ?? "#") || "#")}">${richTextToHtml(
             block.props["ctaText"],
+            { allowLinks: false },
           )}</a>`
         : "";
-      return `<div${structuralCommon(block, "zephus-pricing", options)}><h3>${plainTextToHtml(
+      return `<div${structuralCommon(block, "zephus-pricing", options)}><h3>${richTextToHtml(
         block.props["plan"] ?? "Plan",
-      )}</h3><div class="zephus-price"><span class="zephus-price-amount">${plainTextToHtml(
+      )}</h3><div class="zephus-price"><span class="zephus-price-amount">${richTextToHtml(
         block.props["price"] ?? "",
       )}</span>${
         block.props["period"]
-          ? `<span class="zephus-price-period">${plainTextToHtml(block.props["period"])}</span>`
+          ? `<span class="zephus-price-period">${richTextToHtml(block.props["period"])}</span>`
           : ""
       }</div><ul>${features}</ul>${cta}</div>`;
     }
+    case "postlist": {
+      const listCommon = structuralCommon(block, "zephus-postlist", options);
+      const entries = selectPostEntries(block.props, options.posts ?? []);
+      if (entries.length === 0) {
+        const empty =
+          block.props["emptyText"] ??
+          "No posts yet. Add a page with a publish date.";
+        return `<div${listCommon}><p class="zephus-postlist-empty">${richTextToHtml(
+          empty,
+        )}</p></div>`;
+      }
+      const showDate = block.props["showDate"] !== "false";
+      const showAuthor = block.props["showAuthor"] === "true";
+      const showExcerpt = block.props["showExcerpt"] !== "false";
+      const showImage = block.props["showImage"] === "true";
+      const items = entries
+        .map((post) => {
+          const href = escapeAttr(safeUrl(post.route) || "#");
+          const meta = [
+            showDate && post.date
+              ? `<time class="zephus-postlist-date" datetime="${escapeAttr(
+                  post.date,
+                )}">${escapeHtml(formatPostDate(post.date))}</time>`
+              : "",
+            showAuthor && post.author
+              ? `<span class="zephus-postlist-author">${escapeHtml(post.author)}</span>`
+              : "",
+          ]
+            .filter(Boolean)
+            .join("");
+          const image =
+            showImage && post.image
+              ? `<img class="zephus-postlist-image" src="${escapeAttr(
+                  safeUrl(post.image),
+                )}" alt="" loading="lazy" decoding="async" />`
+              : "";
+          const excerpt =
+            showExcerpt && post.description
+              ? `<p class="zephus-postlist-excerpt">${escapeHtml(post.description)}</p>`
+              : "";
+          return `<article class="zephus-postlist-item">${image}<h3 class="zephus-postlist-title"><a href="${href}">${escapeHtml(
+            post.title,
+          )}</a></h3>${
+            meta ? `<div class="zephus-postlist-meta">${meta}</div>` : ""
+          }${excerpt}</article>`;
+        })
+        .join("");
+      return `<div${listCommon}>${items}</div>`;
+    }
     case "cta": {
       const cta = block.props["buttonText"]
-        ? `<a class="button" href="${escapeAttr(safeUrl(block.props["buttonHref"] ?? "#") || "#")}">${plainTextToHtml(
+        ? `<a class="button" href="${escapeAttr(safeUrl(block.props["buttonHref"] ?? "#") || "#")}">${richTextToHtml(
             block.props["buttonText"],
+            { allowLinks: false },
           )}</a>`
         : "";
-      return `<div${structuralCommon(block, "zephus-cta", options)}><h2>${plainTextToHtml(
+      return `<div${structuralCommon(block, "zephus-cta", options)}><h2>${richTextToHtml(
         block.props["heading"] ?? "",
       )}</h2>${
         block.props["text"]
-          ? `<p>${plainTextToHtml(block.props["text"])}</p>`
+          ? `<p>${richTextToHtml(block.props["text"])}</p>`
           : ""
       }${cta}</div>`;
     }

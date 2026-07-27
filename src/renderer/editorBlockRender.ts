@@ -1,5 +1,9 @@
 import type { BlockNode, SectionNode } from "../main/types";
-import { renderBlockHtml, wrapSectionChildren } from "../shared/blockRender";
+import {
+  renderBlockHtml,
+  wrapSectionChildren,
+  type RenderPostEntry,
+} from "../shared/blockRender";
 import { BUILD_MAX_HEADING_LEVEL } from "../shared/blockRenderFixtures";
 import type { StyleViewport } from "../shared/renderHelpers";
 
@@ -10,6 +14,8 @@ export interface EditorBlockRenderOptions {
   canvasMaxHeadingLevel: number;
   /** Applied when serializing to managed source (defaults to build max). */
   serializeMaxHeadingLevel?: number;
+  /** Pages available to Post List blocks; must mirror the build's index. */
+  posts?: RenderPostEntry[];
 }
 
 /**
@@ -69,6 +75,7 @@ export function blockToHtmlForEditor(
     sanitizeHtmlForCanvas: options.forCanvas
       ? sanitizeHtmlForCanvas
       : undefined,
+    posts: options.posts,
   });
 }
 

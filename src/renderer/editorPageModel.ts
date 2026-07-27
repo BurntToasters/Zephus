@@ -2,13 +2,13 @@
  * Pure helpers for the editor's in-memory page/section model (no DOM).
  */
 
-import type { PageDocument, SectionNode } from "../main/types";
+import type { EditorBlock, PageDocument, SectionNode } from "../main/types";
 
 export function cloneSections(sections: SectionNode[]): SectionNode[] {
   return JSON.parse(JSON.stringify(sections)) as SectionNode[];
 }
 
-export function blocksFromSections(sections: SectionNode[]): Block[] {
+export function blocksFromSections(sections: SectionNode[]): EditorBlock[] {
   return sections.flatMap((section) =>
     section.children.map((child) => ({
       id: child.id,

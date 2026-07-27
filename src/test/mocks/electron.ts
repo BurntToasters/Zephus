@@ -43,7 +43,9 @@ export class BrowserWindow {
   }
 }
 export const ipcMain = { handle: noop, on: noop };
-export const session = { defaultSession: { webRequest: { onHeadersReceived: noop } } };
+export const session = {
+  defaultSession: { webRequest: { onHeadersReceived: noop } },
+};
 export const contextBridge = { exposeInMainWorld: noop };
 export const ipcRenderer = { invoke: async () => undefined, on: noop };
 export const webUtils = { getPathForFile: () => "" };

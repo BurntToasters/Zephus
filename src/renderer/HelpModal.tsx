@@ -44,6 +44,46 @@ export function HelpModalContent() {
               </td>
               <td>Delete Selected Block/Section</td>
             </tr>
+            <tr>
+              <td>
+                <kbd>Ctrl/Cmd</kbd> + <kbd>F</kbd>
+              </td>
+              <td>Find and Replace Across Pages</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="help-section" style={{ "margin-top": "16px" }}>
+        <h4>While Editing Text</h4>
+        <p class="muted">
+          Double-click text on the canvas, then select the words to change.
+        </p>
+        <table class="help-table">
+          <tbody>
+            <tr>
+              <td>
+                <kbd>Ctrl/Cmd</kbd> + <kbd>B</kbd>
+              </td>
+              <td>Bold</td>
+            </tr>
+            <tr>
+              <td>
+                <kbd>Ctrl/Cmd</kbd> + <kbd>I</kbd>
+              </td>
+              <td>Italic</td>
+            </tr>
+            <tr>
+              <td>
+                <kbd>Ctrl/Cmd</kbd> + <kbd>K</kbd>
+              </td>
+              <td>Add Link to Selection</td>
+            </tr>
+            <tr>
+              <td>
+                <kbd>Esc</kbd>
+              </td>
+              <td>Cancel the Edit</td>
+            </tr>
           </tbody>
         </table>
       </div>

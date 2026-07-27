@@ -1,4 +1,5 @@
 import { createSignal } from "solid-js";
+import type { JSX } from "solid-js";
 import { render } from "solid-js/web";
 
 const LENGTH_UNITS = ["px", "rem", "em", "%", "vh", "vw", "auto", "custom"];
@@ -317,7 +318,7 @@ export function LinkField(props: {
   );
 }
 
-export function Group(props: { title: string; children: any }) {
+export function Group(props: { title: string; children: JSX.Element }) {
   return (
     <section class="prop-group">
       <h4>{props.title}</h4>

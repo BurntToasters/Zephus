@@ -3,6 +3,12 @@
 
 // TODO: Split UI rendering from state management (see editorCommands, editorGit, editorSerialize, editorBlockRender, editorSave, editorParse, editorPageModel, editorUndo, editorDraft, editorInspector).
 
+import { createCodeEditor, type CodeEditor } from "./codeEditor";
+import { richTextFromElement } from "./inlineRichText";
+import {
+  activateWorkspaceTab,
+  initEditorWorkspaceTabs,
+} from "./editorWorkspace";
 import { appendCappedLog } from "./editorLog";
 import { collectUnsavedWorkSummaryLines } from "./editorUnsavedWork";
 import { createEditorGitActions } from "./editorGit";
@@ -108,9 +114,11 @@ import {
   BarChart,
   Tag,
   Megaphone,
+  Newspaper,
   X,
   Info,
 } from "lucide";
+import type { RenderPostEntry } from "../shared/blockRender";
 import { renderHelpModal } from "./HelpModal";
 import { mountAboutLicenses, updateAboutLicenses } from "./AboutLicenses";
 import {
@@ -135,6 +143,7 @@ import {
   renderThemePreviewModalBody,
   renderUnsavedWorkSummaryModalBody,
 } from "./MiscModals";
+import { renderFindReplaceModalBody } from "./FindReplaceModal";
 import { mountNextActions, updateNextActions } from "./NextActions";
 import { LinkPickerKind, renderLinkPickerModal } from "./LinkPickerModal";
 import {
@@ -232,6 +241,7 @@ const PALETTE: { type: BlockType; label: string }[] = [
   { type: "stats", label: "Stats" },
   { type: "pricing", label: "Pricing" },
   { type: "cta", label: "Call to Action" },
+  { type: "postlist", label: "Post List" },
   { type: "html", label: "HTML" },
 ];
 
@@ -255,6 +265,7 @@ const PALETTE_ICONS: Record<BlockType, string> = {
   stats: "bar-chart",
   pricing: "tag",
   cta: "megaphone",
+  postlist: "newspaper",
   html: "code-xml",
 };
 
@@ -300,6 +311,7 @@ function refreshIcons(): void {
       BarChart,
       Tag,
       Megaphone,
+      Newspaper,
       X,
       Info,
     },
@@ -589,17 +601,6 @@ function setStatus(message: string): void {
     }, 6000);
   }
 }
-
-const TOOLBAR_TIPS: Record<string, string> = {
-  Up: "Move up",
-  Down: "Move down",
-  Dup: "Duplicate",
-  Wrap: "Wrap in a section",
-  Lock: "Lock (prevent edits)",
-  Unlock: "Unlock",
-  Delete: "Delete",
-  "Add Block": "Add a block inside",
-};
 
 /**
  * Maps raw build/preview/install errors to plain-language guidance for
@@ -1229,6 +1230,57 @@ function renderNextActions(): void {
     });
   }
 
+  // SEO: no site URL means canonical tags, social previews, and sitemap.xml
+  // cannot be generated at all, so it outranks per-page SEO advice.
+  const siteForSeo = effectiveSiteDocument(state);
+  if (siteForSeo && !siteForSeo.siteUrl.trim()) {
+    cards.push({
+      title: "Set your site address",
+      body: "Without a site URL, Zephus cannot add canonical links, social share previews, or generate sitemap.xml for search engines.",
+      actions: [
+        { label: "Open Site Shell", onClick: () => void openSiteShellModal() },
+      ],
+    });
+  }
+
+  // A 404 page is what visitors see after a broken or outdated link; Astro
+  // serves src/pages/404.astro automatically once it exists.
+  if (
+    state.pageMeta.length > 0 &&
+    !state.pageMeta.some((entry) => entry.slug === "404")
+  ) {
+    cards.push({
+      title: "Add a 404 page",
+      body: "Visitors who follow a broken link currently get your host's default error page. A 404 page keeps them on your site with a way back.",
+      actions: [
+        {
+          label: "Create 404 Page",
+          onClick: () => void createNotFoundPage(),
+        },
+      ],
+    });
+  }
+
+  // A 404 page is meant to be noindex, so flagging it would be noise.
+  if (
+    state.page &&
+    state.currentMeta?.noindex &&
+    state.currentMeta.slug !== "404"
+  ) {
+    cards.push({
+      title: "This page is hidden from search engines",
+      body: "It sends a noindex tag and is left out of sitemap.xml. Remove that in Page Settings when the page is ready to be found.",
+      actions: [
+        {
+          label: "Page Settings",
+          onClick: () => {
+            if (state.page) void openPageMetaModal(state.page);
+          },
+        },
+      ],
+    });
+  }
+
   // SEO 2: Multiple H1 Headings Warning
   const h1Blocks = state.blocks.filter(
     (block) => block.type === "heading" && block.props["level"] === "1",
@@ -1311,6 +1363,15 @@ function findBlockLocation(blockId: string | null): {
 
 function findSelectedBlock(): Block | null {
   return findBlockLocation(state.selectedId)?.block ?? null;
+}
+
+/** Resolve reactive canvas view models back to the mutable session objects. */
+function liveCanvasBlock(block: EditorBlock): Block {
+  return findBlockLocation(block.id)?.block ?? (block as Block);
+}
+
+function liveCanvasSection(section: SectionNode): SectionNode {
+  return findSection(section.id) ?? section;
 }
 
 function activeSectionId(): string | null {
@@ -1786,6 +1847,8 @@ async function openProjectByPath(folder: string): Promise<void> {
     return;
   }
 
+  latestPageLoadRequest += 1;
+  ignoredExternalChange = null;
   state.project = result;
   clearAssetCache();
   await renderRecent();
@@ -1833,6 +1896,7 @@ async function openProjectByPath(folder: string): Promise<void> {
 /* ---------- Editor ---------- */
 
 async function enterEditor(result: ProjectOpenResult): Promise<void> {
+  editorSessionGeneration += 1;
   $("view-start").classList.add("hidden");
   const editorView = $("view-editor");
   editorView.classList.remove("hidden");
@@ -1840,6 +1904,11 @@ async function enterEditor(result: ProjectOpenResult): Promise<void> {
   editorView.setAttribute("tabindex", "-1");
   editorView.focus();
   $("project-name").textContent = result.name;
+  // A fresh editor session has no page open yet. Clearing it matters when a
+  // second project is opened without closing the first: both can contain the
+  // same page path, and a stale value would make the load look redundant.
+  state.page = null;
+  state.currentMeta = null;
   const ensured = await window.zephus.ensureVisualSchema(
     result.path,
     result.astro.pagesDir,
@@ -1858,7 +1927,7 @@ async function enterEditor(result: ProjectOpenResult): Promise<void> {
   state.pendingSiteEditorKind = null;
   markSiteDirty(state, false);
   ensureCodeEditor();
-  await maybeRestoreSiteDraft();
+  const siteDraftCleanupWarning = await maybeRestoreSiteDraft();
   void editorGit.refreshGit();
   void applyRepoRules();
   void applyMergedTheme();
@@ -1878,9 +1947,10 @@ async function enterEditor(result: ProjectOpenResult): Promise<void> {
 
   const integrity = ensured.status?.integrity ?? result.schema.integrity;
   setStatus(
-    integrity === "legacy"
-      ? "Migrated project into schema-backed visual mode."
-      : "Ready — " + result.path,
+    siteDraftCleanupWarning ??
+      (integrity === "legacy"
+        ? "Migrated project into schema-backed visual mode."
+        : "Ready — " + result.path),
   );
   const pendingDraft =
     pendingHomeDraftResume?.projectPath === result.path
@@ -2109,6 +2179,7 @@ function renderEditorStateBanner(): void {
               await loadPage(state.page, {
                 skipUnsavedGuard: true,
                 skipDraftRestore: true,
+                forceReload: true,
               });
             })();
           },
@@ -2126,15 +2197,16 @@ function renderEditorStateBanner(): void {
           label: "Reload From Disk",
           onClick: () => {
             const page = state.page;
-            if (!page || !state.project) return;
-            void window.zephus
-              .clearDraft(state.project.path, "page", page)
-              .then(() =>
-                loadPage(page, {
-                  skipUnsavedGuard: true,
-                  skipDraftRestore: true,
-                }),
-              );
+            const projectPath = state.project?.path;
+            if (!page || !projectPath) return;
+            void loadPage(page, {
+              skipUnsavedGuard: true,
+              skipDraftRestore: true,
+              forceReload: true,
+              afterLoad: async () => {
+                await clearPageDraftAfterReload(projectPath, page);
+              },
+            });
           },
         },
         {
@@ -2168,13 +2240,14 @@ function renderEditorStateBanner(): void {
             const page = state.page;
             const projectPath = state.project?.path;
             if (!page || !projectPath) return;
-            void (async () => {
-              await window.zephus.clearDraft(projectPath, "page", page);
-              await loadPage(page, {
-                skipUnsavedGuard: true,
-                skipDraftRestore: true,
-              });
-            })();
+            void loadPage(page, {
+              skipUnsavedGuard: true,
+              skipDraftRestore: true,
+              forceReload: true,
+              afterLoad: async () => {
+                await clearPageDraftAfterReload(projectPath, page);
+              },
+            });
           },
         },
       ],
@@ -2281,6 +2354,9 @@ async function openSiteShellModal(): Promise<void> {
     ctaHref: nextSite.shell.navCtaHref,
     footerHtml: nextSite.shell.footerHtml,
     customHeadHtml: nextSite.shell.customHeadHtml,
+    siteUrl: nextSite.siteUrl ?? "",
+    language: nextSite.language ?? "en",
+    faviconPath: nextSite.faviconPath ?? "",
   };
 
   const wrap = document.createElement("div");
@@ -2324,6 +2400,28 @@ async function openSiteShellModal(): Promise<void> {
       onCustomHeadHtmlChange: (value) => {
         shellState.customHeadHtml = value;
       },
+      siteUrl: shellState.siteUrl,
+      language: shellState.language,
+      faviconPath: shellState.faviconPath,
+      onSiteUrlChange: (value) => {
+        shellState.siteUrl = value;
+      },
+      onLanguageChange: (value) => {
+        shellState.language = value;
+      },
+      onFaviconPathChange: (value) => {
+        shellState.faviconPath = value;
+      },
+      onPickFavicon: () => {
+        openAssetBrowser({
+          filter: "images",
+          title: "Choose Favicon",
+          onSelect: (webPath) => {
+            shellState.faviconPath = webPath;
+            mountShellModal();
+          },
+        });
+      },
     });
   mountShellModal();
 
@@ -2363,6 +2461,16 @@ async function openSiteShellModal(): Promise<void> {
           nextSite.shell.navCtaHref = shellState.ctaHref.trim() || "#";
           nextSite.shell.footerHtml = shellState.footerHtml.trim();
           nextSite.shell.customHeadHtml = shellState.customHeadHtml.trim();
+          const normalizedSiteUrl = normalizeSiteUrl(shellState.siteUrl);
+          if (normalizedSiteUrl === null) {
+            setStatus(
+              "Site URL must be a full http(s) address, for example https://example.com.",
+            );
+            return;
+          }
+          nextSite.siteUrl = normalizedSiteUrl;
+          nextSite.language = shellState.language.trim() || "en";
+          nextSite.faviconPath = shellState.faviconPath.trim();
           closeModal();
           await writeSiteDocumentFromRenderer(
             nextSite,
@@ -2375,6 +2483,30 @@ async function openSiteShellModal(): Promise<void> {
     ],
     { size: "wide" },
   );
+}
+
+/**
+ * Validates the site URL and strips any trailing slash. Returns null when the
+ * value is not a usable absolute http(s) origin, so the caller can reject it —
+ * a malformed base would otherwise produce broken canonical/sitemap URLs.
+ */
+function normalizeSiteUrl(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  const candidate = /^[a-z][\w+.-]*:\/\//i.test(trimmed)
+    ? trimmed
+    : `https://${trimmed}`;
+  let parsed: URL;
+  try {
+    parsed = new URL(candidate);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+  if (!parsed.hostname.includes(".") && parsed.hostname !== "localhost") {
+    return null;
+  }
+  return `${parsed.origin}${parsed.pathname.replace(/\/+$/, "")}`;
 }
 
 async function openDesignSystemModal(): Promise<void> {
@@ -2530,6 +2662,8 @@ function renderPageList(result: ProjectOpenResult): void {
       navLabel: entry.navLabel,
       navVisible: entry.navVisible,
       active: entry.page === state.page,
+      loading: entry.page === loadingPage,
+      interactionDisabled: loadingPage !== null,
     })),
   );
 }
@@ -2543,24 +2677,24 @@ function openHelpModal(): void {
 }
 
 async function reloadPages(): Promise<void> {
-  if (!state.project) return;
-  const pages = await window.zephus.listPages(
-    state.project.path,
-    state.project.astro.pagesDir,
-  );
-  const meta = await window.zephus.listPageMeta(
-    state.project.path,
-    state.project.astro.pagesDir,
-  );
-  state.project.pages = pages;
+  const project = state.project;
+  if (!project) return;
+  const projectPath = project.path;
+  const pagesDir = project.astro.pagesDir;
+  const [pages, meta, site] = await Promise.all([
+    window.zephus.listPages(projectPath, pagesDir),
+    window.zephus.listPageMeta(projectPath, pagesDir),
+    window.zephus.readSiteDocument(projectPath),
+  ]);
+  if (state.project?.path !== projectPath) return;
+  project.pages = pages;
   state.pageMeta = meta.ok ? meta.entries : [];
-  const site = await window.zephus.readSiteDocument(state.project.path);
   if (site.ok && site.site) {
     state.siteDocument = site.site;
   }
   syncCurrentMeta();
-  renderPageList(state.project);
-  renderNavEditor(state.project);
+  renderPageList(project);
+  renderNavEditor(project);
   refreshGuidancePanels();
 }
 
@@ -2623,32 +2757,83 @@ async function openPageMetaModal(page: string): Promise<void> {
     navLabel: entry.navLabel,
     description: entry.metaDescription,
     visible: entry.navVisible,
+    socialImage: entry.socialImage,
+    canonicalUrl: entry.canonicalUrl,
+    noindex: entry.noindex,
+    publishDate: entry.publishDate,
+    author: entry.author,
   };
 
   const wrap = document.createElement("div");
-  renderPageSettingsModal(wrap, {
-    title: formState.title,
-    slug: formState.slug,
-    slugDisabled: entry.isHome,
-    navLabel: formState.navLabel,
-    metaDescription: formState.description,
-    navVisible: formState.visible,
-    onTitleChange: (value) => {
-      formState.title = value;
-    },
-    onSlugChange: (value) => {
-      formState.slug = value;
-    },
-    onNavLabelChange: (value) => {
-      formState.navLabel = value;
-    },
-    onMetaDescriptionChange: (value) => {
-      formState.description = value;
-    },
-    onNavVisibleChange: (value) => {
-      formState.visible = value;
-    },
-  });
+  const mountPageSettings = () =>
+    renderPageSettingsModal(wrap, {
+      title: formState.title,
+      slug: formState.slug,
+      slugDisabled: entry.isHome,
+      navLabel: formState.navLabel,
+      metaDescription: formState.description,
+      navVisible: formState.visible,
+      socialImage: formState.socialImage,
+      canonicalUrl: formState.canonicalUrl,
+      noindex: formState.noindex,
+      publishDate: formState.publishDate,
+      author: formState.author,
+      siteUrl: effectiveSiteDocument(state)?.siteUrl ?? "",
+      route: entry.route,
+      onTitleChange: (value) => {
+        formState.title = value;
+      },
+      onSlugChange: (value) => {
+        const wasReservedNotFound = formState.slug === "404";
+        formState.slug = value;
+        const isReservedNotFound = value === "404";
+        if (isReservedNotFound) {
+          formState.visible = false;
+          formState.noindex = true;
+        } else if (wasReservedNotFound) {
+          formState.visible = true;
+          formState.noindex = false;
+        }
+        if (wasReservedNotFound !== isReservedNotFound) {
+          mountPageSettings();
+        }
+      },
+      onNavLabelChange: (value) => {
+        formState.navLabel = value;
+      },
+      onMetaDescriptionChange: (value) => {
+        formState.description = value;
+      },
+      onNavVisibleChange: (value) => {
+        formState.visible = value;
+      },
+      onSocialImageChange: (value) => {
+        formState.socialImage = value;
+      },
+      onCanonicalUrlChange: (value) => {
+        formState.canonicalUrl = value;
+      },
+      onNoindexChange: (value) => {
+        formState.noindex = value;
+      },
+      onPublishDateChange: (value) => {
+        formState.publishDate = value;
+      },
+      onAuthorChange: (value) => {
+        formState.author = value;
+      },
+      onPickSocialImage: () => {
+        openAssetBrowser({
+          filter: "images",
+          title: "Choose Social Share Image",
+          onSelect: (webPath) => {
+            formState.socialImage = webPath;
+            mountPageSettings();
+          },
+        });
+      },
+    });
+  mountPageSettings();
 
   showModalNode("Page Settings", wrap, [
     {
@@ -2728,7 +2913,7 @@ async function openPageMetaModal(page: string): Promise<void> {
             return;
           }
           closeModal();
-          await loadPage(entry.page);
+          await loadPage(entry.page, { forceReload: true });
           setStatus(`Reattached ${entry.navLabel} to visual mode.`);
           return;
         }
@@ -2747,7 +2932,7 @@ async function openPageMetaModal(page: string): Promise<void> {
         }
         closeModal();
         if (state.page === entry.page) {
-          await loadPage(entry.page);
+          await loadPage(entry.page, { forceReload: true });
         }
         setStatus(`Detached ${entry.navLabel} from visual mode.`);
       },
@@ -2785,6 +2970,11 @@ async function openPageMetaModal(page: string): Promise<void> {
               entry.navLabel,
             metaDescription: formState.description.trim(),
             navVisible: formState.visible,
+            socialImage: formState.socialImage.trim(),
+            canonicalUrl: formState.canonicalUrl.trim(),
+            noindex: formState.noindex,
+            publishDate: formState.publishDate.trim(),
+            author: formState.author.trim(),
           },
         );
         if (!saved.ok) {
@@ -2824,8 +3014,6 @@ function buildUnsavedWorkSummary(): HTMLElement {
   return wrap;
 }
 
-let editorSiteSave!: ReturnType<typeof createEditorSiteSaveActions>;
-
 async function discardPendingSiteChanges(): Promise<void> {
   return editorSiteSave.discardPendingSiteChanges();
 }
@@ -2834,10 +3022,25 @@ async function persistPendingSiteDocument(): Promise<boolean> {
   return editorSiteSave.persistPendingSiteDocument();
 }
 
-let editorDraftRestore!: ReturnType<typeof createEditorDraftRestoreActions>;
-
-async function maybeRestoreSiteDraft(): Promise<void> {
+async function maybeRestoreSiteDraft(): Promise<string | null> {
   return editorDraftRestore.maybeRestoreSiteDraft();
+}
+
+async function saveUnsavedWorkAndVerify(): Promise<boolean> {
+  const projectPath = state.project?.path ?? null;
+  const page = state.page;
+  const saved = await performSave();
+  if (!saved) return false;
+  const safeToLeave =
+    state.project?.path === projectPath &&
+    state.page === page &&
+    !isGlobalDirty(state);
+  if (!safeToLeave) {
+    setStatus(
+      "The saved snapshot is safe, but newer edits are still unsaved. Finish saving or discard them before leaving.",
+    );
+  }
+  return safeToLeave;
 }
 
 async function maybeResolveUnsavedWork(options?: {
@@ -2845,29 +3048,83 @@ async function maybeResolveUnsavedWork(options?: {
 }): Promise<boolean> {
   if (!isGlobalDirty(state)) return true;
   if (appSettings?.autosave) {
-    return performSave();
+    return saveUnsavedWorkAndVerify();
   }
   const choice = await modalController.confirmUnsavedWork(
     "Unsaved Changes",
     buildUnsavedWorkSummary(),
   );
   if (choice === "cancel") return false;
-  if (choice === "save") return performSave();
-  if (state.project && state.pageDirty && state.page) {
-    await window.zephus.clearDraft(state.project.path, "page", state.page);
+  if (choice === "save") return saveUnsavedWorkAndVerify();
+
+  const projectPath = state.project?.path ?? null;
+  const page = state.page;
+  const pageRevision = state.pageRevision;
+  const siteRevision = state.siteRevision;
+  if (projectPath && state.pageDirty && page) {
+    const cleared = await window.zephus.clearDraft(projectPath, "page", page);
+    if (!cleared.ok) {
+      setStatus(
+        "Could not discard page changes: " +
+          (cleared.error ?? "recovery draft cleanup failed"),
+      );
+      return false;
+    }
+    if (
+      state.project?.path !== projectPath ||
+      state.page !== page ||
+      state.pageRevision !== pageRevision ||
+      state.siteRevision !== siteRevision
+    ) {
+      setStatus("New edits were made while discarding; they were kept.");
+      scheduleDraftWrite();
+      return false;
+    }
+    clearChanges();
+    markDirty(false);
   }
   if (state.project && state.siteDirty) {
     await discardPendingSiteChanges();
   }
-  clearChanges();
-  markDirty(false);
+  if (
+    state.project?.path !== projectPath ||
+    state.page !== page ||
+    state.pageRevision !== pageRevision ||
+    state.siteRevision !== siteRevision ||
+    isGlobalDirty(state)
+  ) {
+    setStatus("New edits were made while discarding; they were kept.");
+    scheduleDraftWrite();
+    return false;
+  }
   if (options?.reloadCurrentPageOnDiscard && state.project && state.page) {
     await loadPage(state.page, {
       skipUnsavedGuard: true,
       skipDraftRestore: true,
+      forceReload: true,
     });
+    if (
+      state.project?.path !== projectPath ||
+      state.page !== page ||
+      isGlobalDirty(state)
+    ) {
+      return false;
+    }
   }
   return true;
+}
+
+async function persistSiteChangesAndVerify(): Promise<boolean> {
+  const projectPath = state.project?.path ?? null;
+  const saved = await persistPendingSiteDocument();
+  const safeToSwitch =
+    saved && state.project?.path === projectPath && !state.siteDirty;
+  if (saved && !safeToSwitch) {
+    setStatus(
+      "Newer site edits are still unsaved. Save or discard them before switching editors.",
+    );
+  }
+  return safeToSwitch;
 }
 
 async function resolveSiteEditorConflict(
@@ -2881,60 +3138,211 @@ async function resolveSiteEditorConflict(
     return true;
   }
   if (appSettings?.autosave) {
-    return persistPendingSiteDocument();
+    return persistSiteChangesAndVerify();
   }
   const choice = await modalController.confirmUnsavedWork(
     "Unsaved Site Settings",
     buildUnsavedWorkSummary(),
   );
   if (choice === "cancel") return false;
-  if (choice === "save") return persistPendingSiteDocument();
+  if (choice === "save") return persistSiteChangesAndVerify();
   await discardPendingSiteChanges();
-  return true;
+  return !state.siteDirty;
 }
 
-async function loadPage(
+async function clearPageDraftAfterReload(
+  projectPath: string,
   page: string,
-  options?: { skipUnsavedGuard?: boolean; skipDraftRestore?: boolean },
 ): Promise<void> {
-  if (!state.project) return;
+  const cleared = await window.zephus.clearDraft(projectPath, "page", page);
+  if (!cleared.ok) {
+    throw new Error(cleared.error ?? "recovery draft cleanup failed");
+  }
+}
+
+interface PageLoadOptions {
+  skipUnsavedGuard?: boolean;
+  skipDraftRestore?: boolean;
+  forceReload?: boolean;
+  afterLoad?: () => void | Promise<void>;
+}
+
+let editorSessionGeneration = 0;
+let latestPageLoadRequest = 0;
+let loadingPage: string | null = null;
+let closingProject = false;
+let pageLoadChain: Promise<void> = Promise.resolve();
+let externalChangeInFlight: Promise<void> | null = null;
+let externalChangeQueued = false;
+let ignoredExternalChange: {
+  projectPath: string;
+  page: string;
+  content: string;
+} | null = null;
+
+function setPageLoading(page: string | null): void {
+  loadingPage = page;
+  const canvas = $("canvas");
+  const busy = page !== null;
+  canvas.classList.toggle("loading", busy);
+  if (busy) {
+    canvas.setAttribute("aria-busy", "true");
+    canvas.dataset["loadingLabel"] =
+      `Loading ${findPageMeta(page)?.navLabel ?? page}…`;
+  } else {
+    canvas.removeAttribute("aria-busy");
+    delete canvas.dataset["loadingLabel"];
+  }
+
+  const interactionSurfaces = [
+    canvas,
+    $("code-editor"),
+    $("workspace-left-build"),
+    $("workspace-left-layers"),
+    $("nav-list"),
+    document.querySelector<HTMLElement>(".panel.right"),
+  ];
+  for (const surface of interactionSurfaces) {
+    surface?.toggleAttribute("inert", busy);
+  }
+  for (const id of [
+    "mode-visual",
+    "mode-code",
+    "btn-save",
+    "btn-new-page",
+    "btn-find-replace",
+    "btn-regen-nav",
+    "btn-site-shell",
+    "btn-design-system",
+  ] as const) {
+    ($(id) as HTMLButtonElement).disabled = busy;
+  }
+  if (!busy) syncVisualModeState();
+  updateUndoRedoButtons();
+  if (state.project) renderPageList(state.project);
+}
+
+function loadPage(page: string, options?: PageLoadOptions): Promise<void> {
+  const projectPath = state.project?.path;
+  if (!projectPath) return Promise.resolve();
+  const requestId = ++latestPageLoadRequest;
+  setPageLoading(page);
+  const run = pageLoadChain.then(() =>
+    loadPageNow(page, projectPath, requestId, options),
+  );
+  const handled = run.catch((error: unknown) => {
+    if (
+      requestId === latestPageLoadRequest &&
+      state.project?.path === projectPath
+    ) {
+      setStatus(
+        `Could not load ${page}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  });
+  pageLoadChain = handled.finally(() => {
+    if (requestId === latestPageLoadRequest) setPageLoading(null);
+  });
+  return pageLoadChain;
+}
+
+async function loadPageNow(
+  page: string,
+  projectPath: string,
+  requestId: number,
+  options?: PageLoadOptions,
+): Promise<void> {
+  const isCurrentRequest = (): boolean =>
+    requestId === latestPageLoadRequest && state.project?.path === projectPath;
+
+  await editorSave.waitForIdle();
+  if (!isCurrentRequest()) return;
+  if (page === state.page && !options?.forceReload) return;
   if (!options?.skipUnsavedGuard && !(await maybeResolveUnsavedWork())) {
     return;
   }
+  if (!isCurrentRequest()) return;
+
+  const sourcePage = state.page;
+  const pageRevisionAtRead = state.pageRevision;
+  const siteRevisionAtRead = state.siteRevision;
+  const codeAtRead = state.mode === "code" ? getCode() : null;
+  const sourceChangedDuringRead = (): boolean =>
+    state.page !== sourcePage ||
+    state.pageRevision !== pageRevisionAtRead ||
+    state.siteRevision !== siteRevisionAtRead ||
+    (codeAtRead !== null && getCode() !== codeAtRead);
+
+  const project = state.project;
+  if (!project) return;
+  setStatus(`Loading ${findPageMeta(page)?.navLabel ?? page}…`);
   const res = await window.zephus.readPageDocument(
-    state.project.path,
+    projectPath,
     page,
-    state.project.astro.pagesDir,
+    project.astro.pagesDir,
   );
+  if (!isCurrentRequest()) return;
+  if (sourceChangedDuringRead()) {
+    setStatus(
+      "Page switch canceled because the open page changed while the next page was loading.",
+    );
+    return;
+  }
   if (!res.ok || !res.pageDocument) {
     setStatus("Could not load " + page + ": " + (res.error ?? "unknown"));
     return;
   }
+
+  const nextManagedStatus = res.pageDocument.managedFileStatus;
+  const nextVisualEditable = nextManagedStatus !== "detached";
+  const initialSource = res.source ?? "";
+  const generatedSource = res.generatedSource ?? initialSource;
+  let pageDraftCleanupWarning: string | undefined;
+  let restoredPageContent: string | undefined;
+  let restoredPageDraft: DraftData | undefined;
+  if (!options?.skipDraftRestore) {
+    const draftOutcome = await editorDraftRestore.maybeRestorePageDraft(
+      page,
+      findPageMeta(page)?.navLabel ?? page,
+      nextVisualEditable ? generatedSource : initialSource,
+    );
+    pageDraftCleanupWarning = draftOutcome.cleanupWarning;
+    restoredPageContent = draftOutcome.restoredContent;
+    restoredPageDraft = draftOutcome.restoredDraft;
+  }
+  if (!isCurrentRequest()) return;
+
+  // Commit the complete page in one synchronous step. Until draft resolution
+  // finishes, the current editor session remains untouched, so a superseding
+  // request can safely abandon this candidate without leaving partial state.
+  const frameSource =
+    restoredPageContent && nextVisualEditable
+      ? restoredPageContent
+      : initialSource;
+  const { frame, inner } = splitManagedPageSource(frameSource);
+  const nextSections =
+    restoredPageContent && nextVisualEditable
+      ? parseSections(inner)
+      : sectionsFromPageDocument(res.pageDocument);
+
+  ignoredExternalChange = null;
   state.page = page;
   state.siteDocument = res.site;
   state.pageDocument = res.pageDocument;
-  state.managedStatus = res.pageDocument.managedFileStatus;
-  state.visualEditable =
-    state.managedStatus !== "detached" && state.managedStatus !== "out-of-sync";
-  const initialSource = res.source ?? "";
-  capturePageFrame(initialSource);
+  state.managedStatus = nextManagedStatus;
+  state.visualEditable = nextVisualEditable;
+  state.frontmatter = frame.frontmatter;
+  state.prefix = frame.prefix;
+  state.suffix = frame.suffix;
   syncCurrentMeta();
-  state.sections = sectionsFromPageDocument(res.pageDocument);
+  state.sections = nextSections;
   syncBlocksFromSections();
   state.generatedCode = res.generatedSource ?? currentManagedSource();
-  state.rawCode = state.visualEditable ? state.generatedCode : initialSource;
-  state.recoveredPageDraft = null;
-  if (!options?.skipDraftRestore) {
-    await editorDraftRestore.maybeRestorePageDraft(
-      page,
-      findPageMeta(page)?.navLabel ?? page,
-      state.rawCode,
-      {
-        visualEditable: state.visualEditable,
-        applyRestoredSource: (content) => parsePage(content),
-      },
-    );
-  }
+  state.rawCode =
+    restoredPageContent ??
+    (state.visualEditable ? state.generatedCode : initialSource);
+  state.recoveredPageDraft = restoredPageDraft ?? null;
+
   state.undo = [];
   state.redo = [];
   updateUndoRedoButtons();
@@ -2942,6 +3350,8 @@ async function loadPage(
   state.selectedSectionId = state.sections[0]?.id ?? null;
   clearChanges();
   markDirty(Boolean(state.recoveredPageDraft));
+  const loadedPageRevision = state.pageRevision;
+  const loadedSiteRevision = state.siteRevision;
   renderLayers();
 
   for (const li of Array.from($("page-list").children) as HTMLElement[]) {
@@ -2952,9 +3362,14 @@ async function loadPage(
   setMode(state.visualEditable ? "visual" : "code");
   renderDirtyIndicators();
 
-  // Watch the open file for external changes.
-  await window.zephus.watchFile(state.project.path, page);
-  if (state.managedStatus === "out-of-sync") {
+  // Watch the open file for external changes. Serialized page loads guarantee
+  // that an older request cannot replace the watcher for a newer page.
+  if (!isCurrentRequest()) return;
+  await window.zephus.watchFile(projectPath, page);
+  if (!isCurrentRequest()) return;
+  if (pageDraftCleanupWarning) {
+    setStatus(pageDraftCleanupWarning);
+  } else if (state.managedStatus === "out-of-sync") {
     setStatus(
       "Managed page drift detected. Save visually to overwrite or edit in code and detach.",
     );
@@ -2965,27 +3380,66 @@ async function loadPage(
   } else {
     setStatus("Editing " + page);
   }
-}
 
-async function onExternalChange(): Promise<void> {
-  if (!state.project || !state.page) return;
-
-  // Ignore change events caused by Zephus's own writes: if the on-disk content
-  // matches what we last generated/loaded, there is nothing external to merge.
-  try {
-    const onDisk = await window.zephus.readFile(state.project.path, state.page);
+  if (options?.afterLoad) {
     if (
-      onDisk.ok &&
-      typeof onDisk.content === "string" &&
-      (onDisk.content === state.rawCode ||
-        onDisk.content === state.generatedCode)
+      state.pageRevision !== loadedPageRevision ||
+      state.siteRevision !== loadedSiteRevision
     ) {
+      setStatus(
+        `Editing ${page}; recovery cleanup was postponed because newer edits exist.`,
+      );
       return;
     }
+    try {
+      await options.afterLoad();
+    } catch (error) {
+      setStatus(
+        `Editing ${page}, but recovery cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+}
+
+async function handleExternalChange(): Promise<void> {
+  const project = state.project;
+  const page = state.page;
+  if (!project || !page) return;
+  const projectPath = project.path;
+  const sessionGeneration = editorSessionGeneration;
+  const isCurrentPage = (): boolean =>
+    state.project?.path === projectPath &&
+    state.page === page &&
+    editorSessionGeneration === sessionGeneration;
+
+  await editorSave.waitForIdle();
+  if (!isCurrentPage()) return;
+
+  let diskContent: string | null = null;
+  try {
+    const onDisk = await window.zephus.readFile(projectPath, page);
+    if (!isCurrentPage()) return;
+    if (onDisk.ok && typeof onDisk.content === "string") {
+      diskContent = onDisk.content;
+      if (
+        diskContent === state.rawCode ||
+        diskContent === state.generatedCode
+      ) {
+        return;
+      }
+      if (
+        ignoredExternalChange?.projectPath === projectPath &&
+        ignoredExternalChange.page === page &&
+        ignoredExternalChange.content === diskContent
+      ) {
+        return;
+      }
+    }
   } catch {
-    // If we cannot read the file, fall through to the prompt.
+    // If the file cannot be read, still let the user decide how to proceed.
   }
 
+  if (!isCurrentPage()) return;
   const choice = await modalController.choose<"keep" | "reload">(
     "File Changed on Disk",
     "The current page was modified outside Zephus. Reload it from disk or keep your in-app version?",
@@ -2994,14 +3448,45 @@ async function onExternalChange(): Promise<void> {
       { label: "Reload", value: "reload", kind: "primary" },
     ],
   );
-  if (choice !== "reload") return;
-  const page = state.page;
-  const projectPath = state.project?.path;
-  if (page && projectPath) {
-    markDirty(false);
-    await window.zephus.clearDraft(projectPath, "page", page);
-    await loadPage(page, { skipUnsavedGuard: true, skipDraftRestore: true });
+  if (!isCurrentPage()) return;
+  if (choice === "keep") {
+    if (diskContent !== null) {
+      ignoredExternalChange = { projectPath, page, content: diskContent };
+    }
+    trackChange("Kept in-app version after an external file change");
+    markDirty(true);
+    setStatus(
+      "Keeping your in-app version. Save to overwrite the disk change.",
+    );
+    return;
   }
+
+  ignoredExternalChange = null;
+  await loadPage(page, {
+    skipUnsavedGuard: true,
+    skipDraftRestore: true,
+    forceReload: true,
+    afterLoad: async () => {
+      await clearPageDraftAfterReload(projectPath, page);
+    },
+  });
+}
+
+function onExternalChange(): Promise<void> {
+  if (externalChangeInFlight) {
+    externalChangeQueued = true;
+    return externalChangeInFlight;
+  }
+  const pending = handleExternalChange();
+  externalChangeInFlight = pending;
+  void pending.finally(() => {
+    if (externalChangeInFlight === pending) externalChangeInFlight = null;
+    if (externalChangeQueued) {
+      externalChangeQueued = false;
+      void onExternalChange();
+    }
+  });
+  return pending;
 }
 
 /* ---------- Page structure parse / serialize ---------- */
@@ -3023,6 +3508,21 @@ function parsePage(raw: string): void {
   state.selectedSectionId = state.sections[0]?.id ?? null;
 }
 
+/**
+ * Pages a Post List block can show, in the same shape the build uses, so the
+ * canvas preview and the generated page list identical posts.
+ */
+function editorPostIndex(): RenderPostEntry[] {
+  return state.pageMeta.map((meta) => ({
+    route: meta.route,
+    title: meta.title || meta.navLabel || meta.slug,
+    description: meta.metaDescription,
+    date: meta.publishDate,
+    author: meta.author,
+    image: meta.socialImage,
+  }));
+}
+
 function editorRenderOptions(
   viewport = state.currentViewport,
   forCanvas = false,
@@ -3030,11 +3530,13 @@ function editorRenderOptions(
   viewport: typeof state.currentViewport;
   forCanvas: boolean;
   canvasMaxHeadingLevel: number;
+  posts: RenderPostEntry[];
 } {
   return {
     viewport,
     forCanvas,
     canvasMaxHeadingLevel: editorRules.maxHeadingLevel,
+    posts: editorPostIndex(),
   };
 }
 
@@ -3082,6 +3584,19 @@ let indicator: HTMLElement | null = null;
 let dropSectionId: string | null = null;
 let draggingSectionId: string | null = null;
 let sectionDropIndex = -1;
+
+function resetDropTargetState(): void {
+  dropIndex = -1;
+  dropSectionId = null;
+  sectionDropIndex = -1;
+  indicator?.remove();
+  indicator = null;
+}
+
+function resetDragState(): void {
+  resetDropTargetState();
+  draggingSectionId = null;
+}
 
 // Manual double-click tracking. The canvas rebuilds on every selection change,
 // so a block's DOM node is replaced between the two clicks of a native
@@ -3683,6 +4198,9 @@ function effectiveNodeStyle(node: { style?: BlockStyle }): BlockStyle {
 }
 
 function makeCanvasLinksInert(root: HTMLElement): void {
+  root.querySelectorAll<HTMLIFrameElement>("iframe").forEach((frame) => {
+    frame.tabIndex = -1;
+  });
   if (root.dataset["canvasLinksInert"] === "true") return;
   root.dataset["canvasLinksInert"] = "true";
   root.addEventListener(
@@ -3844,29 +4362,41 @@ function beginCanvasResize(
 function renderCanvas(): void {
   const canvas = $("canvas");
   canvas.setAttribute("data-viewport", state.currentViewport);
-  indicator?.remove();
-  indicator = null;
+  resetDragState();
   updateCanvas({
-    sections: state.sections.map((section) => ({
-      section,
-      selected: section.id === state.selectedSectionId && !state.selectedId,
-      breadcrumb: `${currentPageLabel()} / section`,
-      effectiveStyle: effectiveNodeStyle(section),
-      children: section.children.map((blockNode) => {
-        const block = blockNode as Block;
-        return {
-          block,
-          label: blockLabel(block),
-          breadcrumb: `${currentPageLabel()} / ${section.label} / ${block.type}`,
-          html: blockToHtml(block, state.currentViewport, true),
-          selected: block.id === state.selectedId,
-          editableText: TEXT_EDITABLE.includes(block.type) && !block.locked,
-          shellAriaLabel: `${blockLabel(block)} block${block.id === state.selectedId ? ", selected" : ""}`,
-          htmlBlock: block.type === "html",
-          effectiveStyle: effectiveNodeStyle(block),
-        };
-      }),
-    })),
+    sections: state.sections.map((section) => {
+      // Canvas entries are immutable view snapshots. Session nodes are mutated
+      // in place by editor commands, so passing those same object identities
+      // through keyed reconciliation would hide nested lock/label changes from
+      // Solid. Event handlers resolve snapshots back to live nodes by id.
+      const sectionView: SectionNode = {
+        ...section,
+        children: [...section.children],
+      };
+      return {
+        id: section.id,
+        section: sectionView,
+        selected: section.id === state.selectedSectionId && !state.selectedId,
+        breadcrumb: `${currentPageLabel()} / section`,
+        effectiveStyle: effectiveNodeStyle(section),
+        children: section.children.map((blockNode) => {
+          const block = blockNode as Block;
+          const blockView: Block = { ...block };
+          return {
+            id: block.id,
+            block: blockView,
+            label: blockLabel(block),
+            breadcrumb: `${currentPageLabel()} / ${section.label} / ${block.type}`,
+            html: blockToHtml(block, state.currentViewport, true),
+            selected: block.id === state.selectedId,
+            editableText: TEXT_EDITABLE.includes(block.type) && !block.locked,
+            shellAriaLabel: `${blockLabel(block)} block${block.id === state.selectedId ? ", selected" : ""}`,
+            htmlBlock: block.type === "html",
+            effectiveStyle: effectiveNodeStyle(block),
+          };
+        }),
+      };
+    }),
   });
   applyDesignPreview();
 
@@ -3875,6 +4405,12 @@ function renderCanvas(): void {
     if (state.sections.length === 0) {
       dropIndex = 0;
       dropSectionId = null;
+    }
+  };
+  canvas.ondragleave = (event) => {
+    const nextTarget = event.relatedTarget;
+    if (!(nextTarget instanceof Node) || !canvas.contains(nextTarget)) {
+      resetDropTargetState();
     }
   };
   canvas.ondrop = (e) => handleDrop(e);
@@ -3903,80 +4439,99 @@ function showIndicator(
 function handleDrop(e: DragEvent): void {
   e.preventDefault();
   e.stopPropagation();
-  const newType = e.dataTransfer?.getData("text/zephus-new");
-  const moveBlockId = e.dataTransfer?.getData("text/zephus-move-block");
-  const templateId = e.dataTransfer?.getData("text/zephus-template");
-  const moveSectionId = e.dataTransfer?.getData("text/zephus-move-section");
-  const targetSection =
-    findSection(dropSectionId ?? activeSectionId()) ??
-    state.sections[0] ??
-    null;
-  const target =
-    dropIndex < 0 ? (targetSection?.children.length ?? 0) : dropIndex;
 
-  if (moveSectionId) {
-    const from = state.sections.findIndex((s) => s.id === moveSectionId);
-    const moving = state.sections[from];
-    if (isNodeLocked(moving)) {
-      setStatus(lockedMutationMessage("section"));
-      return;
-    }
-    if (from >= 0 && sectionDropIndex >= 0) {
-      let to = sectionDropIndex;
-      if (from < to) to -= 1;
-      if (to !== from) {
-        pushUndo();
-        const [sec] = state.sections.splice(from, 1);
-        if (sec) {
-          state.sections.splice(to, 0, sec);
-          state.selectedSectionId = sec.id;
-          state.selectedId = null;
-          commitBlockChange("Moved section");
+  try {
+    const newType = e.dataTransfer?.getData("text/zephus-new");
+    const moveBlockId = e.dataTransfer?.getData("text/zephus-move-block");
+    const templateId = e.dataTransfer?.getData("text/zephus-template");
+    const moveSectionId = e.dataTransfer?.getData("text/zephus-move-section");
+    const targetSection =
+      findSection(dropSectionId ?? activeSectionId()) ??
+      state.sections[0] ??
+      null;
+    const target =
+      dropIndex < 0 ? (targetSection?.children.length ?? 0) : dropIndex;
+
+    if (moveSectionId) {
+      const from = state.sections.findIndex(
+        (section) => section.id === moveSectionId,
+      );
+      const moving = state.sections[from];
+      if (isNodeLocked(moving)) {
+        setStatus(lockedMutationMessage("section"));
+        return;
+      }
+      if (from >= 0 && sectionDropIndex >= 0) {
+        let to = sectionDropIndex;
+        if (from < to) to -= 1;
+        if (to !== from) {
+          pushUndo();
+          const [section] = state.sections.splice(from, 1);
+          if (section) {
+            state.sections.splice(to, 0, section);
+            state.selectedSectionId = section.id;
+            state.selectedId = null;
+            commitBlockChange("Moved section");
+          }
         }
       }
-    }
-  } else if (templateId) {
-    const tpl =
-      TEMPLATES.find((t) => t.id === templateId) ??
-      resolveSavedSectionTemplate(templateId);
-    if (!tpl) return;
-    // Honor the drop position: insert after the section dropped onto, or
-    // append when dropped on empty canvas space.
-    const overSection = dropSectionId ? findSection(dropSectionId) : null;
-    const insertAt = overSection
-      ? state.sections.indexOf(overSection) + 1
-      : state.sections.length;
-    addSectionAt(insertAt, tpl);
-  } else if (newType) {
-    addBlockAt(newType as BlockType, target, targetSection?.id);
-  } else if (moveBlockId) {
-    const location = findBlockLocation(moveBlockId);
-    if (!location || !targetSection) return;
-    if (isNodeLocked(location.block)) {
-      setStatus(lockedMutationMessage("block"));
       return;
     }
-    if (isNodeLocked(targetSection)) {
-      setStatus(lockedMutationMessage("target-section"));
+
+    if (templateId) {
+      const template =
+        TEMPLATES.find((entry) => entry.id === templateId) ??
+        resolveSavedSectionTemplate(templateId);
+      if (!template) return;
+      // Honor the drop position: insert after the section dropped onto, or
+      // append when dropped on empty canvas space.
+      const overSection = dropSectionId ? findSection(dropSectionId) : null;
+      const insertAt = overSection
+        ? state.sections.indexOf(overSection) + 1
+        : state.sections.length;
+      addSectionAt(insertAt, template);
       return;
     }
-    pushUndo();
-    const [moved] = location.section.children.splice(location.blockIndex, 1);
-    if (!moved) return;
-    const adjusted =
-      location.section.id === targetSection.id && location.blockIndex < target
-        ? target - 1
-        : target;
-    targetSection.children.splice(adjusted, 0, moved);
-    state.selectedId = moved.id;
-    state.selectedSectionId = targetSection.id;
-    commitBlockChange(`Reordered ${moved.type} block`);
+
+    if (newType) {
+      if (!KNOWN_BLOCK_TYPES.has(newType as BlockType)) return;
+      addBlockAt(newType as BlockType, target, targetSection?.id);
+      return;
+    }
+
+    if (moveBlockId) {
+      const location = findBlockLocation(moveBlockId);
+      if (!location || !targetSection) return;
+      if (isNodeLocked(location.block)) {
+        setStatus(lockedMutationMessage("block"));
+        return;
+      }
+      if (isNodeLocked(targetSection)) {
+        setStatus(lockedMutationMessage("target-section"));
+        return;
+      }
+      const adjusted =
+        location.section.id === targetSection.id && location.blockIndex < target
+          ? target - 1
+          : target;
+      if (
+        location.section.id === targetSection.id &&
+        adjusted === location.blockIndex
+      ) {
+        return;
+      }
+
+      pushUndo();
+      const [moved] = location.section.children.splice(location.blockIndex, 1);
+      if (!moved) return;
+      targetSection.children.splice(adjusted, 0, moved);
+      state.selectedId = moved.id;
+      state.selectedSectionId = targetSection.id;
+      commitBlockChange(`Reordered ${moved.type} block`);
+    }
+  } finally {
+    resetDragState();
   }
-  dropIndex = -1;
-  dropSectionId = null;
-  draggingSectionId = null;
-  sectionDropIndex = -1;
-  indicator?.remove();
 }
 
 interface InlineEditTarget {
@@ -3984,6 +4539,14 @@ interface InlineEditTarget {
   multiline?: boolean;
   lineIndex?: number;
   pairSide?: "left" | "right";
+  /**
+   * Enables the inline formatting toolbar (bold/italic/link) for prose targets.
+   * Off for values that are not prose (icons, numeric stats) and for anything
+   * whose markup would be invalid where it is rendered.
+   */
+  rich?: boolean;
+  /** False where the text is rendered inside an `<a>`, so links are invalid. */
+  allowLinks?: boolean;
 }
 
 function updateLineValue(
@@ -4062,41 +4625,51 @@ function attachInlineEditors(root: HTMLElement, block: Block): HTMLElement[] {
     case "text":
     case "button":
     case "section":
-      add(":scope > *", { prop: "text", multiline: block.type !== "button" });
+      // Headings and buttons are single-line labels, so Enter commits the edit.
+      // Body copy keeps Enter as a line break (Cmd/Ctrl+Enter or blur commits).
+      add(":scope > *", {
+        prop: "text",
+        multiline: block.type === "text" || block.type === "section",
+        rich: true,
+        // A button's label is already inside an <a>; a nested link is invalid.
+        allowLinks: block.type !== "button",
+      });
       break;
     case "columns":
       root.querySelectorAll<HTMLElement>(".zephus-column").forEach((_, i) =>
         add(`.zephus-column:nth-of-type(${i + 1})`, {
           prop: `col${i + 1}`,
           multiline: true,
+          rich: true,
         }),
       );
       break;
     case "card":
-      add("h3", { prop: "title" });
-      add("p", { prop: "text", multiline: true });
+      add("h3", { prop: "title", rich: true });
+      add("p", { prop: "text", multiline: true, rich: true });
       break;
     case "quote":
-      add("p", { prop: "text", multiline: true });
-      add("cite", { prop: "cite" });
+      add("p", { prop: "text", multiline: true, rich: true });
+      add("cite", { prop: "cite", rich: true });
       break;
     case "list":
       root.querySelectorAll<HTMLElement>("li").forEach((_, i) =>
         add(`li:nth-of-type(${i + 1})`, {
           prop: "items",
           lineIndex: i,
+          rich: true,
         }),
       );
       break;
     case "feature":
       add(".zephus-feature-icon", { prop: "icon" });
-      add("h3", { prop: "title" });
-      add("p", { prop: "text", multiline: true });
+      add("h3", { prop: "title", rich: true });
+      add("p", { prop: "text", multiline: true, rich: true });
       break;
     case "testimonial":
-      add("blockquote", { prop: "quote", multiline: true });
-      add("figcaption strong", { prop: "author" });
-      add("figcaption span", { prop: "role" });
+      add("blockquote", { prop: "quote", multiline: true, rich: true });
+      add("figcaption strong", { prop: "author", rich: true });
+      add("figcaption span", { prop: "role", rich: true });
       break;
     case "accordion":
       root.querySelectorAll<HTMLElement>("details").forEach((_, i) => {
@@ -4104,12 +4677,14 @@ function attachInlineEditors(root: HTMLElement, block: Block): HTMLElement[] {
           prop: "items",
           lineIndex: i,
           pairSide: "left",
+          rich: true,
         });
         add(`details:nth-of-type(${i + 1}) p`, {
           prop: "items",
           lineIndex: i,
           pairSide: "right",
           multiline: true,
+          rich: true,
         });
       });
       break;
@@ -4128,21 +4703,23 @@ function attachInlineEditors(root: HTMLElement, block: Block): HTMLElement[] {
       });
       break;
     case "pricing":
-      add("h3", { prop: "plan" });
+      add("h3", { prop: "plan", rich: true });
       add(".zephus-price-amount", { prop: "price" });
       add(".zephus-price-period", { prop: "period" });
       root.querySelectorAll<HTMLElement>("li").forEach((_, i) =>
         add(`li:nth-of-type(${i + 1})`, {
           prop: "features",
           lineIndex: i,
+          rich: true,
         }),
       );
-      add("a.button", { prop: "ctaText" });
+      // Button labels render inside an <a>, so links are not offered.
+      add("a.button", { prop: "ctaText", rich: true, allowLinks: false });
       break;
     case "cta":
-      add("h2", { prop: "heading" });
-      add("p", { prop: "text", multiline: true });
-      add("a.button", { prop: "buttonText" });
+      add("h2", { prop: "heading", rich: true });
+      add("p", { prop: "text", multiline: true, rich: true });
+      add("a.button", { prop: "buttonText", rich: true, allowLinks: false });
       break;
   }
   return targets;
@@ -4152,6 +4729,214 @@ function startFirstInlineEdit(root: HTMLElement, block: Block): void {
   const first = attachInlineEditors(root, block)[0];
   if (!first) return;
   first.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+}
+
+/**
+ * Applies an inline formatting command to the current selection.
+ *
+ * `execCommand` is deprecated but remains the only way to transform a selection
+ * inside a contenteditable without hand-rolling range surgery. Whatever markup
+ * it produces is normalized on commit by `richTextFromElement`, so the stored
+ * value never contains anything outside the allowed subset.
+ */
+function applyInlineFormat(
+  command: "bold" | "italic" | "removeFormat" | "createLink" | "unlink",
+  value?: string,
+): void {
+  try {
+    document.execCommand(command, false, value);
+  } catch {
+    setStatus("Could not apply formatting here.");
+  }
+}
+
+interface InlineFormatToolbar {
+  element: HTMLElement;
+  syncState: () => void;
+  promptLink: () => void;
+  destroy: () => void;
+}
+
+/**
+ * Floating bold/italic/link controls shown while inline-editing prose. Buttons
+ * suppress mousedown so the caret and selection survive the click.
+ */
+function createInlineFormatToolbar(
+  el: HTMLElement,
+  options: { allowLinks: boolean },
+): InlineFormatToolbar {
+  const bar = document.createElement("div");
+  bar.className = "inline-format-toolbar";
+  bar.setAttribute("role", "toolbar");
+  bar.setAttribute("aria-label", "Text formatting");
+
+  const buttons: Array<{ key: string; button: HTMLButtonElement }> = [];
+  const addButton = (
+    key: string,
+    label: string,
+    title: string,
+    onActivate: () => void,
+  ): HTMLButtonElement => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "inline-format-btn";
+    button.innerHTML = label;
+    button.title = title;
+    button.setAttribute("aria-label", title);
+    button.addEventListener("mousedown", (event) => {
+      // Keep focus (and the selection) in the text being edited.
+      event.preventDefault();
+    });
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      onActivate();
+    });
+    bar.appendChild(button);
+    buttons.push({ key, button });
+    return button;
+  };
+
+  const syncState = (): void => {
+    for (const entry of buttons) {
+      if (entry.key !== "bold" && entry.key !== "italic") continue;
+      let active: boolean;
+      try {
+        active = document.queryCommandState(entry.key);
+      } catch {
+        active = false;
+      }
+      entry.button.classList.toggle("active", active);
+      entry.button.setAttribute("aria-pressed", String(active));
+    }
+  };
+
+  addButton("bold", "<strong>B</strong>", "Bold (Cmd/Ctrl+B)", () => {
+    applyInlineFormat("bold");
+    syncState();
+  });
+  addButton("italic", "<em>I</em>", "Italic (Cmd/Ctrl+I)", () => {
+    applyInlineFormat("italic");
+    syncState();
+  });
+
+  const linkRow = document.createElement("div");
+  linkRow.className = "inline-format-link";
+  linkRow.hidden = true;
+  const linkInput = document.createElement("input");
+  linkInput.type = "text";
+  linkInput.className = "text";
+  linkInput.placeholder = "https://example.com or /about";
+  linkInput.setAttribute("aria-label", "Link address");
+  linkRow.appendChild(linkInput);
+
+  let savedRange: Range | null = null;
+  const restoreSelection = (): void => {
+    if (!savedRange) return;
+    const selection = window.getSelection();
+    if (!selection) return;
+    selection.removeAllRanges();
+    selection.addRange(savedRange);
+  };
+
+  const applyLink = (): void => {
+    const raw = linkInput.value.trim();
+    linkRow.hidden = true;
+    el.focus();
+    restoreSelection();
+    if (!raw) return;
+    const safe = safeUrl(raw);
+    if (!safe) {
+      setStatus("That link type is not allowed.");
+      return;
+    }
+    applyInlineFormat("createLink", safe);
+    setStatus("Added link.");
+  };
+
+  const promptLink = (): void => {
+    if (!options.allowLinks) return;
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed) {
+      setStatus("Select the words you want to link first.");
+      return;
+    }
+    savedRange = selection.getRangeAt(0).cloneRange();
+    const existing = selection.anchorNode?.parentElement?.closest("a");
+    linkInput.value = existing?.getAttribute("href") ?? "";
+    linkRow.hidden = false;
+    linkInput.focus();
+    linkInput.select();
+  };
+
+  if (options.allowLinks) {
+    addButton(
+      "link",
+      '<i data-lucide="link"></i>',
+      "Add link (Cmd/Ctrl+K)",
+      () => promptLink(),
+    );
+    addButton("unlink", '<i data-lucide="unlink"></i>', "Remove link", () => {
+      applyInlineFormat("unlink");
+    });
+  }
+  addButton(
+    "removeFormat",
+    '<i data-lucide="remove-formatting"></i>',
+    "Clear formatting",
+    () => {
+      applyInlineFormat("removeFormat");
+      syncState();
+    },
+  );
+
+  linkInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      applyLink();
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      linkRow.hidden = true;
+      el.focus();
+      restoreSelection();
+    }
+  });
+
+  bar.appendChild(linkRow);
+  document.body.appendChild(bar);
+  refreshIcons();
+
+  const position = (): void => {
+    const rect = el.getBoundingClientRect();
+    const barRect = bar.getBoundingClientRect();
+    const top = Math.max(8, rect.top - barRect.height - 8);
+    const left = Math.min(
+      Math.max(8, rect.left),
+      Math.max(8, window.innerWidth - barRect.width - 8),
+    );
+    bar.style.top = `${top}px`;
+    bar.style.left = `${left}px`;
+  };
+  position();
+
+  const onSelectionChange = (): void => syncState();
+  document.addEventListener("selectionchange", onSelectionChange);
+  window.addEventListener("resize", position);
+  window.addEventListener("scroll", position, true);
+  syncState();
+
+  return {
+    element: bar,
+    syncState,
+    promptLink,
+    destroy: () => {
+      document.removeEventListener("selectionchange", onSelectionChange);
+      window.removeEventListener("resize", position);
+      window.removeEventListener("scroll", position, true);
+      bar.remove();
+    },
+  };
 }
 
 function startInlineEdit(
@@ -4175,20 +4960,35 @@ function startInlineEdit(
     selection.removeAllRanges();
     selection.addRange(range);
   }
+  const allowLinks = target.allowLinks !== false;
+  const toolbar = target.rich
+    ? createInlineFormatToolbar(el, { allowLinks })
+    : null;
+
   const cleanup = (): void => {
     isInlineEditing = false;
     el.removeAttribute("contenteditable");
     el.removeAttribute("role");
     el.removeAttribute("aria-label");
     el.classList.remove("inline-editing");
-    el.removeEventListener("blur", finish);
+    el.removeEventListener("blur", onBlur);
     el.removeEventListener("keydown", onKeydown);
     el.removeEventListener("paste", onPaste);
+    toolbar?.destroy();
   };
+  const readValue = (): string =>
+    target.rich
+      ? richTextFromElement(el, {
+          allowLinks,
+          // Line-encoded props must stay on one line or the encoding breaks.
+          allowLineBreaks:
+            target.multiline === true && target.lineIndex === undefined,
+        }).trim()
+      : el.innerText.trim();
   const finish = () => {
     if (finished) return;
     finished = true;
-    const newText = el.innerText.trim();
+    const newText = readValue();
     cleanup();
     if (newText !== original) {
       pushUndo();
@@ -4210,11 +5010,33 @@ function startInlineEdit(
   const onPaste = (event: ClipboardEvent): void => {
     handlePlainTextPaste(event);
   };
+  // Focus moving into the format toolbar is still part of this edit session.
+  const onBlur = (event: FocusEvent): void => {
+    const next = event.relatedTarget;
+    if (toolbar && next instanceof Node && toolbar.element.contains(next)) {
+      return;
+    }
+    finish();
+  };
   const onKeydown = (event: KeyboardEvent): void => {
     if (event.key === "Escape") {
       event.preventDefault();
       cancel();
       return;
+    }
+    if (target.rich && (event.metaKey || event.ctrlKey)) {
+      const key = event.key.toLowerCase();
+      if (key === "b" || key === "i") {
+        event.preventDefault();
+        applyInlineFormat(key === "b" ? "bold" : "italic");
+        toolbar?.syncState();
+        return;
+      }
+      if (key === "k" && allowLinks) {
+        event.preventDefault();
+        toolbar?.promptLink();
+        return;
+      }
     }
     if (event.key === "Enter") {
       // Allow a literal line break only for free-form multiline props. Targets
@@ -4228,7 +5050,7 @@ function startInlineEdit(
       }
     }
   };
-  el.addEventListener("blur", finish);
+  el.addEventListener("blur", onBlur);
   el.addEventListener("keydown", onKeydown);
   el.addEventListener("paste", onPaste);
 }
@@ -4323,6 +5145,17 @@ function defaultProps(type: BlockType): Record<string, string> {
         text: "Join thousands of happy customers today.",
         buttonText: "Get started",
         buttonHref: "#",
+        cls: "",
+      };
+    case "postlist":
+      return {
+        folder: "/posts",
+        limit: "5",
+        showDate: "true",
+        showAuthor: "false",
+        showExcerpt: "true",
+        showImage: "false",
+        emptyText: "No posts yet. Add a page with a publish date.",
         cls: "",
       };
     case "html":
@@ -4563,6 +5396,180 @@ interface AssetBrowserOptions {
   onSelect: (webPath: string) => void;
 }
 
+/** Creates src/pages/404.astro, which Astro serves for unknown routes. */
+async function createNotFoundPage(): Promise<void> {
+  if (!state.project) return;
+  const created = await window.zephus.createPage(
+    state.project.path,
+    "404",
+    state.project.astro.pagesDir,
+  );
+  if (!created.ok) {
+    setStatus("Could not create the 404 page: " + (created.error ?? "unknown"));
+    return;
+  }
+  await reloadPages();
+  const entry = state.pageMeta.find((meta) => meta.slug === "404");
+  if (entry) await loadPage(entry.page);
+  setStatus(
+    "Created the 404 page. It stays out of your navigation and search results.",
+  );
+}
+
+async function openFindReplaceModal(): Promise<void> {
+  if (!state.project) return;
+  const project = state.project;
+  const wrap = document.createElement("div");
+  const formState = {
+    query: "",
+    replacement: "",
+    caseSensitive: false,
+    wholeWord: false,
+    searching: false,
+    matches: null as SearchMatch[] | null,
+    totalMatches: 0,
+  };
+
+  const mount = (): void =>
+    renderFindReplaceModalBody(wrap, {
+      query: formState.query,
+      replacement: formState.replacement,
+      caseSensitive: formState.caseSensitive,
+      wholeWord: formState.wholeWord,
+      searching: formState.searching,
+      matches: formState.matches,
+      totalMatches: formState.totalMatches,
+      onQueryChange: (value) => {
+        formState.query = value;
+      },
+      onReplacementChange: (value) => {
+        formState.replacement = value;
+      },
+      onCaseSensitiveChange: (value) => {
+        formState.caseSensitive = value;
+        mount();
+      },
+      onWholeWordChange: (value) => {
+        formState.wholeWord = value;
+        mount();
+      },
+      onSearch: () => void runSearch(),
+      onOpenPage: (page) => {
+        closeModal();
+        void loadPage(page);
+      },
+    });
+
+  const runSearch = async (): Promise<boolean> => {
+    const query = formState.query.trim();
+    if (!query) {
+      setStatus("Enter text to find.");
+      return false;
+    }
+    const result = await window.zephus.searchPages(
+      project.path,
+      project.astro.pagesDir,
+      query,
+      {
+        caseSensitive: formState.caseSensitive,
+        wholeWord: formState.wholeWord,
+      },
+    );
+    if (!result.ok) {
+      setStatus("Search failed: " + (result.error ?? "unknown"));
+      return false;
+    }
+    formState.matches = result.matches;
+    formState.totalMatches = result.totalMatches;
+    mount();
+    return result.matches.length > 0;
+  };
+
+  mount();
+  showModalNode(
+    "Find and Replace",
+    wrap,
+    [
+      { label: "Close", kind: "ghost", onClick: closeModal },
+      { label: "Find", kind: "ghost", onClick: () => void runSearch() },
+      {
+        label: "Replace All",
+        kind: "primary",
+        onClick: async () => {
+          // Always search first: the visible match list is what the user is
+          // agreeing to replace.
+          if (formState.matches === null && !(await runSearch())) return;
+          const matches = formState.matches ?? [];
+          if (matches.length === 0) {
+            setStatus("Nothing to replace.");
+            return;
+          }
+
+          // Replacement rewrites saved page sidecars, so pending edits must be
+          // settled or saving afterwards would undo the replacement.
+          if (isGlobalDirty(state) && !(await maybeResolveUnsavedWork())) {
+            setStatus("Replace canceled: save or discard your changes first.");
+            return;
+          }
+
+          const confirmed = await modalController.confirmDestructive(
+            "Replace Across Site",
+            `Replace ${formState.totalMatches} occurrence(s) of "${formState.query.trim()}" across ${matches.length} page(s)? This cannot be undone with Ctrl/Cmd+Z.`,
+            "Replace All",
+          );
+          if (!confirmed) return;
+
+          const result = await window.zephus.replaceAllInPages(
+            project.path,
+            project.astro.pagesDir,
+            formState.query.trim(),
+            formState.replacement,
+            {
+              caseSensitive: formState.caseSensitive,
+              wholeWord: formState.wholeWord,
+            },
+            matches.map((match) => match.page),
+          );
+          if (!result.ok) {
+            setStatus("Replace failed: " + (result.error ?? "unknown"));
+            return;
+          }
+          closeModal();
+          // Pages changed on disk; reload the open one rather than keeping a
+          // stale copy in the editor.
+          if (state.page) {
+            await loadPage(state.page, {
+              skipUnsavedGuard: true,
+              skipDraftRestore: true,
+              forceReload: true,
+            });
+          }
+          await reloadPages();
+          setStatus(
+            `Replaced ${result.replaced} occurrence(s) across ${result.pagesChanged} page(s).`,
+          );
+        },
+      },
+    ],
+    { size: "wide" },
+  );
+}
+
+/** Re-reads site.json after main mutated it, so the editor is not left stale. */
+async function reloadSiteDocumentFromDisk(): Promise<void> {
+  if (!state.project) return;
+  const site = await window.zephus.readSiteDocument(state.project.path);
+  if (!site.ok || !site.site) return;
+  state.siteDocument = site.site;
+  state.pendingSiteDocument = null;
+  state.pendingSiteEditorKind = null;
+  clearSiteChanges(state);
+  markSiteDirty(state, false);
+  renderDirtyIndicators();
+  void applyMergedTheme();
+  if (state.project) renderNavEditor(state.project);
+}
+
 function openAssetBrowser(options: AssetBrowserOptions): void {
   if (!state.project) return;
   const project = state.project;
@@ -4590,7 +5597,111 @@ function openAssetBrowser(options: AssetBrowserOptions): void {
         options.onSelect(webPath);
       },
       onRendered: refreshIcons,
+      onRename: (asset) => void renameAssetFlow(asset),
+      onDelete: (asset) => void deleteAssetFlow(asset),
     });
+
+  /** Summarizes where an asset is used, for the confirm prompts. */
+  const describeUsage = async (webPath: string): Promise<string> => {
+    const usage = await window.zephus.findAssetUsage(
+      project.path,
+      project.astro.pagesDir,
+      webPath,
+    );
+    if (!usage.ok) return "";
+    const places = [
+      ...usage.pages.map((entry) => entry.label),
+      ...usage.siteReferences,
+    ];
+    if (places.length === 0) return "";
+    const shown = places.slice(0, 6).join(", ");
+    const extra = places.length > 6 ? ` and ${places.length - 6} more` : "";
+    return `${shown}${extra}`;
+  };
+
+  const renameAssetFlow = async (
+    asset: AssetBrowserModalEntry,
+  ): Promise<void> => {
+    const currentName = asset.fileName.split("/").pop() ?? asset.fileName;
+    const dotIndex = currentName.lastIndexOf(".");
+    const stem = dotIndex > 0 ? currentName.slice(0, dotIndex) : currentName;
+    const extension = dotIndex > 0 ? currentName.slice(dotIndex) : "";
+    const usedBy = await describeUsage(asset.webPath);
+    const nextName = await modalController.promptText("Rename Asset", {
+      label: `New name (keeps ${extension || "the same type"})`,
+      value: stem,
+      confirmLabel: "Rename",
+      description: usedBy
+        ? `Used by: ${usedBy}. Renaming updates those references too.`
+        : undefined,
+    });
+    if (!nextName || nextName.trim() === stem) return;
+
+    // Repointing rewrites saved page sidecars, so unsaved edits must be settled
+    // first — otherwise saving afterwards would write back the old asset path.
+    if (isGlobalDirty(state) && !(await maybeResolveUnsavedWork())) {
+      setStatus("Rename canceled: save or discard your changes first.");
+      return;
+    }
+
+    const result = await window.zephus.renameAsset(
+      project.path,
+      project.astro.publicDir,
+      project.astro.pagesDir,
+      asset.webPath,
+      nextName,
+    );
+    if (!result.ok || !result.webPath) {
+      setStatus("Rename failed: " + (result.error ?? "unknown"));
+      await refresh();
+      return;
+    }
+
+    const updated = result.updatedReferences ?? 0;
+    // The open page and site document were changed on disk by the repoint, so
+    // reload them rather than leaving the editor on a stale copy.
+    await reloadSiteDocumentFromDisk();
+    if (state.page) {
+      await loadPage(state.page, {
+        skipUnsavedGuard: true,
+        skipDraftRestore: true,
+        forceReload: true,
+      });
+    }
+    await refresh();
+    setStatus(
+      updated > 0
+        ? `Renamed asset and updated ${updated} reference(s).`
+        : "Renamed asset.",
+    );
+  };
+
+  const deleteAssetFlow = async (
+    asset: AssetBrowserModalEntry,
+  ): Promise<void> => {
+    const displayName = asset.fileName.split("/").pop() ?? asset.fileName;
+    const usedBy = await describeUsage(asset.webPath);
+    const confirmed = await modalController.confirmDestructive(
+      "Delete Asset",
+      usedBy
+        ? `"${displayName}" is still used by: ${usedBy}. Deleting it will leave those places pointing at a missing file. Delete anyway?`
+        : `Delete "${displayName}" from this project? This removes the file from disk.`,
+      "Delete Asset",
+    );
+    if (!confirmed) return;
+
+    const result = await window.zephus.deleteAsset(
+      project.path,
+      project.astro.publicDir,
+      asset.webPath,
+    );
+    if (!result.ok) {
+      setStatus("Delete failed: " + (result.error ?? "unknown"));
+      return;
+    }
+    await refresh();
+    setStatus(`Deleted ${displayName}.`);
+  };
 
   const resolvePreviewSrc = async (
     asset: AssetEntry,
@@ -4683,12 +5794,30 @@ function openAssetBrowser(options: AssetBrowserOptions): void {
   ]);
 }
 
+let lastInspectorSelectionKey = "none";
+
 function renderProperties(): void {
   const panel = $("properties");
+  if (state.mode === "code") {
+    lastInspectorSelectionKey = "none";
+    renderPropertiesEmpty(panel, !!state.page, () => {
+      if (state.page) void openPageMetaModal(state.page);
+    });
+    return;
+  }
   const block = findSelectedBlock();
   const section =
     (block ? findBlockLocation(block.id)?.section : null) ??
     findSection(state.selectedSectionId);
+  const selectionKey = block
+    ? `block:${block.id}`
+    : section
+      ? `section:${section.id}`
+      : "none";
+  if (selectionKey !== lastInspectorSelectionKey && selectionKey !== "none") {
+    activateWorkspaceTab("right", "inspect");
+  }
+  lastInspectorSelectionKey = selectionKey;
   panel.innerHTML = "";
 
   if (!block && !section) {
@@ -4791,6 +5920,7 @@ function renderProperties(): void {
     "stats",
     "pricing",
     "cta",
+    "postlist",
   ];
 
   if (supportedBlockTypes.includes(block.type)) {
@@ -4956,6 +6086,15 @@ function renderProperties(): void {
 
 /* ---------- Mode switching ---------- */
 
+function syncModeToggle(mode: Mode): void {
+  const visual = $("mode-visual");
+  const code = $("mode-code");
+  visual.classList.toggle("active", mode === "visual");
+  code.classList.toggle("active", mode === "code");
+  visual.setAttribute("aria-pressed", String(mode === "visual"));
+  code.setAttribute("aria-pressed", String(mode === "code"));
+}
+
 function setMode(mode: Mode): void {
   if (mode === "visual" && !state.visualEditable) {
     showModal(
@@ -4970,10 +6109,27 @@ function setMode(mode: Mode): void {
 
   const codeEl = $("code-editor");
 
+  // Re-selecting the active mode should only restore its view. In particular,
+  // never refill CodeMirror here: doing so would discard unsaved code edits.
+  if (mode === state.mode) {
+    syncModeToggle(mode);
+    codeEl.classList.toggle("hidden", mode !== "code");
+    $("canvas").classList.toggle("hidden", mode !== "visual");
+    $("preview-frame").classList.add("hidden");
+    if (mode === "code") {
+      cm?.focus();
+      renderProperties();
+    } else {
+      renderCanvas();
+      renderProperties();
+    }
+    updateUndoRedoButtons();
+    return;
+  }
+
   if (mode === "code") {
     state.mode = mode;
-    $("mode-visual").classList.toggle("active", false);
-    $("mode-code").classList.toggle("active", true);
+    syncModeToggle(mode);
     state.rawCode =
       state.managedStatus === "detached" ||
       state.managedStatus === "out-of-sync"
@@ -4984,6 +6140,7 @@ function setMode(mode: Mode): void {
     $("canvas").classList.add("hidden");
     $("preview-frame").classList.add("hidden");
     cm?.focus();
+    renderProperties();
     updateUndoRedoButtons();
     return;
   }
@@ -5006,8 +6163,7 @@ function setMode(mode: Mode): void {
   }
 
   state.mode = mode;
-  $("mode-visual").classList.toggle("active", true);
-  $("mode-code").classList.toggle("active", false);
+  syncModeToggle(mode);
   $("canvas").classList.remove("hidden");
   codeEl.classList.add("hidden");
   $("preview-frame").classList.add("hidden");
@@ -5018,19 +6174,18 @@ function setMode(mode: Mode): void {
 
 /* ---------- Save ---------- */
 
-let performSave: () => Promise<boolean>;
-
-editorSiteSave = createEditorSiteSaveActions({
+const editorSiteSave = createEditorSiteSaveActions({
   getState: () => state,
   setStatus,
   onSiteStateChanged: () => {
     renderDirtyIndicators();
+    if (state.siteDirty) scheduleDraftWrite();
     if (state.project) renderNavEditor(state.project);
   },
   zephus: window.zephus,
 });
 
-editorDraftRestore = createEditorDraftRestoreActions({
+const editorDraftRestore = createEditorDraftRestoreActions({
   getState: () => state,
   setStatus,
   confirmRestoreDraft: (title, message) =>
@@ -5047,6 +6202,7 @@ const editorSave = createEditorSaveActions({
   getState: () => state,
   setStatus,
   getCode,
+  setCode,
   serializeBlocks,
   pageDocumentFromState,
   syncVisualModeState,
@@ -5054,13 +6210,38 @@ const editorSave = createEditorSaveActions({
   syncBlocksFromSections,
   clearChanges,
   markDirty,
+  scheduleDraftWrite,
   renderDirtyIndicators,
   reloadPages,
   persistPendingSiteDocument,
   afterSave: () => void editorGit.refreshGit(),
   zephus: window.zephus,
 });
-performSave = () => editorSave.performSave();
+const performSave = async (): Promise<boolean> => {
+  const saveButton = $("btn-save") as HTMLButtonElement;
+  const saveLabel = $("save-label");
+  const startedSave = !editorSave.isSaving();
+  const wasSavingPage = state.pageDirty;
+  if (startedSave) setStatus("Saving…");
+  saveLabel.textContent = "Saving…";
+  saveButton.disabled = true;
+  saveButton.setAttribute("aria-busy", "true");
+  saveButton.setAttribute("aria-label", "Saving changes");
+  saveButton.classList.add("saving");
+  try {
+    const saved = await editorSave.performSave();
+    if (saved && wasSavingPage && !state.pageDirty) {
+      ignoredExternalChange = null;
+    }
+    return saved;
+  } finally {
+    saveLabel.textContent = "Save";
+    saveButton.disabled = loadingPage !== null;
+    saveButton.removeAttribute("aria-busy");
+    saveButton.setAttribute("aria-label", "Save changes");
+    saveButton.classList.remove("saving");
+  }
+};
 
 /* ---------- Preview + responsive viewport ---------- */
 
@@ -5071,9 +6252,15 @@ function setViewport(vp: "desktop" | "tablet" | "mobile"): void {
   wrap.classList.remove("vp-tablet", "vp-mobile");
   if (vp === "tablet") wrap.classList.add("vp-tablet");
   if (vp === "mobile") wrap.classList.add("vp-mobile");
-  $("vp-desktop").classList.toggle("active", vp === "desktop");
-  $("vp-tablet").classList.toggle("active", vp === "tablet");
-  $("vp-mobile").classList.toggle("active", vp === "mobile");
+  for (const [id, value] of [
+    ["vp-desktop", "desktop"],
+    ["vp-tablet", "tablet"],
+    ["vp-mobile", "mobile"],
+  ] as const) {
+    const button = $(id);
+    button.classList.toggle("active", vp === value);
+    button.setAttribute("aria-pressed", String(vp === value));
+  }
   if (state.mode === "visual" && !state.previewUrl) {
     renderCanvas();
     renderProperties();
@@ -5268,63 +6455,97 @@ async function publishSite(): Promise<void> {
 /* ---------- Close ---------- */
 
 async function closeProject(): Promise<void> {
-  if (!(await maybeResolveUnsavedWork())) {
-    return;
+  if (closingProject || !(await maybeResolveUnsavedWork())) return;
+
+  const editorView = $("view-editor");
+  closingProject = true;
+  editorView.setAttribute("inert", "");
+  setStatus("Closing project…");
+  updateUndoRedoButtons();
+
+  try {
+    editorSessionGeneration += 1;
+    latestPageLoadRequest += 1;
+    setPageLoading(null);
+    externalChangeQueued = false;
+    ignoredExternalChange = null;
+    if (state.previewUrl) {
+      await window.zephus.closePreviewWindow();
+      resetPreviewState();
+    }
+    await window.zephus.stopWatch();
+    state.unsubExternal?.();
+    state.unsubExternal = null;
+    state.project = null;
+    clearAssetCache();
+    state.siteDocument = null;
+    state.pendingSiteDocument = null;
+    state.pendingSiteEditorKind = null;
+    state.pageDocument = null;
+    state.page = null;
+    state.pageMeta = [];
+    state.currentMeta = null;
+    state.managedStatus = "missing";
+    state.visualEditable = true;
+    state.generatedCode = "";
+    state.rawCode = "";
+    state.frontmatter = "";
+    state.prefix = "";
+    state.suffix = "";
+    state.mode = "visual";
+    state.sections = [];
+    state.blocks = [];
+    state.selectedId = null;
+    state.selectedSectionId = null;
+    state.undo = [];
+    state.redo = [];
+    state.recoveredPageDraft = null;
+    state.recoveredSiteDraft = null;
+    cancelScheduledEditorDraftWrite(state);
+    clearChanges();
+    clearSiteChanges(state);
+    markSiteDirty(state, false);
+    markDirty(false);
+    editorView.classList.add("hidden");
+    $("view-start").classList.remove("hidden");
+    // Return focus to the active start tab rather than leaving it on <body>.
+    document.querySelector<HTMLElement>(".start-nav-item.active")?.focus();
+    renderLayers();
+    renderProjectOverview();
+    renderNextActions();
+    await refreshHomeDraftSummaries();
+    renderThemePlaceholder();
+    await renderRecent();
+    setStatus("");
+  } catch (error) {
+    setStatus(
+      `Could not close project: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  } finally {
+    closingProject = false;
+    editorView.removeAttribute("inert");
+    updateUndoRedoButtons();
   }
-  if (state.previewUrl) {
-    await window.zephus.closePreviewWindow();
-    resetPreviewState();
-  }
-  await window.zephus.stopWatch();
-  state.unsubExternal?.();
-  state.unsubExternal = null;
-  state.project = null;
-  clearAssetCache();
-  state.siteDocument = null;
-  state.pendingSiteDocument = null;
-  state.pendingSiteEditorKind = null;
-  state.pageDocument = null;
-  state.page = null;
-  state.pageMeta = [];
-  state.currentMeta = null;
-  state.managedStatus = "missing";
-  state.visualEditable = true;
-  state.generatedCode = "";
-  state.sections = [];
-  state.blocks = [];
-  state.selectedSectionId = null;
-  state.recoveredPageDraft = null;
-  state.recoveredSiteDraft = null;
-  cancelScheduledEditorDraftWrite(state);
-  clearChanges();
-  clearSiteChanges(state);
-  markSiteDirty(state, false);
-  markDirty(false);
-  $("view-editor").classList.add("hidden");
-  $("view-start").classList.remove("hidden");
-  // Return focus to the active start tab rather than leaving it on <body>.
-  document.querySelector<HTMLElement>(".start-nav-item.active")?.focus();
-  renderLayers();
-  renderProjectOverview();
-  renderNextActions();
-  await refreshHomeDraftSummaries();
-  renderThemePlaceholder();
-  await renderRecent();
-  setStatus("");
 }
 
 /* ---------- Undo / redo ---------- */
 
 function updateUndoRedoButtons(): void {
+  const undoButton = $("btn-undo") as HTMLButtonElement;
+  const redoButton = $("btn-redo") as HTMLButtonElement;
   syncUndoRedoToolbar({
     mode: state.mode,
     visualUndoDepth: state.undo.length,
     visualRedoDepth: state.redo.length,
     codeCanUndo: cm?.canUndo() ?? false,
     codeCanRedo: cm?.canRedo() ?? false,
-    undoButton: $("btn-undo") as HTMLButtonElement,
-    redoButton: $("btn-redo") as HTMLButtonElement,
+    undoButton,
+    redoButton,
   });
+  if (loadingPage || closingProject) {
+    undoButton.disabled = true;
+    redoButton.disabled = true;
+  }
 }
 
 function doUndo(): void {
@@ -5367,6 +6588,18 @@ function onKeydown(e: KeyboardEvent): void {
       active.tagName === "INPUT" ||
       active.tagName === "TEXTAREA" ||
       active.tagName === "SELECT");
+  const mod = e.ctrlKey || e.metaKey;
+
+  if (
+    (loadingPage || closingProject) &&
+    ((mod &&
+      ["s", "z", "y", "d", "c", "x", "v"].includes(e.key.toLowerCase())) ||
+      e.key === "Delete" ||
+      e.key === "Backspace")
+  ) {
+    e.preventDefault();
+    return;
+  }
 
   if ((e.key === "?" || e.key === "h" || e.key === "H") && !editing) {
     openHelpModal();
@@ -5374,9 +6607,15 @@ function onKeydown(e: KeyboardEvent): void {
     return;
   }
 
-  const mod = e.ctrlKey || e.metaKey;
+  if (!state.project) return;
+
   if (mod && e.key === "s") {
     void performSave();
+    e.preventDefault();
+    return;
+  }
+  if (mod && e.key === "f" && !editing) {
+    void openFindReplaceModal();
     e.preventDefault();
     return;
   }
@@ -5849,6 +7088,11 @@ function installEditorSmokeHook(): void {
       metaDescription: "",
       navVisible: true,
       isHome: true,
+      socialImage: "",
+      canonicalUrl: "",
+      noindex: false,
+      publishDate: "",
+      author: "",
     };
     state.pageMeta = state.currentMeta ? [state.currentMeta] : [];
     state.currentViewport = "desktop";
@@ -5937,6 +7181,7 @@ function init(): void {
   if (window.location.search.includes("smoke=1")) installEditorSmokeHook();
   window.refreshIcons = refreshIcons;
   initStartTabs();
+  initEditorWorkspaceTabs();
 
   // Prevent stray file drops from navigating the window away from the app.
   // Specific dropzones call preventDefault + stopPropagation to handle drops.
@@ -5992,6 +7237,7 @@ function init(): void {
   if (btnOpen) btnOpen.onclick = () => void chooseFolder();
 
   $("btn-new-page").onclick = () => void newPageFlow();
+  $("btn-find-replace").onclick = () => void openFindReplaceModal();
   $("btn-regen-nav").onclick = () => void regenerateNav();
   $("btn-site-shell").onclick = () => void openSiteShellModal();
   $("btn-design-system").onclick = () => void openDesignSystemModal();
@@ -6403,7 +7649,8 @@ function init(): void {
           }
           void deleteSection(section.id);
         },
-        onBlockAction: (block, action) => {
+        onBlockAction: (blockView, action) => {
+          const block = liveCanvasBlock(blockView);
           if (action === "up") {
             moveBlock(block, -1);
             return;
@@ -6433,7 +7680,9 @@ function init(): void {
           renderCanvas();
           renderProperties();
         },
-        onBlockKeyDown: (event, section, block, preview) => {
+        onBlockKeyDown: (event, sectionView, blockView, preview) => {
+          const section = liveCanvasSection(sectionView);
+          const block = liveCanvasBlock(blockView);
           if (event.target !== event.currentTarget) return;
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
@@ -6452,7 +7701,9 @@ function init(): void {
             renderProperties();
           }
         },
-        onBlockClick: (event, section, block, preview) => {
+        onBlockClick: (event, sectionView, blockView, preview) => {
+          const section = liveCanvasSection(sectionView);
+          const block = liveCanvasBlock(blockView);
           event.stopPropagation();
           if (isInlineEditing) return;
           const now = Date.now();
@@ -6477,6 +7728,7 @@ function init(): void {
           renderProperties();
         },
         onSectionDragStart: (event, section) => {
+          resetDragState();
           if (section.locked) {
             event.preventDefault();
             return;
@@ -6485,11 +7737,7 @@ function init(): void {
           event.dataTransfer?.setData("text/zephus-move-section", section.id);
           if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
         },
-        onSectionDragEnd: () => {
-          draggingSectionId = null;
-          sectionDropIndex = -1;
-          indicator?.remove();
-        },
+        onSectionDragEnd: resetDragState,
         onSectionDragOver: (event, sectionIndex, shell) => {
           if (!draggingSectionId) return;
           event.preventDefault();
@@ -6500,17 +7748,21 @@ function init(): void {
         },
         onSectionDrop: (event) => handleDrop(event),
         onSectionBodyDragOver: (event, sectionId, childCount) => {
+          if (draggingSectionId) return;
           event.preventDefault();
           dropSectionId = sectionId;
           if (childCount === 0) dropIndex = 0;
         },
         onBlockDragStart: (event, block) => {
+          resetDragState();
           if (block.locked) {
             event.preventDefault();
             return;
           }
           event.dataTransfer?.setData("text/zephus-move-block", block.id);
+          if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
         },
+        onBlockDragEnd: resetDragState,
         onBlockDragOver: (event, sectionId, blockIndex, shell, sectionBody) => {
           if (draggingSectionId) return;
           event.preventDefault();
@@ -6521,14 +7773,16 @@ function init(): void {
           showIndicator(sectionBody, shell, after);
         },
         onBlockDrop: (event) => handleDrop(event),
-        onPreviewRendered: (preview, block) => {
+        onPreviewRendered: (preview, blockView) => {
+          const block = liveCanvasBlock(blockView);
           makeCanvasLinksInert(preview);
           hydrateCanvasAssets(preview);
           if (TEXT_EDITABLE.includes(block.type) && !block.locked) {
             attachInlineEditors(preview, block);
           }
         },
-        onSyncSectionShell: (shell, section) => {
+        onSyncSectionShell: (shell, sectionView) => {
+          const section = liveCanvasSection(sectionView);
           syncResizeHandles(
             shell,
             { kind: "section", node: section },
@@ -6538,7 +7792,8 @@ function init(): void {
               !section.locked,
           );
         },
-        onSyncBlockShell: (shell, block, preview) => {
+        onSyncBlockShell: (shell, blockView, preview) => {
+          const block = liveCanvasBlock(blockView);
           syncResizeHandles(
             shell,
             { kind: "block", node: block },

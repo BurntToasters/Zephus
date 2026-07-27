@@ -48,13 +48,15 @@ function ThemeCard(props: { theme: ThemeCardEntry }) {
 
   createEffect(() => {
     runIconRefresh();
-    if (!headerRef || !frameRef) return;
+    const header = headerRef;
+    const frame = frameRef;
+    if (!header || !frame) return;
     const applyScale = () => {
-      frameRef!.style.transform = `scale(${headerRef!.offsetWidth / 1280})`;
+      frame.style.transform = `scale(${header.offsetWidth / 1280})`;
     };
     applyScale();
     const observer = new ResizeObserver(applyScale);
-    observer.observe(headerRef);
+    observer.observe(header);
     onCleanup(() => observer.disconnect());
   });
 
@@ -76,7 +78,9 @@ function ThemeCard(props: { theme: ThemeCardEntry }) {
       }}
     >
       <div
-        ref={headerRef}
+        ref={(element) => {
+          headerRef = element;
+        }}
         classList={{
           "theme-card-icon-header": true,
           "has-preview": !!props.theme.previewUrl,
@@ -89,7 +93,9 @@ function ThemeCard(props: { theme: ThemeCardEntry }) {
       >
         {props.theme.previewUrl ? (
           <iframe
-            ref={frameRef}
+            ref={(element) => {
+              frameRef = element;
+            }}
             class="theme-card-preview-frame"
             sandbox="allow-scripts allow-same-origin"
             title={`${props.theme.name} preview`}

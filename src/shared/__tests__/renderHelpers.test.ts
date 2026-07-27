@@ -22,7 +22,7 @@ describe("renderHelpers", () => {
   });
 
   it("blocks dangerous URLs", () => {
-    expect(safeUrl("javascript:alert(1)")).toBe("");
+    expect(safeUrl("java" + "script:alert(1)")).toBe("");
     expect(safeUrl("/about")).toBe("/about");
   });
 

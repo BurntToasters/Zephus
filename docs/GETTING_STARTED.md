@@ -5,6 +5,7 @@ Zephus is a local-first visual editor for Astro websites. Use it to create and e
 ## Before You Start
 
 **Important Requirements:**
+
 - **Node.js 22.12+** installed on your system
 - **Git** installed (Zephus can initialize a Git repo for you)
 - An empty folder for your new site, or an existing Zephus project
@@ -23,6 +24,7 @@ When you launch Zephus, you'll see the **Start** screen with several options:
 - **About & Licenses**: View app information
 
 Click **Explore Templates** to see the available themes:
+
 - **Documentation**: Clean, focused documentation pages
 - **Project**: Marketing / landing site template
 - **Blog**: Post list and article pages
@@ -47,48 +49,68 @@ Click **Explore Templates** to see the available themes:
 ### 3. Start Editing
 
 Once the project is created, Zephus opens the **Editor** view. You now have:
+
 - **Canvas** (center): Your page editor
-- **Page List** (left): All your site pages
-- **Inspector** (right): Properties for the current block
+- **Build rail** (left): Pages, blocks, and layers
+- **Inspector rail** (right): Properties for the current block, plus guidance, Git, and logs
 - **Toolbar** (top): Save, Preview, Publish buttons
 
 ## The Editor Interface
 
-### Left Sidebar: Page List
+### Left Sidebar: Pages, Build, Layers
 
-Your site's pages are listed here. You can:
+The left rail has three tabs, so only one panel is open at a time.
+
+**Pages** lists your site pages. You can:
+
 - **Click** a page name to edit it
 - **👁️ Icon**: Toggle visibility in site navigation
 - **⋯ Menu**: Rename, duplicate, or delete pages
 - **+ New Page**: Create a new page
 
+It also holds your site **Navigation** list and the **Site Shell** and **Design System** buttons.
+
+**Build** holds the block palette and the prebuilt section templates. Click or drag an item onto the canvas.
+
+**Layers** shows an outline of the current page: every section and the blocks inside it. Click an entry to select it on the canvas.
+
 ### Center: Canvas
 
 The main editing area where you compose your pages with content blocks. You can:
+
 - **+ Add Block**: Insert new content
 - **Drag blocks** up/down to reorder
 - **Click a block** to select and edit it
 - Toggle between **Visual** (drag-and-drop) and **Code** (raw Astro) modes
 
-### Right Sidebar: Inspector
+Double-click text on the canvas to edit it in place. With text selected, use **Ctrl/Cmd+B** for bold, **Ctrl/Cmd+I** for italic, and **Ctrl/Cmd+K** to add a link.
 
-Shows properties for the currently selected block:
+### Right Sidebar: Inspect, Guide, Git, Logs
+
+The right rail also uses tabs. Selecting a block on the canvas switches it to **Inspect** automatically.
+
+**Inspect** shows properties for the currently selected block:
+
 - Text content
 - Links (href)
 - Images (src, alt text)
 - Styling (CSS class)
 - Section properties (background, padding, etc.)
 
-Edit these fields to customize your content.
+Edit these fields to customize your content. In **Code** mode the Inspector shows no block fields, because the page you are editing is the raw source rather than the visual model.
+
+**Guide** lists suggested next actions and SEO checks. **Git** handles commit, push, and pull when the project is a Git repository. **Logs** shows dev server and build output.
 
 ### Top Toolbar
 
 **Left section:**
+
 - Mode switcher (Visual ↔ Code)
 - Project info
 - Dirty indicator (● = unsaved changes)
 
 **Right section:**
+
 - **Save**: Save your page
 - **Preview**: Start the development server and open a preview in your browser
 - **Publish**: Build for production
@@ -134,6 +156,7 @@ For advanced users or detached pages:
 ## Previewing Your Site
 
 Click **Preview** to:
+
 1. Start the Astro development server (`npm run dev`)
 2. Open your site in a web browser
 3. See live changes as you edit (with hot reload)
@@ -152,6 +175,7 @@ When you're ready to go live:
 3. Your site is output to the project's `dist/` folder (by default)
 
 From here, you can deploy to:
+
 - **Netlify Drop**: Drag and drop to deploy
 - **Cloudflare Pages**: Git-connected deployment
 - **GitHub Pages**: Host from your repository
@@ -159,7 +183,7 @@ From here, you can deploy to:
 
 ## Next Steps
 
-- **Learn all content blocks**: See [Block Reference](./BLOCK_REFERENCE.md) for the 20 available block types
+- **Learn all content blocks**: See [Block Reference](./BLOCK_REFERENCE.md) for the 21 available block types
 - **Customize your site design**: See [Workflows: Configure Design](./WORKFLOWS.md#configure-your-site-design)
 - **Configure the site header/footer**: See [Workflows: Site Shell](./WORKFLOWS.md#configure-site-shell-header-nav-footer)
 - **Manage reusable sections**: See [Workflows: Reusable Sections](./WORKFLOWS.md#save--reuse-sections)

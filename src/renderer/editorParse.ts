@@ -2,6 +2,16 @@
  * Parses managed page inner HTML into section/block trees (visual editor load path).
  */
 
+import type {
+  BlockStyle,
+  EditorBlock,
+  EditorBlockType,
+  SectionNode,
+} from "../main/types";
+
+type Block = EditorBlock;
+type BlockType = EditorBlockType;
+
 const DANGEROUS_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
 /** Coerces decoded dataset props to a flat string record. */
@@ -93,15 +103,25 @@ export function createEditorPageParser(deps: EditorParseDeps) {
       const storedStyle = parseZephusJsonAttr<BlockStyle>(
         el.dataset["zephusStyle"] ?? null,
       );
+      const storedId = el.dataset["zephusId"]?.trim();
       if (storedType && deps.knownBlockTypes.has(storedType) && storedProps) {
         blocks.push({
-          id: deps.uid(),
+          id: storedId || deps.uid(),
           type: storedType as BlockType,
           props: sanitizeStringRecord(storedProps),
           style: storedStyle,
           locked: el.dataset["zephusLocked"] === "true",
           raw: storedType === "html" ? el.outerHTML : undefined,
         });
+        continue;
+      }
+
+      if (
+        tag === "section" &&
+        !storedType &&
+        el.querySelector("[data-zephus-block]")
+      ) {
+        blocks.push(...parseInner(el.innerHTML));
         continue;
       }
 
@@ -203,6 +223,40 @@ export function createEditorPageParser(deps: EditorParseDeps) {
    * Parses managed inner HTML into SectionNodes, reconstructing section
    * wrappers from sectionToHtml as editable SectionNodes.
    */
+  function sectionNodeFromElement(el: HTMLElement, index: number): SectionNode {
+    const storedType = el.dataset["zephusBlock"];
+    const storedProps = parseZephusJsonAttr<Record<string, unknown>>(
+      el.dataset["zephusProps"] ?? null,
+    );
+    const storedStyle = parseZephusJsonAttr<BlockStyle>(
+      el.dataset["zephusStyle"] ?? null,
+    );
+    const storedId = el.dataset["zephusId"]?.trim();
+    if (storedType === "section" && storedProps) {
+      const props = sanitizeStringRecord(storedProps);
+      return {
+        id: storedId || deps.uid(),
+        type: "section",
+        label: props["label"] || `Section ${index + 1}`,
+        props: {
+          wrapper: props["wrapper"] ?? "none",
+          cls: props["cls"] ?? "",
+        },
+        style: storedStyle,
+        locked: el.dataset["zephusLocked"] === "true",
+        children: parseInner(el.innerHTML),
+      };
+    }
+    const cls = el.getAttribute("class") ?? "";
+    return {
+      id: storedId || deps.uid(),
+      type: "section",
+      label: `Section ${index + 1}`,
+      props: { wrapper: "box", cls },
+      children: parseInner(el.innerHTML),
+    };
+  }
+
   function parseSections(inner: string): SectionNode[] {
     const doc = new DOMParser().parseFromString(
       `<div id="z-root">${inner}</div>`,
@@ -211,12 +265,19 @@ export function createEditorPageParser(deps: EditorParseDeps) {
     const root = doc.getElementById("z-root");
     if (!root) return [deps.createFallbackSection()];
 
-    const hasWrapper = Array.from(root.children).some(
-      (el) =>
-        el.tagName.toLowerCase() === "section" &&
-        !el.getAttribute("data-zephus-block"),
+    const topElements = Array.from(root.children)
+      .map((element) => element as HTMLElement)
+      .filter((element) => element.tagName.toLowerCase() !== "style");
+
+    const hasManagedSection = topElements.some(
+      (el) => el.dataset["zephusBlock"] === "section",
     );
-    if (!hasWrapper) {
+    const hasLegacySectionWrapper = topElements.some(
+      (el) =>
+        el.tagName.toLowerCase() === "section" && !el.dataset["zephusBlock"],
+    );
+
+    if (!hasManagedSection && !hasLegacySectionWrapper) {
       const sec = deps.createFallbackSection();
       sec.children = parseInner(inner);
       return [sec];
@@ -259,16 +320,13 @@ export function createEditorPageParser(deps: EditorParseDeps) {
       }
       const el = node as HTMLElement;
       const tag = el.tagName.toLowerCase();
-      if (tag === "section" && !el.dataset["zephusBlock"]) {
+      if (tag === "style") continue;
+      if (
+        tag === "section" &&
+        (el.dataset["zephusBlock"] === "section" || !el.dataset["zephusBlock"])
+      ) {
         flushLoose();
-        const cls = el.getAttribute("class") ?? "";
-        sections.push({
-          id: deps.uid(),
-          type: "section",
-          label: `Section ${sections.length + 1}`,
-          props: { wrapper: "box", cls },
-          children: parseInner(el.innerHTML),
-        });
+        sections.push(sectionNodeFromElement(el, sections.length));
       } else {
         looseBlocks.push(...parseInner(el.outerHTML));
       }

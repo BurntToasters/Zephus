@@ -48,7 +48,7 @@ describe("editorPageModel", () => {
       page: "old.astro",
       title: "T",
       sections: [],
-    } as PageDocument;
+    } as unknown as PageDocument;
     const doc = buildPageDocumentFromSections(base, "index.astro", [
       {
         id: "s1",

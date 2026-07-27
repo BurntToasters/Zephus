@@ -62,4 +62,20 @@ describe("editorParse DOM", () => {
     expect(sections[0]!.props.cls).toBe("wrap");
     expect(sections[0]!.children[0]?.type).toBe("text");
   });
+
+  it("parses managed section metadata (data-zephus-block=section)", () => {
+    const props = encodeURIComponent(
+      JSON.stringify({ wrapper: "none", cls: "hero", label: "Hero" }),
+    );
+    const sections = parser.parseSections(
+      `<section data-zephus-id="sec-1" data-zephus-block="section" data-zephus-props="${props}"><h1>Title</h1></section><section data-zephus-id="sec-2" data-zephus-block="section" data-zephus-props="${encodeURIComponent(JSON.stringify({ wrapper: "box", cls: "" }))}"><p>More</p></section>`,
+    );
+    expect(sections).toHaveLength(2);
+    expect(sections[0]!.id).toBe("sec-1");
+    expect(sections[0]!.label).toBe("Hero");
+    expect(sections[0]!.props.wrapper).toBe("none");
+    expect(sections[0]!.props.cls).toBe("hero");
+    expect(sections[0]!.children[0]?.type).toBe("heading");
+    expect(sections[1]!.props.wrapper).toBe("box");
+  });
 });

@@ -39,9 +39,9 @@ describe("EditorBlockType sync", () => {
     expect(renderer).toEqual(main);
   });
 
-  it("includes all 20 known block types", () => {
+  it("includes all 21 known block types", () => {
     const main = extractBlockTypes(mainTypes);
-    expect(main).toHaveLength(20);
+    expect(main).toHaveLength(21);
     expect(main).toEqual(
       [
         "accordion",
@@ -57,6 +57,7 @@ describe("EditorBlockType sync", () => {
         "html",
         "image",
         "list",
+        "postlist",
         "pricing",
         "quote",
         "section",

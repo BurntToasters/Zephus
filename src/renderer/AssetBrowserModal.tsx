@@ -17,6 +17,9 @@ export interface AssetBrowserModalState {
   onDropFiles: (files: File[]) => void;
   onSelect: (webPath: string) => void;
   onRendered?: () => void;
+  /** Omitted when the browser is opened purely to pick a file. */
+  onRename?: (asset: AssetBrowserModalEntry) => void;
+  onDelete?: (asset: AssetBrowserModalEntry) => void;
 }
 
 const CATEGORY_ICONS: Record<AssetEntry["category"], string> = {
@@ -64,25 +67,56 @@ export function renderAssetBrowserModalBody(
             <p class="muted">{state.emptyMessage}</p>
           ) : (
             <For each={state.assets}>
-              {(asset) => (
-                <button
-                  type="button"
-                  class="asset-tile"
-                  title={`${asset.fileName} · ${formatBytes(asset.size)}`}
-                  onClick={() => state.onSelect(asset.webPath)}
-                >
-                  <div class="asset-thumb">
-                    {asset.previewSrc ? (
-                      <img src={asset.previewSrc} alt={asset.fileName} />
-                    ) : (
-                      <i data-lucide={CATEGORY_ICONS[asset.category]} />
-                    )}
+              {(asset) => {
+                const displayName =
+                  asset.fileName.split("/").pop() ?? asset.fileName;
+                return (
+                  <div class="asset-tile-wrap">
+                    <button
+                      type="button"
+                      class="asset-tile"
+                      title={`${asset.fileName} · ${formatBytes(asset.size)}`}
+                      onClick={() => state.onSelect(asset.webPath)}
+                    >
+                      <div class="asset-thumb">
+                        {asset.previewSrc ? (
+                          <img src={asset.previewSrc} alt={asset.fileName} />
+                        ) : (
+                          <i data-lucide={CATEGORY_ICONS[asset.category]} />
+                        )}
+                      </div>
+                      <span class="asset-name">{displayName}</span>
+                      <span class="asset-size">{formatBytes(asset.size)}</span>
+                    </button>
+                    {state.onRename || state.onDelete ? (
+                      <div class="asset-tile-actions">
+                        {state.onRename ? (
+                          <button
+                            type="button"
+                            class="mini-btn"
+                            title={`Rename ${displayName}`}
+                            aria-label={`Rename ${displayName}`}
+                            onClick={() => state.onRename?.(asset)}
+                          >
+                            <i data-lucide="pencil" />
+                          </button>
+                        ) : null}
+                        {state.onDelete ? (
+                          <button
+                            type="button"
+                            class="mini-btn danger"
+                            title={`Delete ${displayName}`}
+                            aria-label={`Delete ${displayName}`}
+                            onClick={() => state.onDelete?.(asset)}
+                          >
+                            <i data-lucide="trash-2" />
+                          </button>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </div>
-                  <span class="asset-name">
-                    {asset.fileName.split("/").pop() ?? asset.fileName}
-                  </span>
-                </button>
-              )}
+                );
+              }}
             </For>
           )}
         </div>

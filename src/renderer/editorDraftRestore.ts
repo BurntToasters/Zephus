@@ -19,9 +19,7 @@ export function formatPageDraftRestoreMessage(
 }
 
 export function formatSiteDraftRestoreMessage(savedAt: string): string {
-  return `Zephus found unsaved site-level changes from ${new Date(
-    savedAt,
-  ).toLocaleString()}. Restore them?`;
+  return `Zephus found unsaved site-level changes from ${new Date(savedAt).toLocaleString()}. Restore them?`;
 }
 
 export function siteDraftContentMatchesSaved(
@@ -32,6 +30,13 @@ export function siteDraftContentMatchesSaved(
 }
 
 export type DraftRestoreChoice = "restore" | "discard" | "cancel";
+
+export interface PageDraftRestoreOutcome {
+  restored: boolean;
+  restoredContent?: string;
+  restoredDraft?: DraftData;
+  cleanupWarning?: string;
+}
 
 export interface EditorDraftRestoreDeps {
   getState: () => EditorSessionState;
@@ -44,32 +49,41 @@ export interface EditorDraftRestoreDeps {
   zephus: Pick<Window["zephus"], "readDraft" | "clearDraft">;
 }
 
+function cleanupWarning(scope: "page" | "site", error?: string): string {
+  return `The ${scope} recovery draft could not be discarded: ${error ?? "unknown error"}. It will remain available next time.`;
+}
+
 export function createEditorDraftRestoreActions(deps: EditorDraftRestoreDeps) {
-  async function maybeRestoreSiteDraft(): Promise<void> {
+  async function maybeRestoreSiteDraft(): Promise<string | null> {
     const state = deps.getState();
-    if (!state.project || !state.siteDocument) return;
+    if (!state.project || !state.siteDocument) return null;
     const draft = await deps.zephus.readDraft(
       state.project.path,
       "site",
       SITE_DRAFT_TARGET,
     );
-    if (!draft.ok || !draft.draft?.content) return;
+    if (!draft.ok || !draft.draft?.content) return null;
     if (siteDraftContentMatchesSaved(draft.draft.content, state.siteDocument)) {
-      return;
+      return null;
     }
     const choice = await deps.confirmRestoreDraft(
       "Restore Site Draft",
       formatSiteDraftRestoreMessage(draft.draft.savedAt),
     );
     if (choice === "discard") {
-      await deps.zephus.clearDraft(
+      const cleared = await deps.zephus.clearDraft(
         state.project.path,
         "site",
         SITE_DRAFT_TARGET,
       );
-      return;
+      if (!cleared.ok) {
+        const warning = cleanupWarning("site", cleared.error);
+        deps.setStatus(warning);
+        return warning;
+      }
+      return null;
     }
-    if (choice !== "restore") return;
+    if (choice !== "restore") return null;
     try {
       const restored = JSON.parse(draft.draft.content) as SiteDocument;
       state.pendingSiteDocument = restored;
@@ -81,12 +95,19 @@ export function createEditorDraftRestoreActions(deps: EditorDraftRestoreDeps) {
       deps.setStatus(
         `Recovered site settings draft from ${new Date(draft.draft.savedAt).toLocaleString()}.`,
       );
+      return null;
     } catch {
-      await deps.zephus.clearDraft(
+      const cleared = await deps.zephus.clearDraft(
         state.project.path,
         "site",
         SITE_DRAFT_TARGET,
       );
+      if (!cleared.ok) {
+        const warning = cleanupWarning("site", cleared.error);
+        deps.setStatus(warning);
+        return warning;
+      }
+      return null;
     }
   }
 
@@ -94,36 +115,40 @@ export function createEditorDraftRestoreActions(deps: EditorDraftRestoreDeps) {
     page: string,
     pageLabel: string,
     rawCode: string,
-    options: {
-      visualEditable: boolean;
-      applyRestoredSource: (content: string) => void;
-    },
-  ): Promise<boolean> {
+  ): Promise<PageDraftRestoreOutcome> {
     const state = deps.getState();
-    if (!state.project) return false;
+    if (!state.project) return { restored: false };
     const draft = await deps.zephus.readDraft(state.project.path, "page", page);
-    if (!draft.ok || !draft.draft?.content) return false;
-    if (draft.draft.content === rawCode) return false;
+    if (!draft.ok || !draft.draft?.content) return { restored: false };
+    if (draft.draft.content === rawCode) return { restored: false };
 
     const choice = await deps.confirmRestoreDraft(
       "Restore Page Draft",
       formatPageDraftRestoreMessage(pageLabel, draft.draft.savedAt),
     );
     if (choice === "discard") {
-      await deps.zephus.clearDraft(state.project.path, "page", page);
-      return false;
+      const cleared = await deps.zephus.clearDraft(
+        state.project.path,
+        "page",
+        page,
+      );
+      if (!cleared.ok) {
+        const warning = cleanupWarning("page", cleared.error);
+        deps.setStatus(warning);
+        return { restored: false, cleanupWarning: warning };
+      }
+      return { restored: false };
     }
-    if (choice !== "restore") return false;
+    if (choice !== "restore") return { restored: false };
 
-    state.rawCode = draft.draft.content;
-    state.recoveredPageDraft = draft.draft;
-    if (options.visualEditable) {
-      options.applyRestoredSource(draft.draft.content);
-    }
     deps.setStatus(
       `Recovered draft from ${new Date(draft.draft.savedAt).toLocaleString()}.`,
     );
-    return true;
+    return {
+      restored: true,
+      restoredContent: draft.draft.content,
+      restoredDraft: draft.draft,
+    };
   }
 
   return { maybeRestoreSiteDraft, maybeRestorePageDraft };
