@@ -46,6 +46,175 @@ export function plainTextToHtml(text: string): string {
   return escapeHtml(text).replace(/\n/g, "<br />");
 }
 
+/* ---------- Inline rich text ---------- */
+
+/** Inline tags Zephus stores in text props, mapped to their canonical form. */
+const RICH_TAG_ALIASES: Record<string, string> = {
+  b: "strong",
+  strong: "strong",
+  i: "em",
+  em: "em",
+  u: "u",
+  s: "s",
+  del: "s",
+  strike: "s",
+  code: "code",
+};
+
+/**
+ * True when a value contains inline markup Zephus itself wrote. Values without
+ * it are rendered by `plainTextToHtml`, so text authored before inline
+ * formatting existed (including literal entity-looking text) is untouched.
+ */
+const RICH_MARKUP_PATTERN =
+  /<\/?(?:strong|b|em|i|u|s|del|strike|code|br|a)\b[^>]*>/i;
+
+export function hasRichTextMarkup(value: string): boolean {
+  return RICH_MARKUP_PATTERN.test(value ?? "");
+}
+
+const ENTITY_PATTERN =
+  /^&(?:[a-zA-Z][a-zA-Z0-9]{1,30}|#\d{1,7}|#[xX][0-9a-fA-F]{1,6});/;
+
+/**
+ * Escapes text that may already contain entities produced by the editor, so
+ * `&lt;` stays a literal `<` instead of becoming `&amp;lt;`.
+ */
+function escapeRichText(value: string): string {
+  let out = "";
+  for (let i = 0; i < value.length; i += 1) {
+    const char = value[i] as string;
+    if (char === "&") {
+      if (ENTITY_PATTERN.test(value.slice(i))) {
+        const end = value.indexOf(";", i);
+        out += value.slice(i, end + 1);
+        i = end;
+        continue;
+      }
+      out += "&amp;";
+    } else if (char === "<") {
+      out += "&lt;";
+    } else if (char === ">") {
+      out += "&gt;";
+    } else if (char === "\n") {
+      out += "<br />";
+    } else {
+      out += char;
+    }
+  }
+  return out;
+}
+
+function readAttr(attrs: string, name: string): string {
+  const match = attrs.match(
+    new RegExp(`${name}\\s*=\\s*("([^"]*)"|'([^']*)')`, "i"),
+  );
+  return match?.[2] ?? match?.[3] ?? "";
+}
+
+export interface RichTextOptions {
+  /**
+   * Set false where the result is placed inside an `<a>` (button, CTA, pricing
+   * button); nested anchors are invalid HTML.
+   */
+  allowLinks?: boolean;
+}
+
+/**
+ * Renders a text prop that may contain a small inline formatting subset
+ * (`strong`, `em`, `u`, `s`, `code`, `br`, `a`). Everything else is escaped, so
+ * this is safe for untrusted values: no other tags, no attributes besides a
+ * `safeUrl`-checked `href`, and never any event handlers.
+ *
+ * Mirrored usage between the editor canvas and the build output — both call
+ * this same function, so rendered markup stays byte-identical.
+ */
+export function richTextToHtml(
+  text: string,
+  options: RichTextOptions = {},
+): string {
+  const value = text ?? "";
+  if (!hasRichTextMarkup(value)) return plainTextToHtml(value);
+
+  const allowLinks = options.allowLinks !== false;
+  const open: string[] = [];
+  let out = "";
+  let index = 0;
+  let skippedAnchors = 0;
+
+  const closeThrough = (tag: string): void => {
+    if (!open.includes(tag)) return;
+    for (;;) {
+      const current = open.pop();
+      if (!current) break;
+      out += `</${current}>`;
+      if (current === tag) break;
+    }
+  };
+
+  while (index < value.length) {
+    const lt = value.indexOf("<", index);
+    if (lt === -1) {
+      out += escapeRichText(value.slice(index));
+      break;
+    }
+    out += escapeRichText(value.slice(index, lt));
+    const gt = value.indexOf(">", lt);
+    if (gt === -1) {
+      out += escapeRichText(value.slice(lt));
+      break;
+    }
+
+    const rawTag = value.slice(lt + 1, gt);
+    index = gt + 1;
+    const parsed = rawTag.match(/^\s*(\/?)\s*([a-zA-Z][a-zA-Z0-9]*)([\s\S]*)$/);
+    if (!parsed) {
+      out += escapeRichText(`<${rawTag}>`);
+      continue;
+    }
+    const closing = parsed[1] === "/";
+    const name = (parsed[2] ?? "").toLowerCase();
+    const attrs = parsed[3] ?? "";
+
+    if (name === "br") {
+      if (!closing) out += "<br />";
+      continue;
+    }
+
+    if (name === "a") {
+      if (!allowLinks) continue;
+      if (closing) {
+        if (skippedAnchors > 0) skippedAnchors -= 1;
+        else closeThrough("a");
+        continue;
+      }
+      if (open.includes("a")) {
+        // Nested anchors are invalid; keep the inner text, drop the tag.
+        skippedAnchors += 1;
+        continue;
+      }
+      const href = safeUrl(readAttr(attrs, "href"));
+      out += `<a href="${escapeAttr(href || "#")}">`;
+      open.push("a");
+      continue;
+    }
+
+    const mapped = RICH_TAG_ALIASES[name];
+    if (!mapped) {
+      out += escapeRichText(`<${rawTag}>`);
+      continue;
+    }
+    if (closing) closeThrough(mapped);
+    else {
+      out += `<${mapped}>`;
+      open.push(mapped);
+    }
+  }
+
+  while (open.length > 0) out += `</${open.pop()}>`;
+  return out;
+}
+
 export function splitLines(raw: string): string[] {
   return (raw ?? "")
     .split(/\r?\n/)
@@ -65,7 +234,7 @@ export function renderListItems(items: string): string {
     .split(/\r?\n/)
     .map((item) => item.trim())
     .filter(Boolean)
-    .map((item) => `<li>${plainTextToHtml(item)}</li>`)
+    .map((item) => `<li>${richTextToHtml(item)}</li>`)
     .join("");
 }
 

@@ -7,6 +7,8 @@ import { readGlobalSettings } from "./settings";
 import { buildSpawnEnv } from "./nodeCheck";
 import { npmCommand } from "./npmCommand";
 import { resolveProjectRelativeDir } from "./projectPaths";
+import { detectAstro } from "./project";
+import { ensureVisualSchema } from "./schema";
 
 const execFileAsync = promisify(execFile);
 
@@ -26,6 +28,19 @@ export async function buildAndReveal(
     return { ok: false, error: "Invalid project path." };
   }
   try {
+    // Astro builds whatever .astro files are on disk. Refresh managed pages
+    // from their sidecars first, so a page that is stale relative to its saved
+    // state (or to a newer generator) is never what gets published.
+    const refreshed = ensureVisualSchema(
+      projectPath,
+      detectAstro(projectPath).pagesDir,
+      undefined,
+      { refreshManagedPages: true },
+    );
+    if (!refreshed.ok) {
+      return { ok: false, error: refreshed.error ?? "Schema refresh failed." };
+    }
+
     const env = await buildSpawnEnv(readGlobalSettings().customNodePath);
     const npm = npmCommand(["run", "build"], process.platform, env);
     await execFileAsync(npm.command, npm.args, {

@@ -7,6 +7,7 @@ import {
   deletePageSchema,
   duplicatePageSchema,
   ensureVisualSchema,
+  isNotFoundSlug,
   listPageDocuments,
   normalizePageSlug,
   pagePathFromSlug,
@@ -43,6 +44,11 @@ export function readPageMetadata(
       metaDescription: doc.metaDescription,
       navVisible: doc.navVisible,
       isHome: doc.isHome,
+      socialImage: doc.socialImage,
+      canonicalUrl: doc.canonicalUrl,
+      noindex: doc.noindex,
+      publishDate: doc.publishDate,
+      author: doc.author,
     };
   }
   const slug =
@@ -65,6 +71,11 @@ export function readPageMetadata(
     metaDescription: "",
     navVisible: true,
     isHome: route === "/",
+    socialImage: "",
+    canonicalUrl: "",
+    noindex: false,
+    publishDate: "",
+    author: "",
   };
 }
 
@@ -91,6 +102,11 @@ export function listPageMetadata(
       metaDescription: doc.metaDescription,
       navVisible: doc.navVisible,
       isHome: doc.isHome,
+      socialImage: doc.socialImage,
+      canonicalUrl: doc.canonicalUrl,
+      noindex: doc.noindex,
+      publishDate: doc.publishDate,
+      author: doc.author,
     })),
   };
 }
@@ -105,13 +121,23 @@ export function writePageMetadata(
   if (!current.ok || !current.pageDocument) {
     return { ok: false, error: current.error ?? "Page schema not found." };
   }
+  const reservedNotFound = isNotFoundSlug(current.pageDocument.slug);
   const next = {
     ...current.pageDocument,
     title: partial.title ?? current.pageDocument.title,
     navLabel: partial.navLabel ?? current.pageDocument.navLabel,
     metaDescription:
       partial.metaDescription ?? current.pageDocument.metaDescription,
-    navVisible: partial.navVisible ?? current.pageDocument.navVisible,
+    navVisible: reservedNotFound
+      ? false
+      : (partial.navVisible ?? current.pageDocument.navVisible),
+    socialImage: partial.socialImage ?? current.pageDocument.socialImage,
+    canonicalUrl: partial.canonicalUrl ?? current.pageDocument.canonicalUrl,
+    noindex: reservedNotFound
+      ? true
+      : (partial.noindex ?? current.pageDocument.noindex),
+    publishDate: partial.publishDate ?? current.pageDocument.publishDate,
+    author: partial.author ?? current.pageDocument.author,
   };
   const saved = writePageDocument(projectPath, pagesDir, next);
   return saved.ok ? { ok: true } : { ok: false, error: saved.error };
@@ -179,12 +205,24 @@ export function renamePage(
       return moved;
     }
     if (current.ok && current.pageDocument) {
+      const nextIsNotFound = isNotFoundSlug(nextSlug);
+      const previousWasNotFound = isNotFoundSlug(current.pageDocument.slug);
       const saved = writePageDocument(projectPath, pagesDir, {
         ...current.pageDocument,
         page: nextRel,
         slug: nextSlug,
         route: nextSlug === "index" ? "/" : `/${nextSlug}`,
         isHome: nextSlug === "index",
+        navVisible: nextIsNotFound
+          ? false
+          : previousWasNotFound
+            ? true
+            : current.pageDocument.navVisible,
+        noindex: nextIsNotFound
+          ? true
+          : previousWasNotFound
+            ? false
+            : current.pageDocument.noindex,
       });
       if (!saved.ok) {
         fs.writeFileSync(from, originalSource, "utf8");

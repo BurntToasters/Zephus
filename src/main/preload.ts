@@ -2,6 +2,10 @@ import { contextBridge, ipcRenderer, webUtils } from "electron";
 import { IPC } from "./ipcChannels";
 import type {
   AssetListResult,
+  AssetMutationResult,
+  AssetUsageResult,
+  FindReplaceResult,
+  ReplaceAllResult,
   DraftResult,
   DraftScope,
   DraftSummaryResult,
@@ -240,6 +244,62 @@ const api = {
 
   /** Resolves the absolute filesystem path of a drag-and-dropped File. */
   getDroppedFilePath: (file: File): string => webUtils.getPathForFile(file),
+
+  searchPages: (
+    projectPath: string,
+    pagesDir: string,
+    query: string,
+    options: { caseSensitive?: boolean; wholeWord?: boolean },
+  ): Promise<FindReplaceResult> =>
+    ipcRenderer.invoke(IPC.searchPages, projectPath, pagesDir, query, options),
+
+  replaceAllInPages: (
+    projectPath: string,
+    pagesDir: string,
+    query: string,
+    replacement: string,
+    options: { caseSensitive?: boolean; wholeWord?: boolean },
+    onlyPages?: string[],
+  ): Promise<ReplaceAllResult> =>
+    ipcRenderer.invoke(
+      IPC.replaceAll,
+      projectPath,
+      pagesDir,
+      query,
+      replacement,
+      options,
+      onlyPages,
+    ),
+
+  deleteAsset: (
+    projectPath: string,
+    publicDir: string,
+    webPath: string,
+  ): Promise<AssetMutationResult> =>
+    ipcRenderer.invoke(IPC.assetDelete, projectPath, publicDir, webPath),
+
+  renameAsset: (
+    projectPath: string,
+    publicDir: string,
+    pagesDir: string,
+    webPath: string,
+    nextName: string,
+  ): Promise<AssetMutationResult> =>
+    ipcRenderer.invoke(
+      IPC.assetRename,
+      projectPath,
+      publicDir,
+      pagesDir,
+      webPath,
+      nextName,
+    ),
+
+  findAssetUsage: (
+    projectPath: string,
+    pagesDir: string,
+    webPath: string,
+  ): Promise<AssetUsageResult> =>
+    ipcRenderer.invoke(IPC.assetUsage, projectPath, pagesDir, webPath),
 
   listAssets: (
     projectPath: string,

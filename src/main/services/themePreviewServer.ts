@@ -182,6 +182,8 @@ export function ensureThemePreviewServer(
 
 export function stopThemePreviewServer(): void {
   if (!current) return;
-  current.server.close();
+  const { server } = current;
   current = null;
+  server.close();
+  server.closeAllConnections();
 }

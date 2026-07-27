@@ -783,6 +783,58 @@ function ContentGroup(props: { state: BlockPropertiesState }) {
           />
         </Group>
       );
+    case "postlist": {
+      const toggle = (
+        label: string,
+        prop: string,
+        defaultOn: boolean,
+      ): ReturnType<typeof SelectField> => (
+        <SelectField
+          label={label}
+          value={
+            (value(prop) || (defaultOn ? "true" : "false")) === "true"
+              ? "true"
+              : "false"
+          }
+          options={[
+            { value: "true", label: "Show" },
+            { value: "false", label: "Hide" },
+          ]}
+          onFocus={state.onFocus}
+          onBlur={state.onBlur}
+          onChange={(next) => state.onPropChange(prop, next, true)}
+        />
+      );
+      return (
+        <Group title="Content">
+          <TextField
+            label="Folder (route prefix)"
+            value={value("folder") || "/posts"}
+            onFocus={state.onFocus}
+            onBlur={state.onBlur}
+            onChange={(next) => state.onPropChange("folder", next)}
+          />
+          <TextField
+            label="Maximum posts (0 for all)"
+            value={value("limit") || "5"}
+            onFocus={state.onFocus}
+            onBlur={state.onBlur}
+            onChange={(next) => state.onPropChange("limit", next)}
+          />
+          {toggle("Publish date", "showDate", true)}
+          {toggle("Author", "showAuthor", false)}
+          {toggle("Description", "showExcerpt", true)}
+          {toggle("Share image", "showImage", false)}
+          <TextField
+            label="Text when empty"
+            value={value("emptyText")}
+            onFocus={state.onFocus}
+            onBlur={state.onBlur}
+            onChange={(next) => state.onPropChange("emptyText", next)}
+          />
+        </Group>
+      );
+    }
     default:
       return null;
   }

@@ -262,12 +262,23 @@ export function createModalController(refreshIcons: () => void) {
       placeholder?: string;
       value?: string;
       confirmLabel?: string;
+      /** Extra context shown above the field (e.g. what the change affects). */
+      description?: string;
     } = {},
   ): Promise<string | null> {
     const parent = isModalOpen() ? captureFrame() : null;
     return new Promise((resolve) => {
+      const container = document.createElement("div");
+      container.className = "meta-form";
+      if (opts.description) {
+        const note = document.createElement("p");
+        note.className = "muted";
+        note.textContent = opts.description;
+        container.appendChild(note);
+      }
       const wrap = document.createElement("label");
       wrap.className = "meta-field";
+      container.appendChild(wrap);
       if (opts.label) {
         const span = document.createElement("span");
         span.textContent = opts.label;
@@ -294,7 +305,7 @@ export function createModalController(refreshIcons: () => void) {
           finish(input.value.trim() || null);
         }
       });
-      showModalNode(title, wrap, [
+      showModalNode(title, container, [
         { label: "Cancel", kind: "ghost", onClick: () => finish(null) },
         {
           label: opts.confirmLabel ?? "OK",

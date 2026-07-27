@@ -4,6 +4,7 @@
 // TODO: Split UI rendering from state management (see editorCommands, editorGit, editorSerialize, editorBlockRender, editorSave, editorParse, editorPageModel, editorUndo, editorDraft, editorInspector).
 
 import { createCodeEditor, type CodeEditor } from "./codeEditor";
+import { richTextFromElement } from "./inlineRichText";
 import {
   activateWorkspaceTab,
   initEditorWorkspaceTabs,
@@ -113,9 +114,11 @@ import {
   BarChart,
   Tag,
   Megaphone,
+  Newspaper,
   X,
   Info,
 } from "lucide";
+import type { RenderPostEntry } from "../shared/blockRender";
 import { renderHelpModal } from "./HelpModal";
 import { mountAboutLicenses, updateAboutLicenses } from "./AboutLicenses";
 import {
@@ -140,6 +143,7 @@ import {
   renderThemePreviewModalBody,
   renderUnsavedWorkSummaryModalBody,
 } from "./MiscModals";
+import { renderFindReplaceModalBody } from "./FindReplaceModal";
 import { mountNextActions, updateNextActions } from "./NextActions";
 import { LinkPickerKind, renderLinkPickerModal } from "./LinkPickerModal";
 import {
@@ -237,6 +241,7 @@ const PALETTE: { type: BlockType; label: string }[] = [
   { type: "stats", label: "Stats" },
   { type: "pricing", label: "Pricing" },
   { type: "cta", label: "Call to Action" },
+  { type: "postlist", label: "Post List" },
   { type: "html", label: "HTML" },
 ];
 
@@ -260,6 +265,7 @@ const PALETTE_ICONS: Record<BlockType, string> = {
   stats: "bar-chart",
   pricing: "tag",
   cta: "megaphone",
+  postlist: "newspaper",
   html: "code-xml",
 };
 
@@ -305,6 +311,7 @@ function refreshIcons(): void {
       BarChart,
       Tag,
       Megaphone,
+      Newspaper,
       X,
       Info,
     },
@@ -1212,6 +1219,57 @@ function renderNextActions(): void {
     cards.push({
       title: "Add page meta description",
       body: "This page is missing a meta description. Adding one helps search engines summarize your page and improves click-through rates.",
+      actions: [
+        {
+          label: "Page Settings",
+          onClick: () => {
+            if (state.page) void openPageMetaModal(state.page);
+          },
+        },
+      ],
+    });
+  }
+
+  // SEO: no site URL means canonical tags, social previews, and sitemap.xml
+  // cannot be generated at all, so it outranks per-page SEO advice.
+  const siteForSeo = effectiveSiteDocument(state);
+  if (siteForSeo && !siteForSeo.siteUrl.trim()) {
+    cards.push({
+      title: "Set your site address",
+      body: "Without a site URL, Zephus cannot add canonical links, social share previews, or generate sitemap.xml for search engines.",
+      actions: [
+        { label: "Open Site Shell", onClick: () => void openSiteShellModal() },
+      ],
+    });
+  }
+
+  // A 404 page is what visitors see after a broken or outdated link; Astro
+  // serves src/pages/404.astro automatically once it exists.
+  if (
+    state.pageMeta.length > 0 &&
+    !state.pageMeta.some((entry) => entry.slug === "404")
+  ) {
+    cards.push({
+      title: "Add a 404 page",
+      body: "Visitors who follow a broken link currently get your host's default error page. A 404 page keeps them on your site with a way back.",
+      actions: [
+        {
+          label: "Create 404 Page",
+          onClick: () => void createNotFoundPage(),
+        },
+      ],
+    });
+  }
+
+  // A 404 page is meant to be noindex, so flagging it would be noise.
+  if (
+    state.page &&
+    state.currentMeta?.noindex &&
+    state.currentMeta.slug !== "404"
+  ) {
+    cards.push({
+      title: "This page is hidden from search engines",
+      body: "It sends a noindex tag and is left out of sitemap.xml. Remove that in Page Settings when the page is ready to be found.",
       actions: [
         {
           label: "Page Settings",
@@ -2296,6 +2354,9 @@ async function openSiteShellModal(): Promise<void> {
     ctaHref: nextSite.shell.navCtaHref,
     footerHtml: nextSite.shell.footerHtml,
     customHeadHtml: nextSite.shell.customHeadHtml,
+    siteUrl: nextSite.siteUrl ?? "",
+    language: nextSite.language ?? "en",
+    faviconPath: nextSite.faviconPath ?? "",
   };
 
   const wrap = document.createElement("div");
@@ -2339,6 +2400,28 @@ async function openSiteShellModal(): Promise<void> {
       onCustomHeadHtmlChange: (value) => {
         shellState.customHeadHtml = value;
       },
+      siteUrl: shellState.siteUrl,
+      language: shellState.language,
+      faviconPath: shellState.faviconPath,
+      onSiteUrlChange: (value) => {
+        shellState.siteUrl = value;
+      },
+      onLanguageChange: (value) => {
+        shellState.language = value;
+      },
+      onFaviconPathChange: (value) => {
+        shellState.faviconPath = value;
+      },
+      onPickFavicon: () => {
+        openAssetBrowser({
+          filter: "images",
+          title: "Choose Favicon",
+          onSelect: (webPath) => {
+            shellState.faviconPath = webPath;
+            mountShellModal();
+          },
+        });
+      },
     });
   mountShellModal();
 
@@ -2378,6 +2461,16 @@ async function openSiteShellModal(): Promise<void> {
           nextSite.shell.navCtaHref = shellState.ctaHref.trim() || "#";
           nextSite.shell.footerHtml = shellState.footerHtml.trim();
           nextSite.shell.customHeadHtml = shellState.customHeadHtml.trim();
+          const normalizedSiteUrl = normalizeSiteUrl(shellState.siteUrl);
+          if (normalizedSiteUrl === null) {
+            setStatus(
+              "Site URL must be a full http(s) address, for example https://example.com.",
+            );
+            return;
+          }
+          nextSite.siteUrl = normalizedSiteUrl;
+          nextSite.language = shellState.language.trim() || "en";
+          nextSite.faviconPath = shellState.faviconPath.trim();
           closeModal();
           await writeSiteDocumentFromRenderer(
             nextSite,
@@ -2390,6 +2483,30 @@ async function openSiteShellModal(): Promise<void> {
     ],
     { size: "wide" },
   );
+}
+
+/**
+ * Validates the site URL and strips any trailing slash. Returns null when the
+ * value is not a usable absolute http(s) origin, so the caller can reject it —
+ * a malformed base would otherwise produce broken canonical/sitemap URLs.
+ */
+function normalizeSiteUrl(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  const candidate = /^[a-z][\w+.-]*:\/\//i.test(trimmed)
+    ? trimmed
+    : `https://${trimmed}`;
+  let parsed: URL;
+  try {
+    parsed = new URL(candidate);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+  if (!parsed.hostname.includes(".") && parsed.hostname !== "localhost") {
+    return null;
+  }
+  return `${parsed.origin}${parsed.pathname.replace(/\/+$/, "")}`;
 }
 
 async function openDesignSystemModal(): Promise<void> {
@@ -2640,32 +2757,83 @@ async function openPageMetaModal(page: string): Promise<void> {
     navLabel: entry.navLabel,
     description: entry.metaDescription,
     visible: entry.navVisible,
+    socialImage: entry.socialImage,
+    canonicalUrl: entry.canonicalUrl,
+    noindex: entry.noindex,
+    publishDate: entry.publishDate,
+    author: entry.author,
   };
 
   const wrap = document.createElement("div");
-  renderPageSettingsModal(wrap, {
-    title: formState.title,
-    slug: formState.slug,
-    slugDisabled: entry.isHome,
-    navLabel: formState.navLabel,
-    metaDescription: formState.description,
-    navVisible: formState.visible,
-    onTitleChange: (value) => {
-      formState.title = value;
-    },
-    onSlugChange: (value) => {
-      formState.slug = value;
-    },
-    onNavLabelChange: (value) => {
-      formState.navLabel = value;
-    },
-    onMetaDescriptionChange: (value) => {
-      formState.description = value;
-    },
-    onNavVisibleChange: (value) => {
-      formState.visible = value;
-    },
-  });
+  const mountPageSettings = () =>
+    renderPageSettingsModal(wrap, {
+      title: formState.title,
+      slug: formState.slug,
+      slugDisabled: entry.isHome,
+      navLabel: formState.navLabel,
+      metaDescription: formState.description,
+      navVisible: formState.visible,
+      socialImage: formState.socialImage,
+      canonicalUrl: formState.canonicalUrl,
+      noindex: formState.noindex,
+      publishDate: formState.publishDate,
+      author: formState.author,
+      siteUrl: effectiveSiteDocument(state)?.siteUrl ?? "",
+      route: entry.route,
+      onTitleChange: (value) => {
+        formState.title = value;
+      },
+      onSlugChange: (value) => {
+        const wasReservedNotFound = formState.slug === "404";
+        formState.slug = value;
+        const isReservedNotFound = value === "404";
+        if (isReservedNotFound) {
+          formState.visible = false;
+          formState.noindex = true;
+        } else if (wasReservedNotFound) {
+          formState.visible = true;
+          formState.noindex = false;
+        }
+        if (wasReservedNotFound !== isReservedNotFound) {
+          mountPageSettings();
+        }
+      },
+      onNavLabelChange: (value) => {
+        formState.navLabel = value;
+      },
+      onMetaDescriptionChange: (value) => {
+        formState.description = value;
+      },
+      onNavVisibleChange: (value) => {
+        formState.visible = value;
+      },
+      onSocialImageChange: (value) => {
+        formState.socialImage = value;
+      },
+      onCanonicalUrlChange: (value) => {
+        formState.canonicalUrl = value;
+      },
+      onNoindexChange: (value) => {
+        formState.noindex = value;
+      },
+      onPublishDateChange: (value) => {
+        formState.publishDate = value;
+      },
+      onAuthorChange: (value) => {
+        formState.author = value;
+      },
+      onPickSocialImage: () => {
+        openAssetBrowser({
+          filter: "images",
+          title: "Choose Social Share Image",
+          onSelect: (webPath) => {
+            formState.socialImage = webPath;
+            mountPageSettings();
+          },
+        });
+      },
+    });
+  mountPageSettings();
 
   showModalNode("Page Settings", wrap, [
     {
@@ -2802,6 +2970,11 @@ async function openPageMetaModal(page: string): Promise<void> {
               entry.navLabel,
             metaDescription: formState.description.trim(),
             navVisible: formState.visible,
+            socialImage: formState.socialImage.trim(),
+            canonicalUrl: formState.canonicalUrl.trim(),
+            noindex: formState.noindex,
+            publishDate: formState.publishDate.trim(),
+            author: formState.author.trim(),
           },
         );
         if (!saved.ok) {
@@ -3037,6 +3210,7 @@ function setPageLoading(page: string | null): void {
     "mode-code",
     "btn-save",
     "btn-new-page",
+    "btn-find-replace",
     "btn-regen-nav",
     "btn-site-shell",
     "btn-design-system",
@@ -3334,6 +3508,21 @@ function parsePage(raw: string): void {
   state.selectedSectionId = state.sections[0]?.id ?? null;
 }
 
+/**
+ * Pages a Post List block can show, in the same shape the build uses, so the
+ * canvas preview and the generated page list identical posts.
+ */
+function editorPostIndex(): RenderPostEntry[] {
+  return state.pageMeta.map((meta) => ({
+    route: meta.route,
+    title: meta.title || meta.navLabel || meta.slug,
+    description: meta.metaDescription,
+    date: meta.publishDate,
+    author: meta.author,
+    image: meta.socialImage,
+  }));
+}
+
 function editorRenderOptions(
   viewport = state.currentViewport,
   forCanvas = false,
@@ -3341,11 +3530,13 @@ function editorRenderOptions(
   viewport: typeof state.currentViewport;
   forCanvas: boolean;
   canvasMaxHeadingLevel: number;
+  posts: RenderPostEntry[];
 } {
   return {
     viewport,
     forCanvas,
     canvasMaxHeadingLevel: editorRules.maxHeadingLevel,
+    posts: editorPostIndex(),
   };
 }
 
@@ -4348,6 +4539,14 @@ interface InlineEditTarget {
   multiline?: boolean;
   lineIndex?: number;
   pairSide?: "left" | "right";
+  /**
+   * Enables the inline formatting toolbar (bold/italic/link) for prose targets.
+   * Off for values that are not prose (icons, numeric stats) and for anything
+   * whose markup would be invalid where it is rendered.
+   */
+  rich?: boolean;
+  /** False where the text is rendered inside an `<a>`, so links are invalid. */
+  allowLinks?: boolean;
 }
 
 function updateLineValue(
@@ -4431,6 +4630,9 @@ function attachInlineEditors(root: HTMLElement, block: Block): HTMLElement[] {
       add(":scope > *", {
         prop: "text",
         multiline: block.type === "text" || block.type === "section",
+        rich: true,
+        // A button's label is already inside an <a>; a nested link is invalid.
+        allowLinks: block.type !== "button",
       });
       break;
     case "columns":
@@ -4438,34 +4640,36 @@ function attachInlineEditors(root: HTMLElement, block: Block): HTMLElement[] {
         add(`.zephus-column:nth-of-type(${i + 1})`, {
           prop: `col${i + 1}`,
           multiline: true,
+          rich: true,
         }),
       );
       break;
     case "card":
-      add("h3", { prop: "title" });
-      add("p", { prop: "text", multiline: true });
+      add("h3", { prop: "title", rich: true });
+      add("p", { prop: "text", multiline: true, rich: true });
       break;
     case "quote":
-      add("p", { prop: "text", multiline: true });
-      add("cite", { prop: "cite" });
+      add("p", { prop: "text", multiline: true, rich: true });
+      add("cite", { prop: "cite", rich: true });
       break;
     case "list":
       root.querySelectorAll<HTMLElement>("li").forEach((_, i) =>
         add(`li:nth-of-type(${i + 1})`, {
           prop: "items",
           lineIndex: i,
+          rich: true,
         }),
       );
       break;
     case "feature":
       add(".zephus-feature-icon", { prop: "icon" });
-      add("h3", { prop: "title" });
-      add("p", { prop: "text", multiline: true });
+      add("h3", { prop: "title", rich: true });
+      add("p", { prop: "text", multiline: true, rich: true });
       break;
     case "testimonial":
-      add("blockquote", { prop: "quote", multiline: true });
-      add("figcaption strong", { prop: "author" });
-      add("figcaption span", { prop: "role" });
+      add("blockquote", { prop: "quote", multiline: true, rich: true });
+      add("figcaption strong", { prop: "author", rich: true });
+      add("figcaption span", { prop: "role", rich: true });
       break;
     case "accordion":
       root.querySelectorAll<HTMLElement>("details").forEach((_, i) => {
@@ -4473,12 +4677,14 @@ function attachInlineEditors(root: HTMLElement, block: Block): HTMLElement[] {
           prop: "items",
           lineIndex: i,
           pairSide: "left",
+          rich: true,
         });
         add(`details:nth-of-type(${i + 1}) p`, {
           prop: "items",
           lineIndex: i,
           pairSide: "right",
           multiline: true,
+          rich: true,
         });
       });
       break;
@@ -4497,21 +4703,23 @@ function attachInlineEditors(root: HTMLElement, block: Block): HTMLElement[] {
       });
       break;
     case "pricing":
-      add("h3", { prop: "plan" });
+      add("h3", { prop: "plan", rich: true });
       add(".zephus-price-amount", { prop: "price" });
       add(".zephus-price-period", { prop: "period" });
       root.querySelectorAll<HTMLElement>("li").forEach((_, i) =>
         add(`li:nth-of-type(${i + 1})`, {
           prop: "features",
           lineIndex: i,
+          rich: true,
         }),
       );
-      add("a.button", { prop: "ctaText" });
+      // Button labels render inside an <a>, so links are not offered.
+      add("a.button", { prop: "ctaText", rich: true, allowLinks: false });
       break;
     case "cta":
-      add("h2", { prop: "heading" });
-      add("p", { prop: "text", multiline: true });
-      add("a.button", { prop: "buttonText" });
+      add("h2", { prop: "heading", rich: true });
+      add("p", { prop: "text", multiline: true, rich: true });
+      add("a.button", { prop: "buttonText", rich: true, allowLinks: false });
       break;
   }
   return targets;
@@ -4521,6 +4729,214 @@ function startFirstInlineEdit(root: HTMLElement, block: Block): void {
   const first = attachInlineEditors(root, block)[0];
   if (!first) return;
   first.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+}
+
+/**
+ * Applies an inline formatting command to the current selection.
+ *
+ * `execCommand` is deprecated but remains the only way to transform a selection
+ * inside a contenteditable without hand-rolling range surgery. Whatever markup
+ * it produces is normalized on commit by `richTextFromElement`, so the stored
+ * value never contains anything outside the allowed subset.
+ */
+function applyInlineFormat(
+  command: "bold" | "italic" | "removeFormat" | "createLink" | "unlink",
+  value?: string,
+): void {
+  try {
+    document.execCommand(command, false, value);
+  } catch {
+    setStatus("Could not apply formatting here.");
+  }
+}
+
+interface InlineFormatToolbar {
+  element: HTMLElement;
+  syncState: () => void;
+  promptLink: () => void;
+  destroy: () => void;
+}
+
+/**
+ * Floating bold/italic/link controls shown while inline-editing prose. Buttons
+ * suppress mousedown so the caret and selection survive the click.
+ */
+function createInlineFormatToolbar(
+  el: HTMLElement,
+  options: { allowLinks: boolean },
+): InlineFormatToolbar {
+  const bar = document.createElement("div");
+  bar.className = "inline-format-toolbar";
+  bar.setAttribute("role", "toolbar");
+  bar.setAttribute("aria-label", "Text formatting");
+
+  const buttons: Array<{ key: string; button: HTMLButtonElement }> = [];
+  const addButton = (
+    key: string,
+    label: string,
+    title: string,
+    onActivate: () => void,
+  ): HTMLButtonElement => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "inline-format-btn";
+    button.innerHTML = label;
+    button.title = title;
+    button.setAttribute("aria-label", title);
+    button.addEventListener("mousedown", (event) => {
+      // Keep focus (and the selection) in the text being edited.
+      event.preventDefault();
+    });
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      onActivate();
+    });
+    bar.appendChild(button);
+    buttons.push({ key, button });
+    return button;
+  };
+
+  const syncState = (): void => {
+    for (const entry of buttons) {
+      if (entry.key !== "bold" && entry.key !== "italic") continue;
+      let active: boolean;
+      try {
+        active = document.queryCommandState(entry.key);
+      } catch {
+        active = false;
+      }
+      entry.button.classList.toggle("active", active);
+      entry.button.setAttribute("aria-pressed", String(active));
+    }
+  };
+
+  addButton("bold", "<strong>B</strong>", "Bold (Cmd/Ctrl+B)", () => {
+    applyInlineFormat("bold");
+    syncState();
+  });
+  addButton("italic", "<em>I</em>", "Italic (Cmd/Ctrl+I)", () => {
+    applyInlineFormat("italic");
+    syncState();
+  });
+
+  const linkRow = document.createElement("div");
+  linkRow.className = "inline-format-link";
+  linkRow.hidden = true;
+  const linkInput = document.createElement("input");
+  linkInput.type = "text";
+  linkInput.className = "text";
+  linkInput.placeholder = "https://example.com or /about";
+  linkInput.setAttribute("aria-label", "Link address");
+  linkRow.appendChild(linkInput);
+
+  let savedRange: Range | null = null;
+  const restoreSelection = (): void => {
+    if (!savedRange) return;
+    const selection = window.getSelection();
+    if (!selection) return;
+    selection.removeAllRanges();
+    selection.addRange(savedRange);
+  };
+
+  const applyLink = (): void => {
+    const raw = linkInput.value.trim();
+    linkRow.hidden = true;
+    el.focus();
+    restoreSelection();
+    if (!raw) return;
+    const safe = safeUrl(raw);
+    if (!safe) {
+      setStatus("That link type is not allowed.");
+      return;
+    }
+    applyInlineFormat("createLink", safe);
+    setStatus("Added link.");
+  };
+
+  const promptLink = (): void => {
+    if (!options.allowLinks) return;
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed) {
+      setStatus("Select the words you want to link first.");
+      return;
+    }
+    savedRange = selection.getRangeAt(0).cloneRange();
+    const existing = selection.anchorNode?.parentElement?.closest("a");
+    linkInput.value = existing?.getAttribute("href") ?? "";
+    linkRow.hidden = false;
+    linkInput.focus();
+    linkInput.select();
+  };
+
+  if (options.allowLinks) {
+    addButton(
+      "link",
+      '<i data-lucide="link"></i>',
+      "Add link (Cmd/Ctrl+K)",
+      () => promptLink(),
+    );
+    addButton("unlink", '<i data-lucide="unlink"></i>', "Remove link", () => {
+      applyInlineFormat("unlink");
+    });
+  }
+  addButton(
+    "removeFormat",
+    '<i data-lucide="remove-formatting"></i>',
+    "Clear formatting",
+    () => {
+      applyInlineFormat("removeFormat");
+      syncState();
+    },
+  );
+
+  linkInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      applyLink();
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      linkRow.hidden = true;
+      el.focus();
+      restoreSelection();
+    }
+  });
+
+  bar.appendChild(linkRow);
+  document.body.appendChild(bar);
+  refreshIcons();
+
+  const position = (): void => {
+    const rect = el.getBoundingClientRect();
+    const barRect = bar.getBoundingClientRect();
+    const top = Math.max(8, rect.top - barRect.height - 8);
+    const left = Math.min(
+      Math.max(8, rect.left),
+      Math.max(8, window.innerWidth - barRect.width - 8),
+    );
+    bar.style.top = `${top}px`;
+    bar.style.left = `${left}px`;
+  };
+  position();
+
+  const onSelectionChange = (): void => syncState();
+  document.addEventListener("selectionchange", onSelectionChange);
+  window.addEventListener("resize", position);
+  window.addEventListener("scroll", position, true);
+  syncState();
+
+  return {
+    element: bar,
+    syncState,
+    promptLink,
+    destroy: () => {
+      document.removeEventListener("selectionchange", onSelectionChange);
+      window.removeEventListener("resize", position);
+      window.removeEventListener("scroll", position, true);
+      bar.remove();
+    },
+  };
 }
 
 function startInlineEdit(
@@ -4544,20 +4960,35 @@ function startInlineEdit(
     selection.removeAllRanges();
     selection.addRange(range);
   }
+  const allowLinks = target.allowLinks !== false;
+  const toolbar = target.rich
+    ? createInlineFormatToolbar(el, { allowLinks })
+    : null;
+
   const cleanup = (): void => {
     isInlineEditing = false;
     el.removeAttribute("contenteditable");
     el.removeAttribute("role");
     el.removeAttribute("aria-label");
     el.classList.remove("inline-editing");
-    el.removeEventListener("blur", finish);
+    el.removeEventListener("blur", onBlur);
     el.removeEventListener("keydown", onKeydown);
     el.removeEventListener("paste", onPaste);
+    toolbar?.destroy();
   };
+  const readValue = (): string =>
+    target.rich
+      ? richTextFromElement(el, {
+          allowLinks,
+          // Line-encoded props must stay on one line or the encoding breaks.
+          allowLineBreaks:
+            target.multiline === true && target.lineIndex === undefined,
+        }).trim()
+      : el.innerText.trim();
   const finish = () => {
     if (finished) return;
     finished = true;
-    const newText = el.innerText.trim();
+    const newText = readValue();
     cleanup();
     if (newText !== original) {
       pushUndo();
@@ -4579,11 +5010,33 @@ function startInlineEdit(
   const onPaste = (event: ClipboardEvent): void => {
     handlePlainTextPaste(event);
   };
+  // Focus moving into the format toolbar is still part of this edit session.
+  const onBlur = (event: FocusEvent): void => {
+    const next = event.relatedTarget;
+    if (toolbar && next instanceof Node && toolbar.element.contains(next)) {
+      return;
+    }
+    finish();
+  };
   const onKeydown = (event: KeyboardEvent): void => {
     if (event.key === "Escape") {
       event.preventDefault();
       cancel();
       return;
+    }
+    if (target.rich && (event.metaKey || event.ctrlKey)) {
+      const key = event.key.toLowerCase();
+      if (key === "b" || key === "i") {
+        event.preventDefault();
+        applyInlineFormat(key === "b" ? "bold" : "italic");
+        toolbar?.syncState();
+        return;
+      }
+      if (key === "k" && allowLinks) {
+        event.preventDefault();
+        toolbar?.promptLink();
+        return;
+      }
     }
     if (event.key === "Enter") {
       // Allow a literal line break only for free-form multiline props. Targets
@@ -4597,7 +5050,7 @@ function startInlineEdit(
       }
     }
   };
-  el.addEventListener("blur", finish);
+  el.addEventListener("blur", onBlur);
   el.addEventListener("keydown", onKeydown);
   el.addEventListener("paste", onPaste);
 }
@@ -4692,6 +5145,17 @@ function defaultProps(type: BlockType): Record<string, string> {
         text: "Join thousands of happy customers today.",
         buttonText: "Get started",
         buttonHref: "#",
+        cls: "",
+      };
+    case "postlist":
+      return {
+        folder: "/posts",
+        limit: "5",
+        showDate: "true",
+        showAuthor: "false",
+        showExcerpt: "true",
+        showImage: "false",
+        emptyText: "No posts yet. Add a page with a publish date.",
         cls: "",
       };
     case "html":
@@ -4932,6 +5396,180 @@ interface AssetBrowserOptions {
   onSelect: (webPath: string) => void;
 }
 
+/** Creates src/pages/404.astro, which Astro serves for unknown routes. */
+async function createNotFoundPage(): Promise<void> {
+  if (!state.project) return;
+  const created = await window.zephus.createPage(
+    state.project.path,
+    "404",
+    state.project.astro.pagesDir,
+  );
+  if (!created.ok) {
+    setStatus("Could not create the 404 page: " + (created.error ?? "unknown"));
+    return;
+  }
+  await reloadPages();
+  const entry = state.pageMeta.find((meta) => meta.slug === "404");
+  if (entry) await loadPage(entry.page);
+  setStatus(
+    "Created the 404 page. It stays out of your navigation and search results.",
+  );
+}
+
+async function openFindReplaceModal(): Promise<void> {
+  if (!state.project) return;
+  const project = state.project;
+  const wrap = document.createElement("div");
+  const formState = {
+    query: "",
+    replacement: "",
+    caseSensitive: false,
+    wholeWord: false,
+    searching: false,
+    matches: null as SearchMatch[] | null,
+    totalMatches: 0,
+  };
+
+  const mount = (): void =>
+    renderFindReplaceModalBody(wrap, {
+      query: formState.query,
+      replacement: formState.replacement,
+      caseSensitive: formState.caseSensitive,
+      wholeWord: formState.wholeWord,
+      searching: formState.searching,
+      matches: formState.matches,
+      totalMatches: formState.totalMatches,
+      onQueryChange: (value) => {
+        formState.query = value;
+      },
+      onReplacementChange: (value) => {
+        formState.replacement = value;
+      },
+      onCaseSensitiveChange: (value) => {
+        formState.caseSensitive = value;
+        mount();
+      },
+      onWholeWordChange: (value) => {
+        formState.wholeWord = value;
+        mount();
+      },
+      onSearch: () => void runSearch(),
+      onOpenPage: (page) => {
+        closeModal();
+        void loadPage(page);
+      },
+    });
+
+  const runSearch = async (): Promise<boolean> => {
+    const query = formState.query.trim();
+    if (!query) {
+      setStatus("Enter text to find.");
+      return false;
+    }
+    const result = await window.zephus.searchPages(
+      project.path,
+      project.astro.pagesDir,
+      query,
+      {
+        caseSensitive: formState.caseSensitive,
+        wholeWord: formState.wholeWord,
+      },
+    );
+    if (!result.ok) {
+      setStatus("Search failed: " + (result.error ?? "unknown"));
+      return false;
+    }
+    formState.matches = result.matches;
+    formState.totalMatches = result.totalMatches;
+    mount();
+    return result.matches.length > 0;
+  };
+
+  mount();
+  showModalNode(
+    "Find and Replace",
+    wrap,
+    [
+      { label: "Close", kind: "ghost", onClick: closeModal },
+      { label: "Find", kind: "ghost", onClick: () => void runSearch() },
+      {
+        label: "Replace All",
+        kind: "primary",
+        onClick: async () => {
+          // Always search first: the visible match list is what the user is
+          // agreeing to replace.
+          if (formState.matches === null && !(await runSearch())) return;
+          const matches = formState.matches ?? [];
+          if (matches.length === 0) {
+            setStatus("Nothing to replace.");
+            return;
+          }
+
+          // Replacement rewrites saved page sidecars, so pending edits must be
+          // settled or saving afterwards would undo the replacement.
+          if (isGlobalDirty(state) && !(await maybeResolveUnsavedWork())) {
+            setStatus("Replace canceled: save or discard your changes first.");
+            return;
+          }
+
+          const confirmed = await modalController.confirmDestructive(
+            "Replace Across Site",
+            `Replace ${formState.totalMatches} occurrence(s) of "${formState.query.trim()}" across ${matches.length} page(s)? This cannot be undone with Ctrl/Cmd+Z.`,
+            "Replace All",
+          );
+          if (!confirmed) return;
+
+          const result = await window.zephus.replaceAllInPages(
+            project.path,
+            project.astro.pagesDir,
+            formState.query.trim(),
+            formState.replacement,
+            {
+              caseSensitive: formState.caseSensitive,
+              wholeWord: formState.wholeWord,
+            },
+            matches.map((match) => match.page),
+          );
+          if (!result.ok) {
+            setStatus("Replace failed: " + (result.error ?? "unknown"));
+            return;
+          }
+          closeModal();
+          // Pages changed on disk; reload the open one rather than keeping a
+          // stale copy in the editor.
+          if (state.page) {
+            await loadPage(state.page, {
+              skipUnsavedGuard: true,
+              skipDraftRestore: true,
+              forceReload: true,
+            });
+          }
+          await reloadPages();
+          setStatus(
+            `Replaced ${result.replaced} occurrence(s) across ${result.pagesChanged} page(s).`,
+          );
+        },
+      },
+    ],
+    { size: "wide" },
+  );
+}
+
+/** Re-reads site.json after main mutated it, so the editor is not left stale. */
+async function reloadSiteDocumentFromDisk(): Promise<void> {
+  if (!state.project) return;
+  const site = await window.zephus.readSiteDocument(state.project.path);
+  if (!site.ok || !site.site) return;
+  state.siteDocument = site.site;
+  state.pendingSiteDocument = null;
+  state.pendingSiteEditorKind = null;
+  clearSiteChanges(state);
+  markSiteDirty(state, false);
+  renderDirtyIndicators();
+  void applyMergedTheme();
+  if (state.project) renderNavEditor(state.project);
+}
+
 function openAssetBrowser(options: AssetBrowserOptions): void {
   if (!state.project) return;
   const project = state.project;
@@ -4959,7 +5597,111 @@ function openAssetBrowser(options: AssetBrowserOptions): void {
         options.onSelect(webPath);
       },
       onRendered: refreshIcons,
+      onRename: (asset) => void renameAssetFlow(asset),
+      onDelete: (asset) => void deleteAssetFlow(asset),
     });
+
+  /** Summarizes where an asset is used, for the confirm prompts. */
+  const describeUsage = async (webPath: string): Promise<string> => {
+    const usage = await window.zephus.findAssetUsage(
+      project.path,
+      project.astro.pagesDir,
+      webPath,
+    );
+    if (!usage.ok) return "";
+    const places = [
+      ...usage.pages.map((entry) => entry.label),
+      ...usage.siteReferences,
+    ];
+    if (places.length === 0) return "";
+    const shown = places.slice(0, 6).join(", ");
+    const extra = places.length > 6 ? ` and ${places.length - 6} more` : "";
+    return `${shown}${extra}`;
+  };
+
+  const renameAssetFlow = async (
+    asset: AssetBrowserModalEntry,
+  ): Promise<void> => {
+    const currentName = asset.fileName.split("/").pop() ?? asset.fileName;
+    const dotIndex = currentName.lastIndexOf(".");
+    const stem = dotIndex > 0 ? currentName.slice(0, dotIndex) : currentName;
+    const extension = dotIndex > 0 ? currentName.slice(dotIndex) : "";
+    const usedBy = await describeUsage(asset.webPath);
+    const nextName = await modalController.promptText("Rename Asset", {
+      label: `New name (keeps ${extension || "the same type"})`,
+      value: stem,
+      confirmLabel: "Rename",
+      description: usedBy
+        ? `Used by: ${usedBy}. Renaming updates those references too.`
+        : undefined,
+    });
+    if (!nextName || nextName.trim() === stem) return;
+
+    // Repointing rewrites saved page sidecars, so unsaved edits must be settled
+    // first — otherwise saving afterwards would write back the old asset path.
+    if (isGlobalDirty(state) && !(await maybeResolveUnsavedWork())) {
+      setStatus("Rename canceled: save or discard your changes first.");
+      return;
+    }
+
+    const result = await window.zephus.renameAsset(
+      project.path,
+      project.astro.publicDir,
+      project.astro.pagesDir,
+      asset.webPath,
+      nextName,
+    );
+    if (!result.ok || !result.webPath) {
+      setStatus("Rename failed: " + (result.error ?? "unknown"));
+      await refresh();
+      return;
+    }
+
+    const updated = result.updatedReferences ?? 0;
+    // The open page and site document were changed on disk by the repoint, so
+    // reload them rather than leaving the editor on a stale copy.
+    await reloadSiteDocumentFromDisk();
+    if (state.page) {
+      await loadPage(state.page, {
+        skipUnsavedGuard: true,
+        skipDraftRestore: true,
+        forceReload: true,
+      });
+    }
+    await refresh();
+    setStatus(
+      updated > 0
+        ? `Renamed asset and updated ${updated} reference(s).`
+        : "Renamed asset.",
+    );
+  };
+
+  const deleteAssetFlow = async (
+    asset: AssetBrowserModalEntry,
+  ): Promise<void> => {
+    const displayName = asset.fileName.split("/").pop() ?? asset.fileName;
+    const usedBy = await describeUsage(asset.webPath);
+    const confirmed = await modalController.confirmDestructive(
+      "Delete Asset",
+      usedBy
+        ? `"${displayName}" is still used by: ${usedBy}. Deleting it will leave those places pointing at a missing file. Delete anyway?`
+        : `Delete "${displayName}" from this project? This removes the file from disk.`,
+      "Delete Asset",
+    );
+    if (!confirmed) return;
+
+    const result = await window.zephus.deleteAsset(
+      project.path,
+      project.astro.publicDir,
+      asset.webPath,
+    );
+    if (!result.ok) {
+      setStatus("Delete failed: " + (result.error ?? "unknown"));
+      return;
+    }
+    await refresh();
+    setStatus(`Deleted ${displayName}.`);
+  };
 
   const resolvePreviewSrc = async (
     asset: AssetEntry,
@@ -5178,6 +5920,7 @@ function renderProperties(): void {
     "stats",
     "pricing",
     "cta",
+    "postlist",
   ];
 
   if (supportedBlockTypes.includes(block.type)) {
@@ -5871,6 +6614,11 @@ function onKeydown(e: KeyboardEvent): void {
     e.preventDefault();
     return;
   }
+  if (mod && e.key === "f" && !editing) {
+    void openFindReplaceModal();
+    e.preventDefault();
+    return;
+  }
   if (state.mode === "code" && mod) {
     if (e.key === "z" && !e.shiftKey) {
       cm?.undo();
@@ -6340,6 +7088,11 @@ function installEditorSmokeHook(): void {
       metaDescription: "",
       navVisible: true,
       isHome: true,
+      socialImage: "",
+      canonicalUrl: "",
+      noindex: false,
+      publishDate: "",
+      author: "",
     };
     state.pageMeta = state.currentMeta ? [state.currentMeta] : [];
     state.currentViewport = "desktop";
@@ -6484,6 +7237,7 @@ function init(): void {
   if (btnOpen) btnOpen.onclick = () => void chooseFolder();
 
   $("btn-new-page").onclick = () => void newPageFlow();
+  $("btn-find-replace").onclick = () => void openFindReplaceModal();
   $("btn-regen-nav").onclick = () => void regenerateNav();
   $("btn-site-shell").onclick = () => void openSiteShellModal();
   $("btn-design-system").onclick = () => void openDesignSystemModal();

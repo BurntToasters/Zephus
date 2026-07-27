@@ -2228,6 +2228,25 @@ body {
   width: auto;
 }
 
+/* Helper text under a form field: explains what the value affects. */
+.meta-hint {
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+/* Groups related fields inside a long settings form. */
+.meta-group-title {
+  margin: 6px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .meta-form,
 .save-summary,
 .asset-browser {
@@ -2337,6 +2356,199 @@ body {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+/* Wraps a tile plus its hover actions, so the actions are not nested buttons. */
+/* Multiple mini actions in a panel heading. */
+.panel-heading-actions {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.find-replace-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.find-replace-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.find-replace-toggle input {
+  width: auto;
+}
+
+.find-replace-results {
+  max-height: 260px;
+  overflow-y: auto;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.find-replace-summary {
+  margin: 0 0 8px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.find-replace-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.find-replace-page {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-alt);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.find-replace-page:hover {
+  border-color: var(--accent);
+}
+
+.find-replace-excerpt {
+  margin: 4px 0 0 8px;
+  color: var(--muted);
+  font-size: 11.5px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Floating bold/italic/link bar shown while inline-editing prose. */
+.inline-format-toolbar {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  max-width: min(320px, calc(100vw - 16px));
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--panel);
+  box-shadow: var(--shadow-md);
+}
+
+.inline-format-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.inline-format-btn:hover {
+  background: var(--panel-card);
+  border-color: var(--border);
+}
+
+.inline-format-btn.active {
+  background: var(--accent-bg);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.inline-format-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.inline-format-link {
+  flex: 1 1 100%;
+  display: flex;
+}
+
+.inline-format-link .text {
+  width: 100%;
+  font-size: 12px;
+}
+
+/* Inline formatting inside canvas text must look like the built site. */
+.canvas .block code {
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  background: rgba(127, 127, 127, 0.18);
+  font-size: 0.92em;
+}
+
+.canvas .block a[href] {
+  color: var(--zephus-accent, var(--accent));
+  text-decoration: underline;
+}
+
+.asset-tile-wrap {
+  position: relative;
+  display: flex;
+}
+
+.asset-tile-wrap .asset-tile {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.asset-tile-actions {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.asset-tile-wrap:hover .asset-tile-actions,
+.asset-tile-wrap:focus-within .asset-tile-actions {
+  opacity: 1;
+}
+
+.asset-tile-actions .mini-btn {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  background: var(--panel);
+  border: 1px solid var(--border);
+}
+
+.asset-tile-actions .mini-btn svg {
+  width: 13px;
+  height: 13px;
+}
+
+.asset-tile-actions .mini-btn.danger:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.asset-size {
+  color: var(--muted);
+  font-size: 10.5px;
 }
 
 .asset-name {
@@ -2785,6 +2997,48 @@ body {
   padding: 2rem 1rem;
   background: var(--zephus-surface, var(--bg-alt));
   border-radius: var(--radius-md);
+}
+.canvas .zephus-postlist {
+  display: grid;
+  gap: 1.5rem;
+}
+.canvas .zephus-postlist-item {
+  display: grid;
+  gap: 0.4rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+.canvas .zephus-postlist-item:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+.canvas .zephus-postlist-title {
+  margin: 0;
+  font-size: 1.35rem;
+}
+.canvas .zephus-postlist-title a {
+  color: inherit;
+  text-decoration: none;
+}
+.canvas .zephus-postlist-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+  opacity: 0.72;
+}
+.canvas .zephus-postlist-excerpt {
+  margin: 0;
+}
+.canvas .zephus-postlist-image {
+  width: 100%;
+  max-height: 220px;
+  object-fit: cover;
+  border-radius: var(--zephus-radius, var(--radius-md));
+}
+.canvas .zephus-postlist-empty {
+  opacity: 0.72;
+  font-style: italic;
 }
 .canvas .zephus-gallery {
   display: grid;

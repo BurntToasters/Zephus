@@ -27,11 +27,42 @@ export interface SiteShellModalState {
   onPickCtaHref: () => void;
   onFooterHtmlChange: (value: string) => void;
   onCustomHeadHtmlChange: (value: string) => void;
+  siteUrl: string;
+  language: string;
+  faviconPath: string;
+  onSiteUrlChange: (value: string) => void;
+  onLanguageChange: (value: string) => void;
+  onFaviconPathChange: (value: string) => void;
+  onPickFavicon: () => void;
 }
 
 export interface PublishSuccessModalState {
   outputDir: string;
 }
+
+/** Common BCP 47 tags offered for `<html lang>`; any value can be typed. */
+const LANGUAGE_SUGGESTIONS = [
+  "en",
+  "en-GB",
+  "de",
+  "es",
+  "fr",
+  "it",
+  "nl",
+  "pt",
+  "pt-BR",
+  "sv",
+  "pl",
+  "tr",
+  "ru",
+  "ja",
+  "ko",
+  "zh-CN",
+  "zh-TW",
+  "ar",
+  "he",
+  "hi",
+];
 
 export interface ThemePreviewModalState {
   description: string;
@@ -202,6 +233,68 @@ export function renderSiteShellModalBody(
             }
           />
         </label>
+        <h4 class="meta-group-title">Search &amp; sharing</h4>
+        <label class="meta-field">
+          <span>Site URL</span>
+          <input
+            class="text"
+            type="url"
+            placeholder="https://example.com"
+            value={state.siteUrl}
+            onInput={(event) =>
+              state.onSiteUrlChange(event.currentTarget.value)
+            }
+          />
+          <small class="meta-hint">
+            Your site's public address. Required for canonical links, social
+            share previews, and sitemap.xml.
+          </small>
+        </label>
+        <label class="meta-field">
+          <span>Language</span>
+          <input
+            class="text"
+            list="zephus-language-suggestions"
+            placeholder="en"
+            value={state.language}
+            onInput={(event) =>
+              state.onLanguageChange(event.currentTarget.value)
+            }
+          />
+          <datalist id="zephus-language-suggestions">
+            <For each={LANGUAGE_SUGGESTIONS}>
+              {(tag) => <option value={tag} />}
+            </For>
+          </datalist>
+          <small class="meta-hint">
+            Sets the page language for screen readers and search engines.
+          </small>
+        </label>
+        <label class="meta-field">
+          <span>Favicon</span>
+          <div class="link-field">
+            <input
+              class="text"
+              placeholder="/assets/images/favicon.png"
+              value={state.faviconPath}
+              onInput={(event) =>
+                state.onFaviconPathChange(event.currentTarget.value)
+              }
+            />
+            <button
+              type="button"
+              class="btn ghost mini-btn"
+              onClick={state.onPickFavicon}
+            >
+              Choose…
+            </button>
+          </div>
+          <small class="meta-hint">
+            The small icon browsers show in tabs and bookmarks.
+          </small>
+        </label>
+
+        <h4 class="meta-group-title">Advanced</h4>
         <label class="meta-field">
           <span>Custom head HTML</span>
           <textarea

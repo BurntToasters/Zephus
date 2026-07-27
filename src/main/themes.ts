@@ -130,6 +130,16 @@ a { color: var(--accent); }
 .zephus-price-amount { font-size: 2rem; font-weight: 800; }
 .zephus-price-period { color: var(--muted); }
 .zephus-cta { text-align: center; padding: 2.5rem 1.5rem; background: var(--surface); border-radius: var(--zephus-radius, 12px); }
+.zephus-postlist { display: grid; gap: 1.5rem; }
+.zephus-postlist-item { display: grid; gap: 0.4rem; padding-bottom: 1.25rem; border-bottom: 1px solid color-mix(in srgb, var(--fg) 12%, transparent); }
+.zephus-postlist-item:last-child { border-bottom: 0; padding-bottom: 0; }
+.zephus-postlist-title { margin: 0; font-size: 1.35rem; }
+.zephus-postlist-title a { color: inherit; text-decoration: none; }
+.zephus-postlist-title a:hover { color: var(--accent); }
+.zephus-postlist-meta { display: flex; flex-wrap: wrap; gap: 0.75rem; font-size: 0.85rem; opacity: 0.72; }
+.zephus-postlist-excerpt { margin: 0; }
+.zephus-postlist-image { width: 100%; max-height: 220px; object-fit: cover; border-radius: var(--zephus-radius, 12px); }
+.zephus-postlist-empty { opacity: 0.72; font-style: italic; }
 .zephus-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 0.75rem; }
 .zephus-gallery img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--zephus-radius, 12px); }
 /* Auto-grid sibling feature/pricing blocks so repeated cards lay out in
@@ -201,6 +211,23 @@ function list(items: string[], ordered = false): BlockNode {
     id: nid("b"),
     type: "list",
     props: { items: items.join("\n"), ordered: String(ordered), cls: "" },
+  };
+}
+/** Lists pages under a route prefix, newest first. */
+function postList(folder: string, limit = 5): BlockNode {
+  return {
+    id: nid("b"),
+    type: "postlist",
+    props: {
+      folder,
+      limit: String(limit),
+      showDate: "true",
+      showAuthor: "false",
+      showExcerpt: "true",
+      showImage: "false",
+      emptyText: "No posts yet. Add a page with a publish date.",
+      cls: "",
+    },
   };
 }
 function quote(text: string, cite = ""): BlockNode {
@@ -333,6 +360,9 @@ interface ThemePage {
   navLabel?: string;
   navVisible?: boolean;
   metaDescription?: string;
+  /** Set on blog-style pages so Post List blocks and rss.xml can date them. */
+  publishDate?: string;
+  author?: string;
   sections: SectionNode[];
 }
 
@@ -490,6 +520,11 @@ function buildSiteDocument(
     design: def.design,
     shell,
     templates: [],
+    // Scaffolded sites have no public URL yet; the user sets it in Site SEO,
+    // which is what enables canonical tags and sitemap generation.
+    siteUrl: "",
+    language: "en",
+    faviconPath: "",
   };
 }
 
@@ -505,6 +540,11 @@ function buildPageDocument(page: ThemePage): PageDocument {
     metaDescription: page.metaDescription ?? "",
     navVisible: page.navVisible !== false,
     isHome: route === "/",
+    socialImage: "",
+    canonicalUrl: "",
+    noindex: false,
+    publishDate: page.publishDate ?? "",
+    author: page.author ?? "",
     templateId: null,
     sections: page.sections,
     detached: false,
@@ -850,12 +890,10 @@ function blogDef(siteName: string): ThemeDef {
           band("Posts", [
             heading("Latest posts", 1),
             paragraph(
-              "Welcome to the blog. Add new posts as pages and link them here.",
+              "Dated pages under /posts show up here automatically.",
               "lead",
             ),
-            image("/assets/images/placeholder-landscape.svg", "Featured post"),
-            list(["Hello World — our first post"]),
-            button("Read: Hello World", "/posts/hello-world", "secondary"),
+            postList("/posts"),
           ]),
           band("Topics", [
             heading("What we write about", 2),
@@ -877,6 +915,10 @@ function blogDef(siteName: string): ThemeDef {
         slug: "posts/hello-world",
         title: "Hello World",
         navVisible: false,
+        metaDescription:
+          "The first post on the blog, and a place to start writing.",
+        publishDate: "2025-01-15",
+        author: "Site Owner",
         sections: [
           band("Article", [
             heading("Hello World", 1),

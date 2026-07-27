@@ -2,7 +2,13 @@ import { BrowserWindow, dialog } from "electron";
 import * as fs from "fs";
 import * as path from "path";
 import log from "electron-log";
-import { AssetCategory, AssetEntry, AssetListResult } from "../types";
+import sanitizeFilename from "sanitize-filename";
+import {
+  AssetCategory,
+  AssetEntry,
+  AssetListResult,
+  AssetMutationResult,
+} from "../types";
 import { resolveProjectRelativeDir } from "./projectPaths";
 
 export interface ImportImageResult {
@@ -353,6 +359,121 @@ export function readAssetDataUrl(
       dataUrl: `data:${mime};base64,${buffer.toString("base64")}`,
     };
   } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+/**
+ * Resolves a renderer-supplied asset web path to a real file inside the
+ * project's public directory. Rejects traversal, symlink escapes, directories,
+ * and extensions outside the asset allowlist, so this cannot be used to delete
+ * or move arbitrary project files (e.g. source code or `.git` contents).
+ */
+function resolveManagedAssetFile(
+  projectPath: string,
+  publicDir: string,
+  webPath: string,
+): { file: string; publicRoot: string } {
+  if (typeof webPath !== "string" || !webPath.trim()) {
+    throw new Error("Missing asset path.");
+  }
+  const relative = webPath.replace(/^\/+/, "");
+  if (!relative || relative.split(/[\\/]/).includes("..")) {
+    throw new Error("Invalid asset path.");
+  }
+  const publicRoot = resolveProjectRelativeDir(
+    projectPath,
+    publicDir,
+    "public",
+  ).absolute;
+  const resolved = path.resolve(publicRoot, relative);
+  assertRealChild(publicRoot, resolved, "Path escapes the public directory.");
+  const realPublicRoot = resolveRealPublicRoot(projectPath, publicRoot);
+  const realResolved = fs.realpathSync.native(resolved);
+  assertRealChild(
+    realPublicRoot,
+    realResolved,
+    "Path escapes the public directory.",
+  );
+  if (!fs.statSync(realResolved).isFile()) {
+    throw new Error("Asset is not a file.");
+  }
+  const ext = path.extname(realResolved).slice(1).toLowerCase();
+  if (!ALL_ASSET_EXTENSIONS.includes(ext)) {
+    throw new Error("Not a managed asset type.");
+  }
+  // Both paths must be realpaths, or deriving a web path from them produces
+  // traversal garbage on platforms where the temp/home root is a symlink
+  // (e.g. macOS /var -> /private/var).
+  return { file: realResolved, publicRoot: realPublicRoot };
+}
+
+/** Converts an absolute file inside the public root back to its web path. */
+function webPathForFile(publicRoot: string, file: string): string {
+  const rel = path.relative(publicRoot, file).split(path.sep).join("/");
+  return `/${rel}`;
+}
+
+/** Deletes a managed asset file from the project's public directory. */
+export function deleteAsset(
+  projectPath: string,
+  publicDir: string,
+  webPath: string,
+): AssetMutationResult {
+  try {
+    const { file } = resolveManagedAssetFile(projectPath, publicDir, webPath);
+    fs.rmSync(file, { force: true });
+    return { ok: true };
+  } catch (error) {
+    log.error("Asset delete failed", error);
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+/**
+ * Renames a managed asset in place. The new name is reduced to a bare file name
+ * (no directory parts) and keeps the original extension, so a rename can never
+ * relocate the file or change its type. Collisions get a numeric suffix.
+ */
+export function renameAsset(
+  projectPath: string,
+  publicDir: string,
+  webPath: string,
+  nextName: string,
+): AssetMutationResult {
+  try {
+    const { file, publicRoot } = resolveManagedAssetFile(
+      projectPath,
+      publicDir,
+      webPath,
+    );
+    const ext = path.extname(file);
+    const requested = sanitizeFilename(
+      path.basename(String(nextName ?? "")).trim(),
+    );
+    const stem = path.basename(requested, path.extname(requested)).trim();
+    if (!stem) return { ok: false, error: "Enter a file name." };
+
+    const dir = path.dirname(file);
+    const target = path.join(dir, uniqueName(dir, `${stem}${ext}`));
+    if (target === file) {
+      return { ok: true, webPath: webPathForFile(publicRoot, file) };
+    }
+    assertRealChild(
+      fs.realpathSync.native(dir),
+      target,
+      "Path escapes the asset directory.",
+    );
+    fs.renameSync(file, target);
+    return { ok: true, webPath: webPathForFile(publicRoot, target) };
+  } catch (error) {
+    log.error("Asset rename failed", error);
     return {
       ok: false,
       error: error instanceof Error ? error.message : String(error),

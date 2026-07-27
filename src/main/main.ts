@@ -5,6 +5,7 @@ import log from "electron-log";
 import { registerIpcHandlers } from "./ipc";
 import { stopDevServer } from "./services/devServer";
 import { stopThemePreviewServer } from "./services/themePreviewServer";
+import { stopWatching } from "./services/watch";
 import { readGlobalSettings, writeGlobalSettings } from "./services/settings";
 import { setupAutoUpdater, checkForUpdates } from "./updater";
 import { checkNodeVersion, validateNodePath } from "./services/nodeCheck";
@@ -32,7 +33,16 @@ if (log.transports?.file) {
 process.setMaxListeners(48);
 
 function cleanupBackgroundServices(): void {
+  if (splashCloseTimer) {
+    clearTimeout(splashCloseTimer);
+    splashCloseTimer = null;
+  }
+  if (splashWindow && !splashWindow.isDestroyed()) {
+    splashWindow.close();
+  }
+  splashWindow = null;
   closePreviewWindow();
+  stopWatching();
   stopDevServer();
   stopThemePreviewServer();
 }
@@ -62,7 +72,9 @@ process.on("unhandledRejection", (reason) => {
 let mainWindow: BrowserWindow | null = null;
 let previewWindow: BrowserWindow | null = null;
 let splashWindow: BrowserWindow | null = null;
+let splashCloseTimer: NodeJS.Timeout | null = null;
 let isInstallingUpdate = false;
+let smokeExitCode: number | null = null;
 
 function rendererPath(file: string): string {
   // main.js runs from dist/main; renderer files live at <root>/src/renderer.
@@ -98,7 +110,8 @@ function createSplash(): void {
     },
   });
   void splashWindow.loadFile(rendererPath("splash.html"));
-  setTimeout(() => {
+  splashCloseTimer = setTimeout(() => {
+    splashCloseTimer = null;
     if (splashWindow && !splashWindow.isDestroyed()) {
       splashWindow.close();
       splashWindow = null;
@@ -219,21 +232,70 @@ async function runRendererSmokeChecks(
   )) as string[];
 }
 
+function finishSmokeProcess(exitCode: number): void {
+  smokeExitCode = exitCode;
+  process.exitCode = exitCode;
+
+  let quitStarted = false;
+  let sendFallback: NodeJS.Timeout | null = null;
+  const quit = (): void => {
+    if (quitStarted) return;
+    quitStarted = true;
+    process.off("disconnect", onDisconnect);
+    if (sendFallback) {
+      clearTimeout(sendFallback);
+      sendFallback = null;
+    }
+    app.quit();
+  };
+  const onDisconnect = (): void => quit();
+
+  if (typeof process.send !== "function") {
+    quit();
+    return;
+  }
+
+  // Stay alive beyond the launcher's complete TERM/KILL budget so Windows
+  // taskkill /t never loses the root PID while traversing its process tree.
+  process.once("disconnect", onDisconnect);
+  sendFallback = setTimeout(quit, 10_000);
+  try {
+    process.send(
+      { type: "zephus-smoke-complete", exitCode },
+      (error: Error | null) => {
+        if (!error) return;
+        log.warn("Could not notify smoke launcher:", error);
+        quit();
+      },
+    );
+  } catch (error) {
+    log.warn("Could not notify smoke launcher:", error);
+    quit();
+  }
+}
+
+let smokeCompletionStarted = false;
+
 async function completeSmokeRun(windowRef: BrowserWindow): Promise<void> {
+  if (smokeCompletionStarted) return;
+  smokeCompletionStarted = true;
+
+  let exitCode = 1;
   try {
     const failures = await runRendererSmokeChecks(windowRef);
     if (failures.length > 0) {
       for (const failure of failures) {
         log.error("[smoke]", failure);
       }
-      app.exit(1);
-      return;
+    } else {
+      exitCode = 0;
+      log.info("Smoke run: renderer checks passed, shutting down.");
     }
-    log.info("Smoke run: renderer checks passed, exiting.");
-    app.exit(0);
   } catch (error) {
     log.error("Smoke run failed:", error);
-    app.exit(1);
+  } finally {
+    cleanupBackgroundServices();
+    finishSmokeProcess(exitCode);
   }
 }
 
@@ -390,6 +452,10 @@ function createMainWindow(): void {
   // created), so no per-window installation is needed here.
 
   mainWindow.once("ready-to-show", () => {
+    if (splashCloseTimer) {
+      clearTimeout(splashCloseTimer);
+      splashCloseTimer = null;
+    }
     if (splashWindow) {
       splashWindow.close();
       splashWindow = null;
@@ -624,4 +690,12 @@ app.on("before-quit", () => {
     log.info("App quitting to install an update.");
   }
   cleanupBackgroundServices();
+});
+
+app.on("will-quit", (event) => {
+  if (smokeExitCode === null) return;
+  event.preventDefault();
+  const exitCode = smokeExitCode;
+  smokeExitCode = null;
+  app.exit(exitCode);
 });

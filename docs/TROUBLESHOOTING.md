@@ -195,6 +195,39 @@ Detached pages are code-only by design.
 
 ## Asset & Image Issues
 
+### "sitemap.xml and robots.txt were not created"
+
+**Cause:** Both need your site's public address, because a sitemap has to list full URLs.
+
+**Fix:**
+1. Open **Site Shell** → **Search & sharing**
+2. Enter your **Site URL** (e.g. `https://example.com`)
+3. Save, then build/publish again
+
+If the files already exist but Zephus is not updating them, they were written by hand. Zephus only rewrites files it generated (they contain a `zephus:managed` marker), so delete yours if you want Zephus to take over.
+
+---
+
+### "My social share preview shows no image"
+
+**Check:**
+1. **Site URL** is set in **Site Shell** → social platforms require absolute addresses
+2. **Social share image** is set in **Page Settings** for that page
+3. You rebuilt/published after making the change
+4. The sharing platform may cache previews — use its own debug/refresh tool
+
+---
+
+### "I renamed an image and now it's missing"
+
+Renaming from the asset browser updates references across your pages (including HTML blocks), the site favicon, footer HTML, and custom head HTML.
+
+It cannot update **detached pages**, because their code is yours rather than generated.
+
+**Fix:** Open the detached page in Code mode and point it at the new file name.
+
+---
+
 ### "Image won't show on preview"
 
 An image block displays as a placeholder or broken image icon.
@@ -302,7 +335,7 @@ Pages exist but don't appear in the site header menu.
 **Likely cause:** No pages have "Show in Navigation" enabled.
 
 **Fix:**
-1. Click the **👁️ icon** next to a page name in the left sidebar
+1. Click the **👁️ icon** next to a page name in the left sidebar's **Pages** tab
 2. Change it from **👁️‍🗨️ hidden** to **👁️ visible**
 3. That page now appears in the site navigation
 

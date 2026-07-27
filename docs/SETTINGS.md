@@ -179,9 +179,19 @@ Control which blocks are allowed and editing behavior for this project:
 
 | Shortcut | Action |
 |----------|--------|
-| **Ctrl+S** | Save current page |
-| **Ctrl+Z** | Undo |
-| **Ctrl+Y** | Redo |
+| **Ctrl/Cmd+S** | Save current page |
+| **Ctrl/Cmd+Z** | Undo |
+| **Ctrl/Cmd+Y** | Redo |
+| **Ctrl/Cmd+F** | Find and replace across pages |
+
+### While Editing Text on the Canvas
+
+| Shortcut | Action |
+|----------|--------|
+| **Ctrl/Cmd+B** | Bold |
+| **Ctrl/Cmd+I** | Italic |
+| **Ctrl/Cmd+K** | Add link to selection |
+| **Esc** | Cancel the edit |
 
 ### Code Mode
 

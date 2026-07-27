@@ -41,9 +41,13 @@ import {
   importImage,
   importAssets,
   importAssetsFromPaths,
+  deleteAsset,
+  renameAsset,
   listProjectAssets,
   readAssetDataUrl,
 } from "./services/assets";
+import { findAssetUsage, repointAssetReferences } from "./services/assetUsage";
+import { searchPages, replaceAllInPages } from "./services/findReplace";
 import {
   deletePage,
   duplicatePage,
@@ -548,6 +552,92 @@ export function registerIpcHandlers(
     (_e, projectPath: string, publicDir: string, webPath: string) =>
       approved(projectPath, () =>
         readAssetDataUrl(projectPath, publicDir, webPath),
+      ),
+  );
+
+  ipcMain.handle(
+    IPC.searchPages,
+    (
+      _e,
+      projectPath: string,
+      pagesDir: string,
+      query: string,
+      options: { caseSensitive?: boolean; wholeWord?: boolean },
+    ) =>
+      approved(projectPath, () =>
+        searchPages(projectPath, pagesDir, query, options ?? {}),
+      ),
+  );
+
+  ipcMain.handle(
+    IPC.replaceAll,
+    (
+      _e,
+      projectPath: string,
+      pagesDir: string,
+      query: string,
+      replacement: string,
+      options: { caseSensitive?: boolean; wholeWord?: boolean },
+      onlyPages?: string[],
+    ) =>
+      approved(projectPath, () =>
+        replaceAllInPages(
+          projectPath,
+          pagesDir,
+          query,
+          replacement,
+          options ?? {},
+          onlyPages,
+        ),
+      ),
+  );
+
+  ipcMain.handle(
+    IPC.assetDelete,
+    (_e, projectPath: string, publicDir: string, webPath: string) =>
+      approved(projectPath, () => deleteAsset(projectPath, publicDir, webPath)),
+  );
+
+  ipcMain.handle(
+    IPC.assetRename,
+    (
+      _e,
+      projectPath: string,
+      publicDir: string,
+      pagesDir: string,
+      webPath: string,
+      nextName: string,
+    ) =>
+      approved(projectPath, () => {
+        const renamed = renameAsset(projectPath, publicDir, webPath, nextName);
+        if (!renamed.ok || !renamed.webPath) return renamed;
+        // Repoint in the same call: a rename that left references behind would
+        // silently break every page using the old file name.
+        const repointed = repointAssetReferences(
+          projectPath,
+          pagesDir,
+          webPath,
+          renamed.webPath,
+        );
+        if (!repointed.ok) {
+          return {
+            ok: false,
+            webPath: renamed.webPath,
+            error: `Asset was renamed to ${renamed.webPath}, but references could not be updated: ${repointed.error ?? "unknown error"}`,
+          };
+        }
+        return {
+          ...renamed,
+          updatedReferences: repointed.updated,
+        };
+      }),
+  );
+
+  ipcMain.handle(
+    IPC.assetUsage,
+    (_e, projectPath: string, pagesDir: string, webPath: string) =>
+      approved(projectPath, () =>
+        findAssetUsage(projectPath, pagesDir, webPath),
       ),
   );
 
