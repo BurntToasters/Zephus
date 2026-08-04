@@ -314,17 +314,23 @@ const api = {
   ): Promise<{ ok: boolean; dataUrl?: string; error?: string }> =>
     ipcRenderer.invoke(IPC.assetDataUrl, projectPath, publicDir, webPath),
 
-  listReusableSections: (): Promise<ReusableSectionsResult> =>
-    ipcRenderer.invoke(IPC.listReusableSections),
+  listReusableSections: (
+    projectPath: string,
+  ): Promise<ReusableSectionsResult> =>
+    ipcRenderer.invoke(IPC.listReusableSections, projectPath),
 
   saveReusableSection: (
+    projectPath: string,
     label: string,
     html: string,
   ): Promise<ReusableSectionsResult> =>
-    ipcRenderer.invoke(IPC.saveReusableSection, label, html),
+    ipcRenderer.invoke(IPC.saveReusableSection, projectPath, label, html),
 
-  deleteReusableSection: (id: string): Promise<OperationResult> =>
-    ipcRenderer.invoke(IPC.deleteReusableSection, id),
+  deleteReusableSection: (
+    projectPath: string,
+    id: string,
+  ): Promise<OperationResult> =>
+    ipcRenderer.invoke(IPC.deleteReusableSection, projectPath, id),
 
   readDraft: (
     projectPath: string,
@@ -383,6 +389,12 @@ const api = {
     return () => ipcRenderer.removeListener(IPC.previewClosed, listener);
   },
 
+  onPreviewExited: (callback: () => void): (() => void) => {
+    const listener = () => callback();
+    ipcRenderer.on(IPC.previewExited, listener);
+    return () => ipcRenderer.removeListener(IPC.previewExited, listener);
+  },
+
   ensureThemePreviewServer: (): Promise<ThemePreviewServerResult> =>
     ipcRenderer.invoke(IPC.themePreviewEnsure),
 
@@ -391,6 +403,12 @@ const api = {
     outDir: string,
   ): Promise<{ ok: boolean; outputDir?: string; error?: string }> =>
     ipcRenderer.invoke(IPC.publish, projectPath, outDir),
+
+  revealOutputFolder: (
+    projectPath: string,
+    outDir: string,
+  ): Promise<OperationResult> =>
+    ipcRenderer.invoke(IPC.revealOutputFolder, projectPath, outDir),
 
   dependenciesInstalled: (projectPath: string): Promise<boolean> =>
     ipcRenderer.invoke(IPC.depsInstalled, projectPath),

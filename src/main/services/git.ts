@@ -78,9 +78,20 @@ export async function getGitStatus(
   };
 
   try {
-    const branchRaw = (
-      await git(projectPath, ["rev-parse", "--abbrev-ref", "HEAD"])
-    ).trim();
+    let branchRaw: string;
+    try {
+      branchRaw = (
+        await git(projectPath, ["rev-parse", "--abbrev-ref", "HEAD"])
+      ).trim();
+    } catch {
+      // Unborn HEAD (fresh `git init`, no commits yet): `rev-parse HEAD`
+      // fails, but the branch still has a symbolic ref.
+      branchRaw = (
+        await git(projectPath, ["symbolic-ref", "--short", "HEAD"]).catch(
+          () => "HEAD",
+        )
+      ).trim();
+    }
     const detachedHead = branchRaw === "HEAD";
 
     const statusRaw = await git(projectPath, ["status", "--porcelain"]);
@@ -194,8 +205,31 @@ export async function pushCurrentBranch(
         error: "Cannot push while in detached HEAD. Check out a branch first.",
       };
     }
-    await git(projectPath, ["push"]);
-    return { ok: true };
+    try {
+      await git(projectPath, ["push"]);
+      return { ok: true };
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      // First push on a freshly initialized repo has no upstream; set it to
+      // origin (or the first configured remote) so subsequent pushes behave
+      // normally.
+      if (detail.includes("no upstream branch") && status.branch) {
+        const remotes = (await git(projectPath, ["remote"]))
+          .split("\n")
+          .filter(Boolean);
+        const remote = remotes.includes("origin") ? "origin" : remotes[0];
+        if (remote) {
+          await git(projectPath, [
+            "push",
+            "--set-upstream",
+            remote,
+            status.branch,
+          ]);
+          return { ok: true };
+        }
+      }
+      throw error;
+    }
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     log.warn("Git push failed", projectPath, error);
@@ -233,11 +267,17 @@ export async function pullCurrentBranch(
  * and must be committed so the project opens correctly on other machines.
  */
 export async function isZephusIgnored(projectPath: string): Promise<boolean> {
-  try {
-    // `git check-ignore` exits 0 when the path IS ignored, 1 when it is not.
-    await git(projectPath, ["check-ignore", "-q", ".zephus"]);
-    return true;
-  } catch {
-    return false;
-  }
+  // `git check-ignore` exits 0 when the path IS ignored, 1 when it is not.
+  // --no-index makes the check work even when .zephus does not exist yet, and
+  // both path forms are checked because `.zephus/` (dir pattern) vs `.zephus`
+  // (file pattern) match different spellings of the path.
+  const ignored = async (rel: string): Promise<boolean> => {
+    try {
+      await git(projectPath, ["check-ignore", "--no-index", "-q", rel]);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  return (await ignored(".zephus")) || (await ignored(".zephus/"));
 }

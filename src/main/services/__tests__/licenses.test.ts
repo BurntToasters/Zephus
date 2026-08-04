@@ -109,4 +109,76 @@ describe("readProductionLicenses", () => {
       licenses: "MIT",
     });
   });
+
+  it("keeps bundled-renderer entries even when they are dev deps", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "zephus-licenses-"));
+    const file = path.join(root, "licenses.json");
+    const lock = path.join(root, "package-lock.json");
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        "codemirror@6.0.2": {
+          licenses: "MIT",
+          repository: "https://github.com/codemirror/dev",
+          licenseUrl: "https://example.com/mit",
+          parents: "zephus (bundled in renderer)",
+        },
+      }),
+      "utf8",
+    );
+    fs.writeFileSync(
+      lock,
+      JSON.stringify({
+        packages: {
+          "": {},
+          "node_modules/codemirror": { version: "6.0.2", dev: true },
+        },
+      }),
+      "utf8",
+    );
+
+    const result = readProductionLicenses(file, lock);
+    expect(result.ok).toBe(true);
+    expect(result.entries).toHaveLength(1);
+    expect(result.entries[0]!.packageId).toBe("codemirror@6.0.2");
+  });
+
+  it("shows everything when the lockfile cannot filter (no packages map)", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "zephus-licenses-"));
+    const file = path.join(root, "licenses.json");
+    const lock = path.join(root, "package-lock.json");
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        "astro@5.0.0": {
+          licenses: "MIT",
+          repository: "https://github.com/withastro/astro",
+          parents: "zephus",
+        },
+      }),
+      "utf8",
+    );
+    // lockfileVersion 1 style: no packages map at all.
+    fs.writeFileSync(
+      lock,
+      JSON.stringify({ name: "old", version: "1.0.0", dependencies: {} }),
+      "utf8",
+    );
+
+    const result = readProductionLicenses(file, lock);
+    expect(result.ok).toBe(true);
+    expect(result.entries).toHaveLength(1);
+  });
+
+  it("drops absolute filesystem paths from licenseUrl", () => {
+    const entries = parseProductionLicenses({
+      "astro@5.0.0": {
+        licenses: "MIT",
+        repository: "https://github.com/withastro/astro",
+        licenseUrl: "/Users/dev/node_modules/astro/LICENSE",
+        parents: "zephus",
+      },
+    });
+    expect(entries[0]!.licenseUrl).toBeNull();
+  });
 });

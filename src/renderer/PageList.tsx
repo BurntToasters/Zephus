@@ -7,6 +7,8 @@ export interface PageListEntry {
   route: string;
   navLabel: string;
   navVisible: boolean;
+  /** True when the page is detached from visual editing (code only). */
+  detached?: boolean;
   active?: boolean;
   loading?: boolean;
   interactionDisabled?: boolean;
@@ -15,6 +17,7 @@ export interface PageListEntry {
 export interface PageListActionHandlers {
   onOpen: (page: string) => void;
   onManage: (page: string) => void;
+  onToggleNav: (page: string) => void;
 }
 
 const [entries, setEntries] = createStore<PageListEntry[]>([]);
@@ -54,8 +57,13 @@ export function PageListPanel() {
                 class="page-file-icon"
                 aria-hidden="true"
                 hidden={!!entry.loading}
+                title={
+                  entry.detached ? "Detached page — code mode only" : undefined
+                }
               >
-                <i data-lucide="file-code"></i>
+                <i
+                  data-lucide={entry.detached ? "file-pen-line" : "file-code"}
+                ></i>
               </span>
               <span
                 class="page-loading-icon"
@@ -68,6 +76,24 @@ export function PageListPanel() {
                 <strong>{entry.navLabel}</strong>
                 <small>{entry.loading ? "Loading…" : entry.route}</small>
               </span>
+            </button>
+            <button
+              type="button"
+              class="mini-btn page-nav-toggle"
+              title={
+                entry.navVisible
+                  ? `Hide ${entry.navLabel} from navigation`
+                  : `Show ${entry.navLabel} in navigation`
+              }
+              aria-label={`Toggle ${entry.navLabel} in navigation`}
+              aria-pressed={entry.navVisible ? "true" : "false"}
+              disabled={entry.loading || entry.interactionDisabled}
+              onClick={(event) => {
+                event.stopPropagation();
+                handlers?.onToggleNav(entry.page);
+              }}
+            >
+              <i data-lucide={entry.navVisible ? "eye" : "eye-off"}></i>
             </button>
             <button
               class="mini-btn page-manage-button"

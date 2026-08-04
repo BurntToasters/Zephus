@@ -13,6 +13,10 @@ export interface SplitManagedPage {
   inner: string;
 }
 
+/** Quote-aware tag matcher: a `>` inside a quoted attribute must not end the
+ *  tag (mirrors the main-process parser). */
+const TAG_PATTERN_SOURCE = "(?:[^>\"'\\n]|\"[^\"]*\"|'[^']*')*>";
+
 /**
  * Splits raw managed page source into Astro frontmatter, outer frame, and inner
  * HTML (the region Zephus parses into sections/blocks).
@@ -32,7 +36,10 @@ export function splitManagedPageSource(raw: string): SplitManagedPage {
   }
 
   const bodyMatch = rest.match(
-    /([\s\S]*<body[^>]*>)([\s\S]*?)(<\/body>[\s\S]*)/i,
+    new RegExp(
+      `([\\s\\S]*<body\\b${TAG_PATTERN_SOURCE})([\\s\\S]*?)(<\\/body>[\\s\\S]*)`,
+      "i",
+    ),
   );
   let inner: string;
   if (bodyMatch) {
@@ -41,7 +48,9 @@ export function splitManagedPageSource(raw: string): SplitManagedPage {
     frame.suffix = bodyMatch[3] ?? "";
   } else {
     const rootMatch = rest.match(
-      /^(\s*<([A-Za-z][\w.-]*)\b[^>]*>)([\s\S]*)(<\/\2>\s*)$/,
+      new RegExp(
+        `^(\\s*<([A-Za-z][\\w.-]*)\\b${TAG_PATTERN_SOURCE})([\\s\\S]*)(<\\/\\2>\\s*)$`,
+      ),
     );
     if (rootMatch) {
       frame.prefix = rootMatch[1] ?? "";

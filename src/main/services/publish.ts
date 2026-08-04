@@ -16,17 +16,38 @@ export interface PublishResult extends OperationResult {
   outputDir?: string;
 }
 
+let activeBuild: Promise<PublishResult> | null = null;
+
 /**
  * Runs `npm run build` (Astro production build) in the project directory.
  * On success, opens the output folder in the system file manager.
  */
-export async function buildAndReveal(
+export function buildAndReveal(
   projectPath: string,
   outDir: string,
 ): Promise<PublishResult> {
   if (typeof projectPath !== "string" || !projectPath) {
-    return { ok: false, error: "Invalid project path." };
+    return Promise.resolve({ ok: false, error: "Invalid project path." });
   }
+  // Serialize concurrent builds: two overlapping runs would regenerate the
+  // same managed files and race writing the same dist/ directory.
+  if (activeBuild) {
+    return Promise.resolve({
+      ok: false,
+      error: "A build is already running. Wait for it to finish.",
+    });
+  }
+  activeBuild = runBuild(projectPath, outDir);
+  void activeBuild.finally(() => {
+    if (activeBuild) activeBuild = null;
+  });
+  return activeBuild;
+}
+
+async function runBuild(
+  projectPath: string,
+  outDir: string,
+): Promise<PublishResult> {
   try {
     // Astro builds whatever .astro files are on disk. Refresh managed pages
     // from their sidecars first, so a page that is stale relative to its saved

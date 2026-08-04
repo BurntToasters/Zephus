@@ -140,6 +140,41 @@ describe("collectResponsiveCss", () => {
     expect(css).toContain("data-zephus-id=");
     expect(css).toContain("grid-template-columns:1fr");
   });
+
+  it("emits hide rules so hideOn actually hides in the built site", () => {
+    const css = collectResponsiveCss([
+      {
+        id: "sec-1",
+        type: "section",
+        label: "Main",
+        props: { wrapper: "none" },
+        children: [
+          {
+            id: "block-tablet",
+            type: "text",
+            props: { text: "x", cls: "" },
+            style: { hideOn: ["tablet"] },
+          },
+          {
+            id: "block-mobile",
+            type: "text",
+            props: { text: "y", cls: "" },
+            style: { hideOn: ["mobile"] },
+          },
+        ],
+      },
+    ]);
+    expect(css).toContain(
+      '@media (max-width: 1024px){[data-zephus-id="block-tablet"]{display:none}}',
+    );
+    expect(css).toContain(
+      '@media (max-width: 720px){[data-zephus-id="block-mobile"]{display:none}}',
+    );
+    // The mobile rule must not leak into the tablet media query.
+    expect(css).not.toContain(
+      'block-mobile"]{display:none}}@media (max-width: 1024px)',
+    );
+  });
 });
 
 describe("section wrapper snapshots", () => {

@@ -10,12 +10,42 @@ if (!fs.existsSync(summaryPath)) {
 
 const summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
 
+// Lines/statements thresholds per file. Values sit ~5 points below the
+// measured baseline so the gate is regression-proof without being flaky.
 const thresholds = {
-  'src/main/updater.ts': { lines: 45, statements: 45 },
-  'src/main/services/assets.ts': { lines: 80, statements: 80 },
-  'src/main/services/files.ts': { lines: 90, statements: 90 },
-  'src/main/services/schema.ts': { lines: 75, statements: 70 },
+  'src/main/updater.ts': { lines: 75, statements: 75 },
+  'src/main/services/assets.ts': { lines: 92, statements: 92 },
+  'src/main/services/files.ts': { lines: 95, statements: 95 },
+  'src/main/services/schema.ts': { lines: 78, statements: 75 },
   'src/main/services/updateChannel.ts': { lines: 95, statements: 95 },
+  'src/main/services/git.ts': { lines: 75, statements: 75 },
+  'src/main/services/nodeCheck.ts': { lines: 78, statements: 75 },
+  'src/main/services/devServer.ts': { lines: 72, statements: 70 },
+  'src/main/services/findReplace.ts': { lines: 88, statements: 82 },
+  'src/main/services/drafts.ts': { lines: 78, statements: 75 },
+  'src/main/services/settings.ts': { lines: 80, statements: 78 },
+  'src/main/services/licenses.ts': { lines: 80, statements: 72 },
+  'src/main/services/themePreviewServer.ts': { lines: 82, statements: 78 },
+  'src/main/services/pageManager.ts': { lines: 62, statements: 60 },
+  'src/main/services/wizard.ts': { lines: 58, statements: 56 },
+  'src/main/services/reusableSections.ts': { lines: 82, statements: 80 },
+  'src/main/services/assetUsage.ts': { lines: 78, statements: 75 },
+  'src/shared/blockRender.ts': { lines: 90, statements: 88 },
+  'src/shared/renderHelpers.ts': { lines: 88, statements: 85 },
+  'src/renderer/editorCommands.ts': { lines: 95, statements: 95 },
+  'src/renderer/editorDraft.ts': { lines: 95, statements: 90 },
+  'src/renderer/editorDraftRestore.ts': { lines: 82, statements: 78 },
+  'src/renderer/editorGit.ts': { lines: 90, statements: 90 },
+  'src/renderer/editorInlineEdit.ts': { lines: 68, statements: 66 },
+  'src/renderer/editorParse.ts': { lines: 80, statements: 78 },
+  'src/renderer/editorResize.ts': { lines: 95, statements: 88 },
+  'src/renderer/editorSave.ts': { lines: 78, statements: 76 },
+  'src/renderer/editorSerialize.ts': { lines: 90, statements: 90 },
+  'src/renderer/editorSession.ts': { lines: 85, statements: 80 },
+  'src/renderer/editorSiteSave.ts': { lines: 75, statements: 72 },
+  'src/renderer/editorUndo.ts': { lines: 95, statements: 95 },
+  'src/renderer/inlineRichText.ts': { lines: 90, statements: 90 },
+  'src/renderer/editorBlockRender.ts': { lines: 72, statements: 70 },
 };
 
 function findCoverageEntry(suffix) {

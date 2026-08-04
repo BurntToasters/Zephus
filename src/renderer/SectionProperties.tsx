@@ -341,6 +341,7 @@ export interface SectionPropertiesState {
   background: string;
   color: string;
   radius: string;
+  hideOn: string[] | undefined;
   locked: boolean;
   onFocus: () => void;
   onBlur: () => void;
@@ -356,6 +357,10 @@ export interface SectionPropertiesState {
   onBackgroundChange: (value: string) => void;
   onColorChange: (value: string) => void;
   onRadiusChange: (value: string) => void;
+  onHideOnChange: (
+    viewport: "desktop" | "tablet" | "mobile",
+    hidden: boolean,
+  ) => void;
   onAddBlock: () => void;
   onDuplicate: () => void;
   onMoveUp: () => void;
@@ -473,6 +478,34 @@ export function renderSectionProperties(
               onFocus={state.onFocus}
               onBlur={state.onBlur}
             />
+          </Group>
+
+          <Group title="Visibility">
+            <ToggleField
+              label="Hide on desktop"
+              checked={(state.hideOn ?? []).includes("desktop")}
+              onFocus={state.onFocus}
+              onBlur={state.onBlur}
+              onChange={(next) => state.onHideOnChange("desktop", next)}
+            />
+            <ToggleField
+              label="Hide on tablet"
+              checked={(state.hideOn ?? []).includes("tablet")}
+              onFocus={state.onFocus}
+              onBlur={state.onBlur}
+              onChange={(next) => state.onHideOnChange("tablet", next)}
+            />
+            <ToggleField
+              label="Hide on mobile"
+              checked={(state.hideOn ?? []).includes("mobile")}
+              onFocus={state.onFocus}
+              onBlur={state.onBlur}
+              onChange={(next) => state.onHideOnChange("mobile", next)}
+            />
+            <p class="meta-hint">
+              Hidden content stays editable on the canvas (dashed outline) and
+              disappears from the published site at that width.
+            </p>
           </Group>
 
           <Group title="Style">

@@ -54,6 +54,12 @@ export function createSite(
       targetPath,
       path.join("src", "pages"),
       themeId,
+      {
+        // The scaffold's stub pages/layout are placeholders, not user work:
+        // replace them with the real generated files (and record hashes) so
+        // the site opens fully "managed" on the very first pass.
+        regenerateHashlessPages: true,
+      },
     );
     if (!ensured.ok) {
       throw new Error(ensured.error ?? "Could not initialize Zephus schema.");

@@ -178,4 +178,108 @@ describe("updater install lifecycle", () => {
     });
     expect(updaterMock.autoUpdater.quitAndInstall).not.toHaveBeenCalled();
   });
+
+  it("refuses update checks in dev mode", async () => {
+    electronMock.app.isPackaged = false;
+    try {
+      const updater = await import("../updater");
+      const result = await updater.checkForUpdates(() => ({
+        updateChannel: "stable",
+      }));
+      expect(result.status).toBe("error");
+    } finally {
+      electronMock.app.isPackaged = true;
+    }
+  });
+
+  it("reports an approved update as available after a manual check", async () => {
+    updaterMock.autoUpdater.checkForUpdates = vi.fn(async () => ({
+      updateInfo: { version: "0.2.0" },
+    }));
+    try {
+      const updater = await import("../updater");
+      const result = await updater.checkForUpdates(() => ({
+        updateChannel: "stable",
+      }));
+      expect(result.status).toBe("available");
+      expect(result.version).toBe("0.2.0");
+    } finally {
+      delete updaterMock.autoUpdater.checkForUpdates;
+    }
+  });
+
+  it("reports not-available when the feed version is not an upgrade", async () => {
+    updaterMock.autoUpdater.checkForUpdates = vi.fn(async () => ({
+      updateInfo: { version: "0.1.0" },
+    }));
+    try {
+      const updater = await import("../updater");
+      const result = await updater.checkForUpdates(() => ({
+        updateChannel: "stable",
+      }));
+      expect(result.status).toBe("not-available");
+    } finally {
+      delete updaterMock.autoUpdater.checkForUpdates;
+    }
+  });
+
+  it("rejects a download when no update was approved", async () => {
+    const updater = await import("../updater");
+    const result = await updater.downloadUpdate(() => ({
+      updateChannel: "stable",
+    }));
+    expect(result.status).toBe("error");
+    expect(result.error).toContain("No applicable update");
+  });
+
+  it("rejects a download when the channel changed after approval", async () => {
+    updaterMock.autoUpdater.checkForUpdates = vi.fn(async () => ({
+      updateInfo: { version: "0.2.0" },
+    }));
+    try {
+      const updater = await import("../updater");
+      await updater.checkForUpdates(() => ({ updateChannel: "stable" }));
+      const result = await updater.downloadUpdate(() => ({
+        updateChannel: "beta",
+      }));
+      expect(result.status).toBe("error");
+      expect(result.error).toContain("channel changed");
+    } finally {
+      delete updaterMock.autoUpdater.checkForUpdates;
+    }
+  });
+
+  it("cancels an in-flight download and notifies the renderer", async () => {
+    updaterMock.autoUpdater.checkForUpdates = vi.fn(async () => ({
+      updateInfo: { version: "0.2.0" },
+    }));
+    updaterMock.autoUpdater.downloadUpdate = vi.fn(
+      (token: { cancel: () => void }) =>
+        new Promise((_resolve, reject) => {
+          token.cancel = () => reject(new Error("Download cancelled"));
+        }),
+    );
+    try {
+      const updater = await import("../updater");
+      await updater.checkForUpdates(() => ({ updateChannel: "stable" }));
+      const promise = updater.downloadUpdate(() => ({
+        updateChannel: "stable",
+      }));
+      await vi.waitFor(() =>
+        expect(updaterMock.autoUpdater.downloadUpdate).toHaveBeenCalled(),
+      );
+      const win = {
+        isDestroyed: () => false,
+        webContents: { send: vi.fn() },
+      };
+      updater.cancelDownload(() => win as never);
+      await expect(promise).resolves.toMatchObject({ status: "cancelled" });
+      expect(win.webContents.send).toHaveBeenCalledWith("updater-status", {
+        status: "cancelled",
+      });
+    } finally {
+      delete updaterMock.autoUpdater.downloadUpdate;
+      delete updaterMock.autoUpdater.checkForUpdates;
+    }
+  });
 });

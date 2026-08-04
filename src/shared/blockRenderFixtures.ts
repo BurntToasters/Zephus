@@ -44,6 +44,11 @@ export const BLOCK_RENDER_FIXTURES: BlockNode[] = [
     title: "Map",
     cls: "",
   }),
+  blockRenderFixture("video", {
+    src: "https://example.com/movie.mp4",
+    title: "Showreel",
+    cls: "",
+  }),
   blockRenderFixture("html", {}, { raw: "<div>raw <b>html</b></div>" }),
   blockRenderFixture("feature", {
     icon: "⚡",

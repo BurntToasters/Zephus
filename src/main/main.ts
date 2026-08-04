@@ -299,10 +299,34 @@ async function completeSmokeRun(windowRef: BrowserWindow): Promise<void> {
   }
 }
 
+/** Decodes a file:// URL to a normalized absolute path (Windows drive aware). */
+function fileUrlToPath(url: URL): string {
+  let p = decodeURIComponent(url.pathname);
+  if (/^\/[A-Za-z]:/.test(p)) p = p.slice(1);
+  return path.normalize(p);
+}
+
+function isWithinPath(root: string, target: string): boolean {
+  return target === root || target.startsWith(root + path.sep);
+}
+
 /** True for the renderer's own file:// origin or the localhost dev-server preview. */
 function isAllowedFrameUrl(target: string, rendererRootUrl: string): boolean {
-  if (target.startsWith(rendererRootUrl)) return true;
   if (target === "about:blank") return true;
+  if (target.startsWith("file://")) {
+    // Normalize the path (resolving `..` and percent-encoding) before the
+    // containment check: a raw prefix match would let
+    // file://…/renderer/../../../../etc/passwd through while Chromium
+    // normalizes the navigation to a file outside the app.
+    try {
+      return isWithinPath(
+        fileUrlToPath(new URL(rendererRootUrl)),
+        fileUrlToPath(new URL(target)),
+      );
+    } catch {
+      return false;
+    }
+  }
   return isLocalhostPreviewUrl(target);
 }
 
@@ -317,8 +341,17 @@ function installNavigationGuards(contents: Electron.WebContents): void {
   const rendererRootUrl = rendererRoot.endsWith("/")
     ? rendererRoot
     : `${rendererRoot}/`;
-  const isInternal = (target: string): boolean =>
-    target.startsWith(rendererRootUrl);
+  const isInternal = (target: string): boolean => {
+    if (!target.startsWith("file://")) return false;
+    try {
+      return isWithinPath(
+        fileUrlToPath(new URL(rendererRootUrl)),
+        fileUrlToPath(new URL(target)),
+      );
+    } catch {
+      return false;
+    }
+  };
   const openExternal = (url: string): void => {
     if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
   };

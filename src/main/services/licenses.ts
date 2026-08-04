@@ -76,8 +76,14 @@ export function readProductionPackageIdsFromLock(
       packages?: Record<string, LockPackageEntry>;
     };
 
+    // lockfileVersion 1 lockfiles have no `packages` map — there is nothing
+    // to filter against, so no filter (null), never an empty allowlist.
+    if (!parsed.packages || Object.keys(parsed.packages).length === 0) {
+      return null;
+    }
+
     const allowed = new Set<string>();
-    for (const [key, data] of Object.entries(parsed.packages ?? {})) {
+    for (const [key, data] of Object.entries(parsed.packages)) {
       if (!key || data.dev || !data.version) continue;
       const name = packageNameFromLockKey(key);
       if (!name) continue;
@@ -93,19 +99,28 @@ export function readProductionPackageIdsFromLock(
   }
 }
 
+/** True when the value looks like an absolute local filesystem path. */
+function isAbsoluteFsPath(value: string): boolean {
+  return value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value);
+}
+
 export function parseProductionLicenses(
   raw: Record<string, RawLicenseEntry>,
 ): ProductionLicenseEntry[] {
   return Object.entries(raw)
     .map(([packageId, data]) => {
       const { name, version } = splitPackageId(packageId);
+      const licenseUrl = data.licenseUrl?.trim() || null;
       return {
         packageId,
         name,
         version,
         licenses: data.licenses?.trim() || "Unknown",
         repository: data.repository?.trim() || null,
-        licenseUrl: data.licenseUrl?.trim() || null,
+        // Absolute crawl paths leak the machine's filesystem layout and are
+        // useless in the packaged app; drop them.
+        licenseUrl:
+          licenseUrl && isAbsoluteFsPath(licenseUrl) ? null : licenseUrl,
         parents: normalizeParents(data.parents),
       };
     })
@@ -132,9 +147,17 @@ export function readProductionLicenses(
       RawLicenseEntry
     >;
     const allowedPackageIds = readProductionPackageIdsFromLock(lockFilePath);
-    const entries = parseProductionLicenses(parsed).filter(
-      (entry) => !allowedPackageIds || allowedPackageIds.has(entry.packageId),
-    );
+    const entries = parseProductionLicenses(parsed).filter((entry) => {
+      if (!allowedPackageIds) return true;
+      // Packages esbuild inlined into the renderer bundle are devDependencies
+      // (so absent from the production filter) but still ship in the app —
+      // keep them for attribution.
+      if (
+        entry.parents.some((parent) => parent.includes("bundled in renderer"))
+      )
+        return true;
+      return allowedPackageIds.has(entry.packageId);
+    });
 
     return {
       ok: true,

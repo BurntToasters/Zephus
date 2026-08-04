@@ -27,6 +27,11 @@ export function createModalController(refreshIcons: () => void) {
   let keyHandler: ((e: KeyboardEvent) => void) | null = null;
   let focusTimer: number | null = null;
   let focusGeneration = 0;
+  // Frames of parent modals a child modal opened over. A modal that closes
+  // pops its parent's frame back into view instead of destroying it, so
+  // nested flows (link picker / asset browser / licenses) return the user to
+  // the modal they came from with their in-progress edits intact.
+  const frameStack: ModalFrame[] = [];
 
   function isModalOpen(): boolean {
     return !modalElement("modal-overlay").classList.contains("hidden");
@@ -159,6 +164,7 @@ export function createModalController(refreshIcons: () => void) {
     options?: ModalOptions,
   ): void {
     const wasOpen = isModalOpen();
+    if (wasOpen) frameStack.push(captureFrame());
     modalElement("modal-title").textContent = title;
     modalElement("modal-body").textContent = body;
     applyModalOptions(options);
@@ -173,6 +179,7 @@ export function createModalController(refreshIcons: () => void) {
     options?: ModalOptions,
   ): void {
     const wasOpen = isModalOpen();
+    if (wasOpen) frameStack.push(captureFrame());
     modalElement("modal-title").textContent = title;
     const body = modalElement("modal-body");
     body.innerHTML = "";
@@ -207,6 +214,12 @@ export function createModalController(refreshIcons: () => void) {
 
   function closeModal(): void {
     cancelPendingFocus();
+    // A parent frame exists: pop back to it instead of closing the overlay.
+    const frame = frameStack.pop();
+    if (frame) {
+      restoreFrame(frame);
+      return;
+    }
     applyModalOptions();
     modalElement("modal-overlay").classList.add("hidden");
     setBackgroundInert(false);
@@ -214,6 +227,10 @@ export function createModalController(refreshIcons: () => void) {
       document.removeEventListener("keydown", keyHandler, true);
       keyHandler = null;
     }
+    // Drop the modal content: removing iframes (theme previews, publish view)
+    // from the document unloads them, so they stop running after close.
+    modalElement("modal-body").innerHTML = "";
+    modalElement("modal-actions").innerHTML = "";
     const returnFocus = lastFocused;
     lastFocused = null;
     if (returnFocus && document.contains(returnFocus)) returnFocus.focus();
@@ -230,14 +247,23 @@ export function createModalController(refreshIcons: () => void) {
     options?: ModalOptions,
     restoreParentWhen: (value: T) => boolean = () => true,
   ): Promise<T> {
-    const parent = isModalOpen() ? captureFrame() : null;
+    // The child modal is opened via showModal/showModalNode, which capture the
+    // parent frame automatically when one is open.
+    const parentExisted = isModalOpen();
     return new Promise((resolve) => {
       let settled = false;
       const finish = (value: T): void => {
         if (settled) return;
         settled = true;
-        if (parent && restoreParentWhen(value)) restoreFrame(parent);
-        else closeModal();
+        if (parentExisted) {
+          // Pop back to the parent…
+          closeModal();
+          // …and when the parent must not survive (e.g. a confirmed
+          // destructive action), close it too.
+          if (!restoreParentWhen(value)) closeModal();
+        } else {
+          closeModal();
+        }
         resolve(value);
       };
       const modalActions = actions.map((action) => ({
@@ -266,7 +292,6 @@ export function createModalController(refreshIcons: () => void) {
       description?: string;
     } = {},
   ): Promise<string | null> {
-    const parent = isModalOpen() ? captureFrame() : null;
     return new Promise((resolve) => {
       const container = document.createElement("div");
       container.className = "meta-form";
@@ -288,15 +313,16 @@ export function createModalController(refreshIcons: () => void) {
       input.type = "text";
       input.className = "text";
       if (opts.placeholder) input.placeholder = opts.placeholder;
-      if (opts.value) input.value = opts.value;
+      // An explicit empty string is a valid prefill.
+      if (opts.value !== undefined) input.value = opts.value;
       wrap.appendChild(input);
 
       let settled = false;
       const finish = (value: string | null): void => {
         if (settled) return;
         settled = true;
-        if (parent) restoreFrame(parent);
-        else closeModal();
+        // closeModal pops the parent frame (if any) or hides the overlay.
+        closeModal();
         resolve(value);
       };
       input.addEventListener("keydown", (e) => {

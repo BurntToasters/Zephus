@@ -68,10 +68,13 @@ export function categoryForExtension(ext: string): AssetCategory {
   return "other";
 }
 
-function uniqueName(dir: string, base: string): string {
+function uniqueName(dir: string, base: string, skipPath = ""): string {
   let candidate = base;
   let i = 1;
   while (fs.existsSync(path.join(dir, candidate))) {
+    // The file being renamed itself exists at the target name — that is a
+    // no-op, not a collision.
+    if (path.join(dir, candidate) === skipPath) return candidate;
     const ext = path.extname(base);
     const stem = path.basename(base, ext);
     candidate = `${stem}-${i}${ext}`;
@@ -288,13 +291,6 @@ function collectAssets(
   walk(baseDir, "");
 }
 
-export function listProjectImages(
-  projectPath: string,
-  publicDir: string,
-): AssetListResult {
-  return listProjectAssets(projectPath, publicDir);
-}
-
 const MIME_BY_EXTENSION: Record<string, string> = {
   png: "image/png",
   jpg: "image/jpeg",
@@ -461,7 +457,7 @@ export function renameAsset(
     if (!stem) return { ok: false, error: "Enter a file name." };
 
     const dir = path.dirname(file);
-    const target = path.join(dir, uniqueName(dir, `${stem}${ext}`));
+    const target = path.join(dir, uniqueName(dir, `${stem}${ext}`, file));
     if (target === file) {
       return { ok: true, webPath: webPathForFile(publicRoot, file) };
     }

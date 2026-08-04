@@ -92,6 +92,12 @@ export function GitPanelContent() {
     new Set(),
   );
 
+  const busy = () => committing() || pushing() || pulling() || initializing();
+
+  const changedFilesSignature = (status: GitStatusData | null): string =>
+    status ? listChangedFiles(status).join("\u0000") : "";
+  let lastFilesSignature = "";
+
   createEffect(() => {
     gitStatus();
     runIconRefresh();
@@ -100,10 +106,18 @@ export function GitPanelContent() {
   createEffect(() => {
     const status = gitStatus();
     if (!status) {
+      lastFilesSignature = "";
       setSelectedFiles(new Set<string>());
       return;
     }
-    setSelectedFiles(new Set(listChangedFiles(status)));
+    const signature = changedFilesSignature(status);
+    // Only auto-select when the working-tree file set actually changed. A plain
+    // refresh (or a post-commit/push/pull status update) must not clobber a
+    // manual subset selection the user made.
+    if (signature !== lastFilesSignature) {
+      lastFilesSignature = signature;
+      setSelectedFiles(new Set(listChangedFiles(status)));
+    }
   });
 
   const toggleFile = (file: string, checked: boolean) => {
@@ -140,7 +154,7 @@ export function GitPanelContent() {
 
   const submitCommit = async () => {
     const message = commitMessage().trim();
-    if (!message || !gitPanelHandlers || committing()) return;
+    if (!message || !gitPanelHandlers || busy()) return;
     const paths = [...selectedFiles()];
     if (paths.length === 0) return;
     const status = gitStatus();
@@ -220,7 +234,11 @@ export function GitPanelContent() {
                 <button
                   type="button"
                   class="btn ghost"
-                  onClick={() => gitPanelHandlers?.onRefresh()}
+                  disabled={busy()}
+                  onClick={() => {
+                    if (busy()) return;
+                    gitPanelHandlers?.onRefresh();
+                  }}
                 >
                   Refresh
                 </button>
@@ -245,7 +263,11 @@ export function GitPanelContent() {
               <button
                 type="button"
                 class="btn ghost"
-                onClick={() => gitPanelHandlers?.onRefresh()}
+                disabled={busy()}
+                onClick={() => {
+                  if (busy()) return;
+                  gitPanelHandlers?.onRefresh();
+                }}
                 title="Fetch remote and refresh working tree status"
               >
                 Refresh
@@ -254,7 +276,7 @@ export function GitPanelContent() {
                 <button
                   type="button"
                   class="btn"
-                  disabled={committing() || pushing() || pulling()}
+                  disabled={busy()}
                   onClick={() => void runPull()}
                 >
                   {pulling() ? "Pulling…" : "Pull (Fast-Forward)"}
@@ -262,7 +284,7 @@ export function GitPanelContent() {
                 <button
                   type="button"
                   class="btn"
-                  disabled={committing() || pushing() || pulling()}
+                  disabled={busy()}
                   onClick={() => void runPush()}
                 >
                   {pushing() ? "Pushing…" : "Push to Remote"}
@@ -382,9 +404,7 @@ export function GitPanelContent() {
                 type="button"
                 class="btn primary"
                 disabled={
-                  !commitMessage().trim() ||
-                  committing() ||
-                  selectedCount() === 0
+                  !commitMessage().trim() || busy() || selectedCount() === 0
                 }
                 onClick={() => void submitCommit()}
               >

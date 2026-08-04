@@ -31,6 +31,7 @@ import { listThemes } from "./themes";
 import { readProjectFile, writeProjectFile } from "./services/files";
 import { licensesFilePath, readProductionLicenses } from "./services/licenses";
 import { startDevServer, stopDevServer } from "./services/devServer";
+import { resolveProjectRelativeDir } from "./services/projectPaths";
 import {
   ensureThemePreviewServer,
   stopThemePreviewServer,
@@ -84,6 +85,7 @@ import {
 } from "./updater";
 import { watchFile, stopWatching } from "./services/watch";
 import { checkNodeVersion, validateNodePath } from "./services/nodeCheck";
+import { onDevServerExit } from "./services/devServer";
 import { IPC } from "./ipcChannels";
 
 export { IPC };
@@ -504,9 +506,24 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC.licensesRead, () => readProductionLicenses());
 
   ipcMain.handle(IPC.licensesOpenFile, async (): Promise<OperationResult> => {
-    const file = licensesFilePath();
-    const result = await shell.openPath(file);
-    return result ? { ok: false, error: result } : { ok: true };
+    const source = licensesFilePath();
+    let file = source;
+    try {
+      if (app.isPackaged) {
+        // shell.openPath cannot open paths inside app.asar; export a copy to
+        // userData first so the user can actually read the file.
+        const target = path.join(app.getPath("userData"), "licenses.json");
+        fs.copyFileSync(source, target);
+        file = target;
+      }
+      const result = await shell.openPath(file);
+      return result ? { ok: false, error: result } : { ok: true };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
   });
 
   ipcMain.handle(IPC.fileRead, (_e, projectPath: string, rel: string) =>
@@ -641,14 +658,22 @@ export function registerIpcHandlers(
       ),
   );
 
-  ipcMain.handle(IPC.listReusableSections, () => listReusableSections());
-
-  ipcMain.handle(IPC.saveReusableSection, (_e, label: string, html: string) =>
-    saveReusableSection(label, html),
+  ipcMain.handle(IPC.listReusableSections, (_e, projectPath: string) =>
+    approved(projectPath, () => listReusableSections(projectPath)),
   );
 
-  ipcMain.handle(IPC.deleteReusableSection, (_e, id: string) =>
-    deleteReusableSection(id),
+  ipcMain.handle(
+    IPC.saveReusableSection,
+    (_e, projectPath: string, label: string, html: string) =>
+      approved(projectPath, () =>
+        saveReusableSection(projectPath, label, html),
+      ),
+  );
+
+  ipcMain.handle(
+    IPC.deleteReusableSection,
+    (_e, projectPath: string, id: string) =>
+      approved(projectPath, () => deleteReusableSection(projectPath, id)),
   );
 
   ipcMain.handle(
@@ -712,10 +737,58 @@ export function registerIpcHandlers(
     return { ok: true };
   });
 
-  ipcMain.handle(IPC.themePreviewEnsure, () => ensureThemePreviewServer());
+  // When the running dev server dies on its own (crash, port conflict, killed
+  // outside Zephus), tell the renderer so it can reset the preview UI instead
+  // of showing a dead preview window forever.
+  onDevServerExit(() => {
+    const win = getWindow();
+    if (win && !win.isDestroyed()) {
+      win.webContents.send(IPC.previewExited);
+    }
+  });
+
+  ipcMain.handle(IPC.themePreviewEnsure, (event) => {
+    // Long-lived HTTP server: only the main editor window may start it.
+    if (
+      !options?.assertUpdaterSender ||
+      !options.assertUpdaterSender(event.sender.id)
+    ) {
+      return {
+        ok: false,
+        baseUrl: null,
+        error: "Unauthorized sender.",
+      };
+    }
+    return ensureThemePreviewServer();
+  });
 
   ipcMain.handle(IPC.publish, (_e, projectPath: string, outDir: string) =>
     approved(projectPath, () => buildAndReveal(projectPath, outDir)),
+  );
+
+  ipcMain.handle(
+    IPC.revealOutputFolder,
+    async (
+      _e,
+      projectPath: string,
+      outDir: string,
+    ): Promise<OperationResult> => {
+      try {
+        assertApprovedProject(projectPath);
+        const output = resolveProjectRelativeDir(
+          projectPath,
+          outDir,
+          "dist",
+        ).absolute;
+        const error = await shell.openPath(output);
+        return error ? { ok: false, error } : { ok: true };
+      } catch (error) {
+        return {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    },
   );
 
   ipcMain.handle(IPC.depsInstalled, (_e, projectPath: string): boolean =>

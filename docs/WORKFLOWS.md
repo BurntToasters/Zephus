@@ -19,6 +19,8 @@ Step-by-step guides for common tasks in Zephus.
 13. [Set Up Search & Social Sharing](#set-up-search--social-sharing)
 14. [Add a 404 Page](#add-a-404-page)
 15. [Publish a Blog & RSS Feed](#publish-a-blog--rss-feed)
+16. [Responsive Viewports & Hiding Content](#responsive-viewports--hiding-content)
+17. [Lock Blocks & Sections](#lock-blocks--sections)
 
 ---
 
@@ -186,7 +188,7 @@ Set colors, fonts, and layout tokens for your entire site.
 2. Enter a hex color (e.g., `#ff6b6b`) or use the color picker
 3. Click **Save**
 
-The canvas preview updates in real time (except Google Fonts, which won't load due to security).
+The canvas preview updates in real time, including Google Fonts loaded from the font import URL.
 
 ---
 
@@ -199,11 +201,9 @@ The canvas preview updates in real time (except Google Fonts, which won't load d
 
 **Using Google Fonts:**
 
-1. Visit [Google Fonts](https://fonts.google.com)
-2. Select a font and click **Get font**
-3. Copy the import URL (e.g., `https://fonts.googleapis.com/css2?family=Inter:wght@400;700`)
-4. Paste into the **Font Import URL** field in Zephus
-5. Paste the CSS font stack (e.g., `'Inter', sans-serif`) into the font field
+1. Open **Design System** and pick a Google Font from the **Body font** / **Heading font** dropdowns (Inter, Roboto, Open Sans, Lato, Montserrat, Poppins, Playfair Display, Merriweather)
+2. The editor loads the font live on the canvas, and the built site loads it the same way
+3. For a custom font, choose **Custom…** and enter the CSS font stack (e.g., `'MyFont', sans-serif`)
 
 **Fallback stacks (no download):**
 
@@ -236,7 +236,7 @@ ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif
 1. Click **Import Image** or **+ Assets** button
 2. Choose a file from your computer (`.jpg`, `.png`, `.svg`, `.gif`, `.webp`)
 3. Click **Open**
-4. The image is copied to `.zephus/assets/` and assigned a web path
+4. The image is copied to `public/assets/` (by category) and assigned a web path
 
 **Method 2: Drag & Drop**
 
@@ -316,7 +316,7 @@ Save a frequently-used layout as a reusable template.
 3. Give it a memorable name (e.g., "Three-Column Cards")
 4. Click **Save**
 
-The section is stored in your site's reusable sections library.
+The section is stored inside the site at `.zephus/templates/reusable-sections.json`, so it travels with the project when you commit it to Git (like the rest of the Zephus save state). Sections saved by earlier Zephus versions are migrated into the project automatically.
 
 ---
 
@@ -434,13 +434,13 @@ If you edit a page file outside of Zephus (e.g., in VS Code), Zephus detects the
 
 ## Manage Draft Auto-Saves
 
-Zephus automatically saves work-in-progress drafts to `.zephus/drafts/`.
+Zephus automatically saves work-in-progress drafts to the app's local data folder (kept out of your project and out of Git).
 
 ### Auto-Save Behavior
 
 - **Default:** Off
 - **When enabled:** Zephus saves the project when you **leave a page** or switch context (instead of prompting to save or discard)
-- **Crash recovery:** Zephus still keeps local recovery drafts under `.zephus/drafts/` even when Auto-Save is off
+- **Crash recovery:** Zephus still keeps local recovery drafts in the app's data folder even when Auto-Save is off
 - **Disk commits:** Use **Ctrl+S** or **Save** to write pages to disk anytime
 
 ---
@@ -523,6 +523,32 @@ After a pull, if Astro sources changed outside Zephus, use **Reload From Disk** 
 ### Detached HEAD
 
 If you see **detached HEAD** in the branch tag, check out a branch in your terminal (`git checkout main`) before committing or pushing from Zephus.
+
+---
+
+## Responsive Viewports & Hiding Content
+
+### Switch Canvas Viewport
+
+1. In the editor toolbar, click **Desktop**, **Tablet**, or **Mobile** to preview the current page at that width
+2. The canvas narrows and block layouts reflow using each block's responsive overrides (Layout → per-viewport settings in the inspector)
+3. The published site applies the same rules automatically
+
+### Hide a Block or Section on a Viewport
+
+1. Select the block or section
+2. In the inspector, open **Layout → Hide on** and check the viewports where it should disappear
+3. On the canvas, content hidden on the active viewport keeps a **dashed outline** (dimmed) so you can still select and edit it — the built site hides it for real at that width
+
+---
+
+## Lock Blocks & Sections
+
+Lock a block or section to prevent accidental edits (copy, delete, move, drag-drop, and inspector changes are blocked until you unlock).
+
+- Select the block or section, then click the **lock** icon in the inspector or the canvas toolbar
+- Locked items show a lock state on the canvas; click **Unlock** to edit again
+- Locks are saved with the page (`.zephus` sidecars) and survive reloads
 
 ---
 

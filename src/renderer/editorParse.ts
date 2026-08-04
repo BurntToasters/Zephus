@@ -68,6 +68,26 @@ export interface EditorParseDeps {
   knownBlockTypes: ReadonlySet<string>;
 }
 
+/**
+ * Reads an element's text like the main-process regex parser does: <br>
+ * becomes "\n" and nested elements contribute their text. Mirrors the
+ * `textFromHtml` behavior in schema.ts so both parsers produce the same
+ * stored value.
+ */
+function elementText(el: Element): string {
+  let out = "";
+  for (const child of Array.from(el.childNodes)) {
+    if (child.nodeType === Node.TEXT_NODE) {
+      out += child.textContent ?? "";
+    } else if (child.nodeType === Node.ELEMENT_NODE) {
+      const childEl = child as Element;
+      if (childEl.tagName === "BR") out += "\n";
+      else out += elementText(childEl);
+    }
+  }
+  return out;
+}
+
 export function createEditorPageParser(deps: EditorParseDeps) {
   function parseInner(inner: string): Block[] {
     const doc = new DOMParser().parseFromString(
@@ -86,6 +106,15 @@ export function createEditorPageParser(deps: EditorParseDeps) {
         }
         continue;
       }
+      if (node.nodeType === Node.COMMENT_NODE) {
+        // Rebuild the comment markers: textContent alone would turn a
+        // comment into visible page text on the next save.
+        const raw = `<!--${node.textContent ?? ""}-->`;
+        if (raw.trim()) {
+          blocks.push({ id: deps.uid(), type: "html", props: {}, raw });
+        }
+        continue;
+      }
       if (node.nodeType !== Node.ELEMENT_NODE) {
         const raw = (node as ChildNode).textContent ?? "";
         if (raw.trim()) {
@@ -96,6 +125,9 @@ export function createEditorPageParser(deps: EditorParseDeps) {
       const el = node as HTMLElement;
       const tag = el.tagName.toLowerCase();
       const cls = el.getAttribute("class") ?? "";
+      // Match the main-process parser: a top-level <style> is dropped, never
+      // stored as content.
+      if (tag === "style") continue;
       const storedType = el.dataset["zephusBlock"];
       const storedProps = parseZephusJsonAttr<Record<string, unknown>>(
         el.dataset["zephusProps"] ?? null,
@@ -129,14 +161,14 @@ export function createEditorPageParser(deps: EditorParseDeps) {
         blocks.push({
           id: deps.uid(),
           type: "heading",
-          props: { text: el.textContent ?? "", level: tag[1] ?? "2", cls },
+          props: { text: elementText(el), level: tag[1] ?? "2", cls },
           style: styleFromLegacyProps(el),
         });
       } else if (tag === "p") {
         blocks.push({
           id: deps.uid(),
           type: "text",
-          props: { text: el.textContent ?? "", cls },
+          props: { text: elementText(el), cls },
           style: styleFromLegacyProps(el),
         });
       } else if (tag === "a") {
@@ -144,7 +176,7 @@ export function createEditorPageParser(deps: EditorParseDeps) {
           id: deps.uid(),
           type: "button",
           props: {
-            text: el.textContent ?? "",
+            text: elementText(el),
             href: el.getAttribute("href") ?? "#",
             cls,
           },
@@ -173,10 +205,13 @@ export function createEditorPageParser(deps: EditorParseDeps) {
           id: deps.uid(),
           type: "quote",
           props: {
+            // Join every paragraph (not just the first), matching the
+            // main-process parser.
             text:
-              el.querySelector("p")?.textContent?.trim() ??
-              el.textContent?.trim() ??
-              "",
+              Array.from(el.querySelectorAll("p"))
+                .map((paragraph) => elementText(paragraph).trim())
+                .filter(Boolean)
+                .join("\n") || elementText(el).trim(),
             cite: el.querySelector("cite")?.textContent?.trim() ?? "",
             cls,
           },
@@ -188,7 +223,7 @@ export function createEditorPageParser(deps: EditorParseDeps) {
           type: "list",
           props: {
             items: Array.from(el.querySelectorAll("li"))
-              .map((item) => item.textContent?.trim() ?? "")
+              .map((item) => elementText(item).trim())
               .filter(Boolean)
               .join("\n"),
             ordered: tag === "ol" ? "true" : "false",
@@ -308,6 +343,13 @@ export function createEditorPageParser(deps: EditorParseDeps) {
             props: {},
             raw: text,
           });
+        }
+        continue;
+      }
+      if (node.nodeType === Node.COMMENT_NODE) {
+        const raw = `<!--${node.textContent ?? ""}-->`;
+        if (raw.trim()) {
+          looseBlocks.push({ id: deps.uid(), type: "html", props: {}, raw });
         }
         continue;
       }

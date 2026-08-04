@@ -4,7 +4,11 @@ import {
   captureEditorSnapshot,
   EDITOR_UNDO_LIMIT,
   editorSnapshotSectionsChanged,
+  popEditorRedoEntry,
+  popEditorUndoEntry,
+  pushEditorRedoFromCurrent,
   pushEditorUndo,
+  pushEditorUndoFromCurrent,
   restoreEditorSnapshot,
 } from "../editorUndo";
 
@@ -101,5 +105,67 @@ describe("editorUndo", () => {
         },
       ]),
     ).toBe(true);
+  });
+
+  it("clears pending site when the snapshot matches the saved site", () => {
+    const state = createEditorSession();
+    const saved = { design: { accent: "#000" } } as SiteDocument;
+    state.siteDocument = saved;
+    state.pendingSiteDocument = { design: { accent: "#999" } } as SiteDocument;
+    state.siteDirty = true;
+
+    restoreEditorSnapshot(
+      state,
+      { sections: [], site: { ...saved } },
+      {
+        syncBlocksFromSections: vi.fn(),
+        syncSelectionState: vi.fn(),
+        applyDesignPreview: vi.fn(),
+        renderDirtyIndicators: vi.fn(),
+      },
+    );
+
+    expect(state.pendingSiteDocument).toBeNull();
+    expect(state.siteDirty).toBe(false);
+  });
+
+  it("leaves site state untouched when the snapshot site matches", () => {
+    const state = createEditorSession();
+    state.siteDocument = { design: { accent: "#000" } } as SiteDocument;
+
+    const applyDesignPreview = vi.fn();
+    restoreEditorSnapshot(
+      state,
+      { sections: [], site: { design: { accent: "#000" } } as SiteDocument },
+      {
+        syncBlocksFromSections: vi.fn(),
+        syncSelectionState: vi.fn(),
+        applyDesignPreview,
+        renderDirtyIndicators: vi.fn(),
+      },
+    );
+
+    expect(applyDesignPreview).not.toHaveBeenCalled();
+    expect(state.siteDirty).toBe(false);
+  });
+
+  it("pop and push round-trips undo/redo entries", () => {
+    const state = createEditorSession();
+    state.sections = [
+      {
+        id: "s1",
+        type: "section",
+        label: "A",
+        props: {},
+        children: [],
+      },
+    ];
+    pushEditorUndo(state);
+    pushEditorRedoFromCurrent(state);
+    pushEditorUndoFromCurrent(state);
+
+    expect(state.redo).toHaveLength(1);
+    expect(popEditorRedoEntry(state)?.sections[0]?.label).toBe("A");
+    expect(popEditorUndoEntry(state)?.sections[0]?.label).toBe("A");
   });
 });

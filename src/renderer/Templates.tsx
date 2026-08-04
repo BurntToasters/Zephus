@@ -27,6 +27,8 @@ export function TemplatePalette() {
   });
 
   const handleKeyDown = (e: KeyboardEvent, tpl: SectionTemplate) => {
+    // Let the inner Delete button handle its own keys.
+    if (e.target !== e.currentTarget) return;
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
       onInsertTemplateCallback?.(tpl);

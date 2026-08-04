@@ -19,6 +19,8 @@ export interface CanvasBlockEntry {
   shellAriaLabel: string;
   htmlBlock: boolean;
   effectiveStyle?: BlockStyle;
+  /** Hidden via style.hideOn on the active viewport (kept visible on canvas). */
+  hiddenOnViewport?: boolean;
 }
 
 export interface CanvasSectionEntry {
@@ -27,6 +29,7 @@ export interface CanvasSectionEntry {
   selected: boolean;
   breadcrumb: string;
   effectiveStyle?: BlockStyle;
+  hiddenOnViewport?: boolean;
   children: CanvasBlockEntry[];
 }
 
@@ -64,11 +67,7 @@ export interface CanvasHandlers {
     shell: HTMLElement,
   ) => void;
   onSectionDrop: (event: DragEvent) => void;
-  onSectionBodyDragOver: (
-    event: DragEvent,
-    sectionId: string,
-    childCount: number,
-  ) => void;
+  onSectionBodyDragOver: (event: DragEvent, sectionId: string) => void;
   onBlockDragStart: (event: DragEvent, block: EditorBlock) => void;
   onBlockDragEnd: () => void;
   onBlockDragOver: (
@@ -218,8 +217,17 @@ function SectionShell(props: { entry: CanvasSectionEntry; index: number }) {
           "canvas-section": true,
           selected: props.entry.selected,
           locked: !!props.entry.section.locked,
+          "hidden-on-viewport": !!props.entry.hiddenOnViewport,
         }}
         style={boxStyle(props.entry.effectiveStyle)}
+        onClick={(event) => {
+          // Clicks on the section chrome (label, breadcrumb, empty toolbar
+          // space) select the section instead of bubbling to the canvas and
+          // deselecting everything. Interactive children (body, buttons, grip,
+          // resize handles) stop propagation themselves.
+          handlers?.onSelectSection(sectionNode(props.entry));
+          void event;
+        }}
         onDragOver={(event) =>
           shellRef && handlers?.onSectionDragOver(event, props.index, shellRef)
         }
@@ -307,17 +315,22 @@ function SectionShell(props: { entry: CanvasSectionEntry; index: number }) {
             bodyRef = element;
           }}
           class="section-body"
+          tabIndex={0}
+          role="group"
+          aria-label={`Select ${props.entry.section.label} section`}
           onClick={(event) =>
             stopAndRun(event, () =>
               handlers?.onSelectSection(sectionNode(props.entry)),
             )
           }
+          onKeyDown={(event) => {
+            if (event.target !== event.currentTarget) return;
+            if (event.key !== "Enter" && event.key !== " ") return;
+            event.preventDefault();
+            handlers?.onSelectSection(sectionNode(props.entry));
+          }}
           onDragOver={(event) =>
-            handlers?.onSectionBodyDragOver(
-              event,
-              props.entry.section.id,
-              props.entry.section.children.length,
-            )
+            handlers?.onSectionBodyDragOver(event, props.entry.section.id)
           }
           onDrop={(event) => handlers?.onSectionDrop(event)}
         >
@@ -365,6 +378,11 @@ function BlockShell(props: {
 }) {
   let shellRef: HTMLDivElement | undefined;
   let previewRef: HTMLDivElement | undefined;
+  // Asset hydration + inline-editor attach only need to run when the preview
+  // markup actually changes. Re-running them on every selection/lock/style
+  // update would re-fetch asset data URLs and re-wire dblclick handlers on
+  // each click.
+  let lastPreviewHtml: string | null = null;
 
   createEffect(() => {
     const entry = props.blockEntry;
@@ -374,7 +392,10 @@ function BlockShell(props: {
       entry.block.locked,
       entry.effectiveStyle,
     );
-    if (previewRef) handlers?.onPreviewRendered(previewRef, blockNode(entry));
+    if (previewRef && entry.html !== lastPreviewHtml) {
+      lastPreviewHtml = entry.html;
+      handlers?.onPreviewRendered(previewRef, blockNode(entry));
+    }
     if (shellRef && previewRef) {
       handlers?.onSyncBlockShell(shellRef, blockNode(entry), previewRef);
     }
@@ -390,6 +411,7 @@ function BlockShell(props: {
         selected: props.blockEntry.selected,
         "html-block": props.blockEntry.htmlBlock,
         locked: !!props.blockEntry.block.locked,
+        "hidden-on-viewport": !!props.blockEntry.hiddenOnViewport,
       }}
       title={props.blockEntry.label}
       tabIndex={0}

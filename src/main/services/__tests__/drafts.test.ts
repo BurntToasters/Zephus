@@ -86,4 +86,42 @@ describe("drafts", () => {
     ).toBe(true);
     expect(listed.entries.some((entry) => entry.scope === "site")).toBe(true);
   });
+
+  it("prunes expired drafts on the next write", async () => {
+    const drafts = await import("../drafts");
+    fs.mkdirSync(userDataDir, { recursive: true });
+    const file = path.join(userDataDir, "drafts.json");
+    // Seed one expired and one fresh draft directly in the store.
+    const oldDate = new Date(
+      Date.now() - 60 * 24 * 60 * 60 * 1000,
+    ).toISOString();
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        expired: {
+          projectPath: "/tmp/old",
+          scope: "page",
+          target: "src/pages/old.astro",
+          content: "<h1>old</h1>",
+          savedAt: oldDate,
+        },
+        fresh: {
+          projectPath: "/tmp/new",
+          scope: "page",
+          target: "src/pages/new.astro",
+          content: "<h1>new</h1>",
+          savedAt: new Date().toISOString(),
+        },
+      }),
+      "utf8",
+    );
+
+    expect(drafts.writeDraft("/tmp/other", "site", "site-shell", "{}").ok).toBe(
+      true,
+    );
+
+    const store = JSON.parse(fs.readFileSync(file, "utf8"));
+    expect(store["expired"]).toBeUndefined();
+    expect(store["fresh"]).toBeDefined();
+  });
 });

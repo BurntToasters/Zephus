@@ -71,6 +71,21 @@ export function createEditorSiteSaveActions(deps: EditorSiteSaveDeps) {
     const revisionAtStart = state.siteRevision;
     const snapshot = JSON.parse(JSON.stringify(pending)) as SiteDocument;
     const snapshotFingerprint = JSON.stringify(snapshot);
+
+    // Drift check: the staged snapshot builds on the baseline captured at
+    // staging time (state.siteDocument). If the disk copy has changed since,
+    // writing would silently overwrite external edits — stop instead.
+    const onDisk = await deps.zephus.readSiteDocument(projectPath);
+    if (onDisk.ok && onDisk.site && state.siteDocument) {
+      if (JSON.stringify(onDisk.site) !== JSON.stringify(state.siteDocument)) {
+        deps.setStatus(
+          "Site settings changed on disk since you staged your edits. " +
+            "Discard your staged changes to load the disk version, then re-apply them.",
+        );
+        return false;
+      }
+    }
+
     const result = await deps.zephus.writeSiteDocument(
       projectPath,
       snapshot,

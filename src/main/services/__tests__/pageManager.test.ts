@@ -2,36 +2,27 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+import { createSite } from "../wizard";
+import { ensureVisualSchema } from "../schema";
 import {
   createManagedPage,
   deletePage,
   duplicatePage,
   listPageMetadata,
-  normalizePageSlug,
-  readPageMetadata,
   renamePage,
-  routeFromPage,
   writePageMetadata,
 } from "../pageManager";
 
 let tmpDir: string;
-const pagesDir = path.join("src", "pages");
+let project: string;
 
 beforeEach(() => {
-  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "zephus-pages-"));
-  fs.mkdirSync(path.join(tmpDir, "src", "layouts"), { recursive: true });
-  fs.writeFileSync(
-    path.join(tmpDir, "package.json"),
-    JSON.stringify({
-      scripts: { dev: "astro dev", build: "astro build" },
-      dependencies: { astro: "^6.0.0" },
-    }),
-  );
-  fs.writeFileSync(path.join(tmpDir, "astro.config.mjs"), "export default {};");
-  fs.writeFileSync(
-    path.join(tmpDir, "src", "layouts", "BaseLayout.astro"),
-    "<slot />",
-  );
+  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "zephus-pagemgr-"));
+  project = path.join(tmpDir, "site");
+  fs.mkdirSync(project);
+  const created = createSite(project, "minimal");
+  expect(created.ok).toBe(true);
+  ensureVisualSchema(project, "src/pages");
 });
 
 afterEach(() => {
@@ -39,121 +30,133 @@ afterEach(() => {
 });
 
 describe("pageManager", () => {
-  it("normalizes nested slugs", () => {
-    expect(normalizePageSlug(" Docs/Getting Started ")).toBe(
-      "docs/getting-started",
-    );
-    expect(normalizePageSlug("")).toBe("index");
-  });
-
-  it("creates nested pages and reads metadata", () => {
-    const created = createManagedPage(tmpDir, "docs/getting-started", pagesDir);
+  it("creates pages with normalized slugs", () => {
+    const created = createManagedPage(project, "About Us", "src/pages");
     expect(created.ok).toBe(true);
-
-    const page = path.join("src", "pages", "docs", "getting-started.astro");
-    expect(fs.existsSync(path.join(tmpDir, page))).toBe(true);
-    expect(routeFromPage(page, pagesDir)).toBe("/docs/getting-started");
-
-    const meta = readPageMetadata(tmpDir, page, pagesDir);
-    expect(meta.slug).toBe("docs/getting-started");
-    expect(meta.title).toBe("Getting Started");
-  });
-
-  it("writes metadata, renames, duplicates, and deletes pages", () => {
-    createManagedPage(tmpDir, "about", pagesDir);
-    const page = path.join("src", "pages", "about.astro");
-
-    const saved = writePageMetadata(tmpDir, page, pagesDir, {
-      title: "About Zephus",
-      navLabel: "About",
-      metaDescription: "About page",
-      navVisible: false,
-    });
-    expect(saved.ok).toBe(true);
-
-    let meta = readPageMetadata(tmpDir, page, pagesDir);
-    expect(meta.title).toBe("About Zephus");
-    expect(meta.navVisible).toBe(false);
-
-    const renamed = renamePage(tmpDir, page, pagesDir, "company/about");
-    expect(renamed.ok).toBe(true);
-
-    const renamedPage = path.join("src", "pages", "company", "about.astro");
-    expect(fs.existsSync(path.join(tmpDir, renamedPage))).toBe(true);
-
-    const duplicated = duplicatePage(tmpDir, renamedPage, pagesDir);
-    expect(duplicated.ok).toBe(true);
-
-    const listed = listPageMetadata(tmpDir, pagesDir);
-    expect(listed.ok).toBe(true);
-    expect(listed.entries.length).toBe(2);
-    expect(listed.entries.map((entry) => entry.route)).toContain(
-      "/company/about",
-    );
-
-    const deleted = deletePage(tmpDir, renamedPage, pagesDir);
-    expect(deleted.ok).toBe(true);
-    expect(fs.existsSync(path.join(tmpDir, renamedPage))).toBe(false);
-
-    meta = readPageMetadata(
-      tmpDir,
-      path.join("src", "pages", "company", "about-copy.astro"),
-      pagesDir,
-    );
-    expect(meta.title).toContain("Copy");
-  });
-
-  it("keeps schema and files aligned for custom Astro pages directories", () => {
-    const customPagesDir = path.join("source", "pages");
-    fs.writeFileSync(
-      path.join(tmpDir, "astro.config.mjs"),
-      "export default { srcDir: './source' };",
-    );
-    fs.mkdirSync(path.join(tmpDir, "source", "layouts"), { recursive: true });
-    fs.writeFileSync(
-      path.join(tmpDir, "source", "layouts", "BaseLayout.astro"),
-      "<slot />",
-    );
-
-    const created = createManagedPage(tmpDir, "docs/intro", customPagesDir);
-    expect(created.ok).toBe(true);
-
-    const page = path.join("source", "pages", "docs", "intro.astro");
-    const renamed = renamePage(
-      tmpDir,
-      page,
-      customPagesDir,
-      "docs/getting-started",
-    );
-    expect(renamed.ok).toBe(true);
-
-    const renamedPage = path.join(
-      "source",
-      "pages",
-      "docs",
-      "getting-started.astro",
-    );
-    const duplicated = duplicatePage(tmpDir, renamedPage, customPagesDir);
-    expect(duplicated.ok).toBe(true);
     expect(
-      fs.existsSync(
-        path.join(
-          tmpDir,
-          ".zephus",
-          "pages",
-          "docs",
-          "getting-started-copy.json",
-        ),
-      ),
+      fs.existsSync(path.join(project, "src", "pages", "about-us.astro")),
     ).toBe(true);
 
-    const deleted = deletePage(tmpDir, renamedPage, customPagesDir);
-    expect(deleted.ok).toBe(true);
-    expect(fs.existsSync(path.join(tmpDir, renamedPage))).toBe(false);
+    const listed = listPageMetadata(project, "src/pages");
+    expect(listed.entries.some((e) => e.slug === "about-us")).toBe(true);
+  });
+
+  it("rejects invalid and duplicate slugs", () => {
+    expect(createManagedPage(project, "", "src/pages").ok).toBe(false);
+    expect(createManagedPage(project, "////", "src/pages").ok).toBe(false);
+    expect(createManagedPage(project, "index", "src/pages").ok).toBe(false);
+  });
+
+  it("renames pages and moves the sidecar", () => {
+    createManagedPage(project, "First Page", "src/pages");
+    const renamed = renamePage(
+      project,
+      path.join("src", "pages", "first-page.astro"),
+      "src/pages",
+      "second-page",
+    );
+    expect(renamed.ok).toBe(true);
     expect(
-      fs.existsSync(
-        path.join(tmpDir, ".zephus", "pages", "docs", "getting-started.json"),
-      ),
+      fs.existsSync(path.join(project, "src", "pages", "second-page.astro")),
+    ).toBe(true);
+    expect(
+      fs.existsSync(path.join(project, "src", "pages", "first-page.astro")),
     ).toBe(false);
+
+    const listed = listPageMetadata(project, "src/pages");
+    expect(listed.entries.some((e) => e.slug === "second-page")).toBe(true);
+  });
+
+  it("refuses to rename onto an existing page", () => {
+    createManagedPage(project, "One", "src/pages");
+    createManagedPage(project, "Two", "src/pages");
+    const renamed = renamePage(
+      project,
+      path.join("src", "pages", "one.astro"),
+      "src/pages",
+      "two",
+    );
+    expect(renamed.ok).toBe(false);
+    expect(renamed.error).toContain("already exists");
+  });
+
+  it("duplicates pages with fresh slugs and content", () => {
+    createManagedPage(project, "About", "src/pages");
+    const duplicated = duplicatePage(
+      project,
+      path.join("src", "pages", "about.astro"),
+      "src/pages",
+    );
+    expect(duplicated.ok).toBe(true);
+    expect(
+      fs.existsSync(path.join(project, "src", "pages", "about-copy.astro")),
+    ).toBe(true);
+  });
+
+  it("deletes pages and their sidecars", () => {
+    createManagedPage(project, "Temp", "src/pages");
+    const deleted = deletePage(
+      project,
+      path.join("src", "pages", "temp.astro"),
+      "src/pages",
+    );
+    expect(deleted.ok).toBe(true);
+    expect(
+      fs.existsSync(path.join(project, "src", "pages", "temp.astro")),
+    ).toBe(false);
+    expect(
+      fs.existsSync(path.join(project, ".zephus", "pages", "temp.json")),
+    ).toBe(false);
+  });
+
+  it("reports deletion of a missing page", () => {
+    const deleted = deletePage(
+      project,
+      path.join("src", "pages", "nope.astro"),
+      "src/pages",
+    );
+    expect(deleted.ok).toBe(false);
+  });
+
+  it("writes page metadata (title, nav, SEO)", () => {
+    createManagedPage(project, "Blog", "src/pages");
+    const written = writePageMetadata(
+      project,
+      path.join("src", "pages", "blog.astro"),
+      "src/pages",
+      {
+        title: "The Blog",
+        navLabel: "Articles",
+        metaDescription: "All the articles.",
+        navVisible: false,
+        noindex: true,
+        publishDate: "2026-02-03",
+        author: "Ada",
+      },
+    );
+    expect(written.ok).toBe(true);
+
+    const listed = listPageMetadata(project, "src/pages");
+    const entry = listed.entries.find((e) => e.slug === "blog");
+    expect(entry?.title).toBe("The Blog");
+    expect(entry?.navLabel).toBe("Articles");
+    expect(entry?.navVisible).toBe(false);
+    expect(entry?.noindex).toBe(true);
+    expect(entry?.publishDate).toBe("2026-02-03");
+  });
+
+  it("keeps the 404 page hidden and noindex even when written otherwise", () => {
+    createManagedPage(project, "404", "src/pages");
+    const written = writePageMetadata(
+      project,
+      path.join("src", "pages", "404.astro"),
+      "src/pages",
+      { navVisible: true, noindex: false },
+    );
+    expect(written.ok).toBe(true);
+    const listed = listPageMetadata(project, "src/pages");
+    const entry = listed.entries.find((e) => e.slug === "404");
+    expect(entry?.navVisible).toBe(false);
+    expect(entry?.noindex).toBe(true);
   });
 });

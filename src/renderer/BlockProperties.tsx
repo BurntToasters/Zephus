@@ -72,7 +72,7 @@ function ButtonVariantField(props: {
   onFocus: () => void;
   onBlur: () => void;
 }) {
-  const currentVariant = /\bsecondary\b/.test(props.cls ?? "")
+  const currentVariant = (props.cls ?? "").split(/\s+/).includes("secondary")
     ? "secondary"
     : "primary";
   return (
@@ -175,16 +175,28 @@ function AssetPreviewImage(props: {
     }
 
     setPreviewSrc("");
-    void props.resolveAssetPreviewSrc(source).then((resolved) => {
-      if (!cancelled) setPreviewSrc(resolved ?? "");
-    });
+    void props.resolveAssetPreviewSrc(source).then(
+      (resolved) => {
+        if (!cancelled) setPreviewSrc(resolved ?? "");
+      },
+      () => {
+        if (!cancelled) setPreviewSrc("");
+      },
+    );
 
     onCleanup(() => {
       cancelled = true;
     });
   });
 
-  return <img class={props.class} src={previewSrc()} alt={props.alt} />;
+  return (
+    <img
+      class={props.class}
+      src={previewSrc()}
+      alt={props.alt}
+      draggable={false}
+    />
+  );
 }
 
 function ImageContentGroup(props: {
@@ -275,6 +287,7 @@ function ImageContentGroup(props: {
               }}
               class="focal-box"
               onPointerDown={(event) => {
+                event.preventDefault();
                 dragging = true;
                 props.state.onFocus();
                 event.currentTarget.setPointerCapture(event.pointerId);
@@ -602,6 +615,29 @@ function ContentGroup(props: { state: BlockPropertiesState }) {
           />
         </Group>
       );
+    case "video":
+      return (
+        <Group title="Content">
+          <TextField
+            label="Video URL"
+            value={value("src")}
+            onFocus={state.onFocus}
+            onBlur={state.onBlur}
+            onChange={(next) => state.onPropChange("src", next)}
+          />
+          <TextField
+            label="Title"
+            value={value("title")}
+            onFocus={state.onFocus}
+            onBlur={state.onBlur}
+            onChange={(next) => state.onPropChange("title", next)}
+          />
+          <p class="muted">
+            Use an .mp4 or .webm URL (https, or a project file under
+            public/assets). Project files play in the preview browser.
+          </p>
+        </Group>
+      );
     case "spacer":
       return (
         <Group title="Content">
@@ -915,6 +951,55 @@ export function renderBlockProperties(
               onBlur={state.onBlur}
               onChange={(next) => state.onStyleChange("stackOnMobile", next)}
             />
+            <ToggleField
+              label="Hide on desktop"
+              checked={(state.style?.hideOn ?? []).includes("desktop")}
+              onFocus={state.onFocus}
+              onBlur={state.onBlur}
+              onChange={(next) => {
+                const current = state.style?.hideOn ?? [];
+                state.onStyleChange(
+                  "hideOn",
+                  next
+                    ? [...new Set([...current, "desktop"])]
+                    : current.filter((v) => v !== "desktop"),
+                );
+              }}
+            />
+            <ToggleField
+              label="Hide on tablet"
+              checked={(state.style?.hideOn ?? []).includes("tablet")}
+              onFocus={state.onFocus}
+              onBlur={state.onBlur}
+              onChange={(next) => {
+                const current = state.style?.hideOn ?? [];
+                state.onStyleChange(
+                  "hideOn",
+                  next
+                    ? [...new Set([...current, "tablet"])]
+                    : current.filter((v) => v !== "tablet"),
+                );
+              }}
+            />
+            <ToggleField
+              label="Hide on mobile"
+              checked={(state.style?.hideOn ?? []).includes("mobile")}
+              onFocus={state.onFocus}
+              onBlur={state.onBlur}
+              onChange={(next) => {
+                const current = state.style?.hideOn ?? [];
+                state.onStyleChange(
+                  "hideOn",
+                  next
+                    ? [...new Set([...current, "mobile"])]
+                    : current.filter((v) => v !== "mobile"),
+                );
+              }}
+            />
+            <p class="meta-hint">
+              Hidden content stays editable on the canvas (dashed outline) and
+              disappears from the published site at that width.
+            </p>
           </Group>
 
           <Group title="Style">

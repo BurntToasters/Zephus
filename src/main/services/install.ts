@@ -11,6 +11,11 @@ export type InstallLogListener = (chunk: string) => void;
 
 let installing = false;
 
+// A hung `npm install` (network stall, blocked postinstall script) must not
+// lock the install path forever: after this the child is killed and the lock
+// released with a clear error.
+const INSTALL_TIMEOUT_MS = 30 * 60 * 1000;
+
 /** True if the project already has node_modules. */
 export function dependenciesInstalled(projectPath: string): boolean {
   return fs.existsSync(path.join(projectPath, "node_modules"));
@@ -42,6 +47,14 @@ export async function installDependencies(
 
   return new Promise<OperationResult>((resolve) => {
     let child;
+    let settled = false;
+    const finish = (result: OperationResult): void => {
+      if (settled) return;
+      settled = true;
+      installing = false;
+      clearTimeout(timeout);
+      resolve(result);
+    };
     try {
       const npm = npmCommand(
         ["install", "--loglevel=http", "--no-fund"],
@@ -51,25 +64,38 @@ export async function installDependencies(
       child = spawn(npm.command, npm.args, {
         cwd: projectPath,
         windowsHide: true,
-        env: { ...env, FORCE_COLOR: "0" },
+        env: { ...env, FORCE_COLOR: "0", NO_COLOR: "1" },
       });
     } catch (error) {
-      installing = false;
-      resolve({
+      finish({
         ok: false,
         error: error instanceof Error ? error.message : String(error),
       });
       return;
     }
 
+    const timeout = setTimeout(() => {
+      onLog(
+        `\n[npm install timed out after ${INSTALL_TIMEOUT_MS / 60000} minutes; terminating.]\n`,
+      );
+      try {
+        child.kill();
+      } catch {
+        /* already gone */
+      }
+      finish({
+        ok: false,
+        error: `npm install timed out after ${INSTALL_TIMEOUT_MS / 60000} minutes.`,
+      });
+    }, INSTALL_TIMEOUT_MS);
+
     const handle = (data: Buffer) => onLog(data.toString());
     child.stdout?.on("data", handle);
     child.stderr?.on("data", handle);
 
     child.on("error", (error) => {
-      installing = false;
       log.error("npm install failed to start", error);
-      resolve({
+      finish({
         ok: false,
         error:
           error.message.includes("ENOENT") || /not found/i.test(error.message)
@@ -79,11 +105,10 @@ export async function installDependencies(
     });
 
     child.on("exit", (code) => {
-      installing = false;
       onLog(`\n[npm install exited with code ${code ?? "null"}]\n`);
-      if (code === 0) resolve({ ok: true });
+      if (code === 0) finish({ ok: true });
       else
-        resolve({
+        finish({
           ok: false,
           error: `npm install failed (exit code ${code ?? "null"}). See the log for details.`,
         });

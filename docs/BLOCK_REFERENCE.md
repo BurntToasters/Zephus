@@ -1,8 +1,8 @@
 # Content Block Reference
 
-Zephus provides 21 different content block types to build your pages. Each block has specific properties you can edit in the **Inspect** tab of the right sidebar.
+Zephus provides 22 different content block types to build your pages. Each block has specific properties you can edit in the **Inspect** tab of the right sidebar.
 
-Text-based properties (headings, body copy, quotes, card and feature text, list items, and so on) also support inline **bold**, _italic_, underline, strikethrough, inline code, and links — double-click the text on the canvas and use the toolbar or **Ctrl/Cmd+B / I / K**. Button labels support formatting but not their own link, since the button itself is already a link.
+Text-based properties (headings, body copy, quotes, card and feature text, list items, and so on) also support inline **bold**, _italic_, and links — double-click the text on the canvas and use the toolbar or **Ctrl/Cmd+B / I / K**. Button labels support formatting but not their own link, since the button itself is already a link.
 
 ## Block Categories
 
@@ -141,9 +141,27 @@ Embed external content (YouTube, Vimeo, maps, etc.).
 
 ---
 
+#### **Video**
+
+Plays a video file inline with native controls (no third-party player).
+
+| Property | Type      | Example                         |
+| -------- | --------- | ------------------------------- |
+| `src`    | Video URL | "https://example.com/movie.mp4" |
+| `title`  | Text      | "Showreel"                      |
+| `cls`    | CSS class | ""                              |
+
+**Use for:** MP4/WebM files — hosted anywhere, or inside your project's
+`public/assets/` folder (play them in the Preview browser).
+
+> 💡 **Tip:** For YouTube/Vimeo, use the **Embed** block with the player's
+> `src` URL instead.
+
+---
+
 #### **HTML**
 
-Raw HTML/JSX for advanced customization (code mode only).
+Raw HTML/JSX for advanced customization (edited in the Inspector Markup field).
 
 | Property | Type     | Example                         |
 | -------- | -------- | ------------------------------- |
@@ -151,7 +169,7 @@ Raw HTML/JSX for advanced customization (code mode only).
 
 **Use for:** Custom styling, interactive widgets, one-off designs
 
-> ⚠️ **Note**: HTML blocks can only be edited in Code mode. Switch to Code mode to edit the raw markup.
+> ⚠️ **Note**: HTML blocks are edited through the Inspector **Markup** field in Visual mode; use Code mode for full-page source.
 
 ---
 

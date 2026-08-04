@@ -12,6 +12,11 @@ import {
   writeSiteDocument,
 } from "./schema";
 
+/** A match boundary: neither side may continue a filename/path token. */
+function isTokenBoundary(char: string): boolean {
+  return !/[A-Za-z0-9._-]/.test(char);
+}
+
 /** Replaces whole-token occurrences of `from` with `to`, counting replacements. */
 function replaceReferences(
   value: string,
@@ -28,9 +33,12 @@ function replaceReferences(
       out += value.slice(index);
       break;
     }
+    // A filename character before or after the match means this is a longer,
+    // different path (e.g. `/a/hero.png` inside `/my/a/hero.png`) — leave it.
+    const before = found > 0 ? value.charAt(found - 1) : "";
     const after = value.charAt(found + from.length);
     out += value.slice(index, found);
-    if (/[A-Za-z0-9._-]/.test(after)) {
+    if (!isTokenBoundary(before) || !isTokenBoundary(after)) {
       out += from;
     } else {
       out += to;
@@ -156,9 +164,11 @@ function referenceCount(haystack: string, webPath: string): number {
   let count = 0;
   let index = haystack.indexOf(webPath);
   while (index !== -1) {
+    // A filename character on either side means this is a longer, different
+    // path — not a reference to this asset.
+    const before = index > 0 ? haystack.charAt(index - 1) : "";
     const after = haystack.charAt(index + webPath.length);
-    // A following filename character means this is a longer, different path.
-    if (!/[A-Za-z0-9._-]/.test(after)) count += 1;
+    if (isTokenBoundary(before) && isTokenBoundary(after)) count += 1;
     index = haystack.indexOf(webPath, index + webPath.length);
   }
   return count;

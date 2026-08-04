@@ -10,6 +10,8 @@ export interface FindReplaceModalState {
   /** Null until a search has been run. */
   matches: SearchMatch[] | null;
   totalMatches: number;
+  /** The query the current results were searched with. */
+  searchedQuery: string;
   onQueryChange: (value: string) => void;
   onReplacementChange: (value: string) => void;
   onCaseSensitiveChange: (value: boolean) => void;
@@ -21,9 +23,9 @@ export interface FindReplaceModalState {
 export function renderFindReplaceModalBody(
   container: HTMLElement,
   state: FindReplaceModalState,
-): void {
+): () => void {
   container.innerHTML = "";
-  render(
+  return render(
     () => (
       <div class="meta-form find-replace">
         <p class="muted">
@@ -86,8 +88,19 @@ export function renderFindReplaceModalBody(
         <Show when={state.matches !== null}>
           <div class="find-replace-results" aria-live="polite">
             <Show
-              when={(state.matches ?? []).length > 0}
-              fallback={<p class="muted">No matches found.</p>}
+              when={
+                state.searchedQuery === state.query &&
+                (state.matches ?? []).length > 0
+              }
+              fallback={
+                state.searchedQuery === state.query ? (
+                  <p class="muted">No matches found.</p>
+                ) : (
+                  <p class="muted">
+                    Search text changed — press Find to update the results.
+                  </p>
+                )
+              }
             >
               <p class="find-replace-summary">
                 {state.totalMatches} match

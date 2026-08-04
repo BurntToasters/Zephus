@@ -46,6 +46,25 @@ export interface SearchOptions {
   wholeWord?: boolean;
 }
 
+const MAX_QUERY_LENGTH = 500;
+const MAX_REPLACEMENT_LENGTH = 5000;
+
+/** Rejects oversized or degenerate search payloads before they hit regex. */
+function validatePayload(query: string, replacement?: string): string | null {
+  const needle = String(query ?? "");
+  if (!needle.trim()) return "Enter text to find.";
+  if (needle.length > MAX_QUERY_LENGTH) {
+    return `Search text is too long (max ${MAX_QUERY_LENGTH} characters).`;
+  }
+  if (
+    replacement !== undefined &&
+    replacement.length > MAX_REPLACEMENT_LENGTH
+  ) {
+    return `Replacement is too long (max ${MAX_REPLACEMENT_LENGTH} characters).`;
+  }
+  return null;
+}
+
 function occurrences(
   haystack: string,
   needle: string,
@@ -54,7 +73,12 @@ function occurrences(
   if (!needle) return 0;
   const flags = options.caseSensitive ? "g" : "gi";
   const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const pattern = options.wholeWord ? `\\b${escaped}\\b` : escaped;
+  // Whole-word = not surrounded by word characters. Explicit lookarounds (not
+  // `\b`, which requires word characters and so can never match needles that
+  // start or end with non-word characters like "C++").
+  const pattern = options.wholeWord
+    ? `(?<![A-Za-z0-9_])${escaped}(?![A-Za-z0-9_])`
+    : escaped;
   const matches = haystack.match(new RegExp(pattern, flags));
   return matches ? matches.length : 0;
 }
@@ -68,7 +92,9 @@ function replaceOccurrences(
   if (!needle) return haystack;
   const flags = options.caseSensitive ? "g" : "gi";
   const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const pattern = options.wholeWord ? `\\b${escaped}\\b` : escaped;
+  const pattern = options.wholeWord
+    ? `(?<![A-Za-z0-9_])${escaped}(?![A-Za-z0-9_])`
+    : escaped;
   // `$` sequences in the replacement must be literal, not capture references.
   return haystack.replace(
     new RegExp(pattern, flags),
@@ -127,6 +153,10 @@ export function searchPages(
 ): FindReplaceResult {
   try {
     const needle = String(query ?? "");
+    const payloadError = validatePayload(needle);
+    if (payloadError) {
+      return { ok: false, matches: [], totalMatches: 0, error: payloadError };
+    }
     if (!needle) return { ok: true, matches: [], totalMatches: 0 };
 
     const listed = listPageDocuments(projectPath, pagesDir);
@@ -185,6 +215,16 @@ export function replaceAllInPages(
 ): ReplaceAllResult {
   try {
     const needle = String(query ?? "");
+    const next = String(replacement ?? "");
+    const payloadError = validatePayload(needle, next);
+    if (payloadError) {
+      return {
+        ok: false,
+        replaced: 0,
+        pagesChanged: 0,
+        error: payloadError,
+      };
+    }
     if (!needle) {
       return {
         ok: false,
@@ -193,7 +233,6 @@ export function replaceAllInPages(
         error: "Enter text to find.",
       };
     }
-    const next = String(replacement ?? "");
 
     const listed = listPageDocuments(projectPath, pagesDir);
     if (!listed.ok) {

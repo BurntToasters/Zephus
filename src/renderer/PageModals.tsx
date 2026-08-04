@@ -66,12 +66,15 @@ export function renderNewPageModal(
           New pages inherit the project theme layout. Nested routes like
           `docs/getting-started` are supported.
         </p>
-        <input
-          class="text"
-          placeholder="docs/getting-started"
-          value={state.value}
-          onInput={(event) => state.onValueChange(event.currentTarget.value)}
-        />
+        <label class="meta-field">
+          <span>Page route</span>
+          <input
+            class="text"
+            placeholder="docs/getting-started"
+            value={state.value}
+            onInput={(event) => state.onValueChange(event.currentTarget.value)}
+          />
+        </label>
       </div>
     ),
     container,

@@ -1,10 +1,13 @@
+// @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
 import {
   formatPanelMountFailureStatus,
+  handlePlainTextPaste,
   isBlockTypeAllowed,
   isNodeLocked,
   lockedMutationMessage,
   shouldBlockManagedVisualSwitch,
+  syncUndoRedoToolbar,
   tryMountPanel,
 } from "../editorCommands";
 
@@ -60,5 +63,53 @@ describe("editorCommands", () => {
     expect(lockedMutationMessage("target-section")).toContain(
       "section is locked",
     );
+  });
+
+  it("syncUndoRedoToolbar reflects visual and code history", () => {
+    const undo = document.createElement("button");
+    const redo = document.createElement("button");
+    const sync = (mode: "visual" | "code") =>
+      syncUndoRedoToolbar({
+        mode,
+        visualUndoDepth: 2,
+        visualRedoDepth: 0,
+        codeCanUndo: true,
+        codeCanRedo: false,
+        undoButton: undo,
+        redoButton: redo,
+      });
+
+    sync("visual");
+    expect(undo.disabled).toBe(false);
+    expect(redo.disabled).toBe(true);
+    expect(undo.getAttribute("aria-disabled")).toBe("false");
+    expect(redo.getAttribute("aria-disabled")).toBe("true");
+
+    sync("code");
+    expect(undo.disabled).toBe(false);
+    expect(redo.disabled).toBe(true);
+  });
+
+  it("handlePlainTextPaste inserts plain text only", () => {
+    const insertText = vi.fn();
+    document.execCommand = vi.fn((_cmd, _ui, value) => {
+      insertText(value);
+      return true;
+    }) as typeof document.execCommand;
+    const event = {
+      preventDefault: vi.fn(),
+      clipboardData: { getData: vi.fn(() => "<b>rich</b> text") },
+    } as unknown as ClipboardEvent;
+
+    handlePlainTextPaste(event);
+    expect(event.preventDefault).toHaveBeenCalled();
+    expect(insertText).toHaveBeenCalledWith("<b>rich</b> text");
+
+    const empty = {
+      preventDefault: vi.fn(),
+      clipboardData: { getData: vi.fn(() => "") },
+    } as unknown as ClipboardEvent;
+    handlePlainTextPaste(empty);
+    expect(insertText).toHaveBeenCalledTimes(1);
   });
 });

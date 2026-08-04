@@ -229,6 +229,15 @@ export function collectResponsiveCss(sections: SectionNode[]): string {
     if (includeStackRule && style?.stackOnMobile) {
       mobileRules.push(`${selector}{grid-template-columns:1fr}`);
     }
+    // hideOn hides the element at the marked viewports in the BUILT site
+    // (the canvas previews the same state with a dashed outline instead of
+    // display:none, so hidden blocks stay selectable).
+    if (style?.hideOn?.includes("tablet")) {
+      tabletRules.push(`${selector}{display:none}`);
+    }
+    if (style?.hideOn?.includes("mobile")) {
+      mobileRules.push(`${selector}{display:none}`);
+    }
   };
 
   for (const section of sections) {
@@ -273,10 +282,11 @@ export function renderBlockHtml(
 
   switch (block.type) {
     case "heading": {
-      const level = Math.max(
-        1,
-        Math.min(maxHeading, Number(block.props["level"] ?? 2)),
-      );
+      // Hand-edited sidecars can carry a non-numeric level; never emit
+      // `<hNaN>` or a fractional level.
+      const rawLevel = Number(block.props["level"] ?? 2);
+      const parsedLevel = Number.isFinite(rawLevel) ? Math.round(rawLevel) : 2;
+      const level = Math.max(1, Math.min(maxHeading, parsedLevel));
       return `<h${level}${common}>${richTextToHtml(
         block.props["text"] ?? "",
       )}</h${level}>`;
@@ -364,6 +374,13 @@ export function renderBlockHtml(
         return `<section${common}><div class="canvas-empty">Missing embed URL.</div></section>`;
       }
       return `<iframe${common} src="${escapeAttr(safeUrl(block.props["src"] ?? ""))}" title="${escapeAttr(block.props["title"] ?? "Embed")}" loading="lazy"></iframe>`;
+    case "video": {
+      const src = block.props["src"] ?? "";
+      if (!src && forCanvas) {
+        return `<figure${common}><div class="canvas-empty">Missing video URL. Set it in Properties.</div></figure>`;
+      }
+      return `<video${common} controls preload="metadata" src="${escapeAttr(safeUrl(src))}" title="${escapeAttr(block.props["title"] ?? "Video")}"></video>`;
+    }
     case "html":
       if (forCanvas && options.sanitizeHtmlForCanvas) {
         return options.sanitizeHtmlForCanvas(block.raw ?? "");

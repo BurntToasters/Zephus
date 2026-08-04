@@ -155,6 +155,7 @@ export type EditorBlockType =
   | "quote"
   | "list"
   | "embed"
+  | "video"
   | "feature"
   | "testimonial"
   | "accordion"
@@ -207,7 +208,6 @@ export interface FormDefinition {
 
 export interface BlockNode extends EditorBlock {
   children?: BlockNode[];
-  hidden?: boolean;
   asset?: AssetRef;
   link?: LinkRef;
   form?: FormDefinition;
@@ -220,7 +220,6 @@ export interface SectionNode {
   props: Record<string, string>;
   style?: BlockStyle;
   locked?: boolean;
-  hidden?: boolean;
   children: BlockNode[];
 }
 
@@ -279,6 +278,8 @@ export interface PageMeta {
   metaDescription: string;
   navVisible: boolean;
   isHome: boolean;
+  /** True when the page is detached from visual editing (code only). */
+  detached: boolean;
   /** Social share image (web path like `/assets/images/x.png`, or absolute URL). */
   socialImage: string;
   /** Overrides the canonical URL derived from the site URL + route. */
@@ -296,7 +297,6 @@ export interface PageMeta {
 
 export interface PageDocument extends PageMeta {
   schemaVersion: number;
-  templateId: string | null;
   sections: SectionNode[];
   detached: boolean;
   detachedAt: string | null;
@@ -311,7 +311,6 @@ export interface SiteDocument {
   generatedAt: string;
   design: DesignTokenSet;
   shell: ShellConfig;
-  templates: TemplateDefinition[];
   /**
    * Public base URL (e.g. `https://example.com`). Required for canonical tags,
    * absolute Open Graph image URLs, and sitemap.xml generation.

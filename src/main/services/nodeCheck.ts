@@ -162,7 +162,7 @@ async function probeNode(binary: string): Promise<ParsedVersion | null> {
  *      meets the minimum version wins; otherwise the first that works at all
  *      (so the result can still report an outdated version).
  */
-async function resolveNodeBinary(
+async function resolveNodeBinaryUncached(
   customPath?: string | null,
 ): Promise<ResolvedNode | null> {
   const trimmedCustom = customPath?.trim();
@@ -192,6 +192,26 @@ async function resolveNodeBinary(
   }
 
   return firstWorking;
+}
+
+// Probing Node (up to 8 candidates, 10s timeout each) is expensive; every
+// build/preview/install was re-probing on each spawn. Cache the resolution,
+// keyed by the custom path so a settings change invalidates it.
+let cachedNodeResolution: {
+  key: string;
+  resolved: ResolvedNode | null;
+} | null = null;
+
+async function resolveNodeBinary(
+  customPath?: string | null,
+): Promise<ResolvedNode | null> {
+  const key = customPath?.trim() ?? "";
+  if (cachedNodeResolution && cachedNodeResolution.key === key) {
+    return cachedNodeResolution.resolved;
+  }
+  const resolved = await resolveNodeBinaryUncached(customPath);
+  cachedNodeResolution = { key, resolved };
+  return resolved;
 }
 
 /**

@@ -1623,6 +1623,24 @@ body {
   opacity: 0.82;
 }
 
+/* Blocks/sections hidden on the active viewport stay visible on the canvas
+   (marked) so they can still be selected and edited — the built site hides
+   them via the responsive CSS. */
+.canvas .block.hidden-on-viewport,
+.canvas-section.hidden-on-viewport {
+  outline: 2px dashed var(--border-focus);
+  outline-offset: 3px;
+  opacity: 0.55;
+}
+.canvas .block.hidden-on-viewport:hover,
+.canvas-section.hidden-on-viewport:hover {
+  opacity: 0.9;
+}
+.canvas .block.hidden-on-viewport.selected,
+.canvas-section.hidden-on-viewport.selected {
+  opacity: 1;
+}
+
 .canvas .block:hover {
   border-color: var(--border-focus);
   background: rgba(255, 255, 255, 0.018);
@@ -1933,6 +1951,12 @@ body {
   border: 0;
   background: #ffffff;
   pointer-events: none;
+}
+
+.block-preview video {
+  max-width: 100%;
+  display: block;
+  background: #000000;
 }
 
 .block-preview [data-zephus-block="columns"],
@@ -2621,28 +2645,6 @@ body {
 
 .link-field .mini-btn {
   flex: 0 0 auto;
-  white-space: nowrap;
-}
-
-.font-control {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.font-custom {
-  width: 100%;
-}
-
-.font-preview {
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg-alt);
-  color: var(--text);
-  font-size: 15px;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 

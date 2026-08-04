@@ -147,6 +147,7 @@ type EditorBlockType =
   | "quote"
   | "list"
   | "embed"
+  | "video"
   | "feature"
   | "testimonial"
   | "accordion"
@@ -198,7 +199,6 @@ interface FormDefinition {
 
 interface BlockNode extends EditorBlock {
   children?: BlockNode[];
-  hidden?: boolean;
   asset?: AssetRef;
   link?: LinkRef;
   form?: FormDefinition;
@@ -211,7 +211,6 @@ interface SectionNode {
   props: Record<string, string>;
   style?: BlockStyle;
   locked?: boolean;
-  hidden?: boolean;
   children: BlockNode[];
 }
 
@@ -269,6 +268,8 @@ interface PageMeta {
   metaDescription: string;
   navVisible: boolean;
   isHome: boolean;
+  /** True when the page is detached from visual editing (code only). */
+  detached: boolean;
   /** Social share image (web path like `/assets/images/x.png`, or absolute URL). */
   socialImage: string;
   /** Overrides the canonical URL derived from the site URL + route. */
@@ -286,7 +287,6 @@ interface PageMeta {
 
 interface PageDocument extends PageMeta {
   schemaVersion: number;
-  templateId: string | null;
   sections: SectionNode[];
   detached: boolean;
   detachedAt: string | null;
@@ -301,7 +301,6 @@ interface SiteDocument {
   generatedAt: string;
   design: DesignTokenSet;
   shell: ShellConfig;
-  templates: TemplateDefinition[];
   /**
    * Public base URL (e.g. `https://example.com`). Required for canonical tags,
    * absolute Open Graph image URLs, and sitemap.xml generation.
@@ -631,12 +630,16 @@ interface ZephusApi {
     publicDir: string,
     webPath: string,
   ): Promise<{ ok: boolean; dataUrl?: string; error?: string }>;
-  listReusableSections(): Promise<ReusableSectionsResult>;
+  listReusableSections(projectPath: string): Promise<ReusableSectionsResult>;
   saveReusableSection(
+    projectPath: string,
     label: string,
     html: string,
   ): Promise<ReusableSectionsResult>;
-  deleteReusableSection(id: string): Promise<OperationResult>;
+  deleteReusableSection(
+    projectPath: string,
+    id: string,
+  ): Promise<OperationResult>;
   readDraft(
     projectPath: string,
     scope: DraftScope,
@@ -663,11 +666,16 @@ interface ZephusApi {
   openPreviewWindow(url: string): Promise<OperationResult>;
   closePreviewWindow(): Promise<OperationResult>;
   onPreviewClosed(callback: () => void): () => void;
+  onPreviewExited(callback: () => void): () => void;
   ensureThemePreviewServer(): Promise<ThemePreviewServerResult>;
   publish(
     projectPath: string,
     outDir: string,
   ): Promise<{ ok: boolean; outputDir?: string; error?: string }>;
+  revealOutputFolder(
+    projectPath: string,
+    outDir: string,
+  ): Promise<OperationResult>;
   dependenciesInstalled(projectPath: string): Promise<boolean>;
   installDependencies(
     projectPath: string,

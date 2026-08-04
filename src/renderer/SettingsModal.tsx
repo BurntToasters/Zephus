@@ -40,9 +40,9 @@ function buttonClass(tone: SettingsModalAction["tone"]): string {
 export function renderSettingsModalBody(
   container: HTMLElement,
   state: SettingsModalState,
-): void {
+): () => void {
   container.innerHTML = "";
-  render(
+  return render(
     () => (
       <div class="settings-form">
         <div class="settings-section">

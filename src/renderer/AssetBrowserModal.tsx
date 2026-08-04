@@ -1,4 +1,4 @@
-import { For } from "solid-js";
+import { For, createSignal } from "solid-js";
 import { render } from "solid-js/web";
 
 export interface AssetBrowserModalEntry {
@@ -38,24 +38,39 @@ function formatBytes(bytes: number): string {
 export function renderAssetBrowserModalBody(
   container: HTMLElement,
   state: AssetBrowserModalState,
-): void {
+): () => void {
   container.innerHTML = "";
-  render(
-    () => (
+  return render(() => {
+    // Drag state lives in a local signal: re-rendering the whole modal on
+    // dragover would destroy the drop target mid-drag and cancel the drop.
+    const [dragover, setDragover] = createSignal(state.dragActive);
+    // dragenter/dragleave fire per child element, so depth-count them.
+    let dragDepth = 0;
+    const markDrag = (active: boolean): void => {
+      setDragover(active);
+      state.onDragActiveChange(active);
+    };
+    return (
       <div class="asset-browser">
         <div
-          class={`asset-dropzone${state.dragActive ? " dragover" : ""}`}
+          class={`asset-dropzone${dragover() ? " dragover" : ""}`}
           tabindex="0"
           role="region"
           aria-label="Drop files here to import"
-          onDragOver={(event) => {
+          onDragEnter={(event) => {
             event.preventDefault();
-            state.onDragActiveChange(true);
+            dragDepth += 1;
+            markDrag(true);
           }}
-          onDragLeave={() => state.onDragActiveChange(false)}
+          onDragOver={(event) => event.preventDefault()}
+          onDragLeave={() => {
+            dragDepth = Math.max(0, dragDepth - 1);
+            if (dragDepth === 0) markDrag(false);
+          }}
           onDrop={(event) => {
             event.preventDefault();
-            state.onDragActiveChange(false);
+            dragDepth = 0;
+            markDrag(false);
             state.onDropFiles(Array.from(event.dataTransfer?.files ?? []));
           }}
         >
@@ -121,8 +136,7 @@ export function renderAssetBrowserModalBody(
           )}
         </div>
       </div>
-    ),
-    container,
-  );
+    );
+  }, container);
   state.onRendered?.();
 }

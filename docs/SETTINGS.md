@@ -5,7 +5,7 @@ Configure Zephus behavior and appearance to match your workflow.
 ## Opening Settings
 
 1. On the **Start** screen, click the **Settings** tab
-2. Or, if editing a project, look for **⚙️ Settings** in the top menu
+2. Or, if editing a project, click **Settings** in the editor top toolbar
 3. The settings panel opens
 
 ---
@@ -26,7 +26,7 @@ Choose how Zephus looks:
 
 **Default:** Off
 
-When enabled, Zephus **saves the project when you leave a page** (or auto-persists during site-wide editor conflicts) instead of showing the unsaved-changes dialog. That is separate from **crash-recovery drafts** in `.zephus/drafts/`, which Zephus can still offer after a crash even when Auto-Save is off.
+When enabled, Zephus **saves the project when you leave a page** (or auto-persists during site-wide editor conflicts) instead of showing the unsaved-changes dialog. That is separate from **crash-recovery drafts** stored in the app's local data folder (kept out of your project and Git), which Zephus can still offer after a crash even when Auto-Save is off.
 
 > 💡 **Recommendation:** Enable auto-save if you switch pages often. Always use **Ctrl+S** before publishing so disk matches what you expect.
 
@@ -54,7 +54,7 @@ When enabled, Zephus automatically reopens the last project you were editing whe
 
 **Default:** 13px
 
-Adjust the text size in Code mode editor. Range: 12px–18px.
+Adjust the text size in Code mode editor. Range: 12px–18px in preset steps.
 
 ---
 
@@ -64,12 +64,12 @@ Adjust the text size in Code mode editor. Range: 12px–18px.
 
 Choose how Zephus checks for updates:
 
-| Channel | Release Schedule | Stability |
-|---------|------------------|-----------|
-| **Auto** | Automatically chooses based on your version | Recommended for most users |
-| **Stable** | Final releases only | Recommended for production use |
-| **Beta** | Pre-release versions | For testers and early adopters |
-| **Developer** | Nightly builds | For developers only |
+| Channel       | Release Schedule                            | Stability                      |
+| ------------- | ------------------------------------------- | ------------------------------ |
+| **Auto**      | Automatically chooses based on your version | Recommended for most users     |
+| **Stable**    | Final releases only                         | Recommended for production use |
+| **Beta**      | Pre-release versions                        | For testers and early adopters |
+| **Developer** | Nightly builds                              | For developers only            |
 
 ---
 
@@ -92,6 +92,7 @@ If you have multiple Node.js versions installed or want to use a specific one, e
 **Linux example:** `/usr/bin/node`
 
 Zephus uses this Node.js version to run:
+
 - `npm run dev` (preview)
 - `npm run build` (publish)
 - Theme preview generation
@@ -126,7 +127,7 @@ Zephus bundles several open-source libraries:
 - **Lucide**: Icon library
 - And others...
 
-Click **Open Licenses** to view the full list of licenses.
+Click **Load Dependency Licenses** to view the full list of licenses.
 
 ---
 
@@ -141,9 +142,11 @@ Click **Open Config Directory** to reveal the folder where Zephus stores global 
 ```
 
 Inside, you'll find:
+
 - `settings.json`: Global app settings
-- `reusable-sections.json`: Saved section templates
-- `drafts/`: Auto-saved work-in-progress
+- `drafts.json`: Crash-recovery drafts (per project)
+
+(Reusable sections now live inside each project at `.zephus/templates/reusable-sections.json`, so they travel with the site in Git.)
 
 > 💡 **Tip:** You can manually edit `settings.json` if needed, but restart Zephus to apply changes.
 
@@ -175,41 +178,47 @@ Control which blocks are allowed and editing behavior for this project:
 
 ## Keyboard Shortcuts
 
-### General
+### General (visual editor)
 
-| Shortcut | Action |
-|----------|--------|
-| **Ctrl/Cmd+S** | Save current page |
-| **Ctrl/Cmd+Z** | Undo |
-| **Ctrl/Cmd+Y** | Redo |
-| **Ctrl/Cmd+F** | Find and replace across pages |
+| Shortcut                                 | Action                                     |
+| ---------------------------------------- | ------------------------------------------ |
+| **Ctrl/Cmd+S**                           | Save current page                          |
+| **Ctrl/Cmd+Z**                           | Undo                                       |
+| **Ctrl/Cmd+Y** (or **Shift+Cmd/Ctrl+Z**) | Redo                                       |
+| **Ctrl/Cmd+D**                           | Duplicate selected block or section        |
+| **Ctrl/Cmd+C / X / V**                   | Copy, cut, paste selected block or section |
+| **Delete / Backspace**                   | Delete selected block or section           |
+| **Ctrl/Cmd+F**                           | Find and replace across pages              |
+| **?** or **H**                           | Open the in-app shortcut help              |
 
 ### While Editing Text on the Canvas
 
-| Shortcut | Action |
-|----------|--------|
-| **Ctrl/Cmd+B** | Bold |
-| **Ctrl/Cmd+I** | Italic |
+| Shortcut       | Action                |
+| -------------- | --------------------- |
+| **Ctrl/Cmd+B** | Bold                  |
+| **Ctrl/Cmd+I** | Italic                |
 | **Ctrl/Cmd+K** | Add link to selection |
-| **Esc** | Cancel the edit |
+| **Esc**        | Cancel the edit       |
 
 ### Code Mode
 
-| Shortcut | Action |
-|----------|--------|
-| **Ctrl+F** | Find |
-| **Ctrl+H** | Find & Replace |
+| Shortcut       | Action                  |
+| -------------- | ----------------------- |
+| **Ctrl+F**     | Find                    |
+| **Ctrl+H**     | Find & Replace          |
 | **Ctrl+Enter** | Commit multi-line edits |
-| **Tab** | Indent |
-| **Shift+Tab** | Unindent |
+| **Tab**        | Indent                  |
+| **Shift+Tab**  | Unindent                |
 
 ### Visual Mode
 
-| Shortcut | Action |
-|----------|--------|
-| **Enter** | Confirm single-line edit |
-| **Ctrl+Enter** | Confirm multi-line edit |
-| **Arrow Up/Down** | Reorder blocks (when block is selected) |
+| Shortcut       | Action                                                          |
+| -------------- | --------------------------------------------------------------- |
+| **Enter**      | Confirm single-line edit (headings, buttons, one-line fields)   |
+| **Ctrl+Enter** | Confirm multi-line text edit (plain Enter inserts a line break) |
+| **Esc**        | Cancel the inline edit                                          |
+
+> Reorder blocks and sections by dragging their grip handles, or use the up/down arrows in the block toolbar.
 
 ---
 
@@ -220,6 +229,7 @@ Control which blocks are allowed and editing behavior for this project:
 Zephus couldn't detect Node.js on your system.
 
 **Fix:**
+
 1. Install [Node.js 22.12+](https://nodejs.org)
 2. Restart Zephus
 3. If still not detected, manually enter the path in **Custom Node.js Path**
@@ -231,6 +241,7 @@ Zephus couldn't detect Node.js on your system.
 The development server failed to start.
 
 **Check:**
+
 1. Node.js is installed (see above)
 2. Your project has a valid `package.json`
 3. Dependencies are installed (`npm install` in project folder)
@@ -243,11 +254,13 @@ The development server failed to start.
 Zephus couldn't save a draft.
 
 **Likely causes:**
+
 1. Disk is full
-2. Permission issue on `.zephus/drafts/` folder
+2. Permission issue on the app’s local data folder (where `drafts.json` lives)
 3. Antivirus software blocking writes
 
 **Fix:**
+
 1. Check disk space
 2. Ensure Zephus has write permissions
 3. Check antivirus exclusions

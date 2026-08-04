@@ -1,3 +1,4 @@
+import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 
 export type LinkPickerKind = "page" | "url" | "email" | "phone" | "anchor";
@@ -50,10 +51,14 @@ function placeholder(kind: LinkPickerKind): string {
 export function renderLinkPickerModal(
   container: HTMLElement,
   state: LinkPickerModalState,
-): void {
+): () => void {
   container.innerHTML = "";
-  render(
-    () => (
+  return render(() => {
+    // Local signals keep focus while typing: re-rendering the whole body on
+    // every keystroke would destroy the focused input and drop input.
+    const [raw, setRaw] = createSignal(state.rawValue);
+    const [pageValue, setPageValue] = createSignal(state.pageValue);
+    return (
       <div class="meta-form">
         <label class="meta-field">
           <span>Link type</span>
@@ -75,10 +80,12 @@ export function renderLinkPickerModal(
           <label class="meta-field">
             <span>{fieldLabel(state.kind)}</span>
             <select
-              value={state.pageValue}
-              onChange={(event) =>
-                state.onPageValueChange(event.currentTarget.value)
-              }
+              value={pageValue()}
+              onChange={(event) => {
+                const value = event.currentTarget.value;
+                setPageValue(value);
+                state.onPageValueChange(value);
+              }}
             >
               {state.pageOptions.map((option) => (
                 <option value={option.value}>{option.label}</option>
@@ -90,16 +97,17 @@ export function renderLinkPickerModal(
             <span>{fieldLabel(state.kind)}</span>
             <input
               class="text"
-              value={state.rawValue}
+              value={raw()}
               placeholder={placeholder(state.kind)}
-              onInput={(event) =>
-                state.onRawValueChange(event.currentTarget.value)
-              }
+              onInput={(event) => {
+                const value = event.currentTarget.value;
+                setRaw(value);
+                state.onRawValueChange(value);
+              }}
             />
           </label>
         )}
       </div>
-    ),
-    container,
-  );
+    );
+  }, container);
 }

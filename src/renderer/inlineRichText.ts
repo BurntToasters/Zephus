@@ -69,9 +69,16 @@ export function richTextFromElement(
   const allowLinks = options.allowLinks !== false;
   const allowLineBreaks = options.allowLineBreaks !== false;
   let usedMarkup = false;
+  // True once any non-text child was seen (br, script, span, formatting…).
+  // The walk output is authoritative then; the innerText fallback (which is
+  // layout-dependent and browser-inconsistent) only applies to pure text.
+  let sawElement = false;
 
   const lineBreak = (): string => {
-    if (!allowLineBreaks) return " ";
+    if (!allowLineBreaks) {
+      sawElement = true;
+      return " ";
+    }
     usedMarkup = true;
     return "<br />";
   };
@@ -82,6 +89,7 @@ export function richTextFromElement(
     }
     if (node.nodeType !== Node.ELEMENT_NODE) return "";
 
+    sawElement = true;
     const element = node as HTMLElement;
     const tag = element.tagName;
     if (tag === "BR") return lineBreak();
@@ -123,9 +131,9 @@ export function richTextFromElement(
   });
 
   const markup = parts.join("");
-  if (!usedMarkup) {
-    // No formatting: keep the prop as plain text (what the editor did before
-    // inline formatting existed).
+  if (!usedMarkup && !sawElement) {
+    // Pure text (no markup, no tags): keep the prop as plain text (what the
+    // editor did before inline formatting existed).
     const text = root.innerText ?? root.textContent ?? "";
     return allowLineBreaks ? text : text.replace(/\s*\n+\s*/g, " ");
   }

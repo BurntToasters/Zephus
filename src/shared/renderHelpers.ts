@@ -369,8 +369,11 @@ export function styleAttr(
   ) {
     css.push(`grid-template-columns:1fr`);
   }
-  if (style.hideOn?.includes(viewport) && forCanvas) {
-    css.push(`display:none`);
+  if (style.hideOn?.includes(viewport) && !forCanvas) {
+    // Build: hide inline for the desktop viewport (tablet/mobile hiding comes
+    // from collectResponsiveCss media queries). The canvas keeps hidden
+    // elements visible with a dashed outline so they stay selectable.
+    css.push("display:none");
   }
   if (block.type === "spacer" && !style.height) {
     addCssValue(css, "height", block.props["height"] || "48px");

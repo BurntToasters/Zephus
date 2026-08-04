@@ -98,6 +98,7 @@ const GLOBAL_CSS = `:root {
 html { scroll-behavior: smooth; }
 body { margin: 0; line-height: 1.65; -webkit-font-smoothing: antialiased; }
 img { max-width: 100%; height: auto; display: block; border-radius: var(--zephus-radius, 12px); }
+video { max-width: 100%; display: block; border-radius: var(--zephus-radius, 12px); background: #000; }
 a { color: var(--accent); }
 .lead { font-size: 1.2rem; color: var(--muted); }
 .button {
@@ -519,7 +520,6 @@ function buildSiteDocument(
     generatedAt: new Date(0).toISOString(),
     design: def.design,
     shell,
-    templates: [],
     // Scaffolded sites have no public URL yet; the user sets it in Site SEO,
     // which is what enables canonical tags and sitemap generation.
     siteUrl: "",
@@ -545,7 +545,6 @@ function buildPageDocument(page: ThemePage): PageDocument {
     noindex: false,
     publishDate: page.publishDate ?? "",
     author: page.author ?? "",
-    templateId: null,
     sections: page.sections,
     detached: false,
     detachedAt: null,
@@ -554,6 +553,8 @@ function buildPageDocument(page: ThemePage): PageDocument {
   };
 }
 
+/** Placeholder page for the scaffold: enumerates the page for the first
+ *  schema pass and keeps `npm run dev` runnable before generation. */
 function stubAstro(slug: string, title: string): string {
   const ups = slug.split("/").length;
   const prefix = "../".repeat(ups);
@@ -564,6 +565,7 @@ import BaseLayout from '${prefix}layouts/BaseLayout.astro';
 `;
 }
 
+/** Placeholder layout for the scaffold; replaced by the managed layout. */
 function stubLayout(siteName: string): string {
   return `---
 interface Props { title?: string }
@@ -1544,9 +1546,13 @@ export function listThemes(): ThemeMeta[] {
 }
 
 /**
- * Builds the full file set for a theme: static project files plus the Zephus
- * schema sidecars (.zephus/site.json + .zephus/pages/*.json) and stub pages.
- * ensureVisualSchema() turns the sidecars into the real pages/layout/CSS.
+ * Builds the full file set for a theme: static project files, scaffold stub
+ * pages/layout (which enumerate the pages for the first schema pass and keep
+ * `npm run dev` runnable), plus the Zephus schema sidecars
+ * (.zephus/site.json + .zephus/pages/*.json).
+ * The wizard runs ensureVisualSchema with `regenerateHashlessPages` right
+ * after scaffolding, which replaces the stubs with the real generated pages
+ * and records their hashes — so a freshly created site opens fully "managed".
  */
 export function buildTheme(themeId: string, siteName: string): Theme | null {
   const def = buildThemeDef(themeId, siteName);
