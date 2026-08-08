@@ -51,7 +51,11 @@ function readStoredSections(projectPath: string): ReusableSection[] {
   const file = sectionsPath(projectPath);
   const sections = readSectionsFile(file);
   if (sections.length > 0) return sections;
-  // One-time migration from the legacy global store.
+  // An EXISTING but empty project store means the user deleted every saved
+  // section — do NOT re-migrate from the legacy global store (previously the
+  // migration re-triggered on the next read and resurrected the deleted
+  // sections). Only migrate when the project store was never created.
+  if (fs.existsSync(file)) return sections;
   const legacy = readSectionsFile(legacySectionsPath());
   if (legacy.length === 0) return [];
   writeSectionsFile(file, legacy);

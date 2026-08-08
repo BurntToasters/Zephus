@@ -76,9 +76,14 @@ function normalizeDraft(
 
 function writeStore(store: DraftStore): void {
   // Prune expired drafts so the store stays bounded for long-running use.
+  // Entries without a savedAt (legacy/corrupt) can never be valid and would
+  // otherwise accumulate forever — delete them too.
   const cutoff = Date.now() - DRAFT_RETENTION_MS;
   for (const [key, draft] of Object.entries(store)) {
-    if (!draft?.savedAt) continue;
+    if (!draft || !draft.savedAt) {
+      delete store[key];
+      continue;
+    }
     const time = Date.parse(draft.savedAt);
     if (Number.isNaN(time) || time < cutoff) delete store[key];
   }

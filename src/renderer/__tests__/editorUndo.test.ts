@@ -7,6 +7,7 @@ import {
   popEditorRedoEntry,
   popEditorUndoEntry,
   pushEditorRedoFromCurrent,
+  pushEditorSnapshot,
   pushEditorUndo,
   pushEditorUndoFromCurrent,
   restoreEditorSnapshot,
@@ -34,6 +35,31 @@ describe("editorUndo", () => {
     const snap = captureEditorSnapshot(state);
     expect(snap.sections[0]!.children[0]!.props.text).toBe("Hi");
     expect(snap.site?.design?.accent).toBe("#111");
+  });
+
+  it("pushes a pre-captured snapshot and clears redo", () => {
+    const state = createEditorSession();
+    state.sections = [
+      {
+        id: "s1",
+        type: "section",
+        label: "A",
+        props: {},
+        children: [],
+      },
+    ];
+    pushEditorUndo(state);
+    pushEditorRedoFromCurrent(state);
+    expect(state.redo).toHaveLength(1);
+
+    const preEdit = captureEditorSnapshot(state);
+    state.sections = [];
+    pushEditorSnapshot(state, preEdit);
+
+    expect(state.undo).toHaveLength(2);
+    expect(state.undo[1]).toBe(preEdit);
+    // Pushing must wipe redo.
+    expect(state.redo).toHaveLength(0);
   });
 
   it("caps the undo stack", () => {
@@ -147,6 +173,34 @@ describe("editorUndo", () => {
 
     expect(applyDesignPreview).not.toHaveBeenCalled();
     expect(state.siteDirty).toBe(false);
+  });
+
+  it("clears staged site edits when the snapshot has no site", () => {
+    // Regression: snap.site null vs a staged site fell through every branch —
+    // staged site edits stayed applied and dirty, undo did nothing.
+    const state = createEditorSession();
+    state.pendingSiteDocument = { design: { accent: "#999" } } as SiteDocument;
+    state.pendingSiteEditorKind = "design";
+    state.siteDirty = true;
+
+    const applyDesignPreview = vi.fn();
+    const renderDirtyIndicators = vi.fn();
+    restoreEditorSnapshot(
+      state,
+      { sections: [], site: null },
+      {
+        syncBlocksFromSections: vi.fn(),
+        syncSelectionState: vi.fn(),
+        applyDesignPreview,
+        renderDirtyIndicators,
+      },
+    );
+
+    expect(state.pendingSiteDocument).toBeNull();
+    expect(state.pendingSiteEditorKind).toBeNull();
+    expect(state.siteDirty).toBe(false);
+    expect(applyDesignPreview).toHaveBeenCalled();
+    expect(renderDirtyIndicators).toHaveBeenCalled();
   });
 
   it("pop and push round-trips undo/redo entries", () => {

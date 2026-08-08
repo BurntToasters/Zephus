@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ensureThemePreviewServer,
   resolveThemePreviewFile,
@@ -170,5 +170,24 @@ describe("themePreviewServer", () => {
     );
     expect(result.ok).toBe(false);
     expect(result.error).toContain("preview bundle missing at");
+  });
+
+  it("uses the default preview bundle location when no root is given", async () => {
+    // The repo has a real template-previews/dist; the default-root call must
+    // start a server against it.
+    const result = await ensureThemePreviewServer();
+    expect(result.ok).toBe(true);
+    expect(result.baseUrl).toBeTruthy();
+    stopThemePreviewServer();
+  });
+
+  it("resolves with an error when stopped during startup", async () => {
+    const root = makePreviewRoot();
+    const pending = ensureThemePreviewServer(root);
+    // Stop before the listen callback runs: the in-flight start must not
+    // register as the current server.
+    stopThemePreviewServer();
+    const result = await pending;
+    expect(result.ok).toBe(false);
   });
 });

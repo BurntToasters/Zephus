@@ -89,7 +89,10 @@ export function readProductionPackageIdsFromLock(
       if (!name) continue;
       allowed.add(`${name}@${data.version}`);
     }
-    return allowed;
+    // An empty allowlist (every lockfile entry marked dev) must not filter
+    // EVERYTHING out of the license list — that is a read artifact, not a
+    // signal. Only filter when there is something to filter with.
+    return allowed.size > 0 ? allowed : null;
   } catch (error) {
     log.warn(
       "Failed to read package-lock.json for production license filter.",

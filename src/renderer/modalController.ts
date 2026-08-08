@@ -6,6 +6,12 @@ export interface ModalAction {
 
 export interface ModalOptions {
   size?: "default" | "wide";
+  /**
+   * Called when Esc is pressed and no Cancel/Close/ghost button exists to
+   * activate. Lets `choose()` settle its promise instead of hanging forever
+   * on the modal's bare close.
+   */
+  onEscapedWithoutAction?: () => void;
 }
 
 interface ModalFrame {
@@ -14,6 +20,9 @@ interface ModalFrame {
   actionNodes: Node[];
   wide: boolean;
   focused: HTMLElement | null;
+  options: ModalOptions | null;
+  closeHandler: (() => void) | null;
+  cleanup: (() => void) | null;
 }
 
 function modalElement<T extends HTMLElement>(id: string): T {
@@ -32,6 +41,13 @@ export function createModalController(refreshIcons: () => void) {
   // nested flows (link picker / asset browser / licenses) return the user to
   // the modal they came from with their in-progress edits intact.
   const frameStack: ModalFrame[] = [];
+  // Options of the currently visible modal (tracked across frame pushes/pops
+  // so Esc handling can consult the right modal's escape hook).
+  let currentOptions: ModalOptions | null = null;
+  // Promise-backed modals (choose/promptText) register handler for external
+  // close. Bare closeModal must settle them, or callers await forever.
+  let currentCloseHandler: (() => void) | null = null;
+  let currentCleanup: (() => void) | null = null;
 
   function isModalOpen(): boolean {
     return !modalElement("modal-overlay").classList.contains("hidden");
@@ -84,7 +100,15 @@ export function createModalController(refreshIcons: () => void) {
         /cancel|close|done/i.test(button.textContent ?? ""),
       ) ?? buttons.find((button) => button.classList.contains("ghost"));
     if (cancel) cancel.click();
-    else closeModal();
+    else {
+      // No dismissable action: the awaiting code (e.g. choose()) must still
+      // settle, or it hangs forever.
+      if (currentOptions?.onEscapedWithoutAction) {
+        currentOptions.onEscapedWithoutAction();
+        return;
+      }
+      closeModal();
+    }
   }
 
   function onModalKeydown(e: KeyboardEvent): void {
@@ -132,6 +156,7 @@ export function createModalController(refreshIcons: () => void) {
   }
 
   function applyModalOptions(options?: ModalOptions): void {
+    currentOptions = options ?? null;
     modalElement("modal-shell").classList.toggle(
       "modal-wide",
       options?.size === "wide",
@@ -165,6 +190,8 @@ export function createModalController(refreshIcons: () => void) {
   ): void {
     const wasOpen = isModalOpen();
     if (wasOpen) frameStack.push(captureFrame());
+    currentCloseHandler = null;
+    currentCleanup = null;
     modalElement("modal-title").textContent = title;
     modalElement("modal-body").textContent = body;
     applyModalOptions(options);
@@ -180,6 +207,8 @@ export function createModalController(refreshIcons: () => void) {
   ): void {
     const wasOpen = isModalOpen();
     if (wasOpen) frameStack.push(captureFrame());
+    currentCloseHandler = null;
+    currentCleanup = null;
     modalElement("modal-title").textContent = title;
     const body = modalElement("modal-body");
     body.innerHTML = "";
@@ -199,6 +228,9 @@ export function createModalController(refreshIcons: () => void) {
       wide: shell.classList.contains("modal-wide"),
       focused:
         active instanceof HTMLElement && shell.contains(active) ? active : null,
+      options: currentOptions,
+      closeHandler: currentCloseHandler,
+      cleanup: currentCleanup,
     };
   }
 
@@ -208,12 +240,23 @@ export function createModalController(refreshIcons: () => void) {
     modalElement("modal-actions").replaceChildren(...frame.actionNodes);
     modalElement("modal-shell").classList.toggle("modal-wide", frame.wide);
     modalElement("modal-overlay").classList.remove("hidden");
+    currentOptions = frame.options;
+    currentCloseHandler = frame.closeHandler;
+    currentCleanup = frame.cleanup;
     refreshIcons();
     scheduleModalFocus(frame.focused);
   }
 
   function closeModal(): void {
     cancelPendingFocus();
+    // External close (another modal, close button, project shutdown) must
+    // cancel current promise-backed modal before restoring its parent.
+    const closeHandler = currentCloseHandler;
+    currentCloseHandler = null;
+    closeHandler?.();
+    const cleanup = currentCleanup;
+    currentCleanup = null;
+    cleanup?.();
     // A parent frame exists: pop back to it instead of closing the overlay.
     const frame = frameStack.pop();
     if (frame) {
@@ -236,6 +279,10 @@ export function createModalController(refreshIcons: () => void) {
     if (returnFocus && document.contains(returnFocus)) returnFocus.focus();
   }
 
+  function registerCleanup(cleanup: (() => void) | null): void {
+    currentCleanup = cleanup;
+  }
+
   function choose<T>(
     title: string,
     content: string | HTMLElement,
@@ -252,9 +299,15 @@ export function createModalController(refreshIcons: () => void) {
     const parentExisted = isModalOpen();
     return new Promise((resolve) => {
       let settled = false;
+      const closeHandler = (): void => {
+        if (settled) return;
+        settled = true;
+        resolve(undefined as T);
+      };
       const finish = (value: T): void => {
         if (settled) return;
         settled = true;
+        if (currentCloseHandler === closeHandler) currentCloseHandler = null;
         if (parentExisted) {
           // Pop back to the parent…
           closeModal();
@@ -273,10 +326,19 @@ export function createModalController(refreshIcons: () => void) {
       }));
 
       if (typeof content === "string") {
-        showModal(title, content, modalActions, options);
+        showModal(title, content, modalActions, {
+          ...options,
+          // Esc with no dismissable action must settle the promise (as a
+          // cancellation) instead of leaving the caller awaiting forever.
+          onEscapedWithoutAction: () => finish(undefined as T),
+        });
       } else {
-        showModalNode(title, content, modalActions, options);
+        showModalNode(title, content, modalActions, {
+          ...options,
+          onEscapedWithoutAction: () => finish(undefined as T),
+        });
       }
+      currentCloseHandler = closeHandler;
     });
   }
 
@@ -321,9 +383,15 @@ export function createModalController(refreshIcons: () => void) {
       const finish = (value: string | null): void => {
         if (settled) return;
         settled = true;
+        if (currentCloseHandler === closeHandler) currentCloseHandler = null;
         // closeModal pops the parent frame (if any) or hides the overlay.
         closeModal();
         resolve(value);
+      };
+      const closeHandler = (): void => {
+        if (settled) return;
+        settled = true;
+        resolve(null);
       };
       input.addEventListener("keydown", (e) => {
         if (e.key === "Enter") {
@@ -339,6 +407,7 @@ export function createModalController(refreshIcons: () => void) {
           onClick: () => finish(input.value.trim() || null),
         },
       ]);
+      currentCloseHandler = closeHandler;
     });
   }
 
@@ -395,6 +464,7 @@ export function createModalController(refreshIcons: () => void) {
     showModal,
     showModalNode,
     closeModal,
+    registerCleanup,
     isOpen: isModalOpen,
     choose,
     promptText,

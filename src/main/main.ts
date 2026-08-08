@@ -307,7 +307,12 @@ function fileUrlToPath(url: URL): string {
 }
 
 function isWithinPath(root: string, target: string): boolean {
-  return target === root || target.startsWith(root + path.sep);
+  // Trailing separators (a URL root like file://…/renderer/) must not make
+  // every containment test false: root + sep would become "…/renderer//".
+  const normalizedRoot = root.replace(/[\\/]+$/, "");
+  return (
+    target === normalizedRoot || target.startsWith(normalizedRoot + path.sep)
+  );
 }
 
 /** True for the renderer's own file:// origin or the localhost dev-server preview. */
@@ -353,7 +358,9 @@ function installNavigationGuards(contents: Electron.WebContents): void {
     }
   };
   const openExternal = (url: string): void => {
-    if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
+    // mailto:/tel: links (portfolio CTAs, restaurant reservation buttons)
+    // must reach the OS handlers too, or clicking them silently does nothing.
+    if (/^(https?:\/\/|mailto:|tel:)/i.test(url)) void shell.openExternal(url);
   };
 
   contents.setWindowOpenHandler(({ url }) => {

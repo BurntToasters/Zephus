@@ -197,4 +197,191 @@ describe("editorSiteSave", () => {
     // The draft must NOT be cleared for the newer edits.
     expect(clearDraft).not.toHaveBeenCalled();
   });
+
+  it("warns when the recovery draft cannot be cleared on discard", async () => {
+    const state = createEditorSession();
+    state.project = {
+      path: "/proj",
+      name: "P",
+      astro: { pagesDir: "src/pages" },
+    } as ProjectOpenResult;
+    state.siteDirty = true;
+    state.pendingSiteDocument = { design: {} } as SiteDocument;
+
+    const setStatus = vi.fn();
+    const actions = createEditorSiteSaveActions({
+      getState: () => state,
+      setStatus,
+      onSiteStateChanged: vi.fn(),
+      zephus: {
+        clearDraft: vi.fn(async () => ({
+          ok: false as const,
+          error: "disk unwritable",
+        })),
+        writeSiteDocument: vi.fn(),
+        readSiteDocument: vi.fn(),
+      },
+    });
+
+    await actions.discardPendingSiteChanges();
+    expect(setStatus).toHaveBeenCalledWith(
+      expect.stringContaining("disk unwritable"),
+    );
+    expect(state.siteDirty).toBe(false);
+  });
+
+  it("warns when clearDraft throws during discard", async () => {
+    const state = createEditorSession();
+    state.project = {
+      path: "/proj",
+      name: "P",
+      astro: { pagesDir: "src/pages" },
+    } as ProjectOpenResult;
+    state.siteDirty = true;
+    state.pendingSiteDocument = { design: {} } as SiteDocument;
+
+    const setStatus = vi.fn();
+    const actions = createEditorSiteSaveActions({
+      getState: () => state,
+      setStatus,
+      onSiteStateChanged: vi.fn(),
+      zephus: {
+        clearDraft: vi.fn(async () => {
+          throw new Error("ipc exploded");
+        }),
+        writeSiteDocument: vi.fn(),
+        readSiteDocument: vi.fn(),
+      },
+    });
+
+    await actions.discardPendingSiteChanges();
+    expect(setStatus).toHaveBeenCalledWith(
+      expect.stringContaining("ipc exploded"),
+    );
+  });
+
+  it("leaves a newer edit untouched when it lands mid-discard", async () => {
+    const state = createEditorSession();
+    state.project = {
+      path: "/proj",
+      name: "P",
+      astro: { pagesDir: "src/pages" },
+    } as ProjectOpenResult;
+    state.siteDirty = true;
+    state.pendingSiteDocument = { design: { accent: "#f00" } } as SiteDocument;
+
+    const actions = createEditorSiteSaveActions({
+      getState: () => state,
+      setStatus: vi.fn(),
+      onSiteStateChanged: vi.fn(),
+      zephus: {
+        clearDraft: vi.fn(async () => {
+          // A newer site edit lands while the clear is in flight.
+          state.pendingSiteDocument = {
+            design: { accent: "#0f0" },
+          } as SiteDocument;
+          state.siteRevision += 1;
+          return { ok: true as const };
+        }),
+        writeSiteDocument: vi.fn(),
+        readSiteDocument: vi.fn(),
+      },
+    });
+
+    await actions.discardPendingSiteChanges();
+    expect(state.siteDirty).toBe(true);
+    expect(state.pendingSiteDocument?.design?.accent).toBe("#0f0");
+  });
+
+  it("warns when the recovery draft cannot be cleared after a save", async () => {
+    const state = createEditorSession();
+    state.project = {
+      path: "/proj",
+      name: "P",
+      astro: { pagesDir: "src/pages" },
+    } as ProjectOpenResult;
+    state.siteDirty = true;
+    state.pendingSiteDocument = { design: { accent: "#f00" } } as SiteDocument;
+    state.siteDocument = { design: { accent: "#000" } } as SiteDocument;
+
+    const setStatus = vi.fn();
+    const actions = createEditorSiteSaveActions({
+      getState: () => state,
+      setStatus,
+      onSiteStateChanged: vi.fn(),
+      zephus: {
+        clearDraft: vi.fn(async () => ({
+          ok: false as const,
+          error: "locked file",
+        })),
+        writeSiteDocument: vi.fn(async () => ({ ok: true as const })),
+        readSiteDocument: vi
+          .fn()
+          .mockResolvedValueOnce({
+            ok: true as const,
+            site: { design: { accent: "#000" } } as SiteDocument,
+          })
+          .mockResolvedValue({
+            ok: true as const,
+            site: { design: { accent: "#f00" } } as SiteDocument,
+          }),
+      },
+    });
+
+    expect(await actions.persistPendingSiteDocument()).toBe(true);
+    expect(setStatus).toHaveBeenCalledWith(
+      expect.stringContaining("locked file"),
+    );
+  });
+
+  it("keeps newer site edits dirty and warns when the draft clear fails", async () => {
+    const state = createEditorSession();
+    state.project = {
+      path: "/proj",
+      name: "P",
+      astro: { pagesDir: "src/pages" },
+    } as ProjectOpenResult;
+    state.pendingSiteDocument = { design: { accent: "#f00" } } as SiteDocument;
+    state.siteDocument = { design: { accent: "#000" } } as SiteDocument;
+    state.siteDirty = true;
+
+    const writeSiteDocument = vi.fn(async () => ({ ok: true as const }));
+    const clearDraft = vi.fn(async () => {
+      // A newer edit lands while the draft clear is in flight — between the
+      // two hasNewerEdits checks, so the warning path is taken.
+      state.pendingSiteDocument = {
+        design: { accent: "#0f0" },
+      } as SiteDocument;
+      state.siteRevision += 1;
+      return { ok: false as const, error: "still dirty draft" };
+    });
+    const setStatus = vi.fn();
+    const actions = createEditorSiteSaveActions({
+      getState: () => state,
+      setStatus,
+      onSiteStateChanged: vi.fn(),
+      zephus: {
+        clearDraft,
+        writeSiteDocument,
+        readSiteDocument: vi
+          .fn()
+          .mockResolvedValueOnce({
+            ok: true as const,
+            site: { design: { accent: "#000" } } as SiteDocument,
+          })
+          .mockResolvedValue({
+            ok: true as const,
+            site: { design: { accent: "#f00" } } as SiteDocument,
+          }),
+      },
+    });
+
+    expect(await actions.persistPendingSiteDocument()).toBe(true);
+    // The newer edit stays dirty and the failed draft clear is surfaced.
+    expect(state.siteDirty).toBe(true);
+    expect(state.pendingSiteDocument?.design?.accent).toBe("#0f0");
+    expect(setStatus).toHaveBeenCalledWith(
+      expect.stringContaining("still dirty draft"),
+    );
+  });
 });

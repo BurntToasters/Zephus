@@ -12,6 +12,9 @@ export interface LinkPickerModalState {
   kind: LinkPickerKind;
   pageOptions: LinkPickerPageOption[];
   pageValue: string;
+  /** The current link is a route not present in pageOptions — never silently
+   *  replace it with the first listed page. */
+  pageValueMissing?: boolean;
   rawValue: string;
   onKindChange: (value: LinkPickerKind) => void;
   onPageValueChange: (value: string) => void;
@@ -79,6 +82,13 @@ export function renderLinkPickerModal(
         {state.kind === "page" ? (
           <label class="meta-field">
             <span>{fieldLabel(state.kind)}</span>
+            {state.pageValueMissing ? (
+              <p class="muted" style="margin: 4px 0 8px">
+                The current link target is not in the page list (it may be a
+                hand-authored or detached page). Choose a listed page below, or
+                switch to URL to keep the exact address.
+              </p>
+            ) : null}
             <select
               value={pageValue()}
               onChange={(event) => {
@@ -87,6 +97,11 @@ export function renderLinkPickerModal(
                 state.onPageValueChange(value);
               }}
             >
+              {state.pageValueMissing ? (
+                <option value="" disabled>
+                  Choose a page…
+                </option>
+              ) : null}
               {state.pageOptions.map((option) => (
                 <option value={option.value}>{option.label}</option>
               ))}

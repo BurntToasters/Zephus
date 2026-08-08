@@ -83,6 +83,19 @@ function occurrences(
   return matches ? matches.length : 0;
 }
 
+/** Counts occurrences across every searchable prop of one document. */
+function countOnDoc(
+  doc: PageDocument,
+  needle: string,
+  options: SearchOptions,
+): number {
+  let count = 0;
+  eachSearchableProp(doc.sections, (_node, _prop, value) => {
+    count += occurrences(value, needle, options);
+  });
+  return count;
+}
+
 function replaceOccurrences(
   haystack: string,
   needle: string,
@@ -171,7 +184,17 @@ export function searchPages(
 
     const matches: SearchMatch[] = [];
     let totalMatches = 0;
+    let skippedDetachedPages = 0;
     for (const doc of listed.entries) {
+      // Detached/out-of-sync pages hold hand-authored content: replaceAll
+      // SKIPS them (replacing via the stale sidecar would un-detach the page
+      // and overwrite the file). The search must skip them too, or the
+      // confirmation dialog counts matches that will never be replaced.
+      if (doc.detached || doc.managedFileStatus === "out-of-sync") {
+        const pageCount = countOnDoc(doc, needle, options);
+        if (pageCount > 0) skippedDetachedPages += 1;
+        continue;
+      }
       let pageCount = 0;
       const samples: string[] = [];
       eachSearchableProp(doc.sections, (node, _prop, value) => {
@@ -194,12 +217,13 @@ export function searchPages(
       }
     }
 
-    return { ok: true, matches, totalMatches };
+    return { ok: true, matches, totalMatches, skippedDetachedPages };
   } catch (error) {
     return {
       ok: false,
       matches: [],
       totalMatches: 0,
+      skippedDetachedPages: 0,
       error: error instanceof Error ? error.message : String(error),
     };
   }
@@ -250,6 +274,10 @@ export function replaceAllInPages(
 
     for (const doc of listed.entries) {
       if (limit && !limit.has(doc.page)) continue;
+      // Detached/out-of-sync pages have hand-authored content only on disk:
+      // replacing through their stale sidecar tree would un-detach them and
+      // overwrite the file. Their text cannot be replaced safely.
+      if (doc.detached || doc.managedFileStatus === "out-of-sync") continue;
       let pageReplacements = 0;
       const sections = JSON.parse(
         JSON.stringify(doc.sections),

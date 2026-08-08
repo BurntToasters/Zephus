@@ -403,6 +403,35 @@ describe("deleteAsset", () => {
       fs.rmSync(outside, { recursive: true, force: true });
     }
   });
+
+  it("refuses to delete or rename an in-project symlinked asset", () => {
+    // Regression: operations resolved the symlink and mutated the TARGET,
+    // leaving the in-project link dangling while the web path kept pointing
+    // at the link.
+    importAssetsFromPaths(projectDir, "public", [makeSource("real.png")]);
+    const target = path.join(projectDir, "public/assets/images/real.png");
+    const link = path.join(projectDir, "public/assets/images/link.png");
+    fs.symlinkSync(target, link);
+
+    const deleted = deleteAsset(
+      projectDir,
+      "public",
+      "/assets/images/link.png",
+    );
+    expect(deleted.ok).toBe(false);
+    expect(deleted.error).toContain("symlink");
+    expect(fs.existsSync(target)).toBe(true);
+
+    const renamed = renameAsset(
+      projectDir,
+      "public",
+      "/assets/images/link.png",
+      "moved.png",
+    );
+    expect(renamed.ok).toBe(false);
+    expect(renamed.error).toContain("symlink");
+    expect(fs.existsSync(target)).toBe(true);
+  });
 });
 
 describe("renameAsset", () => {

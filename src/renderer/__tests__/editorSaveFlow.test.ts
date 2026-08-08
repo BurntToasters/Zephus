@@ -61,11 +61,12 @@ function makeDeps(
     state.pendingSiteDocument = null;
     return true;
   });
+  const setCode = vi.fn();
   const deps = {
     getState: () => state,
     setStatus: vi.fn(),
     getCode: () => state.rawCode,
-    setCode: vi.fn(),
+    setCode,
     serializeBlocks: () => "<h1>visual</h1>",
     pageDocumentFromState: () => state.pageDocument,
     syncVisualModeState: vi.fn(),
@@ -91,6 +92,7 @@ function makeDeps(
     detachPageDocument,
     clearDraft,
     persistPendingSiteDocument,
+    setCode,
   };
 }
 
@@ -244,6 +246,131 @@ describe("editorSave runSave", () => {
     expect(state.visualEditable).toBe(true);
   });
 
+  it("reports failure when the detach call fails", async () => {
+    const state = makeState({ mode: "code", managedStatus: "out-of-sync" });
+    state.rawCode = "<p>code</p>";
+    const { deps, detachPageDocument, writePageDocument } = makeDeps(state);
+    detachPageDocument.mockResolvedValueOnce({
+      ok: false as const,
+      error: "disk on fire",
+      site: null,
+      pageDocument: null,
+      source: null,
+      generatedSource: null,
+    });
+    const { performSave } = createEditorSaveActions(deps);
+
+    const ok = await performSave();
+    expect(ok).toBe(false);
+    expect(writePageDocument).not.toHaveBeenCalled();
+    expect(deps.setStatus).toHaveBeenCalledWith(
+      expect.stringContaining("disk on fire"),
+    );
+  });
+
+  it("reports failure when the code-mode write fails", async () => {
+    const state = makeState({ mode: "code", managedStatus: "managed" });
+    state.rawCode = "<h1>visual</h1>";
+    const { deps, writePageDocument } = makeDeps(state);
+    writePageDocument.mockResolvedValueOnce({
+      ok: false as const,
+      error: "write refused",
+      site: null,
+      pageDocument: null,
+      source: null,
+      generatedSource: null,
+    });
+    const { performSave } = createEditorSaveActions(deps);
+
+    const ok = await performSave();
+    expect(ok).toBe(false);
+    expect(deps.setStatus).toHaveBeenCalledWith(
+      expect.stringContaining("write refused"),
+    );
+  });
+
+  it("reports no page open when dirty without a page path", async () => {
+    const state = makeState({ page: "" });
+    const { deps } = makeDeps(state);
+    const { performSave } = createEditorSaveActions(deps);
+    expect(await performSave()).toBe(false);
+    expect(deps.setStatus).toHaveBeenCalledWith("No page open to save.");
+  });
+
+  it("warns when the page recovery draft cannot be cleared", async () => {
+    const state = makeState();
+    const { deps, clearDraft } = makeDeps(state);
+    clearDraft.mockResolvedValueOnce({ ok: false, error: "locked" });
+    const { performSave } = createEditorSaveActions(deps);
+
+    expect(await performSave()).toBe(true);
+    expect(deps.setStatus).toHaveBeenCalledWith(
+      expect.stringContaining("recovery draft could not be cleared"),
+    );
+  });
+
+  it("warns when clearing the recovery draft throws", async () => {
+    const state = makeState();
+    const { deps, clearDraft } = makeDeps(state);
+    clearDraft.mockRejectedValueOnce(new Error("ipc down"));
+    const { performSave } = createEditorSaveActions(deps);
+
+    expect(await performSave()).toBe(true);
+    expect(deps.setStatus).toHaveBeenCalledWith(
+      expect.stringContaining("recovery draft could not be cleared"),
+    );
+  });
+
+  it("stops when the page changed mid-detach", async () => {
+    const state = makeState({ mode: "code", managedStatus: "out-of-sync" });
+    state.rawCode = "<p>code</p>";
+    const { deps, detachPageDocument } = makeDeps(state);
+    detachPageDocument.mockImplementation(async () => {
+      // The open page changes while the detach is in flight.
+      state.page = "about.astro";
+      return pageResult();
+    });
+    const { performSave } = createEditorSaveActions(deps);
+
+    expect(await performSave()).toBe(true);
+    expect(deps.setStatus).toHaveBeenCalledWith(
+      "Saved index.astro; the open page changed.",
+    );
+  });
+
+  it("reports a missing page document when the visual doc cannot be built", async () => {
+    const state = makeState({ mode: "code", managedStatus: "managed" });
+    state.rawCode = "<h1>visual</h1>";
+    state.pageDocument = null;
+    const { deps } = makeDeps(state);
+    const { performSave } = createEditorSaveActions(deps);
+
+    expect(await performSave()).toBe(false);
+    expect(deps.setStatus).toHaveBeenCalledWith(
+      expect.stringContaining("missing page document"),
+    );
+  });
+
+  it("writes the visual document and refreshes the code mirror on success", async () => {
+    const state = makeState({ mode: "code", managedStatus: "managed" });
+    state.rawCode = "<h1>visual</h1>";
+    const { deps, writePageDocument, setCode } = makeDeps(state);
+    // The canonical generated source must match the code content, or the
+    // save sees "newer edits" and takes the detach path instead.
+    writePageDocument.mockResolvedValueOnce(
+      pageResult({ generatedSource: "<h1>visual</h1>" }),
+    );
+    const { performSave } = createEditorSaveActions(deps);
+
+    expect(await performSave()).toBe(true);
+    expect(writePageDocument).toHaveBeenCalledTimes(1);
+    // Content unchanged: the code mirror must NOT be refilled (setCode
+    // recreates the EditorState and wipes the user's undo/redo history).
+    expect(setCode).not.toHaveBeenCalled();
+    expect(deps.syncBlocksFromSections).toHaveBeenCalled();
+    expect(state.pageDirty).toBe(false);
+  });
+
   it("saves site settings when the site is dirty", async () => {
     const state = makeState({ siteDirty: true });
     const { deps, persistPendingSiteDocument } = makeDeps(state);
@@ -316,5 +443,43 @@ describe("editorSave trailing save", () => {
 
     // The trailing request flushed the newer edits with a second write.
     expect(writePageDocument).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports a page list refresh failure without failing the save", async () => {
+    const state = makeState();
+    const { deps, writePageDocument } = makeDeps(state, {
+      reloadPages: vi.fn(async () => {
+        throw new Error("list exploded");
+      }),
+    });
+    const { performSave } = createEditorSaveActions(deps);
+
+    const ok = await performSave();
+    expect(ok).toBe(true);
+    expect(writePageDocument).toHaveBeenCalled();
+    expect(deps.setStatus).toHaveBeenCalledWith(
+      expect.stringContaining("Page list refresh failed"),
+    );
+  });
+
+  it("tracks save activity via isSaving and waitForIdle", async () => {
+    const state = makeState();
+    const { deps } = makeDeps(state);
+    let release: () => void = () => undefined;
+    deps.zephus.writePageDocument = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve(pageResult());
+        }),
+    ) as never;
+    const { performSave, isSaving, waitForIdle } =
+      createEditorSaveActions(deps);
+
+    const pending = performSave();
+    expect(isSaving()).toBe(true);
+    release();
+    await pending;
+    expect(isSaving()).toBe(false);
+    expect(await waitForIdle()).toBe(true);
   });
 });

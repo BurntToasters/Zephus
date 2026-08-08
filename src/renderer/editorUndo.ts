@@ -33,6 +33,18 @@ export function pushEditorUndo(
   onStackChange?.();
 }
 
+/** Pushes an already-captured snapshot (pre-mutation state) onto the stack. */
+export function pushEditorSnapshot(
+  state: EditorSessionState,
+  snapshot: EditorSnapshot,
+  onStackChange?: () => void,
+): void {
+  state.undo.push(snapshot);
+  if (state.undo.length > EDITOR_UNDO_LIMIT) state.undo.shift();
+  state.redo = [];
+  onStackChange?.();
+}
+
 export interface RestoreEditorSnapshotEffects {
   syncBlocksFromSections: () => void;
   syncSelectionState: () => void;
@@ -54,21 +66,35 @@ export function restoreEditorSnapshot(
 
   const currentSite = effectiveSiteDocument(state);
   if (JSON.stringify(snap.site) !== JSON.stringify(currentSite)) {
-    if (
-      snap.site &&
+    if (snap.site === null || snap.site === undefined) {
+      // The snapshot was captured while no site document was loaded/staged.
+      // Undo must return to that state: clear any staged site edits instead
+      // of leaving them applied-and-dirty (previously nothing happened).
+      if (state.pendingSiteDocument) {
+        state.pendingSiteDocument = null;
+        state.pendingSiteEditorKind = null;
+        markSiteDirty(state, false);
+        effects.applyDesignPreview();
+        effects.renderDirtyIndicators();
+      }
+    } else if (
       state.siteDocument &&
       JSON.stringify(snap.site) === JSON.stringify(state.siteDocument)
     ) {
       state.pendingSiteDocument = null;
       state.pendingSiteEditorKind = null;
       markSiteDirty(state, false);
-    } else if (snap.site) {
+      // The staged preview must be cleared from the canvas and the dirty
+      // indicators refreshed, like the other revert branches.
+      effects.applyDesignPreview();
+      effects.renderDirtyIndicators();
+    } else {
       state.pendingSiteDocument = cloneSiteDocument(snap.site);
       trackSiteChange(state, "Reverted a design change");
       markSiteDirty(state, true);
+      effects.applyDesignPreview();
+      effects.renderDirtyIndicators();
     }
-    effects.applyDesignPreview();
-    effects.renderDirtyIndicators();
   }
 }
 

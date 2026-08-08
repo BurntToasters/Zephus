@@ -151,7 +151,19 @@ export function LengthField(props: {
   const emit = () => {
     if (unit() === "auto") props.onChange("auto");
     else if (unit() === "custom") props.onChange(raw().trim());
-    else props.onChange(num() ? `${num()}${unit()}` : "");
+    else {
+      // Sanitize the typed number: ".", "-", "e" mid-typing produce values
+      // like ".px" that are invalid CSS and silently drop the declaration
+      // (both on the canvas and in the build). Normalize what parses; skip
+      // what doesn't.
+      const typed = num().trim();
+      if (!typed) {
+        props.onChange("");
+        return;
+      }
+      const n = Number(typed);
+      if (Number.isFinite(n)) props.onChange(`${n}${unit()}`);
+    }
   };
 
   const friendly: Record<string, string> = {

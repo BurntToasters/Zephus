@@ -84,10 +84,11 @@ export function renderNewPageModal(
 export function renderPageSettingsModal(
   container: HTMLElement,
   state: PageSettingsModalState,
-): void {
+): () => void {
   container.innerHTML = "";
-  const reservedNotFound = state.slug === "404";
-  render(
+  const reservedNotFound =
+    state.slug === "404" || state.slug.startsWith("404/");
+  return render(
     () => (
       <div class="meta-form">
         <label class="meta-field">

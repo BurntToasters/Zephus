@@ -62,6 +62,41 @@ describe("richTextFromElement", () => {
     expect(richTextFromElement(el)).toBe("a < b & c");
   });
 
+  it("decodes text wrapped in browser-only elements", () => {
+    // Regression: browsers wrap edited text in spans/divs (spellcheck,
+    // execCommand). Storing the escaped walk output ("A &amp; B") with no
+    // markup tags made plainTextToHtml escape it again — the literal text
+    // "&amp;" appeared on screen and in the file.
+    const span = element("<p><span>A &amp; B</span></p>");
+    expect(richTextFromElement(span)).toBe("A & B");
+
+    const div = element("<div>A &amp; B</div>");
+    expect(richTextFromElement(div)).toBe("A & B");
+
+    // Literal entity-looking text typed by the user must not be decoded away.
+    const literal = element("<div>Tom &amp;amp; Jerry</div>");
+    expect(richTextFromElement(literal)).toBe("Tom &amp; Jerry");
+  });
+
+  it("still drops script content when only wrappers are present", () => {
+    const el = element("<div>safe<script>alert(1)</script></div>");
+    expect(richTextFromElement(el)).toBe("safe");
+  });
+
+  it("collapses newline text nodes when line breaks are disallowed", () => {
+    // Regression: a literal "\n" text node (browser paste/insertText) used to
+    // land inside line-encoded props (list items, accordion, stats), shifting
+    // every following "left :: right" pair.
+    const el = element("<p>10k+\nMore</p>");
+    expect(richTextFromElement(el, { allowLineBreaks: false })).toBe(
+      "10k+ More",
+    );
+    const rich = element("<p><strong>A</strong>\nB</p>");
+    expect(richTextFromElement(rich, { allowLineBreaks: false })).toBe(
+      "<strong>A</strong> B",
+    );
+  });
+
   it("collapses block wrappers into line breaks", () => {
     const el = element("<div><p>one</p><p>two</p></div>");
     expect(richTextFromElement(el)).toBe("one<br />two");

@@ -64,6 +64,7 @@ describe("editorDraftRestore", () => {
     it("returns null when the draft matches the saved document", async () => {
       const state = makeState();
       const confirmRestoreDraft = vi.fn();
+      const clearDraft = vi.fn(async () => ({ ok: true as const }));
       const actions = createEditorDraftRestoreActions({
         getState: () => state,
         setStatus: vi.fn(),
@@ -80,12 +81,20 @@ describe("editorDraftRestore", () => {
               savedAt: "2026-01-15T12:00:00.000Z",
             },
           })),
-          clearDraft: vi.fn(),
+          clearDraft,
         },
       });
 
       expect(await actions.maybeRestoreSiteDraft()).toBeNull();
       expect(confirmRestoreDraft).not.toHaveBeenCalled();
+      // The stale draft (content now equals the saved site — e.g. the user
+      // staged a change and reverted it) must be cleared, or the home
+      // recovery card lingers forever.
+      expect(clearDraft).toHaveBeenCalledWith(
+        "/proj",
+        "site",
+        SITE_DRAFT_TARGET,
+      );
     });
 
     it("discards the draft when the user chooses discard", async () => {
@@ -120,6 +129,68 @@ describe("editorDraftRestore", () => {
       expect(state.siteDirty).toBe(false);
     });
 
+    it("warns when clearing a discarded draft fails", async () => {
+      const state = makeState();
+      const setStatus = vi.fn();
+      const actions = createEditorDraftRestoreActions({
+        getState: () => state,
+        setStatus,
+        confirmRestoreDraft: vi.fn(async () => "discard" as const),
+        onSiteDraftRestored: vi.fn(),
+        zephus: {
+          readDraft: vi.fn(async () => ({
+            ok: true as const,
+            draft: {
+              projectPath: "/proj",
+              scope: "site" as const,
+              target: SITE_DRAFT_TARGET,
+              content: '{"design":{"accent":"#111"}}',
+              savedAt: "2026-01-15T12:00:00.000Z",
+            },
+          })),
+          clearDraft: vi.fn(async () => ({
+            ok: false as const,
+            error: "read-only store",
+          })),
+        },
+      });
+
+      const warning = await actions.maybeRestoreSiteDraft();
+      expect(warning).toContain("read-only store");
+      expect(setStatus).toHaveBeenCalledWith(warning);
+    });
+
+    it("warns when clearing a corrupt draft fails", async () => {
+      const state = makeState();
+      const setStatus = vi.fn();
+      const actions = createEditorDraftRestoreActions({
+        getState: () => state,
+        setStatus,
+        confirmRestoreDraft: vi.fn(async () => "restore" as const),
+        onSiteDraftRestored: vi.fn(),
+        zephus: {
+          readDraft: vi.fn(async () => ({
+            ok: true as const,
+            draft: {
+              projectPath: "/proj",
+              scope: "site" as const,
+              target: SITE_DRAFT_TARGET,
+              content: "not json{{",
+              savedAt: "2026-01-15T12:00:00.000Z",
+            },
+          })),
+          clearDraft: vi.fn(async () => ({
+            ok: false as const,
+            error: "locked",
+          })),
+        },
+      });
+
+      const warning = await actions.maybeRestoreSiteDraft();
+      expect(warning).toContain("locked");
+      expect(state.siteDirty).toBe(false);
+    });
+
     it("restores the draft into the pending site document", async () => {
       const state = makeState();
       const onSiteDraftRestored = vi.fn();
@@ -147,6 +218,68 @@ describe("editorDraftRestore", () => {
       expect(state.pendingSiteDocument?.design?.accent).toBe("#111");
       expect(state.siteDirty).toBe(true);
       expect(onSiteDraftRestored).toHaveBeenCalled();
+    });
+
+    it("restores the site draft silently without prompting", async () => {
+      const state = makeState();
+      const confirmRestoreDraft = vi.fn();
+      const actions = createEditorDraftRestoreActions({
+        getState: () => state,
+        setStatus: vi.fn(),
+        confirmRestoreDraft,
+        onSiteDraftRestored: vi.fn(),
+        zephus: {
+          readDraft: vi.fn(async () => ({
+            ok: true as const,
+            draft: {
+              projectPath: "/proj",
+              scope: "site" as const,
+              target: SITE_DRAFT_TARGET,
+              content: '{"design":{"accent":"#222"}}',
+              savedAt: "2026-01-15T12:00:00.000Z",
+            },
+          })),
+          clearDraft: vi.fn(),
+        },
+      });
+
+      const result = await actions.maybeRestoreSiteDraft({ skipPrompt: true });
+      expect(result).toBeNull();
+      expect(confirmRestoreDraft).not.toHaveBeenCalled();
+      expect(state.pendingSiteDocument?.design?.accent).toBe("#222");
+      expect(state.siteDirty).toBe(true);
+    });
+
+    it("clears a corrupt site draft silently and warns on failure", async () => {
+      const state = makeState();
+      const setStatus = vi.fn();
+      const actions = createEditorDraftRestoreActions({
+        getState: () => state,
+        setStatus,
+        confirmRestoreDraft: vi.fn(),
+        onSiteDraftRestored: vi.fn(),
+        zephus: {
+          readDraft: vi.fn(async () => ({
+            ok: true as const,
+            draft: {
+              projectPath: "/proj",
+              scope: "site" as const,
+              target: SITE_DRAFT_TARGET,
+              content: "not json{{",
+              savedAt: "2026-01-15T12:00:00.000Z",
+            },
+          })),
+          clearDraft: vi.fn(async () => ({
+            ok: false as const,
+            error: "locked store",
+          })),
+        },
+      });
+
+      const warning = await actions.maybeRestoreSiteDraft({ skipPrompt: true });
+      expect(warning).toContain("locked store");
+      expect(setStatus).toHaveBeenCalledWith(warning);
+      expect(state.siteDirty).toBe(false);
     });
 
     it("clears a corrupt draft instead of restoring it", async () => {
@@ -200,6 +333,7 @@ describe("editorDraftRestore", () => {
     it("returns no-restore when the draft matches the raw code", async () => {
       const state = makeState();
       const confirmRestoreDraft = vi.fn();
+      const clearDraft = vi.fn(async () => ({ ok: true as const }));
       const actions = createEditorDraftRestoreActions({
         getState: () => state,
         setStatus: vi.fn(),
@@ -216,7 +350,7 @@ describe("editorDraftRestore", () => {
               savedAt: "2026-01-15T12:00:00.000Z",
             },
           })),
-          clearDraft: vi.fn(),
+          clearDraft,
         },
       });
 
@@ -228,6 +362,9 @@ describe("editorDraftRestore", () => {
         ),
       ).toEqual({ restored: false });
       expect(confirmRestoreDraft).not.toHaveBeenCalled();
+      // The draft's content equals the saved page: it is stale and must be
+      // cleared so the home recovery card does not linger forever.
+      expect(clearDraft).toHaveBeenCalledWith("/proj", "page", "index.astro");
     });
 
     it("restores the draft content on confirm", async () => {

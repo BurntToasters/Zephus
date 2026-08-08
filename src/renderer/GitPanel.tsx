@@ -11,6 +11,7 @@ export interface GitStatusData {
   branch: string | null;
   zephusIgnored?: boolean;
   notARepository?: boolean;
+  hasRemote?: boolean;
   error?: string;
   ahead?: number;
   behind?: number;
@@ -20,6 +21,11 @@ export interface GitStatusData {
 }
 
 const [gitStatus, setGitStatus] = createSignal<GitStatusData | null>(null);
+
+// The editor holds unsaved page/site changes: a commit would stage the
+// LAST-SAVED disk state and silently exclude the newer edits (which then
+// still show as "modified" — looking like a failed commit).
+const [gitPanelEditorDirty, setGitPanelEditorDirty] = createSignal(false);
 
 let gitPanelHandlers: {
   onRefresh: () => void;
@@ -149,7 +155,15 @@ export function GitPanelContent() {
 
   const canSyncRemote = () => {
     const status = gitStatus();
-    return !!status?.available && !status.detachedHead && !!status.branch;
+    return (
+      !!status?.available &&
+      !status.detachedHead &&
+      !!status.branch &&
+      // A repo with NO remote has nothing to push/pull to: previously the
+      // Push button appeared anyway and every click failed with a raw
+      // "No configured push destination" (a guaranteed-error dead end).
+      !!status.hasRemote
+    );
   };
 
   const submitCommit = async () => {
@@ -302,6 +316,19 @@ export function GitPanelContent() {
             <Show
               when={(() => {
                 const s = gitStatus();
+                if (!s?.available || s.detachedHead || !s.branch) return false;
+                return !s.hasRemote;
+              })()}
+            >
+              <p class="muted git-detached-note">
+                No git remote configured — add one on the command line (git
+                remote add origin &lt;url&gt;) to enable push and pull.
+              </p>
+            </Show>
+
+            <Show
+              when={(() => {
+                const s = gitStatus();
                 if (s?.ahead == null || s?.behind == null) return false;
                 return formatGitUpstreamPanelNote(s.ahead, s.behind);
               })()}
@@ -388,13 +415,19 @@ export function GitPanelContent() {
                 </For>
               </div>
 
+              <Show when={gitPanelEditorDirty()}>
+                <p class="muted git-detached-note">
+                  Save your page first — a commit now would stage the last saved
+                  state and silently exclude your newer edits.
+                </p>
+              </Show>
               <label class="meta-field git-commit-field">
                 <span>Commit message</span>
                 <textarea
                   rows={3}
                   value={commitMessage()}
                   placeholder="Describe your changes"
-                  disabled={committing()}
+                  disabled={committing() || gitPanelEditorDirty()}
                   onInput={(event) =>
                     setCommitMessage(event.currentTarget.value)
                   }
@@ -404,7 +437,10 @@ export function GitPanelContent() {
                 type="button"
                 class="btn primary"
                 disabled={
-                  !commitMessage().trim() || busy() || selectedCount() === 0
+                  !commitMessage().trim() ||
+                  busy() ||
+                  selectedCount() === 0 ||
+                  gitPanelEditorDirty()
                 }
                 onClick={() => void submitCommit()}
               >
@@ -440,4 +476,9 @@ export function mountGitBranch(container: HTMLElement): void {
 export function mountGitPanel(container: HTMLElement): void {
   container.innerHTML = "";
   render(() => <GitPanelContent />, container);
+}
+
+/** Reflects the editor's dirty state into the panel (commit gating). */
+export function updateGitPanelEditorDirty(dirty: boolean): void {
+  setGitPanelEditorDirty(dirty);
 }

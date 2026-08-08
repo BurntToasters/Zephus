@@ -71,10 +71,18 @@ export function categoryForExtension(ext: string): AssetCategory {
 function uniqueName(dir: string, base: string, skipPath = ""): string {
   let candidate = base;
   let i = 1;
+  // macOS/Windows filesystems are case-insensitive: "Hero.png" and "hero.png"
+  // are the SAME file. The skip comparison must be case-insensitive there, or
+  // a pure case rename would be rejected as a collision and produce Hero-1.png.
+  const caseInsensitive = process.platform !== "linux";
+  const skipMatches = (full: string): boolean =>
+    caseInsensitive
+      ? full.toLowerCase() === skipPath.toLowerCase()
+      : full === skipPath;
   while (fs.existsSync(path.join(dir, candidate))) {
     // The file being renamed itself exists at the target name — that is a
     // no-op, not a collision.
-    if (path.join(dir, candidate) === skipPath) return candidate;
+    if (skipPath && skipMatches(path.join(dir, candidate))) return candidate;
     const ext = path.extname(base);
     const stem = path.basename(base, ext);
     candidate = `${stem}-${i}${ext}`;
@@ -233,6 +241,18 @@ export function importAssetsFromPaths(
           `${path.basename(source)}: unsupported file type` +
             (ext ? ` (.${ext})` : ""),
         );
+        continue;
+      }
+      // Reject sources inside the project: importing the project's own files
+      // into its own public dir is never intended and copies secrets that
+      // happen to sit in the tree (e.g. .env snapshots renamed .png).
+      const resolvedSource = path.resolve(source);
+      const resolvedRoot = path.resolve(projectPath);
+      if (
+        resolvedSource === resolvedRoot ||
+        resolvedSource.startsWith(resolvedRoot + path.sep)
+      ) {
+        errors.push(`${path.basename(source)}: already inside the project`);
         continue;
       }
       const stat = fs.statSync(source);
@@ -404,6 +424,17 @@ function resolveManagedAssetFile(
   // Both paths must be realpaths, or deriving a web path from them produces
   // traversal garbage on platforms where the temp/home root is a symlink
   // (e.g. macOS /var -> /private/var).
+  // A symlink INSIDE the project pointing at this asset: mutating it would
+  // change the symlink's target (leaving the in-project link pointing at a
+  // dead name) while the web path refers to the link. Reject so the user can
+  // decide instead of silently operating on a different file. (Compare the
+  // LEXICAL path: resolving first would hide the link — e.g. macOS /var is
+  // itself a symlink to /private/var.)
+  if (fs.lstatSync(resolved).isSymbolicLink()) {
+    throw new Error(
+      "This asset is a symlink. Deleting or renaming it would affect the file it points to; remove the link manually instead.",
+    );
+  }
   return { file: realResolved, publicRoot: realPublicRoot };
 }
 

@@ -98,11 +98,102 @@ describe("updater install lifecycle", () => {
       () => null,
       () => settings({ updateChannel: "developer" }),
     );
-
     expect(updaterMock.autoUpdater.channel).toBe("db");
     expect(updaterMock.autoUpdater.allowPrerelease).toBe(true);
     expect(updaterMock.autoUpdater.allowDowngrade).toBe(false);
     electronMock.app.getVersion.mockReturnValue("0.1.0");
+  });
+
+  it("reports events for progress, errors, and rejected updates", async () => {
+    vi.resetModules();
+    updaterMock.autoUpdater.reset();
+    electronMock.app.getVersion.mockReturnValue("0.1.0");
+    const { setupAutoUpdater } = await import("../updater");
+    const send = vi.fn();
+    const win = {
+      isDestroyed: () => false,
+      webContents: { send },
+    };
+    setupAutoUpdater(() => win as never, settings);
+
+    updaterMock.autoUpdater.emit("update-not-available");
+    expect(send).toHaveBeenLastCalledWith("updater-status", {
+      status: "not-available",
+      version: "0.1.0",
+    });
+
+    updaterMock.autoUpdater.emit("error", new Error("boom"));
+    expect(send).toHaveBeenLastCalledWith("updater-status", {
+      status: "error",
+      error: "boom",
+    });
+
+    updaterMock.autoUpdater.emit("download-progress", { percent: 42 });
+    expect(send).toHaveBeenLastCalledWith("updater-status", {
+      status: "downloading",
+      percent: 42,
+    });
+
+    // A rejected update (same base, less stable channel) sends not-available.
+    updaterMock.autoUpdater.emit("update-available", { version: "0.1.0-db.9" });
+    expect(send).toHaveBeenLastCalledWith("updater-status", {
+      status: "not-available",
+      version: "0.1.0",
+    });
+  });
+
+  it("guards checkForUpdates during an active download", async () => {
+    vi.resetModules();
+    updaterMock.autoUpdater.reset();
+    const { setupAutoUpdater, checkForUpdates, downloadUpdate } =
+      await import("../updater");
+    setupAutoUpdater(() => null, settings);
+
+    // Force the isDownloading flag by starting a download that never settles.
+    updaterMock.autoUpdater.emit("update-available", { version: "9.9.9" });
+    let releaseDownload: () => void = () => undefined;
+    updaterMock.autoUpdater.downloadUpdate = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          releaseDownload = () => resolve(undefined);
+        }),
+    );
+    const downloading = downloadUpdate();
+    const status = await checkForUpdates(settings);
+    expect(status).toEqual({ status: "downloading" });
+    releaseDownload();
+    await downloading;
+  });
+
+  it("checkForUpdates reports a thrown check as an error", async () => {
+    vi.resetModules();
+    updaterMock.autoUpdater.reset();
+    const { checkForUpdates } = await import("../updater");
+    updaterMock.autoUpdater.checkForUpdates = vi.fn(() =>
+      Promise.reject(new Error("network down")),
+    );
+    const status = await checkForUpdates(settings);
+    expect(status.status).toBe("error");
+  });
+
+  it("downloadUpdate reports a cancelled or failed transfer", async () => {
+    vi.resetModules();
+    updaterMock.autoUpdater.reset();
+    const { setupAutoUpdater, downloadUpdate } = await import("../updater");
+    setupAutoUpdater(() => null, settings);
+    updaterMock.autoUpdater.emit("update-available", { version: "9.9.9" });
+
+    updaterMock.autoUpdater.downloadUpdate = vi.fn(() =>
+      Promise.reject(new Error("Download cancelled")),
+    );
+    const cancelled = await downloadUpdate();
+    expect(cancelled.status).toBe("cancelled");
+
+    updaterMock.autoUpdater.downloadUpdate = vi.fn(() =>
+      Promise.reject(new Error("disk full")),
+    );
+    const failed = await downloadUpdate();
+    expect(failed.status).toBe("error");
   });
 
   it("restarts and relaunches only after an update is downloaded", async () => {

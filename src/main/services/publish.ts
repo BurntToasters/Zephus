@@ -63,13 +63,32 @@ async function runBuild(
     }
 
     const env = await buildSpawnEnv(readGlobalSettings().customNodePath);
-    const npm = npmCommand(["run", "build"], process.platform, env);
-    await execFileAsync(npm.command, npm.args, {
-      cwd: projectPath,
-      windowsHide: true,
-      maxBuffer: 20 * 1024 * 1024,
-      env: { ...env, FORCE_COLOR: "0" },
-    });
+    const npm = npmCommand(
+      ["run", "build"],
+      process.platform,
+      env,
+      projectPath,
+    );
+    try {
+      await execFileAsync(npm.command, npm.args, {
+        cwd: projectPath,
+        windowsHide: true,
+        maxBuffer: 100 * 1024 * 1024,
+        env: { ...env, FORCE_COLOR: "0" },
+      });
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      // A maxBuffer blowout means the build produced a huge amount of log
+      // output — report that, not the misleading buffer error.
+      if (/maxBuffer/.test(msg)) {
+        return {
+          ok: false,
+          error:
+            "The build produced too much log output and was stopped. Check the build logs for warnings.",
+        };
+      }
+      throw error;
+    }
     const output = resolveProjectRelativeDir(
       projectPath,
       outDir,

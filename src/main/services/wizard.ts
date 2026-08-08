@@ -5,15 +5,17 @@ import { OperationResult } from "../types";
 import { buildTheme } from "../themes";
 import { DEFAULT_REPO_SETTINGS } from "../types";
 import { createManagedPage } from "./pageManager";
-import { ensureVisualSchema } from "./schema";
+import { createSchemaPage, ensureVisualSchema } from "./schema";
 
 function sanitizeSiteName(folderPath: string): string {
-  return (
-    path
-      .basename(folderPath)
-      .toLowerCase()
-      .replace(/[^a-z0-9-]/g, "-") || "zephus-site"
-  );
+  const safe = path
+    .basename(folderPath)
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 214);
+  return safe || "zephus-site";
 }
 
 /**
@@ -33,6 +35,9 @@ export function createSite(
 
   const written: string[] = [];
   const zephusDir = path.join(targetPath, ".zephus");
+  const targetExisted = fs.existsSync(targetPath);
+  const targetWasEmpty =
+    targetExisted && fs.readdirSync(targetPath).length === 0;
   const hadZephusDir = fs.existsSync(zephusDir);
   try {
     if (fs.existsSync(targetPath) && fs.readdirSync(targetPath).length > 0) {
@@ -65,6 +70,19 @@ export function createSite(
       throw new Error(ensured.error ?? "Could not initialize Zephus schema.");
     }
 
+    // Fresh sites previously shipped without a 404 page (no theme scaffolded
+    // one) — visitors hit the host's generic unstyled 404. The machinery
+    // already exists (createSchemaPage's 404 branch forces navVisible=false
+    // and noindex); scaffold one per site.
+    const notFound = createSchemaPage(
+      targetPath,
+      path.join("src", "pages"),
+      "404",
+    );
+    if (!notFound.ok && notFound.error) {
+      throw new Error(notFound.error);
+    }
+
     fs.mkdirSync(zephusDir, { recursive: true });
     fs.writeFileSync(
       path.join(zephusDir, "settings.json"),
@@ -76,6 +94,24 @@ export function createSite(
     return { ok: true };
   } catch (error) {
     log.error("Site creation failed; rolling back written files.", error);
+    if (!targetExisted) {
+      try {
+        fs.rmSync(targetPath, { recursive: true, force: true });
+      } catch {
+        /* best-effort cleanup */
+      }
+    } else if (targetWasEmpty) {
+      try {
+        for (const entry of fs.readdirSync(targetPath)) {
+          fs.rmSync(path.join(targetPath, entry), {
+            recursive: true,
+            force: true,
+          });
+        }
+      } catch {
+        /* best-effort cleanup */
+      }
+    }
     for (const file of written) {
       try {
         fs.rmSync(file, { force: true });

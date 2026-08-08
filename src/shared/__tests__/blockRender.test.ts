@@ -138,7 +138,62 @@ describe("collectResponsiveCss", () => {
     expect(css).toContain("@media (max-width: 1024px)");
     expect(css).toContain("@media (max-width: 720px)");
     expect(css).toContain("data-zephus-id=");
-    expect(css).toContain("grid-template-columns:1fr");
+    expect(css).toContain("grid-template-columns:1fr!important");
+  });
+
+  it("escapes tricky ids with CSS string rules, not HTML entities", () => {
+    // Regression: the selector used escapeAttr (`&amp;`), which stays literal
+    // inside <style> — blocks with & " \ in their id never got responsive
+    // rules (hidden-on-mobile blocks stayed visible).
+    const css = collectResponsiveCss([
+      {
+        id: 'weird&"id\\x',
+        type: "section",
+        label: "Main",
+        props: { wrapper: "none" },
+        style: { responsive: { mobile: { padding: "8px" } } },
+        children: [],
+      },
+    ]);
+    expect(css).toContain('[data-zephus-id="weird&\\"id\\\\x"]');
+    expect(css).not.toContain("&amp;");
+  });
+
+  it("escapes angle brackets in ids so a crafted id cannot break out of <style>", () => {
+    // Stored XSS regression: a hand-authored block id containing `</style>`
+    // would terminate the raw-text style element mid-selector; a following
+    // `<script>` would then run in the published site. The selector must keep
+    // matching the real attribute (CSS hex escapes) without emitting a literal
+    // angle bracket into the style text.
+    const css = collectResponsiveCss([
+      {
+        id: "x</style><script>alert(1)</script>",
+        type: "section",
+        label: "Main",
+        props: { wrapper: "none" },
+        style: { responsive: { mobile: { padding: "8px" } } },
+        children: [],
+      },
+    ]);
+    expect(css).not.toContain("</style>");
+    expect(css).not.toContain("<script>");
+    // Every angle bracket is escaped (CSS hex escape + space terminator);
+    // the selector still identifies the real attribute value on match.
+    expect(css).toContain('data-zephus-id="x\\3c /style\\3e \\3c script\\3e');
+  });
+
+  it("emits the .button class on button blocks (theme pill styling)", () => {
+    const html = renderBlockHtml(
+      {
+        id: "b1",
+        type: "button",
+        props: { text: "Go", href: "/x", cls: "secondary" },
+      },
+      {},
+    );
+    // The global .button rule styles every hero CTA; without it they render
+    // as plain accent links.
+    expect(html).toContain('class="button secondary"');
   });
 
   it("emits hide rules so hideOn actually hides in the built site", () => {
@@ -165,14 +220,14 @@ describe("collectResponsiveCss", () => {
       },
     ]);
     expect(css).toContain(
-      '@media (max-width: 1024px){[data-zephus-id="block-tablet"]{display:none}}',
+      '@media (max-width: 1024px){[data-zephus-id="block-tablet"]{display:none!important}}',
     );
     expect(css).toContain(
-      '@media (max-width: 720px){[data-zephus-id="block-mobile"]{display:none}}',
+      '@media (max-width: 720px){[data-zephus-id="block-mobile"]{display:none!important}}',
     );
     // The mobile rule must not leak into the tablet media query.
     expect(css).not.toContain(
-      'block-mobile"]{display:none}}@media (max-width: 1024px)',
+      'block-mobile"]{display:none!important}}@media (max-width: 1024px)',
     );
   });
 });

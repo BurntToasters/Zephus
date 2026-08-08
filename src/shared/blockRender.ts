@@ -193,25 +193,68 @@ function responsiveCssDeclarations(
   style: BlockStyle | undefined,
 ): string | null {
   if (!style) return null;
+  // !important is REQUIRED: the same properties ship as inline style="" on
+  // the element (styleAttr), and inline styles beat every non-!important
+  // stylesheet rule — without this, tablet/mobile overrides (and
+  // stackOnMobile) never applied in the built site while the canvas showed
+  // them.
+  const important = (value: string): string => `${value}!important`;
   const css: string[] = [];
   if (["left", "center", "right"].includes(String(style.align))) {
-    css.push(`text-align:${style.align}`);
+    css.push(important(`text-align:${style.align}`));
   }
-  addCssValue(css, "width", style.width);
-  addCssValue(css, "height", style.height);
-  addCssValue(css, "max-width", style.maxWidth);
-  addCssValue(css, "padding", style.padding);
-  addCssValue(css, "margin", style.margin);
-  addCssValue(css, "gap", style.gap);
+  addCssValue(css, "width", style.width ? important(style.width) : undefined);
+  addCssValue(
+    css,
+    "height",
+    style.height ? important(style.height) : undefined,
+  );
+  addCssValue(
+    css,
+    "max-width",
+    style.maxWidth ? important(style.maxWidth) : undefined,
+  );
+  addCssValue(
+    css,
+    "padding",
+    style.padding ? important(style.padding) : undefined,
+  );
+  addCssValue(
+    css,
+    "margin",
+    style.margin ? important(style.margin) : undefined,
+  );
+  addCssValue(css, "gap", style.gap ? important(style.gap) : undefined);
   if (style.columns) {
     css.push(
-      `grid-template-columns:repeat(${Math.max(1, Number(style.columns) || 1)}, minmax(0, 1fr))`,
+      important(
+        `grid-template-columns:repeat(${Math.max(1, Number(style.columns) || 1)}, minmax(0, 1fr))`,
+      ),
     );
   }
   return css.length ? css.join(";") : null;
 }
 
 /** Media-query rules for responsive block/section styles (build + editor serialize). */
+/** Escapes an attribute value for use inside a CSS attribute selector
+ *  string. HTML escaping (escapeAttr) must NOT be used here: `<style>` is a
+ *  raw-text element, so `&amp;` would stay literal and the selector would
+ *  never match the real `data-zephus-id` attribute.
+ *
+ *  `<`/`>` are escaped too: a hand-authored block id containing `</style>`
+ *  would otherwise terminate the `<style>` raw-text element mid-selector and
+ *  let a following `<script>` run in the published site (stored XSS). The
+ *  `\3c `/`\3e ` hex escapes (space terminates the escape) keep the selector
+ *  matching the real attribute while never emitting a literal angle bracket. */
+function cssStringValue(value: string): string {
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, "\\a ")
+    .replace(/</g, "\\3c ")
+    .replace(/>/g, "\\3e ");
+}
+
 export function collectResponsiveCss(sections: SectionNode[]): string {
   const tabletRules: string[] = [];
   const mobileRules: string[] = [];
@@ -223,20 +266,21 @@ export function collectResponsiveCss(sections: SectionNode[]): string {
   ): void => {
     const tablet = responsiveCssDeclarations(style?.responsive?.tablet);
     const mobile = responsiveCssDeclarations(style?.responsive?.mobile);
-    const selector = `[data-zephus-id="${escapeAttr(id)}"]`;
+    const selector = `[data-zephus-id="${cssStringValue(id)}"]`;
     if (tablet) tabletRules.push(`${selector}{${tablet}}`);
     if (mobile) mobileRules.push(`${selector}{${mobile}}`);
     if (includeStackRule && style?.stackOnMobile) {
-      mobileRules.push(`${selector}{grid-template-columns:1fr}`);
+      // !important: must beat the inline grid-template-columns from styleAttr.
+      mobileRules.push(`${selector}{grid-template-columns:1fr!important}`);
     }
     // hideOn hides the element at the marked viewports in the BUILT site
     // (the canvas previews the same state with a dashed outline instead of
     // display:none, so hidden blocks stay selectable).
     if (style?.hideOn?.includes("tablet")) {
-      tabletRules.push(`${selector}{display:none}`);
+      tabletRules.push(`${selector}{display:none!important}`);
     }
     if (style?.hideOn?.includes("mobile")) {
-      mobileRules.push(`${selector}{display:none}`);
+      mobileRules.push(`${selector}{display:none!important}`);
     }
   };
 
@@ -299,18 +343,29 @@ export function renderBlockHtml(
         return `<figure${common}><div class="canvas-empty">Missing image. Choose one in Properties.</div></figure>`;
       }
       const isProjectAsset = forCanvas && src.startsWith("/");
+      // A project asset hydrates to a data URL asynchronously; an empty src
+      // would fire a request for the app's own document (broken-icon flash)
+      // until then, so start with a transparent placeholder instead.
       const srcAttr = isProjectAsset
-        ? ` src="" data-asset-src="${escapeAttr(src)}"`
+        ? ` src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-asset-src="${escapeAttr(src)}"`
         : ` src="${escapeAttr(safeUrl(src))}"`;
       return `<img${common}${srcAttr} alt="${escapeAttr(block.props["alt"] ?? "")}" />`;
     }
-    case "button":
+    case "button": {
+      // The .button class carries the theme's pill styling (global CSS);
+      // without it every hero CTA renders as a plain accent link. Merge it
+      // with the user's cls (blockCommon already emitted the raw class).
+      const cls = `button ${block.props["cls"] ?? ""}`.trim();
+      const common = `${blockMetadataAttrs(block)}${
+        cls ? ` class="${escapeAttr(cls)}"` : ""
+      }${styleAttr(block, options)}`;
       return `<a${common} href="${escapeAttr(safeUrl(block.props["href"] ?? "#") || "#")}">${richTextToHtml(
         block.props["text"] ?? "",
         {
           allowLinks: false,
         },
       )}</a>`;
+    }
     case "section":
       return `<section${common}>${richTextToHtml(block.props["text"] ?? "")}</section>`;
     case "divider":

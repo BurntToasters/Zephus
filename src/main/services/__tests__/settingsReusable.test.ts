@@ -26,6 +26,41 @@ afterEach(() => {
 });
 
 describe("settings", () => {
+  it("tolerates hand-edited junk in recentProjects and lastOpenedProject", async () => {
+    const settings = await import("../settings");
+    fs.mkdirSync(userDataDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(userDataDir, "settings.json"),
+      JSON.stringify({
+        recentProjects: ["/tmp/ok", 123, null, ""],
+        lastOpenedProject: 42,
+      }),
+    );
+    const read = settings.readGlobalSettings();
+    expect(read.recentProjects).toEqual(["/tmp/ok"]);
+    expect(read.lastOpenedProject).toBeNull();
+  });
+
+  it("falls back to defaults for a corrupt settings file", async () => {
+    const settings = await import("../settings");
+    fs.mkdirSync(userDataDir, { recursive: true });
+    fs.writeFileSync(path.join(userDataDir, "settings.json"), "{ not json");
+    const read = settings.readGlobalSettings();
+    expect(read.recentProjects).toEqual([]);
+    expect(read.theme).toBe("system");
+  });
+
+  it("does not crash when the settings file cannot be written", async () => {
+    const settings = await import("../settings");
+    fs.mkdirSync(userDataDir, { recursive: true });
+    // A directory where settings.json should live makes the atomic write fail.
+    fs.mkdirSync(path.join(userDataDir, "settings.json"));
+    expect(() => settings.recordRecentProject("/tmp/x")).not.toThrow();
+    expect(() => settings.removeRecentProject("/tmp/x")).not.toThrow();
+    const read = settings.readGlobalSettings();
+    expect(read.recentProjects).toEqual([]);
+  });
+
   it("clears lastOpenedProject when that recent project is removed", async () => {
     const settings = await import("../settings");
 

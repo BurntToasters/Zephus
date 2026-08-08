@@ -43,6 +43,38 @@ describe("sanitizeHtmlForCanvas", () => {
     expect(out).not.toContain("data:text/html");
   });
 
+  it("blocks URL schemes with tabs/newlines inside the scheme", () => {
+    const out = sanitizeHtmlForCanvas(
+      '<a href="java\tscript:alert(1)">x</a><a href="java\nscript:alert(1)">y</a><img src="data:text/html,e">',
+    );
+    expect(out).not.toContain("script:alert");
+    expect(out).not.toContain("data:text/html");
+  });
+
+  it("removes base elements and dangerous poster/srcset URLs", () => {
+    const out = sanitizeHtmlForCanvas(
+      '<base href="https://evil.example/"><img src="/ok.png" poster="java' +
+        "script:alert(1)" +
+        '"><img srcset="/a.png 1x, java' +
+        "script:x" +
+        ' 2x"><img srcset="java' +
+        "script:x" +
+        ' 1x">',
+    );
+    expect(out).not.toContain("<base");
+    expect(out).not.toContain("poster");
+    // The mixed srcset keeps its safe entry; the all-dangerous one is dropped.
+    expect(out).toContain('srcset="/a.png 1x"');
+    expect(out).not.toContain("script:x");
+  });
+
+  it("keeps safe srcset intact", () => {
+    const out = sanitizeHtmlForCanvas(
+      '<img srcset="/a.png 1x, /b.png 2x" src="/a.png">',
+    );
+    expect(out).toContain('srcset="/a.png 1x, /b.png 2x"');
+  });
+
   it("keeps safe content intact", () => {
     const out = sanitizeHtmlForCanvas(
       '<a href="/about">About</a><img src="/assets/x.png" alt="X"><strong>bold</strong>',

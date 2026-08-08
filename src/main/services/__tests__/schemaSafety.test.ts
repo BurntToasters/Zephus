@@ -245,6 +245,47 @@ import BaseLayout from '../layouts/BaseLayout.astro';
     expect(text).toBe("We use Rust here and Rust rocks. Also C++STD.");
   });
 
+  it("case-sensitive search and replace match only exact casing", () => {
+    ensureVisualSchema(tmpDir, pagesDir);
+    createSchemaPage(tmpDir, pagesDir, "story");
+    const rel = pagePathFromSlug(pagesDir, "story");
+    const current = readPageDocument(tmpDir, rel, pagesDir);
+    writePageDocument(tmpDir, pagesDir, {
+      ...current.pageDocument!,
+      sections: sectionsWithText("Zephus and zephus and ZEPHUS and ZePhUs."),
+    });
+    const result = searchPages(tmpDir, pagesDir, "Zephus", {
+      caseSensitive: true,
+    });
+    expect(result.ok).toBe(true);
+    expect(result.totalMatches).toBe(1);
+
+    const replaced = replaceAllInPages(tmpDir, pagesDir, "Zephus", "Editor", {
+      caseSensitive: true,
+    });
+    expect(replaced.ok).toBe(true);
+    expect(replaced.replaced).toBe(1);
+    const reread = readPageDocument(tmpDir, rel, pagesDir);
+    const text = reread
+      .pageDocument!.sections.flatMap((s) => s.children)
+      .find((b) => b.type === "text")!.props["text"];
+    expect(text).toBe("Editor and zephus and ZEPHUS and ZePhUs.");
+  });
+
+  it("case-insensitive search matches every casing", () => {
+    ensureVisualSchema(tmpDir, pagesDir);
+    createSchemaPage(tmpDir, pagesDir, "story");
+    const rel = pagePathFromSlug(pagesDir, "story");
+    const current = readPageDocument(tmpDir, rel, pagesDir);
+    writePageDocument(tmpDir, pagesDir, {
+      ...current.pageDocument!,
+      sections: sectionsWithText("Zephus and zephus"),
+    });
+    const result = searchPages(tmpDir, pagesDir, "zephus", {});
+    expect(result.ok).toBe(true);
+    expect(result.totalMatches).toBe(2);
+  });
+
   it("renaming a page schema writes the new sidecar before removing the old", () => {
     ensureVisualSchema(tmpDir, pagesDir);
     createSchemaPage(tmpDir, pagesDir, "story");
@@ -261,5 +302,40 @@ import BaseLayout from '../layouts/BaseLayout.astro';
     expect(
       fs.existsSync(path.join(tmpDir, ".zephus", "pages", "story.json")),
     ).toBe(false);
+  });
+
+  it("search and replace fail cleanly when pages cannot be listed", () => {
+    fs.writeFileSync(path.join(tmpDir, ".zephus", "site.json"), "{ broken");
+    const search = searchPages(tmpDir, pagesDir, "anything");
+    expect(search.ok).toBe(false);
+    const replaced = replaceAllInPages(tmpDir, pagesDir, "x", "y");
+    expect(replaced.ok).toBe(false);
+  });
+
+  it("search fails cleanly for a missing needle", () => {
+    const search = searchPages(tmpDir, pagesDir, "");
+    expect(search.ok).toBe(false);
+    expect(search.error).toContain("Enter text to find");
+  });
+
+  it("replace fails cleanly on an unwritable page", async () => {
+    if (process.getuid?.() === 0) return; // root ignores permissions
+    ensureVisualSchema(tmpDir, pagesDir);
+    createSchemaPage(tmpDir, pagesDir, "story");
+    const rel = pagePathFromSlug(pagesDir, "story");
+    const current = readPageDocument(tmpDir, rel, pagesDir);
+    writePageDocument(tmpDir, pagesDir, {
+      ...current.pageDocument!,
+      sections: sectionsWithText("target word here"),
+    });
+    const pagesDirAbs = path.join(tmpDir, pagesDir);
+    const mode = fs.statSync(pagesDirAbs).mode;
+    try {
+      fs.chmodSync(pagesDirAbs, 0o555);
+      const replaced = replaceAllInPages(tmpDir, pagesDir, "target", "done");
+      expect(replaced.ok).toBe(false);
+    } finally {
+      fs.chmodSync(pagesDirAbs, mode);
+    }
   });
 });

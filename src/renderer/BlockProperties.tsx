@@ -641,9 +641,16 @@ function ContentGroup(props: { state: BlockPropertiesState }) {
     case "spacer":
       return (
         <Group title="Content">
-          <TextField
-            label="Height"
-            value={value("height") || "48px"}
+          {/* The Layout panel's "Height" (style.height) takes precedence over
+              this prop in the renderer; when set, this field is inert. Use
+              LengthField so bare numbers get px and invalid CSS never ships. */}
+          <LengthField
+            label={
+              state.style?.height
+                ? "Height (overridden by Layout Height)"
+                : "Height"
+            }
+            value={value("height")}
             onFocus={state.onFocus}
             onBlur={state.onBlur}
             onChange={(next) => state.onPropChange("height", next)}
@@ -845,14 +852,20 @@ function ContentGroup(props: { state: BlockPropertiesState }) {
         <Group title="Content">
           <TextField
             label="Folder (route prefix)"
-            value={value("folder") || "/posts"}
+            // Show the ACTUAL stored value: an empty folder means "all
+            // posts", but falling back to "/posts" here made a cleared field
+            // display as a /posts filter on reload — the panel claimed a
+            // state the build did not honor.
+            value={value("folder")}
             onFocus={state.onFocus}
             onBlur={state.onBlur}
             onChange={(next) => state.onPropChange("folder", next)}
           />
           <TextField
             label="Maximum posts (0 for all)"
-            value={value("limit") || "5"}
+            // Same lie: cleared limit means 0 = all, but the fallback "5"
+            // displayed a filter that was not applied.
+            value={value("limit")}
             onFocus={state.onFocus}
             onBlur={state.onBlur}
             onChange={(next) => state.onPropChange("limit", next)}
@@ -938,10 +951,19 @@ export function renderBlockProperties(
             {state.blockType === "gallery" ? (
               <TextField
                 label="Columns"
+                // Sanitized on commit: gallery columns map to
+                // `repeat(N, ...)` — 0/negative/huge/garbage values silently
+                // produce invalid CSS or a broken grid. Clamp to 1..6.
                 value={state.style?.columns ?? ""}
                 onFocus={state.onFocus}
                 onBlur={state.onBlur}
-                onChange={(next) => state.onStyleChange("columns", next)}
+                onChange={(next) => {
+                  const parsed = Math.floor(Number(next));
+                  const clamped = Number.isFinite(parsed)
+                    ? String(Math.min(6, Math.max(1, parsed)))
+                    : "";
+                  state.onStyleChange("columns", clamped);
+                }}
               />
             ) : null}
             <ToggleField

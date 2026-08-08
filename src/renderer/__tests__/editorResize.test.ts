@@ -81,10 +81,10 @@ describe("editorResize handles", () => {
     Object.defineProperty(subject, "getBoundingClientRect", {
       value: () => ({ width: 100, height: 50, top: 0, left: 0 }),
     });
-
+    const node = block();
     controller.syncResizeHandles(
       shell,
-      { kind: "block", node: block() },
+      { kind: "block", node },
       () => subject,
       true,
     );
@@ -99,8 +99,37 @@ describe("editorResize handles", () => {
     expect(commitInspectorChange).toHaveBeenCalledWith("Resized heading", true);
     expect(endInspectorEdit).toHaveBeenCalled();
     // 100 + 10px step, written to the style.
+    expect(node.style?.width).toBe("110px");
+    expect(node.style?.height).toBe("50px");
+  });
+
+  it("keyboard resize snapshots the pre-mutation size for undo", () => {
+    const { controller, pushUndo } = makeController();
+    const shell = document.createElement("div");
+    const subject = document.createElement("div");
+    shell.appendChild(subject);
+    Object.defineProperty(subject, "getBoundingClientRect", {
+      value: () => ({ width: 100, height: 50, top: 0, left: 0 }),
+    });
     const node = block();
-    expect(node).toBeTruthy();
+    controller.syncResizeHandles(
+      shell,
+      { kind: "block", node },
+      () => subject,
+      true,
+    );
+    const se = shell.querySelector<HTMLButtonElement>(".resize-handle.se");
+
+    let styleAtUndo: unknown = "unset";
+    pushUndo.mockImplementation(() => {
+      styleAtUndo = JSON.parse(JSON.stringify(node.style ?? null));
+    });
+    se!.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }),
+    );
+    // The undo snapshot must capture the size BEFORE the arrow key applied.
+    expect(styleAtUndo).toBeNull();
+    expect(node.style?.width).toBe("110px");
   });
 
   it("ignores non-arrow keys on handles", () => {
@@ -183,8 +212,10 @@ describe("editorResize handles", () => {
     se!.dispatchEvent(
       new PointerEvent("pointerdown", { pointerId: 1, clientX: 0, clientY: 0 }),
     );
-    expect(pushUndo).toHaveBeenCalled();
     expect(inspectorEditLatch.markActive).toHaveBeenCalled();
+    // The undo snapshot is pushed lazily on the FIRST MOVE (a no-move handle
+    // click must not push a phantom undo entry / wipe the redo stack).
+    expect(pushUndo).not.toHaveBeenCalled();
 
     document.dispatchEvent(
       new PointerEvent("pointermove", {
@@ -193,6 +224,7 @@ describe("editorResize handles", () => {
         clientY: 10,
       }),
     );
+    expect(pushUndo).toHaveBeenCalledTimes(1);
     expect(node.style?.width).toBe("120px");
     expect(node.style?.height).toBe("60px");
     expect(subject.style.width).toBe("120px");
@@ -266,6 +298,14 @@ describe("editorResize handles", () => {
     const se = shell.querySelector<HTMLButtonElement>(".resize-handle.se");
     se!.dispatchEvent(
       new PointerEvent("pointerdown", { pointerId: 3, clientX: 0, clientY: 0 }),
+    );
+    // A real drag must happen before blur counts as a commit.
+    document.dispatchEvent(
+      new PointerEvent("pointermove", {
+        pointerId: 3,
+        clientX: 10,
+        clientY: 5,
+      }),
     );
     window.dispatchEvent(new Event("blur"));
     expect(commitInspectorChange).toHaveBeenCalledTimes(1);

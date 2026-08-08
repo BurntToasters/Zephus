@@ -36,6 +36,11 @@ function normalizeTree<T>(node: T, path = ""): unknown {
     )) {
       if (key === "id") {
         out[key] = `id@${path}`;
+      } else if (key === "raw") {
+        // The DOM parser re-serializes unknown markup lowercased; the regex
+        // parser preserves source case. Tag case is insignificant (parsing is
+        // case-insensitive), so compare case-insensitively.
+        out[key] = String(value).toLowerCase();
       } else {
         out[key] = normalizeTree(value, `${path}.${key}`);
       }
@@ -83,6 +88,20 @@ describe("parser parity (schema regex parser vs renderer DOM parser)", () => {
     expectParity(
       WRAP(
         `<p>© 2024 — Café &amp; more &#169; &#x1F600; &amp;copy; literal</p>`,
+      ),
+    );
+  });
+
+  it("parses full HTML5 entity semantics identically", () => {
+    // Beyond the 5 core entities: the main parser must use the same decoder
+    // as parse5 (legacy no-semicolon references, maximal-name matching,
+    // numeric refs without semicolons, U+FFFD for invalid code points).
+    // Regressions: &eacute; stayed literal, &amp (no semi) and &#65 stayed
+    // undecoded, &notit; stayed literal — all caused hash mismatches and
+    // double-escaped rewrites of hand-authored pages.
+    expectParity(
+      WRAP(
+        `<p>&eacute;t&eacute; &#x1F600; &#65 Tom &amp Jerry &copycat &Amp; &#xD800; &#0; &notit; &not= &AMP;</p>`,
       ),
     );
   });
@@ -181,5 +200,74 @@ describe("parser parity (schema regex parser vs renderer DOM parser)", () => {
       WRAP(`<div class="custom"><span style="color:red">styled</span></div>
 <p>after</p>`),
     );
+  });
+
+  it("keeps hand-authored content after the layout close tag", () => {
+    // Regression: the main-process parser used to slice up to the last
+    // </BaseLayout> and silently DROP trailing content (false hash mismatch,
+    // data loss on regeneration). Both parsers must keep the full body.
+    expectParity(
+      `${FRONTMATTER}
+<BaseLayout>
+  <p>inside</p>
+</BaseLayout>
+<p>hand-authored trailing</p>
+`,
+    );
+    expectParity(
+      `${FRONTMATTER}
+<BaseLayout>
+  <p>inside</p>
+</BaseLayout>
+<section class="handmade"><p>more</p></section>
+`,
+    );
+  });
+
+  it("matches mixed-case layout close tags in both parsers", () => {
+    expectParity(`${FRONTMATTER}
+<BaseLayout>
+  <p>inside</p>
+</baseLayout>
+`);
+  });
+
+  it("does not lose content when the layout close tag is missing", () => {
+    // The DOM parser re-serializes the unclosed element with an implicit
+    // closing tag; the regex parser keeps the source verbatim. The content
+    // itself must survive in both.
+    const { main, renderer } = parseBoth(`${FRONTMATTER}
+<BaseLayout>
+  <p>inside</p>
+`);
+    expect(JSON.stringify(main)).toContain("<p>inside</p>");
+    expect(JSON.stringify(renderer)).toContain("<p>inside</p>");
+  });
+
+  it("keeps a literal </BaseLayout> inside an html block as content", () => {
+    expectParity(
+      WRAP(`<div>the text &lt;/BaseLayout&gt; appears literally</div>
+<p>rest</p>`),
+    );
+  });
+
+  it("parses multi-line tags as single blocks in both parsers", () => {
+    // Regression: the regex tag matcher excluded "\n", so a hand-formatted
+    // multi-line opening tag was split into "<", "div\nclass=…", "</div>"
+    // fragments. Both parsers must now keep it as one html block (the DOM
+    // normalizes tag-internal whitespace, which the raw comparison ignores).
+    const { main, renderer } = parseBoth(
+      WRAP(`<div
+  class="band"
+  data-x="a > b">
+  <p>inside</p>
+</div>
+<p>after</p>`),
+    );
+    const shape = (tree: unknown): unknown =>
+      (tree as Array<{ children: Array<{ type: string }> }>).map((s) => ({
+        children: s.children.map((b) => b.type),
+      }));
+    expect(shape(renderer)).toEqual(shape(main));
   });
 });

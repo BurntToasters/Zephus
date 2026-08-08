@@ -123,12 +123,37 @@ export function createResizeController(deps: ResizeDeps) {
     if (key === "ArrowDown") height += fromTop ? -step : step;
     if (key === "ArrowUp") height += fromTop ? step : -step;
 
+    // Clamp FIRST, then bail when the clamp makes the change a no-op (already
+    // at MIN/MAX): a phantom undo entry + dirty flag per dead keypress used to
+    // accumulate and wipe the redo stack.
+    width = Math.min(
+      maxResizeWidthFor(subject),
+      Math.max(MIN_RESIZE_WIDTH, Math.round(width)),
+    );
+    height = Math.max(MIN_RESIZE_HEIGHT, Math.round(height));
+    // Read the current values WITHOUT creating the style object (creation
+    // must happen after the undo snapshot so the pre-state stays null/empty).
+    const existingStyle = target.node.style;
+    const existing =
+      existingStyle &&
+      (deps.getViewport() === "desktop"
+        ? existingStyle
+        : existingStyle.responsive?.[deps.getViewport()]);
+    if (
+      existing?.width === `${width}px` &&
+      existing?.height === `${height}px`
+    ) {
+      return;
+    }
+
+    // Snapshot BEFORE mutating (like the pointer path): the undo entry must
+    // capture the pre-resize state, or Ctrl+Z restores the same size.
+    deps.pushUndo();
     const style = resizeStyleTarget(target);
-    style.width = `${Math.min(maxResizeWidthFor(subject), Math.max(MIN_RESIZE_WIDTH, Math.round(width)))}px`;
-    style.height = `${Math.max(MIN_RESIZE_HEIGHT, Math.round(height))}px`;
+    style.width = `${width}px`;
+    style.height = `${height}px`;
     subject.style.width = style.width;
     subject.style.height = style.height;
-    deps.pushUndo();
     deps.inspectorEditLatch.markActive();
     deps.commitInspectorChange(
       `Resized ${target.kind === "block" ? target.node.type : target.node.label}`,
@@ -144,7 +169,10 @@ export function createResizeController(deps: ResizeDeps) {
     subject: HTMLElement,
     handle: HTMLElement,
   ): void {
-    deps.pushUndo();
+    // NOTE: the undo snapshot is pushed lazily inside onMove, only when the
+    // size actually changes. Pushing at pointerdown left a phantom undo entry
+    // (and a dirty page + wiped redo stack) when the user clicked a handle
+    // without dragging.
     deps.inspectorEditLatch.markActive();
     const startX = event.clientX;
     const startY = event.clientY;
@@ -160,6 +188,7 @@ export function createResizeController(deps: ResizeDeps) {
       /* pointer capture is best effort */
     }
 
+    let undoPushed = false;
     const onMove = (moveEvent: PointerEvent): void => {
       const dx = moveEvent.clientX - startX;
       const dy = moveEvent.clientY - startY;
@@ -175,6 +204,13 @@ export function createResizeController(deps: ResizeDeps) {
         Math.round(startHeight + (fromTop ? -dy : dy)),
       );
       const style = resizeStyleTarget(target);
+      if (
+        !undoPushed &&
+        (style.width !== `${width}px` || style.height !== `${height}px`)
+      ) {
+        undoPushed = true;
+        deps.pushUndo();
+      }
       style.width = `${width}px`;
       style.height = `${height}px`;
       subject.style.width = style.width;
@@ -194,10 +230,12 @@ export function createResizeController(deps: ResizeDeps) {
       } catch {
         /* pointer capture is best effort */
       }
-      deps.commitInspectorChange(
-        `Resized ${target.kind === "block" ? target.node.type : target.node.label}`,
-        true,
-      );
+      if (undoPushed) {
+        deps.commitInspectorChange(
+          `Resized ${target.kind === "block" ? target.node.type : target.node.label}`,
+          true,
+        );
+      }
       deps.endInspectorEdit();
     };
     const onUp = (): void => finish();

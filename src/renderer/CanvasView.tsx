@@ -66,6 +66,7 @@ export interface CanvasHandlers {
     sectionIndex: number,
     shell: HTMLElement,
   ) => void;
+  onSectionRailDragOver: (event: DragEvent, index: number) => void;
   onSectionDrop: (event: DragEvent) => void;
   onSectionBodyDragOver: (event: DragEvent, sectionId: string) => void;
   onBlockDragStart: (event: DragEvent, block: EditorBlock) => void;
@@ -93,17 +94,39 @@ const [canvasState, setCanvasState] = createStore<CanvasState>({
 let handlers: CanvasHandlers | null = null;
 
 function boxStyle(style?: BlockStyle): Record<string, string> {
+  // The wrapper must NOT duplicate the visual style declarations: the inner
+  // element (blockEntry.html) already carries padding/margin/background/
+  // color/radius/shadow via styleAttr. Applying them here too makes the
+  // canvas show ~2x padding/margins (and doubled shadows) — the build applies
+  // them once, so the canvas would not match the published site. Only the
+  // outer layout box (width/height/max-width) belongs on the wrapper.
   const next: Record<string, string> = {
     "box-sizing": "border-box",
     "max-width": style?.maxWidth ? `min(${style.maxWidth}, 100%)` : "100%",
   };
   if (style?.width) next.width = style.width;
   if (style?.height) next.height = style.height;
-  if (style?.background) next.background = style.background;
-  if (style?.color) next.color = style.color;
-  if (style?.padding) next.padding = style.padding;
-  if (style?.margin) next.margin = style.margin;
-  if (style?.radius) next["border-radius"] = style.radius;
+  return next;
+}
+
+/** The section's VISUAL declarations for the canvas content area. The build
+ *  puts these on the real <section> (styleAttr); the canvas section wrapper
+ *  only carries the layout box, so without this the canvas never showed a
+ *  section's background/padding/align/radius/shadow — the canvas was not
+ *  WYSIWYG for every styled hero/band section. */
+function sectionVisualStyle(style?: BlockStyle): Record<string, string> {
+  const next: Record<string, string> = {};
+  if (["left", "center", "right"].includes(String(style?.align))) {
+    next["text-align"] = style!.align as string;
+  }
+  const set = (prop: string, value?: string): void => {
+    if (value) next[prop] = value;
+  };
+  set("background", style?.background);
+  set("color", style?.color);
+  set("padding", style?.padding);
+  set("margin", style?.margin);
+  set("border-radius", style?.radius);
   if (style?.shadow === "sm") next["box-shadow"] = "var(--shadow-sm)";
   if (style?.shadow === "md") next["box-shadow"] = "var(--shadow-md)";
   if (style?.shadow === "lg") next["box-shadow"] = "var(--shadow-lg)";
@@ -175,7 +198,14 @@ function InsertBlockButton(props: { index: number; sectionId: string }) {
 
 function InsertSectionButton(props: { index: number }) {
   return (
-    <div class="canvas-insert section-insert">
+    <div
+      class="canvas-insert section-insert"
+      data-section-index={props.index}
+      onDragOver={(event) =>
+        handlers?.onSectionRailDragOver(event, props.index)
+      }
+      onDrop={(event) => handlers?.onSectionDrop(event)}
+    >
       <button
         type="button"
         class="canvas-insert-button"
@@ -225,8 +255,8 @@ function SectionShell(props: { entry: CanvasSectionEntry; index: number }) {
           // space) select the section instead of bubbling to the canvas and
           // deselecting everything. Interactive children (body, buttons, grip,
           // resize handles) stop propagation themselves.
+          event.stopPropagation();
           handlers?.onSelectSection(sectionNode(props.entry));
-          void event;
         }}
         onDragOver={(event) =>
           shellRef && handlers?.onSectionDragOver(event, props.index, shellRef)
@@ -315,6 +345,7 @@ function SectionShell(props: { entry: CanvasSectionEntry; index: number }) {
             bodyRef = element;
           }}
           class="section-body"
+          style={sectionVisualStyle(props.entry.effectiveStyle)}
           tabIndex={0}
           role="group"
           aria-label={`Select ${props.entry.section.label} section`}

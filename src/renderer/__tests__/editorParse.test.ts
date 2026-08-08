@@ -157,4 +157,40 @@ describe("editorParse DOM", () => {
     expect(sections[0]!.children).toHaveLength(1);
     expect(sections[0]!.children[0]?.props.text).toBe("kept");
   });
+
+  it("keeps loose text inside a managed section as html content", () => {
+    const props = encodeURIComponent(
+      JSON.stringify({ wrapper: "none", cls: "" }),
+    );
+    const sections = parser.parseSections(
+      `<section data-zephus-block="section" data-zephus-props="${props}">Hello</section>`,
+    );
+    expect(sections[0]!.children).toHaveLength(1);
+    expect(sections[0]!.children[0]?.type).toBe("html");
+    expect(sections[0]!.children[0]?.raw).toBe("Hello");
+  });
+
+  it("parses legacy element types into blocks", () => {
+    const sections = parser.parseSections(
+      '<a href="/x">Link</a><img src="/i.png" alt="I"><hr><ol><li>One</li><li>Two</li></ol><iframe src="https://e.com" title="E"></iframe>',
+    );
+    const types = sections[0]!.children.map((b) => b.type);
+    expect(types).toEqual(["button", "image", "divider", "list", "embed"]);
+    const list = sections[0]!.children[3]!;
+    expect(list.props.ordered).toBe("true");
+    expect(list.props.items).toBe("One\nTwo");
+  });
+
+  it("recurses into wrapper sections that contain stored blocks", () => {
+    const props = encodeURIComponent(
+      JSON.stringify({ text: "Inner", cls: "" }),
+    );
+    const sections = parser.parseSections(
+      `<section class="wrap"><p data-zephus-block="text" data-zephus-props="${props}">Inner</p></section>`,
+    );
+    const blocks = sections[0]!.children;
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]!.type).toBe("text");
+    expect(blocks[0]!.props.text).toBe("Inner");
+  });
 });

@@ -28,6 +28,17 @@ describe("renderHelpers", () => {
     expect(safeUrl("/about")).toBe("/about");
   });
 
+  it("blocks dangerous URLs even with whitespace inside the scheme", () => {
+    // Browsers strip ASCII tab/newline before scheme detection, so
+    // "java<tab>script:alert(1)" is executable and must be blocked too.
+    expect(safeUrl("java\tscript:alert(1)")).toBe("");
+    expect(safeUrl("java\nscript:alert(1)")).toBe("");
+    expect(safeUrl("java\rscript:alert(1)")).toBe("");
+    expect(safeUrl(" data:text/html,x")).toBe("");
+    expect(safeUrl("JaVaScRiPt" + ":alert(1)")).toBe("");
+    expect(safeUrl("mailto:a@b.com")).toBe("mailto:a@b.com");
+  });
+
   it("encodes data payloads without raw apostrophes", () => {
     const encoded = encodeDataPayload({ text: "it's fine" });
     expect(encoded.includes("'")).toBe(false);
@@ -186,5 +197,18 @@ describe("richTextToHtml", () => {
   it("normalizes stray angle brackets as literal text", () => {
     expect(richTextToHtml("2 < 3 and 5 > 4")).toBe("2 &lt; 3 and 5 &gt; 4");
     expect(richTextToHtml("a < b")).toBe("a &lt; b");
+  });
+
+  it("escapes braces in rich text (Astro expression hazard)", () => {
+    expect(richTextToHtml("a {expr} b")).toBe("a &#123;expr&#125; b");
+    expect(richTextToHtml("<strong>{x}</strong>")).toBe(
+      "<strong>&#123;x&#125;</strong>",
+    );
+  });
+
+  it("treats malformed and unknown tags as literal text", () => {
+    expect(richTextToHtml("x <123> y")).toBe("x &lt;123&gt; y");
+    expect(richTextToHtml("x <span> y")).toBe("x &lt;span&gt; y");
+    expect(richTextToHtml("unclosed <")).toBe("unclosed &lt;");
   });
 });

@@ -85,7 +85,14 @@ export function richTextFromElement(
 
   const walk = (node: Node): string => {
     if (node.nodeType === Node.TEXT_NODE) {
-      return escapeStored(node.textContent ?? "");
+      let text = node.textContent ?? "";
+      if (!allowLineBreaks) {
+        // Line-encoded props (list items, accordion, stats) must stay on one
+        // line; some browsers/pastes produce literal "\n" text nodes that
+        // bypass the BR/block handling.
+        text = text.replace(/\s*\n+\s*/g, " ");
+      }
+      return escapeStored(text);
     }
     if (node.nodeType !== Node.ELEMENT_NODE) return "";
 
@@ -131,11 +138,23 @@ export function richTextFromElement(
   });
 
   const markup = parts.join("");
-  if (!usedMarkup && !sawElement) {
-    // Pure text (no markup, no tags): keep the prop as plain text (what the
-    // editor did before inline formatting existed).
-    const text = root.innerText ?? root.textContent ?? "";
-    return allowLineBreaks ? text : text.replace(/\s*\n+\s*/g, " ");
+  if (!usedMarkup) {
+    if (!sawElement) {
+      // Pure text (no markup, no tags): keep the prop as plain text (what the
+      // editor did before inline formatting existed).
+      const text = root.innerText ?? root.textContent ?? "";
+      return allowLineBreaks ? text : text.replace(/\s*\n+\s*/g, " ");
+    }
+    // Only browser-generated wrappers were seen (spellcheck spans, execCommand
+    // divs) — no formatting was actually applied. The walk already escaped the
+    // text, so decode it back: storing "A &amp; B" here would render as the
+    // literal text "&amp;" (plainTextToHtml escapes again). Scripts are
+    // dropped by the walk, so this stays safe where innerText is not.
+    return markup
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&amp;/g, "&")
+      .replace(/<br \/>/g, allowLineBreaks ? "\n" : " ");
   }
   return markup;
 }

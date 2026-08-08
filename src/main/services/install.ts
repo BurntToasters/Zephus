@@ -1,4 +1,4 @@
-import { spawn } from "child_process";
+import { spawn, spawnSync, type ChildProcess } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 import log from "electron-log";
@@ -16,9 +16,63 @@ let installing = false;
 // released with a clear error.
 const INSTALL_TIMEOUT_MS = 30 * 60 * 1000;
 
-/** True if the project already has node_modules. */
+/** True when node_modules contains every declared dependency. A partial
+ *  directory left by a failed npm install must not make later flows skip the
+ *  install and fail cryptically during preview/build. */
 export function dependenciesInstalled(projectPath: string): boolean {
-  return fs.existsSync(path.join(projectPath, "node_modules"));
+  const modules = path.join(projectPath, "node_modules");
+  if (!fs.existsSync(modules)) return false;
+  try {
+    const packageJson = JSON.parse(
+      fs.readFileSync(path.join(projectPath, "package.json"), "utf8"),
+    ) as {
+      dependencies?: Record<string, unknown>;
+      devDependencies?: Record<string, unknown>;
+    };
+    const declared = Object.keys({
+      ...(packageJson.dependencies ?? {}),
+      ...(packageJson.devDependencies ?? {}),
+    });
+    return declared.every((name) =>
+      fs.existsSync(path.join(modules, ...name.split("/"))),
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Kills npm and its whole process tree (postinstall scripts, node-gyp…),
+ *  so a terminated install cannot keep writing into node_modules while the
+ *  next install runs. */
+function killInstallTree(child: ChildProcess, hard: boolean): void {
+  if (!child.pid) return;
+  if (process.platform === "win32") {
+    try {
+      spawnSync(
+        "taskkill",
+        ["/pid", String(child.pid), "/t", hard ? "/f" : ""],
+        {
+          windowsHide: true,
+        },
+      );
+    } catch {
+      try {
+        child.kill();
+      } catch {
+        /* already gone */
+      }
+    }
+    return;
+  }
+  try {
+    process.kill(-child.pid, hard ? "SIGKILL" : "SIGTERM");
+  } catch {
+    try {
+      child.kill(hard ? "SIGKILL" : "SIGTERM");
+    } catch {
+      /* already gone */
+    }
+  }
 }
 
 /**
@@ -46,13 +100,14 @@ export async function installDependencies(
   onLog("Running npm install…\n");
 
   return new Promise<OperationResult>((resolve) => {
-    let child;
+    let child: ChildProcess | null = null;
+    let timeout: NodeJS.Timeout | null = null;
     let settled = false;
     const finish = (result: OperationResult): void => {
       if (settled) return;
       settled = true;
       installing = false;
-      clearTimeout(timeout);
+      if (timeout) clearTimeout(timeout);
       resolve(result);
     };
     try {
@@ -60,10 +115,14 @@ export async function installDependencies(
         ["install", "--loglevel=http", "--no-fund"],
         process.platform,
         env,
+        projectPath,
       );
+      // detached: true keeps npm's process group separate so the timeout can
+      // terminate the whole install tree, not just the npm parent.
       child = spawn(npm.command, npm.args, {
         cwd: projectPath,
         windowsHide: true,
+        detached: process.platform !== "win32",
         env: { ...env, FORCE_COLOR: "0", NO_COLOR: "1" },
       });
     } catch (error) {
@@ -74,14 +133,16 @@ export async function installDependencies(
       return;
     }
 
-    const timeout = setTimeout(() => {
+    timeout = setTimeout(() => {
       onLog(
         `\n[npm install timed out after ${INSTALL_TIMEOUT_MS / 60000} minutes; terminating.]\n`,
       );
-      try {
-        child.kill();
-      } catch {
-        /* already gone */
+      if (child) {
+        killInstallTree(child, false);
+        // Escalate: SIGTERM may be ignored by stuck postinstall scripts.
+        setTimeout(() => {
+          if (child && !child.killed) killInstallTree(child, true);
+        }, 3000);
       }
       finish({
         ok: false,

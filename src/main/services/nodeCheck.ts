@@ -107,6 +107,21 @@ export function meetsMinimumNodeVersion(version: ParsedVersion): boolean {
   return patch >= MIN_NODE_VERSION.patch;
 }
 
+/** Windows-specific candidate locations (pure, so the win32 branch is
+ *  testable on any platform). */
+export function windowsNodePaths(
+  homedir: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string[] {
+  const programFiles = env.ProgramFiles || "C:\\Program Files";
+  const programFilesX86 = env["ProgramFiles(x86)"] || "C:\\Program Files (x86)";
+  return [
+    path.win32.join(programFiles, "nodejs", "node.exe"),
+    path.win32.join(programFilesX86, "nodejs", "node.exe"),
+    path.win32.join(homedir, "AppData", "Roaming", "npm", "node.exe"),
+  ];
+}
+
 /**
  * Common locations where a Node.js binary lands from the official .pkg
  * installer, Homebrew, system package managers, and version managers.
@@ -124,14 +139,7 @@ export function commonNodePaths(homedir: string = os.homedir()): string[] {
     ];
   }
   if (process.platform === "win32") {
-    const programFiles = process.env.ProgramFiles || "C:\\Program Files";
-    const programFilesX86 =
-      process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)";
-    return [
-      path.join(programFiles, "nodejs", "node.exe"),
-      path.join(programFilesX86, "nodejs", "node.exe"),
-      path.join(homedir, "AppData", "Roaming", "npm", "node.exe"),
-    ];
+    return windowsNodePaths(homedir);
   }
   // linux and others
   return [
@@ -196,21 +204,29 @@ async function resolveNodeBinaryUncached(
 
 // Probing Node (up to 8 candidates, 10s timeout each) is expensive; every
 // build/preview/install was re-probing on each spawn. Cache the resolution,
-// keyed by the custom path so a settings change invalidates it.
+// keyed by the custom path so a settings change invalidates it. The cache is
+// time-limited: a user installing Node mid-session (or fixing PATH) must not
+// be stuck with the old "missing" result until restart.
+const NODE_RESOLUTION_CACHE_MS = 30 * 1000;
 let cachedNodeResolution: {
   key: string;
   resolved: ResolvedNode | null;
+  at: number;
 } | null = null;
 
 async function resolveNodeBinary(
   customPath?: string | null,
 ): Promise<ResolvedNode | null> {
   const key = customPath?.trim() ?? "";
-  if (cachedNodeResolution && cachedNodeResolution.key === key) {
+  if (
+    cachedNodeResolution &&
+    cachedNodeResolution.key === key &&
+    Date.now() - cachedNodeResolution.at < NODE_RESOLUTION_CACHE_MS
+  ) {
     return cachedNodeResolution.resolved;
   }
   const resolved = await resolveNodeBinaryUncached(customPath);
-  cachedNodeResolution = { key, resolved };
+  cachedNodeResolution = { key, resolved, at: Date.now() };
   return resolved;
 }
 

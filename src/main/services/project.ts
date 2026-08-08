@@ -83,14 +83,47 @@ function extractConfigDir(
   key: string,
   fallback: string,
 ): { value: string; invalid: boolean } {
-  // Matches e.g. srcDir: './source' or outDir: "build"
-  const re = new RegExp(`${key}\\s*:\\s*['"\`]([^'"\`]+)['"\`]`);
-  const m = configText.match(re);
-  if (!m || !m[1]) return { value: fallback, invalid: false };
+  // Matches e.g. srcDir: './source' or outDir: "build". Scans every
+  // occurrence and keeps the last one that is not commented out: a
+  // `// srcDir: './old'` comment above the real config must not win, and a
+  // template-literal value like `${path.join("a","b")}` never matches
+  // (quotes inside the value break the `[^'"`]+` shape).
+  const candidates: string[] = [];
+  const re = new RegExp(`${key}\\s*:\\s*(['"\`])([^'"\`]+)\\1`, "g");
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(configText))) {
+    const before = configText.slice(0, match.index);
+    const linePrefix = (before.split("\n").pop() ?? "").trim();
+    if (linePrefix.startsWith("//") || linePrefix.startsWith("*")) continue;
+    const blockOpen = before.lastIndexOf("/*");
+    const blockClose = before.lastIndexOf("*/");
+    if (blockOpen > blockClose) continue;
+    candidates.push(match[2] ?? "");
+  }
+  // The common `outDir: new URL('./build', import.meta.url)` pattern: the
+  // relative URL argument is the directory (absolute URL patterns are not
+  // portable and stay on the fallback).
+  const urlRe = new RegExp(
+    `${key}\\s*:\\s*new\\s+URL\\(\\s*['"]([^'"]+)['"]`,
+    "g",
+  );
+  let urlMatch: RegExpExecArray | null;
+  while ((urlMatch = urlRe.exec(configText))) {
+    const before = configText.slice(0, urlMatch.index);
+    const linePrefix = (before.split("\n").pop() ?? "").trim();
+    if (linePrefix.startsWith("//") || linePrefix.startsWith("*")) continue;
+    const blockOpen = before.lastIndexOf("/*");
+    const blockClose = before.lastIndexOf("*/");
+    if (blockOpen > blockClose) continue;
+    candidates.push(urlMatch[1] ?? "");
+  }
+  const value =
+    candidates.length > 0 ? candidates[candidates.length - 1]! : null;
+  if (value === null) return { value: fallback, invalid: false };
   const invalidSentinel = "__zephus_invalid_dir__";
-  const value = normalizeProjectRelativeDir(m[1], invalidSentinel);
-  if (value === invalidSentinel) return { value: fallback, invalid: true };
-  return { value, invalid: false };
+  const normalized = normalizeProjectRelativeDir(value, invalidSentinel);
+  if (normalized === invalidSentinel) return { value: fallback, invalid: true };
+  return { value: normalized, invalid: false };
 }
 
 export function detectAstro(projectPath: string): AstroInfo {

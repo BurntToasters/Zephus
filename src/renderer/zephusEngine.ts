@@ -25,6 +25,7 @@ import {
 import {
   cancelScheduledEditorDraftWrite,
   scheduleEditorDraftWrite,
+  SITE_DRAFT_TARGET,
 } from "./editorDraft";
 import {
   createDebouncedCanvasRepaint,
@@ -36,9 +37,11 @@ import {
   popEditorRedoEntry,
   popEditorUndoEntry,
   pushEditorRedoFromCurrent,
+  pushEditorSnapshot,
   pushEditorUndo,
   pushEditorUndoFromCurrent,
   restoreEditorSnapshot,
+  captureEditorSnapshot,
 } from "./editorUndo";
 import { blockToHtmlForEditor } from "./editorBlockRender";
 import { assembleManagedPage, splitManagedPageSource } from "./editorSerialize";
@@ -109,6 +112,7 @@ import {
   Info,
 } from "lucide";
 import type { RenderPostEntry } from "../shared/blockRender";
+import { renderSectionsMarkup } from "../shared/blockRender";
 import { renderHelpModal } from "./HelpModal";
 import { mountAboutLicenses, updateAboutLicenses } from "./AboutLicenses";
 import {
@@ -153,6 +157,7 @@ import {
   mountGitBranch,
   mountGitPanel,
   registerGitPanelHandlers,
+  updateGitPanelEditorDirty,
   updateGitStatus,
 } from "./GitPanel";
 import {
@@ -320,7 +325,8 @@ const inlineEdit = createInlineEditController({
   renderCanvas,
   renderProperties,
 });
-const { closeModal, showModal, showModalNode } = modalController;
+const { closeModal, showModal, showModalNode, registerCleanup } =
+  modalController;
 
 let statusTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -364,6 +370,7 @@ function friendlyError(raw: string | undefined): string {
 }
 
 function nodeStatusMessage(res: NodeCheckResult): string {
+  if (res.message) return res.message;
   if (res.status === "missing") {
     return "Node.js was not found. Install Node.js 22.12 or newer, or set a custom Node.js location in Settings.";
   }
@@ -452,12 +459,26 @@ function sectionsFromPageDocument(doc: PageDocument): SectionNode[] {
   return cloneSections(doc.sections);
 }
 
+function clampSavedHeadingLevels(doc: PageDocument): PageDocument {
+  for (const section of doc.sections) {
+    for (const block of section.children) {
+      if (block.type !== "heading") continue;
+      const level = Number(block.props["level"] ?? "1");
+      block.props["level"] = String(
+        Math.min(
+          editorRules.maxHeadingLevel,
+          Math.max(1, Number.isFinite(level) ? Math.floor(level) : 1),
+        ),
+      );
+    }
+  }
+  return doc;
+}
+
 function pageDocumentFromState(): PageDocument | null {
   if (!state.pageDocument || !state.page) return null;
-  return buildPageDocumentFromSections(
-    state.pageDocument,
-    state.page,
-    state.sections,
+  return clampSavedHeadingLevels(
+    buildPageDocumentFromSections(state.pageDocument, state.page, state.sections),
   );
 }
 
@@ -572,6 +593,8 @@ function renderHomeStatusPanels(): void {
     updateHomeDraftRecovery(
       drafts.map((draft) => ({
         projectPath: draft.projectPath,
+        scope: draft.scope,
+        target: draft.target,
         title: `${projectBaseName(draft.projectPath)} - ${formatRelativeTime(draft.savedAt)}`,
         body: homeDraftLabel(draft),
       })),
@@ -603,7 +626,15 @@ function updaterStatusMessage(): string {
 }
 
 async function restartToApplyUpdate(): Promise<void> {
+  // Unsaved edits must not be lost to the quit-and-install (the draft timer
+  // can hold up to 800ms of work the process is about to destroy). Resolve
+  // save/discard first, then let the close through.
+  if (state.project && isGlobalDirty(state)) {
+    const resolved = await maybeResolveUnsavedWork();
+    if (!resolved) return;
+  }
   setStatus("Restarting to apply update...");
+  window.zephusMarkForceCloseAllowed?.();
   const result = (await window.zephus.installUpdate()) as
     { ok?: boolean; error?: string } | undefined;
   if (result && result.ok === false) {
@@ -705,6 +736,14 @@ function renderSidebarUpdateStatus(): void {
       dotTone: "error",
       label: "Update Error",
     });
+  } else if (updaterSnapshot.status === "cancelled") {
+    // After Cancel the sidebar falsely reported "Up to date" (it fell into
+    // the default branch); say what actually happened.
+    updateSidebarUpdateStatus({
+      clickable: true,
+      dotTone: "default",
+      label: "Update cancelled",
+    });
   } else {
     const versionStr = updaterSnapshot.version
       ? `v${updaterSnapshot.version}`
@@ -797,6 +836,10 @@ function renderProjectOverview(): void {
 }
 
 async function addImageBlockWithAssetFlow(): Promise<void> {
+  if (!isBlockTypeAllowed("image", editorRules.allowedBlocks)) {
+    setStatus('Block type "image" is not allowed on this site.');
+    return;
+  }
   const sectionId = activeSectionId();
   const section = findSection(sectionId);
   addBlockAt("image", section?.children.length ?? 0, sectionId);
@@ -833,7 +876,16 @@ function renderNextActions(): void {
       actions: [
         {
           label: "Add Hero",
-          onClick: () => addSectionAt(state.sections.length, TEMPLATES[0]),
+          onClick: () => {
+            const hero = TEMPLATES[0];
+            if (!hero || !templateAllowed(hero)) {
+              setStatus(
+                "This section's blocks are not allowed by the project's rules.",
+              );
+              return;
+            }
+            addSectionAt(state.sections.length, hero);
+          },
         },
         {
           label: "Add Blank Section",
@@ -1162,11 +1214,24 @@ function siteDraftContentForCurrentState(): string {
   );
 }
 
+// Warns once per session: the crash-recovery net failing silently (disk full,
+// unwritable drafts.json) would mean unsaved work is unrecoverable after a
+// crash, with zero user-visible sign.
+let draftWriteFailureWarned = false;
+
 function scheduleDraftWrite(): void {
   scheduleEditorDraftWrite(state, {
     writeDraft: window.zephus.writeDraft.bind(window.zephus),
     pageDraftContent: draftContentForCurrentState,
     siteDraftContent: siteDraftContentForCurrentState,
+    onDraftWriteFailure: () => {
+      if (draftWriteFailureWarned) return;
+      draftWriteFailureWarned = true;
+      setStatus(
+        "Warning: the crash-recovery draft could not be saved. " +
+          "Unsaved work may not be recoverable if the app closes unexpectedly.",
+      );
+    },
   });
 }
 
@@ -1196,6 +1261,10 @@ function renderDirtyIndicators(): void {
   for (const id of ["btn-site-shell", "btn-design-system"]) {
     $(id).classList.toggle("dirty-flag", state.siteDirty);
   }
+
+  // The Git panel must not let a commit stage the last-saved disk state
+  // while the editor holds newer unsaved edits.
+  updateGitPanelEditorDirty(globalDirty);
 
   renderEditorStateBanner();
   refreshGuidancePanels();
@@ -1261,6 +1330,18 @@ async function openSettingsModal(): Promise<void> {
   // Dispose the previous Solid root before re-rendering so its effects and
   // listeners are cleaned up instead of accumulating per re-render.
   let disposeSettingsBody: (() => void) | null = null;
+
+  // Late-resolving async status calls must NOT re-render the whole modal
+  // body: that destroys the control the user is typing in. The status texts
+  // are plain spans — patch them in place when the modal is open.
+  const refreshSettingsStatusText = (): void => {
+    const statusEl = wrap.querySelector(
+      ".settings-inline-copy span, .settings-inline-copy > span",
+    );
+    if (statusEl) statusEl.textContent = modalState.nodeStatusText;
+    const versionEl = wrap.querySelector(".version-info-text");
+    if (versionEl) versionEl.textContent = modalState.versionText;
+  };
 
   const renderModal = () => {
     disposeSettingsBody?.();
@@ -1357,7 +1438,15 @@ async function openSettingsModal(): Promise<void> {
         }
       },
       onOpenProductionLicenses: () => void openProductionLicensesModal(),
-      onOpenConfigFolder: () => void window.zephus.openConfigFolder(),
+       onOpenConfigFolder: async () => {
+         const result = await window.zephus.openConfigFolder();
+         if (!result.ok) {
+           setStatus(
+             "Could not open config folder: " +
+               (result.error ?? "unknown error"),
+           );
+         }
+       },
     });
   };
 
@@ -1386,7 +1475,13 @@ async function openSettingsModal(): Promise<void> {
           codeFontSize: 13,
           customNodePath: null,
         };
-        await window.zephus.writeGlobalSettings(defaults);
+        const reset = await window.zephus.writeGlobalSettings(defaults);
+        if (!reset.ok) {
+          setStatus(
+            "Could not reset settings: " + (reset.error ?? "unknown error"),
+          );
+          return;
+        }
         document.documentElement.setAttribute("data-theme", "system");
         applyCodeFontSize(13);
         closeModal();
@@ -1401,7 +1496,17 @@ async function openSettingsModal(): Promise<void> {
       label: "Save",
       kind: "primary",
       onClick: async () => {
-        await window.zephus.writeGlobalSettings(modalState.settings);
+        const saved = await window.zephus.writeGlobalSettings(
+          modalState.settings,
+        );
+        if (!saved.ok) {
+          // Never claim "Settings saved." when the write failed (read-only
+          // config dir, invalid custom node path, etc.).
+          setStatus(
+            "Settings could not be saved: " + (saved.error ?? "unknown error"),
+          );
+          return;
+        }
         document.documentElement.setAttribute(
           "data-theme",
           modalState.settings.theme,
@@ -1424,22 +1529,22 @@ async function openSettingsModal(): Promise<void> {
           : "Auto-detect (system PATH)"
       }`;
       modalState.nodeAutoDisabled = !modalState.settings.customNodePath;
-      renderModal();
+      refreshSettingsStatusText();
     })
     .catch(() => {
       modalState.nodeStatusText = "Could not check Node.js.";
-      renderModal();
+      refreshSettingsStatusText();
     });
 
   void window.zephus
     .getAppVersion()
     .then((v) => {
       modalState.versionText = `Zephus v${v}`;
-      renderModal();
+      refreshSettingsStatusText();
     })
     .catch(() => {
       modalState.versionText = "Zephus";
-      renderModal();
+      refreshSettingsStatusText();
     });
 }
 
@@ -1457,6 +1562,14 @@ function applyDesignPreview(): void {
   const canvas = document.getElementById("canvas");
   if (!canvas) return;
   const design = effectiveSiteDocument(state)?.design;
+  const shadowValue =
+    design?.shadow === "md"
+      ? "0 18px 42px rgba(15, 23, 42, 0.12)"
+      : design?.shadow === "lg"
+        ? "0 26px 60px rgba(15, 23, 42, 0.18)"
+        : design?.shadow === "none"
+          ? "none"
+          : "0 8px 20px rgba(15, 23, 42, 0.08)";
   const props: Array<[string, string | undefined]> = [
     ["--zephus-accent", design?.accent],
     ["--zephus-foreground", design?.foreground],
@@ -1465,6 +1578,12 @@ function applyDesignPreview(): void {
     ["--zephus-font-family", design?.fontFamily],
     ["--zephus-heading-font", design?.headingFontFamily],
     ["--zephus-radius", design?.radius],
+    // The build's bands cap content at var(--zephus-container-width) and the
+    // shell uses var(--zephus-shadow); without these on the canvas, styled
+    // sections render full-bleed there (build: capped column) and shadow
+    // tokens fall back to nothing.
+    ["--zephus-container-width", design?.containerWidth],
+    ["--zephus-shadow", shadowValue],
   ];
   for (const [name, value] of props) {
     if (value && value.trim()) canvas.style.setProperty(name, value);
@@ -1566,10 +1685,61 @@ async function openProductionLicensesModal(): Promise<void> {
 
 /* ---------- Open + strict gating ---------- */
 
+// Guards concurrent opens (double-click on a recent entry): two overlapping
+// flows would both mutate state.project and interleave their page loads.
+let projectOpenInFlight = false;
+// An open requested while another is in flight (the startup auto-restore is
+// the common case): user intent must WIN over the automatic restore, so the
+// request is queued and run once the in-flight open settles instead of being
+// silently dropped.
+let queuedProjectOpen: string | null = null;
+
 async function openProjectByPath(folder: string): Promise<void> {
+  if (projectOpenInFlight) {
+    // The auto-restore (bootstrap) is running; remember the user's explicit
+    // choice and open it right after, so their click is never swallowed.
+    queuedProjectOpen = folder;
+    setStatus("Opening " + folder + "…");
+    return;
+  }
+  projectOpenInFlight = true;
+  try {
+    await openProjectByPathInner(folder);
+    const queued = queuedProjectOpen;
+    queuedProjectOpen = null;
+    if (queued && queued !== folder) {
+      // The user clicked another project while the auto-restore ran: honor
+      // their explicit choice (the freshly-opened project has no unsaved
+      // work, so switching is safe).
+      setStatus("Opening " + queued + "…");
+      await openProjectByPathInner(queued);
+    }
+  } finally {
+    projectOpenInFlight = false;
+  }
+}
+
+async function openProjectByPathInner(folder: string): Promise<void> {
   setStatus("Opening " + folder + "…");
   const result = await window.zephus.openProject(folder);
   if (!result.ok) {
+    // A failed open must not leave a stale resume request pending: the next
+    // successful open of the same path would silently resume a draft with no
+    // second prompt (and if its target page no longer exists, the draft would
+    // linger on the home screen forever).
+    const pending = pendingHomeDraftResume;
+    pendingHomeDraftResume = null;
+    if (pending?.projectPath === folder) {
+      // The project cannot be opened (deleted folder): clear its recovery
+      // drafts so the card does not stay on the home screen.
+      const cleared = await window.zephus.clearDraft(
+        folder,
+        pending.scope,
+        pending.target,
+      );
+      void cleared;
+      await refreshHomeDraftSummaries();
+    }
     // Recent-project validation: drop entries that no longer resolve.
     await window.zephus.removeRecentProject(folder);
     await renderRecent();
@@ -1680,10 +1850,8 @@ async function enterEditor(result: ProjectOpenResult): Promise<void> {
     ensureCodeEditor();
     const siteDraftCleanupWarning = await maybeRestoreSiteDraft();
     void editorGit.refreshGit();
-    void applyRepoRules();
+    await applyRepoRules();
     void applyMergedTheme();
-    renderPalette();
-    void renderTemplates();
     await reloadPages();
     renderPageList(result);
     renderNavEditor(result);
@@ -1708,14 +1876,42 @@ async function enterEditor(result: ProjectOpenResult): Promise<void> {
         ? pendingHomeDraftResume
         : null;
     pendingHomeDraftResume = null;
+    if (pendingDraft?.scope === "site") {
+      // The user already chose to resume the site draft on the home screen;
+      // restore it silently instead of prompting again.
+      const warning = await editorDraftRestore.maybeRestoreSiteDraft({
+        skipPrompt: true,
+      });
+      if (warning) setStatus(warning);
+    }
     if (
       pendingDraft?.scope === "page" &&
       state.project?.pages.includes(pendingDraft.target)
     ) {
       // The user already chose to resume this draft on the home screen; do
-      // not prompt "Restore Page Draft?" a second time.
-      await loadPage(pendingDraft.target, { skipDraftRestore: true });
+      // not prompt "Restore Page Draft?" a second time — but DO restore the
+      // draft content (skipping the restore entirely opened the stale disk
+      // copy and left the card looping forever).
+      await loadPage(pendingDraft.target, {
+        restoreDraftSilently: true,
+      });
       return;
+    }
+    if (pendingDraft?.scope === "page") {
+      // The draft's page was renamed or deleted: clear the stale draft so
+      // the card does not linger on the home screen forever.
+      const cleared = await window.zephus.clearDraft(
+        result.path,
+        "page",
+        pendingDraft.target,
+      );
+      if (!cleared.ok) {
+        setStatus(
+          "Could not clear the recovery draft: " +
+            (cleared.error ?? "unknown error"),
+        );
+      }
+      await refreshHomeDraftSummaries();
     }
     if (!state.page && state.project?.pages[0]) {
       await loadPage(state.project.pages[0]);
@@ -1743,6 +1939,7 @@ const editorGit = createEditorGitActions({
   getProjectPath: () => state.project?.path ?? null,
   setStatus,
   setGitStatus: updateGitStatus,
+  onPullComplete: () => applyRepoRules(),
   zephus: window.zephus,
 });
 
@@ -1757,12 +1954,16 @@ async function renderTemplates(): Promise<void> {
   const saved = projectPath
     ? await window.zephus.listReusableSections(projectPath).catch(() => null)
     : null;
+  // A stale write must not land: an unawaited renderTemplates from a previous
+  // project could resolve after the user already opened another project and
+  // overwrite its saved-sections cache with the old project's list.
+  if (state.project?.path !== projectPath) return;
   // Built-in templates insert editable schema blocks; saved sections are
   // preserved HTML and only shown when HTML blocks are permitted.
   const savedSections = htmlAllowed && saved?.ok ? saved.sections : [];
   reusableSectionsCache = savedSections;
   const merged: SectionTemplate[] = [
-    ...TEMPLATES,
+    ...TEMPLATES.filter(templateAllowed),
     ...savedSections.map((section) => ({
       id: section.id,
       label: `${section.label} (Saved)`,
@@ -1770,7 +1971,15 @@ async function renderTemplates(): Promise<void> {
       deletable: true,
       onDelete: async () => {
         if (!projectPath) return;
-        await window.zephus.deleteReusableSection(projectPath, section.id);
+        try {
+          await window.zephus.deleteReusableSection(projectPath, section.id);
+        } catch (error) {
+          setStatus(
+            "Could not delete: " +
+              (error instanceof Error ? error.message : String(error)),
+          );
+          return;
+        }
         await renderTemplates();
       },
     })),
@@ -1787,6 +1996,30 @@ function pageToRoute(page: string): string {
     .replace(/\.(astro|md|mdx|html)$/i, "");
   if (route === "index" || route === "") return "/";
   return "/" + route;
+}
+
+function normalizePageSlugInput(input: string): string | null {
+  const normalized = input
+    .trim()
+    .replace(/\\/g, "/")
+    .replace(/^\/+|\/+$/g, "")
+    .replace(/\.(astro|md|mdx|html)$/i, "");
+  if (!normalized) return "index";
+  const safe = normalized
+    .split("/")
+    .map((segment) =>
+      segment
+        .toLowerCase()
+        .replace(/[^a-z0-9-_]/g, "-")
+        .replace(/-+/g, "-")
+        .replace(/^[-_]+|[-_]+$/g, ""),
+    )
+    .filter(Boolean);
+  return safe.length > 0 ? safe.join("/") : null;
+}
+
+function isReservedNotFoundSlug(slug: string): boolean {
+  return slug === "404" || slug.startsWith("404/");
 }
 
 function findPageMeta(page: string): PageMeta | null {
@@ -1884,15 +2117,30 @@ async function regenerateNav(): Promise<void> {
         if (!state.project) return;
         for (const row of rows) {
           if (!row.entry.page) continue;
-          await window.zephus.writePageMeta(
-            state.project.path,
-            row.entry.page,
-            state.project.astro.pagesDir,
-            {
-              navLabel: row.label.trim() || row.entry.label,
-              navVisible: row.visible,
-            },
-          );
+          try {
+            const saved = await window.zephus.writePageMeta(
+              state.project.path,
+              row.entry.page,
+              state.project.astro.pagesDir,
+              {
+                navLabel: row.label.trim() || row.entry.label,
+                navVisible: row.visible,
+              },
+            );
+            if (!saved.ok) {
+              setStatus(
+                "Could not save navigation: " +
+                  (saved.error ?? "unknown error"),
+              );
+              return;
+            }
+          } catch (error) {
+            setStatus(
+              "Could not save navigation: " +
+                (error instanceof Error ? error.message : String(error)),
+            );
+            return;
+          }
         }
         nextSite.shell.layoutMode = "managed";
         nextSite.shell.navItems = rows.map((row) => ({
@@ -1939,6 +2187,10 @@ function renderEditorStateBanner(): void {
           onClick: () => {
             void (async () => {
               if (!state.project || !state.page) return;
+              // Unsaved code edits must not vanish silently: resolve them
+              // (save/discard/cancel) before the reattach overwrites the doc.
+              const resolved = await maybeResolveUnsavedWork();
+              if (!resolved) return;
               const reattached = await window.zephus.reattachPageDocument(
                 state.project.path,
                 state.page,
@@ -1973,14 +2225,19 @@ function renderEditorStateBanner(): void {
             const page = state.page;
             const projectPath = state.project?.path;
             if (!page || !projectPath) return;
-            void loadPage(page, {
-              skipUnsavedGuard: true,
-              skipDraftRestore: true,
-              forceReload: true,
-              afterLoad: async () => {
-                await clearPageDraftAfterReload(projectPath, page);
-              },
-            });
+            void (async () => {
+              // Unsaved edits must not be silently dropped by the reload.
+              const resolved = await maybeResolveUnsavedWork();
+              if (!resolved) return;
+              void loadPage(page, {
+                skipUnsavedGuard: true,
+                skipDraftRestore: true,
+                forceReload: true,
+                afterLoad: async () => {
+                  await clearPageDraftAfterReload(projectPath, page);
+                },
+              });
+            })();
           },
         },
         {
@@ -2137,8 +2394,10 @@ async function openSiteShellModal(): Promise<void> {
   };
 
   const wrap = document.createElement("div");
-  const mountShellModal = () =>
-    renderSiteShellModalBody(wrap, {
+  let shellModalDispose: (() => void) | null = null;
+  const mountShellModal = () => {
+    shellModalDispose?.();
+    shellModalDispose = renderSiteShellModalBody(wrap, {
       siteTitle: shellState.siteTitle,
       logoText: shellState.logoText,
       announcementText: shellState.announcementText,
@@ -2200,6 +2459,8 @@ async function openSiteShellModal(): Promise<void> {
         });
       },
     });
+    registerCleanup(shellModalDispose);
+  };
   mountShellModal();
 
   showModalNode(
@@ -2260,6 +2521,7 @@ async function openSiteShellModal(): Promise<void> {
     ],
     { size: "wide" },
   );
+  registerCleanup(shellModalDispose);
 }
 
 /**
@@ -2385,13 +2647,21 @@ async function openDesignSystemModal(): Promise<void> {
  * the editing surface. Falls back to defaults and notifies on malformed rules.
  */
 async function applyRepoRules(): Promise<void> {
+  const projectPath = state.project?.path ?? null;
+  const sessionGeneration = editorSessionGeneration;
   editorRules.allowedBlocks = null;
   editorRules.maxHeadingLevel = 6;
-  if (!state.project) return;
+  if (!projectPath) return;
   try {
     const settings = (await window.zephus.readRepoSettings(
-      state.project.path,
+      projectPath,
     )) as { editorRules?: Record<string, unknown> } | null;
+    if (
+      state.project?.path !== projectPath ||
+      editorSessionGeneration !== sessionGeneration
+    ) {
+      return;
+    }
     const rules = settings?.editorRules ?? {};
     const allowed = rules["allowedBlocks"];
     if (Array.isArray(allowed) && allowed.every((x) => typeof x === "string")) {
@@ -2402,6 +2672,12 @@ async function applyRepoRules(): Promise<void> {
       editorRules.maxHeadingLevel = maxLevel;
     }
   } catch {
+    if (
+      state.project?.path !== projectPath ||
+      editorSessionGeneration !== sessionGeneration
+    ) {
+      return;
+    }
     setStatus("Custom editor rules could not be applied; using defaults.");
   }
   renderPalette();
@@ -2472,7 +2748,16 @@ async function reloadPages(): Promise<void> {
     // Keep the staging baseline while the user has staged (unsaved) site
     // changes: replacing it with the disk copy would let a later save
     // silently overwrite external site.json edits made since staging.
+    const siteChanged =
+      JSON.stringify(state.siteDocument) !== JSON.stringify(site.site);
     state.siteDocument = site.site;
+    if (siteChanged && (state.undo.length > 0 || state.redo.length > 0)) {
+      // Undo snapshots captured the OLD site document; undoing a page edit
+      // would stage the stale site and claim "Reverted a design change".
+      state.undo = [];
+      state.redo = [];
+      updateUndoRedoButtons();
+    }
   }
   syncCurrentMeta();
   renderPageList(project);
@@ -2510,8 +2795,21 @@ async function newPageFlow(): Promise<void> {
           return;
         }
         await reloadPages();
+        // Match the NORMALIZED slug ("My Page" -> "my-page"), or the list
+        // may have refreshed with the normalized name while the raw input
+        // still holds the original — the page would be created but never
+        // opened and the editor would stay on the old page. Mirrors the
+        // main-process slug normalization (schema.ts).
+        const normalizedName = name
+          .toLowerCase()
+          .replace(/[^a-z0-9-_]+/g, "-")
+          .replace(/-+/g, "-")
+          .replace(/^[-_]+|[-_]+$/g, "");
         const created = state.pageMeta.find(
-          (entry) => entry.slug === name || entry.route === "/" + name,
+          (entry) =>
+            entry.slug === name ||
+            entry.slug === normalizedName ||
+            entry.route === "/" + name,
         );
         if (created) await loadPage(created.page);
         setStatus("Created page " + name);
@@ -2530,6 +2828,12 @@ async function togglePageNavVisibility(page: string): Promise<void> {
     return;
   }
   const nextVisible = !entry.navVisible;
+  // Push an undo snapshot BEFORE mutating: the eye toggle is a user mutation
+  // and must be undoable (Ctrl+Z restores the nav visibility + the site
+  // baseline). Without this, a fresh-session toggle was undo-less, and an
+  // unrelated later undo would pop a snapshot holding the pre-toggle site
+  // and "revert the toggle" as a side effect.
+  pushUndo();
   const result = await window.zephus.writePageMeta(
     state.project.path,
     page,
@@ -2542,7 +2846,16 @@ async function togglePageNavVisibility(page: string): Promise<void> {
   }
   const meta = state.pageMeta.find((m) => m.page === page);
   if (meta) meta.navVisible = nextVisible;
+  // The layout + site.json navItems were resynced on disk by the write; the
+  // in-memory site baseline is stale, and renderNavEditor prefers
+  // siteDocument.shell.navItems — so refresh the baseline (without touching
+  // any staged site edits) before re-rendering, or the panel shows the old
+  // visibility until the next page switch/save.
   if (state.project) {
+    const fresh = await window.zephus.readSiteDocument(state.project.path);
+    if (fresh.ok && fresh.site) {
+      state.siteDocument = fresh.site;
+    }
     renderNavEditor(state.project);
     renderPageList(state.project);
   }
@@ -2555,16 +2868,26 @@ async function togglePageNavVisibility(page: string): Promise<void> {
 
 async function openPageMetaModal(page: string): Promise<void> {
   if (!state.project) return;
-  const entry = await window.zephus.readPageMeta(
-    state.project.path,
-    page,
-    state.project.astro.pagesDir,
-  );
-  const doc = await window.zephus.readPageDocument(
-    state.project.path,
-    page,
-    state.project.astro.pagesDir,
-  );
+  let entry: PageMeta;
+  let doc: PageDocumentResult;
+  try {
+    entry = await window.zephus.readPageMeta(
+      state.project.path,
+      page,
+      state.project.astro.pagesDir,
+    );
+    doc = await window.zephus.readPageDocument(
+      state.project.path,
+      page,
+      state.project.astro.pagesDir,
+    );
+  } catch (error) {
+    setStatus(
+      "Could not open page settings: " +
+        (error instanceof Error ? error.message : String(error)),
+    );
+    return;
+  }
 
   const formState = {
     title: entry.title,
@@ -2580,8 +2903,10 @@ async function openPageMetaModal(page: string): Promise<void> {
   };
 
   const wrap = document.createElement("div");
-  const mountPageSettings = () =>
-    renderPageSettingsModal(wrap, {
+  let pageSettingsDispose: (() => void) | null = null;
+  const mountPageSettings = () => {
+    pageSettingsDispose?.();
+    pageSettingsDispose = renderPageSettingsModal(wrap, {
       title: formState.title,
       slug: formState.slug,
       slugDisabled: entry.isHome,
@@ -2599,9 +2924,9 @@ async function openPageMetaModal(page: string): Promise<void> {
         formState.title = value;
       },
       onSlugChange: (value) => {
-        const wasReservedNotFound = formState.slug === "404";
+        const wasReservedNotFound = isReservedNotFoundSlug(formState.slug);
         formState.slug = value;
-        const isReservedNotFound = value === "404";
+        const isReservedNotFound = isReservedNotFoundSlug(value.trim());
         if (isReservedNotFound) {
           formState.visible = false;
           formState.noindex = true;
@@ -2648,6 +2973,8 @@ async function openPageMetaModal(page: string): Promise<void> {
         });
       },
     });
+    registerCleanup(pageSettingsDispose);
+  };
   mountPageSettings();
 
   showModalNode("Page Settings", wrap, [
@@ -2667,6 +2994,13 @@ async function openPageMetaModal(page: string): Promise<void> {
         if (!confirmed) {
           return;
         }
+        // Deleting the open page with unsaved edits must not silently discard
+        // them: resolve save/discard/cancel first (the switch path guards this
+        // via maybeResolveUnsavedWork; the delete path previously did not).
+        if (state.page === entry.page && isGlobalDirty(state)) {
+          const resolved = await maybeResolveUnsavedWork();
+          if (!resolved) return;
+        }
         const deleted = await window.zephus.deletePage(
           state.project!.path,
           entry.page,
@@ -2677,17 +3011,14 @@ async function openPageMetaModal(page: string): Promise<void> {
           return;
         }
         closeModal();
+        // Always clear the deleted page's recovery draft so the home screen
+        // stops offering "Resume" for a page that no longer exists — whether
+        // or not it was the open page.
+        await window.zephus.clearDraft(state.project!.path, "page", entry.page);
         if (state.page === entry.page) {
           // Drop the deleted page's document state entirely (a phantom
-          // document would otherwise be written by a later Save) and clear
-          // its recovery draft so the home screen stops offering "Resume"
-          // for a page that no longer exists.
+          // document would otherwise be written by a later Save).
           resetOpenPageState();
-          await window.zephus.clearDraft(
-            state.project!.path,
-            "page",
-            entry.page,
-          );
         }
         await reloadPages();
         if (!state.page && state.project?.pages[0]) {
@@ -2737,7 +3068,7 @@ async function openPageMetaModal(page: string): Promise<void> {
           setStatus(`Reattached ${entry.navLabel} to visual mode.`);
           return;
         }
-        const currentSource = getCode() || state.rawCode;
+        const currentSource = getCode() ?? state.rawCode;
         const detached = await window.zephus.detachPageDocument(
           state.project.path,
           entry.page,
@@ -2763,13 +3094,20 @@ async function openPageMetaModal(page: string): Promise<void> {
       kind: "primary",
       onClick: async () => {
         if (!state.project) return;
-        const nextSlug = formState.slug.trim() || entry.slug;
+         const nextSlug =
+           normalizePageSlugInput(formState.slug) ?? entry.slug;
         let nextPage = entry.page;
         if (!entry.isHome && nextSlug !== entry.slug) {
           // Suppress the app's own rename event: the file watcher would
           // otherwise surface a spurious "File Changed on Disk" prompt for
           // the deletion of the old path.
-          await window.zephus.stopWatch();
+          // Stop the watcher only when the rename touches the open page (its
+          // old path disappears). Any other page can be renamed with the open
+          // page's watcher left running.
+          const renameIsOpenPage = state.page === entry.page;
+          if (renameIsOpenPage) {
+            await window.zephus.stopWatch();
+          }
           const renamed = await window.zephus.renamePage(
             state.project.path,
             entry.page,
@@ -2777,6 +3115,11 @@ async function openPageMetaModal(page: string): Promise<void> {
             nextSlug,
           );
           if (!renamed.ok) {
+            // The watcher was stopped above; re-arm it on the original path
+            // so external edits to the open page keep being detected.
+            if (renameIsOpenPage && state.page === entry.page) {
+              await window.zephus.watchFile(state.project.path, entry.page);
+            }
             setStatus("Rename failed: " + (renamed.error ?? "unknown"));
             return;
           }
@@ -2810,11 +3153,41 @@ async function openPageMetaModal(page: string): Promise<void> {
           },
         );
         if (!saved.ok) {
+          // The rename already succeeded on disk; if the open page was
+          // renamed, the editor must follow it to the new path. Otherwise it
+          // would keep pointing at the deleted old path and a later Save
+          // would resurrect that file, silently duplicating the page.
+          if (nextPage !== entry.page && state.page === entry.page) {
+            state.page = nextPage;
+            syncCurrentMeta();
+            if (state.project) {
+              await window.zephus
+                .watchFile(state.project.path, nextPage)
+                .catch(() => {});
+            }
+          }
           setStatus("Metadata save failed: " + (saved.error ?? "unknown"));
           return;
         }
         closeModal();
         await reloadPages();
+        if (nextPage !== entry.page && state.project) {
+          // The old slug's recovery draft is orphaned by the rename: its
+          // content is unreachable under the old path and its home card
+          // would linger forever. Clear it (the new slug has no draft yet —
+          // fresh edits will create one under the new key).
+          const clearedOld = await window.zephus.clearDraft(
+            state.project.path,
+            "page",
+            entry.page,
+          );
+          if (!clearedOld.ok) {
+            setStatus(
+              "Saved page settings, but the old page's recovery draft could not be cleared: " +
+                (clearedOld.error ?? "unknown"),
+            );
+          }
+        }
         if (state.page === entry.page) {
           // Exact match only: two pages sharing a trailing slug segment must
           // not switch the editor to the wrong page.
@@ -2823,13 +3196,20 @@ async function openPageMetaModal(page: string): Promise<void> {
           if (state.project) {
             // Re-register the watcher on the renamed file so external edits
             // to it keep being detected.
-            await window.zephus.watchFile(state.project.path, nextPage);
+            await window.zephus
+              .watchFile(state.project.path, nextPage)
+              .catch(() => {
+                setStatus(
+                  "Warning: could not watch the page for external edits.",
+                );
+              });
           }
         }
         setStatus(`Saved page settings for ${entry.navLabel}.`);
       },
     },
   ]);
+  registerCleanup(pageSettingsDispose);
 }
 
 function buildUnsavedWorkSummary(): HTMLElement {
@@ -2848,7 +3228,20 @@ function buildUnsavedWorkSummary(): HTMLElement {
 }
 
 async function discardPendingSiteChanges(): Promise<void> {
-  return editorSiteSave.discardPendingSiteChanges();
+  await editorSiteSave.discardPendingSiteChanges();
+  // Staging a site change pushed a pre-staging snapshot; after discarding,
+  // the current state equals that snapshot — the top undo entry is a visible
+  // no-op that would also pollute redo. Drop it.
+  const top = state.undo[state.undo.length - 1];
+  if (top) {
+    const currentSite = effectiveSiteDocument(state);
+    const siteMatches =
+      JSON.stringify(top.site) === JSON.stringify(currentSite);
+    if (!editorSnapshotSectionsChanged(top, state.sections) && siteMatches) {
+      state.undo.pop();
+      updateUndoRedoButtons();
+    }
+  }
 }
 
 async function persistPendingSiteDocument(): Promise<boolean> {
@@ -2996,6 +3389,8 @@ async function clearPageDraftAfterReload(
 interface PageLoadOptions {
   skipUnsavedGuard?: boolean;
   skipDraftRestore?: boolean;
+  /** Restore the recovery draft WITHOUT prompting (home-screen resume). */
+  restoreDraftSilently?: boolean;
   forceReload?: boolean;
   afterLoad?: () => void | Promise<void>;
 }
@@ -3143,10 +3538,31 @@ async function loadPageNow(
   let restoredPageContent: string | undefined;
   let restoredPageDraft: DraftData | undefined;
   if (!options?.skipDraftRestore) {
+    // The visual draft was written as serializeBlocks() — the RENDERER's
+    // serialization of the live state. Comparing it against the main-side
+    // generatedSource can never be byte-equal (different body indentation,
+    // post-index source), which forced a bogus "Restore unsaved draft"
+    // prompt for already-saved content. Compare against the renderer's own
+    // serialization of the SAVED document instead: equality then means the
+    // live state would serialize identically — nothing to restore.
+    const savedRendererSource =
+      nextVisualEditable && res.pageDocument
+        ? (() => {
+            const savedFrame = splitManagedPageSource(generatedSource);
+            return assembleManagedPage(
+              savedFrame.frame,
+              sectionsFromPageDocument(res.pageDocument),
+              (block) => blockToHtml(block as Block, "desktop", false),
+            );
+          })()
+        : nextVisualEditable
+          ? generatedSource
+          : initialSource;
     const draftOutcome = await editorDraftRestore.maybeRestorePageDraft(
       page,
       findPageMeta(page)?.navLabel ?? page,
-      nextVisualEditable ? generatedSource : initialSource,
+      savedRendererSource,
+      options?.restoreDraftSilently ? { skipPrompt: true } : undefined,
     );
     pageDraftCleanupWarning = draftOutcome.cleanupWarning;
     restoredPageContent = draftOutcome.restoredContent;
@@ -3210,7 +3626,9 @@ async function loadPageNow(
   // Watch the open file for external changes. Serialized page loads guarantee
   // that an older request cannot replace the watcher for a newer page.
   if (!isCurrentRequest()) return;
-  await window.zephus.watchFile(projectPath, page);
+  await window.zephus.watchFile(projectPath, page).catch(() => {
+    setStatus("Warning: could not watch the page for external edits.");
+  });
   if (!isCurrentRequest()) return;
   if (pageDraftCleanupWarning) {
     setStatus(pageDraftCleanupWarning);
@@ -3274,10 +3692,16 @@ async function handleExternalChange(): Promise<void> {
       }
       if (
         ignoredExternalChange?.projectPath === projectPath &&
-        ignoredExternalChange.page === page &&
-        ignoredExternalChange.content === diskContent
+        ignoredExternalChange.page === page
       ) {
-        return;
+        if (ignoredExternalChange.content === diskContent) return;
+        if (ignoredExternalChange.content === null) {
+          // The file was unreadable when the user chose Keep Mine; the next
+          // watcher event is almost certainly the same change becoming
+          // readable. Suppress it once instead of re-prompting forever.
+          ignoredExternalChange = null;
+          return;
+        }
       }
     }
   } catch {
@@ -3351,6 +3775,12 @@ function parsePage(raw: string): void {
   const inner = capturePageFrame(raw);
   state.sections = parseSections(inner);
   syncBlocksFromSections();
+  // The tree was rebuilt from code: the old selection ids may point at nodes
+  // that no longer exist. Anchor to the first section and clear the block
+  // selection (previously only selectedSectionId was set, so the canvas could
+  // show NOTHING selected while the inspector showed section 0's props, and
+  // layers showed a stale pre-code-mode selection).
+  state.selectedId = null;
   state.selectedSectionId = state.sections[0]?.id ?? null;
 }
 
@@ -3376,12 +3806,14 @@ function editorRenderOptions(
   viewport: typeof state.currentViewport;
   forCanvas: boolean;
   canvasMaxHeadingLevel: number;
+  serializeMaxHeadingLevel: number;
   posts: RenderPostEntry[];
 } {
   return {
     viewport,
     forCanvas,
     canvasMaxHeadingLevel: editorRules.maxHeadingLevel,
+    serializeMaxHeadingLevel: editorRules.maxHeadingLevel,
     posts: editorPostIndex(),
   };
 }
@@ -3463,7 +3895,12 @@ const inspectorCanvasRepaint = createDebouncedCanvasRepaint(() => {
   renderLayers();
   renderCanvas();
 });
-const inspectorEditLatch = createInspectorUndoLatch(pushUndo);
+const inspectorEditLatch = createInspectorUndoLatch({
+  captureSnapshot: () => captureEditorSnapshot(state),
+  pushSnapshot: (snapshot) => {
+    pushEditorSnapshot(state, snapshot, updateUndoRedoButtons);
+  },
+});
 
 // Canvas resize handles — same injection pattern as inlineEdit.
 const resize = createResizeController({
@@ -3484,6 +3921,16 @@ function beginInspectorEdit(): void {
 
 function endInspectorEdit(): void {
   inspectorEditLatch.end(() => inspectorCanvasRepaint.flush());
+}
+
+/**
+ * Pushes undo for control-triggered inspector changes (buttons, checkboxes,
+ * selects). Text-input typing is covered by the latch (snapshot at focus,
+ * push at blur when changed) — pushing here too would create phantom entries
+ * and wipe redo on every keystroke.
+ */
+function pushUndoForControlChange(): void {
+  if (!inspectorEditLatch.isActive()) pushUndo();
 }
 
 function blockLabel(block: Block): string {
@@ -3547,6 +3994,10 @@ function addBlockAt(
   index: number,
   sectionId?: string | null,
 ): void {
+  if (!isBlockTypeAllowed(type, editorRules.allowedBlocks)) {
+    setStatus(`Block type "${type}" is not allowed on this site.`);
+    return;
+  }
   let targetSection =
     findSection(sectionId ?? activeSectionId()) ?? state.sections[0];
   if (!targetSection) {
@@ -3558,12 +4009,14 @@ function addBlockAt(
     state.sections.push(ensureFallbackSection());
     targetSection = state.sections[0];
   } else {
+    // A blocked insertion must not leave a phantom undo entry (and must not
+    // wipe the redo stack): validate the target first.
+    if (!targetSection) return;
+    if (isNodeLocked(targetSection)) {
+      setStatus(lockedMutationMessage("target-section"));
+      return;
+    }
     pushUndo();
-  }
-  if (!targetSection) return;
-  if (isNodeLocked(targetSection)) {
-    setStatus(lockedMutationMessage("target-section"));
-    return;
   }
   const block: Block =
     type === "html"
@@ -3584,6 +4037,7 @@ function addBlockAt(
                 ? { columns: "3", gap: "12px" }
                 : undefined,
         };
+  if (!targetSection) return;
   targetSection.children.splice(index, 0, block);
   state.selectedId = block.id;
   state.selectedSectionId = targetSection.id;
@@ -3593,6 +4047,17 @@ function addBlockAt(
 function duplicateSelectedBlock(block: Block): void {
   const location = findBlockLocation(block.id);
   if (!location) return;
+  if (!isBlockTypeAllowed(block.type, editorRules.allowedBlocks)) {
+    setStatus(`Block type "${block.type}" is not allowed on this site.`);
+    return;
+  }
+  // Mirror the add/paste/drop guards: inserting INTO a locked section is
+  // blocked ("unlock to add content there"). The duplicate previously
+  // spliced the copy into the locked section unchecked.
+  if (isNodeLocked(location.section)) {
+    setStatus(lockedMutationMessage("target-section"));
+    return;
+  }
   pushUndo();
   const copy = cloneBlock(block);
   copy.id = uid();
@@ -3724,11 +4189,22 @@ function duplicateSection(sectionId: string): void {
   const index = state.sections.findIndex((section) => section.id === sectionId);
   const section = state.sections[index];
   if (!section) return;
+  const disallowed = section.children.find(
+    (block) => !isBlockTypeAllowed(block.type, editorRules.allowedBlocks),
+  );
+  if (disallowed) {
+    setStatus(`Block type "${disallowed.type}" is not allowed on this site.`);
+    return;
+  }
   pushUndo();
   const copy = cloneSections([section])[0]!;
   copy.id = uid();
   copy.label = `${section.label} Copy`;
-  copy.children = copy.children.map((child) => ({ ...child, id: uid() }));
+  copy.children = copy.children.map((child) => {
+    const childCopy = cloneBlock(child);
+    childCopy.id = uid();
+    return childCopy;
+  });
   state.sections.splice(index + 1, 0, copy);
   state.selectedSectionId = copy.id;
   state.selectedId = null;
@@ -3739,10 +4215,10 @@ function copySelectionToClipboard(): void {
   const block = findSelectedBlock();
   if (block) {
     editorClipboard = { kind: "block", block: cloneBlock(block) };
-    void navigator.clipboard
-      ?.writeText(blockToHtml(block, "desktop"))
-      .catch(() => undefined);
-    setStatus("Copied block.");
+    void navigator.clipboard?.writeText(blockToHtml(block, "desktop")).then(
+      () => setStatus("Copied block."),
+      () => setStatus("Copied block (in-app only; clipboard unavailable)."),
+    );
     return;
   }
   if (state.selectedSectionId && !state.selectedId) {
@@ -3752,7 +4228,16 @@ function copySelectionToClipboard(): void {
         kind: "section",
         section: cloneSections([section])[0]!,
       };
-      setStatus("Copied section.");
+      // In-app paste (editorClipboard) always works; the OS clipboard write
+      // is best-effort and its failure must not claim full success.
+      const sectionCopy = cloneSections([section])[0]!;
+      const html = renderSectionsMarkup([sectionCopy], (b) =>
+        blockToHtml(b as Block, "desktop"),
+      );
+      void navigator.clipboard?.writeText(html).then(
+        () => setStatus("Copied section."),
+        () => setStatus("Copied section (in-app only; clipboard unavailable)."),
+      );
       return;
     }
   }
@@ -3827,6 +4312,13 @@ function pasteFromClipboard(): void {
     return;
   }
   const sourceSection = editorClipboard.section;
+  const disallowed = sourceSection.children.find(
+    (block) => !isBlockTypeAllowed(block.type, editorRules.allowedBlocks),
+  );
+  if (disallowed) {
+    setStatus(`Block type "${disallowed.type}" is not allowed on this site.`);
+    return;
+  }
   const index = state.selectedSectionId
     ? state.sections.findIndex(
         (section) => section.id === state.selectedSectionId,
@@ -3835,7 +4327,11 @@ function pasteFromClipboard(): void {
   pushUndo();
   const copy = cloneSections([sourceSection])[0]!;
   copy.id = uid();
-  copy.children = copy.children.map((child) => ({ ...child, id: uid() }));
+  copy.children = copy.children.map((child) => {
+    const childCopy = cloneBlock(child);
+    childCopy.id = uid();
+    return childCopy;
+  });
   state.sections.splice(Math.max(0, index) + 1, 0, copy);
   state.selectedSectionId = copy.id;
   state.selectedId = null;
@@ -3910,7 +4406,7 @@ function openSectionInsertModal(index: number): void {
         addSectionAt(index);
       },
     },
-    ...TEMPLATES.map((template) => ({
+    ...TEMPLATES.filter(templateAllowed).map((template) => ({
       label: template.label,
       onSelect: () => {
         closeModal();
@@ -3938,6 +4434,17 @@ function openSectionInsertModal(index: number): void {
   ]);
 }
 
+/** A template is insertable only when EVERY block it contains is allowed
+ *  (the palette and Add-Block modal filter per block, but the template/
+ *  quick-insert paths inserted disallowed blocks wholesale, violating the
+ *  repo's editorRules.allowedBlocks policy). */
+function templateAllowed(template: SectionTemplate): boolean {
+  const allowed = editorRules.allowedBlocks;
+  if (!allowed) return true;
+  const blocks = template.blocks?.() ?? [];
+  return blocks.every((block) => isBlockTypeAllowed(block.type, allowed));
+}
+
 /** Build an insertable template from a cached saved (HTML) reusable section. */
 function resolveSavedSectionTemplate(id: string): SectionTemplate | null {
   const saved = reusableSectionsCache.find((s) => s.id === id);
@@ -3952,6 +4459,12 @@ function clearAssetCache(): void {
   assetDataUrlCache.clear();
 }
 
+/** Drops one asset's cached data-URL so a delete/rename/replace is not served
+ *  stale bytes for the rest of the session. */
+function invalidateAssetCache(webPath: string): void {
+  assetDataUrlCache.delete(webPath);
+}
+
 function fetchAssetDataUrl(webPath: string): Promise<string | null> {
   if (!state.project) return Promise.resolve(null);
   const cached = assetDataUrlCache.get(webPath);
@@ -3962,6 +4475,13 @@ function fetchAssetDataUrl(webPath: string): Promise<string | null> {
     .then((res) => (res.ok && res.dataUrl ? res.dataUrl : null))
     .catch(() => null);
   assetDataUrlCache.set(webPath, promise);
+  // A failed read must not be cached forever: the file may be temporarily
+  // unreadable (transient FS error, mid-copy) or the name reclaimed later —
+  // drop the entry so the next hydration retries instead of serving a
+  // permanently broken image for the whole session.
+  void promise.then((dataUrl) => {
+    if (!dataUrl) assetDataUrlCache.delete(webPath);
+  });
   return promise;
 }
 
@@ -4152,12 +4672,21 @@ function handleDrop(e: DragEvent): void {
         TEMPLATES.find((entry) => entry.id === templateId) ??
         resolveSavedSectionTemplate(templateId);
       if (!template) return;
-      // Honor the drop position: insert after the section dropped onto, or
-      // append when dropped on empty canvas space.
+      if (!templateAllowed(template)) {
+        setStatus("This section contains blocks not allowed by site rules.");
+        return;
+      }
+      // Honor the drop position: section shells/rails set sectionDropIndex
+      // (whole-section payloads use section slots, not block slots). Fall
+      // back to inserting after the section dropped onto, or append when
+      // dropped on empty canvas space.
       const overSection = dropSectionId ? findSection(dropSectionId) : null;
-      const insertAt = overSection
-        ? state.sections.indexOf(overSection) + 1
-        : state.sections.length;
+      const insertAt =
+        sectionDropIndex >= 0
+          ? sectionDropIndex
+          : overSection
+            ? state.sections.indexOf(overSection) + 1
+            : state.sections.length;
       addSectionAt(insertAt, template);
       return;
     }
@@ -4236,11 +4765,16 @@ function openLinkPicker(current: string, onPick: (href: string) => void): void {
   }));
   const modalState = {
     kind: detectLinkKind(current),
+    // A route that is not in the current page list (detached/code-only page,
+    // or trailing-slash mismatch) must NOT silently fall back to the first
+    // listed page — "Use Link" would replace the link with a different page.
+    pageValueMissing:
+      current.startsWith("/") &&
+      !state.pageMeta.some((meta) => meta.route === current),
     pageValue:
-      state.pageMeta.find((meta) => meta.route === current)?.route ??
-      pageOptions[0]?.value ??
-      "/",
+      state.pageMeta.find((meta) => meta.route === current)?.route ?? "",
     rawValue: "",
+    rawEdited: false,
   };
   modalState.rawValue = prefillFor(modalState.kind, current);
 
@@ -4251,16 +4785,19 @@ function openLinkPicker(current: string, onPick: (href: string) => void): void {
       kind: modalState.kind,
       pageOptions,
       pageValue: modalState.pageValue,
+      pageValueMissing: modalState.pageValueMissing,
       rawValue: modalState.rawValue,
       onKindChange: (value) => {
         modalState.kind = value;
         if (value === "page" && !modalState.pageValue) {
-          modalState.pageValue = pageOptions[0]?.value ?? "/";
+          modalState.pageValue = pageOptions[0]?.value ?? "";
         }
-        // Re-derive the raw value for the new kind: a leftover email/phone/
-        // anchor/url text from the previous kind must not leak into the next
-        // href (e.g. a mailto address becoming a bare URL).
-        modalState.rawValue = prefillFor(value, current);
+        // Only re-derive the raw value when the user has not typed anything:
+        // overwriting their typed URL with a prefill on every kind switch
+        // silently discards their input.
+        if (!modalState.rawEdited) {
+          modalState.rawValue = prefillFor(value, current);
+        }
         renderModal();
       },
       onPageValueChange: (value) => {
@@ -4268,6 +4805,7 @@ function openLinkPicker(current: string, onPick: (href: string) => void): void {
       },
       onRawValueChange: (value) => {
         modalState.rawValue = value;
+        modalState.rawEdited = true;
       },
     });
   };
@@ -4353,6 +4891,7 @@ async function openFindReplaceModal(): Promise<void> {
     matches: null as SearchMatch[] | null,
     totalMatches: 0,
     searchedQuery: "",
+    skippedDetachedPages: 0,
   };
   let searchSeq = 0;
   let disposeFindBody: (() => void) | null = null;
@@ -4375,6 +4914,17 @@ async function openFindReplaceModal(): Promise<void> {
         formState.matches = null;
         formState.totalMatches = 0;
         formState.searchedQuery = "";
+        formState.skippedDetachedPages = 0;
+        // Re-render so the stale result list is replaced by the
+        // "Search text changed — press Find" hint; keep typing by restoring
+        // focus and the caret to the end of the input.
+        mount();
+        const input = wrap.querySelector<HTMLInputElement>(
+          ".find-replace input",
+        );
+        input?.focus();
+        const len = input?.value.length ?? 0;
+        input?.setSelectionRange(len, len);
       },
       onReplacementChange: (value) => {
         formState.replacement = value;
@@ -4419,6 +4969,7 @@ async function openFindReplaceModal(): Promise<void> {
     }
     formState.matches = result.matches;
     formState.totalMatches = result.totalMatches;
+    formState.skippedDetachedPages = result.skippedDetachedPages ?? 0;
     formState.searchedQuery = query;
     mount();
     return result.matches.length > 0;
@@ -4454,7 +5005,10 @@ async function openFindReplaceModal(): Promise<void> {
 
           const confirmed = await modalController.confirmDestructive(
             "Replace Across Site",
-            `Replace ${formState.totalMatches} occurrence(s) of "${formState.query.trim()}" across ${matches.length} page(s)? This cannot be undone with Ctrl/Cmd+Z.`,
+            `Replace ${formState.totalMatches} occurrence(s) of "${formState.query.trim()}" across ${matches.length} page(s)? This cannot be undone with Ctrl/Cmd+Z.` +
+              (formState.skippedDetachedPages
+                ? `\n\n${formState.skippedDetachedPages} hand-authored page(s) with matches will be skipped (their text is replaced in code mode only).`
+                : ""),
             "Replace All",
           );
           if (!confirmed) return;
@@ -4600,6 +5154,10 @@ function openAssetBrowser(options: AssetBrowserOptions): void {
       await refresh();
       return;
     }
+    // Drop cached data-URLs for both the old and the new path so the canvas
+    // re-reads the file instead of serving a stale (or wrong-file) copy.
+    invalidateAssetCache(asset.webPath);
+    invalidateAssetCache(result.webPath);
 
     const updated = result.updatedReferences ?? 0;
     // The open page and site document were changed on disk by the repoint, so
@@ -4643,6 +5201,9 @@ function openAssetBrowser(options: AssetBrowserOptions): void {
       setStatus("Delete failed: " + (result.error ?? "unknown"));
       return;
     }
+    // The freed name can be reclaimed by a later import; drop the cached
+    // data-URL so the canvas never keeps showing the deleted file's bytes.
+    invalidateAssetCache(asset.webPath);
     await refresh();
     setStatus(`Deleted ${displayName}.`);
   };
@@ -4777,6 +5338,7 @@ function renderProperties(): void {
         setStatus(lockedMutationMessage("section"));
         return;
       }
+      pushUndoForControlChange();
       section.props[key] = value;
       if (key === "label") section.label = value || section.label;
       commitInspectorChange(`Updated ${section.label}`);
@@ -4790,6 +5352,7 @@ function renderProperties(): void {
         setStatus(lockedMutationMessage("section"));
         return;
       }
+      pushUndoForControlChange();
       section.style = section.style ?? {};
       (section.style as Record<string, unknown>)[key] = value;
       commitInspectorChange(`Updated ${section.label} style`);
@@ -4817,6 +5380,7 @@ function renderProperties(): void {
           setStatus(lockedMutationMessage("section"));
           return;
         }
+        pushUndoForControlChange();
         section.label = value.trim() || "Section";
         commitInspectorChange("Renamed section");
       },
@@ -4832,6 +5396,7 @@ function renderProperties(): void {
       onColorChange: (value) => commitSectionStyle("color", value),
       onRadiusChange: (value) => commitSectionStyle("radius", value),
       onHideOnChange: (viewport, hidden) => {
+        pushUndoForControlChange();
         section.style = section.style ?? {};
         const hideOn = section.style.hideOn ?? [];
         section.style.hideOn = hidden
@@ -4881,6 +5446,7 @@ function renderProperties(): void {
           setStatus(lockedMutationMessage("block"));
           return;
         }
+        pushUndoForControlChange();
         block.props[key] = value;
         commitInspectorChange(
           `Updated ${block.type} ${key}`,
@@ -4894,6 +5460,7 @@ function renderProperties(): void {
                 setStatus(lockedMutationMessage("block"));
                 return;
               }
+              pushUndoForControlChange();
               block.raw = value;
               commitInspectorChange("Updated HTML markup");
             }
@@ -4903,6 +5470,7 @@ function renderProperties(): void {
           setStatus(lockedMutationMessage("block"));
           return;
         }
+        pushUndoForControlChange();
         block.style = block.style ?? {};
         if (Array.isArray(value) && value.length === 0) {
           delete (block.style as Record<string, unknown>)[key];
@@ -4920,6 +5488,7 @@ function renderProperties(): void {
           setStatus(lockedMutationMessage("block"));
           return;
         }
+        pushUndoForControlChange();
         block.style = block.style ?? {};
         block.style.responsive = block.style.responsive ?? {};
         block.style.responsive[state.currentViewport] = {
@@ -4936,6 +5505,7 @@ function renderProperties(): void {
       onClearImage:
         block.type === "image"
           ? () => {
+              pushUndoForControlChange();
               block.props["src"] = "";
               commitInspectorChange(`Updated ${block.type} src`, true);
             }
@@ -5079,7 +5649,7 @@ function setMode(mode: Mode): void {
     state.rawCode =
       state.managedStatus === "detached" ||
       state.managedStatus === "out-of-sync"
-        ? getCode() || state.rawCode
+        ? getCode() ?? state.rawCode
         : currentManagedSource();
     setCode(state.rawCode);
     codeEl.classList.remove("hidden");
@@ -5105,7 +5675,14 @@ function setMode(mode: Mode): void {
   if (codeVal !== state.rawCode) {
     state.rawCode = codeVal;
     parsePage(state.rawCode);
+    // The tree was wholesale replaced by content from a different lineage
+    // (the code edits). The old undo stack points into the replaced tree —
+    // undoing would restore content the user already discarded by editing
+    // code — so clear it rather than mix the two.
+    state.undo = [];
+    state.redo = [];
     markDirty(true);
+    updateUndoRedoButtons();
   }
 
   state.mode = mode;
@@ -5175,6 +5752,10 @@ const performSave = async (): Promise<boolean> => {
   saveButton.setAttribute("aria-label", "Saving changes");
   saveButton.classList.add("saving");
   try {
+    // An in-flight contenteditable edit lives in the DOM, not in the section
+    // tree — commit it first or the save serializes stale content (and the
+    // just-deleted recovery draft would be the only copy of the edit).
+    inlineEdit.finishInlineEdit();
     const saved = await editorSave.performSave();
     if (saved && wasSavingPage && !state.pageDirty) {
       ignoredExternalChange = null;
@@ -5218,11 +5799,13 @@ function setViewport(vp: "desktop" | "tablet" | "mobile"): void {
 }
 
 /**
- * Runs `npm install` for a project with a live-log modal. Resolves true on
- * success. Used after scaffolding and before preview/publish when node_modules
+ * Runs `npm install` for a project with a live-log modal. Resolves an outcome.
+ * Used after scaffolding and before preview/publish when node_modules
  * is missing — so a novice never has to touch a terminal.
  */
-async function runInstallFlow(projectPath: string): Promise<boolean> {
+type InstallFlowResult = "installed" | "backgrounded" | "failed";
+
+async function runInstallFlow(projectPath: string): Promise<InstallFlowResult> {
   const wrap = document.createElement("div");
   wrap.className = "install-flow";
   const status = document.createElement("p");
@@ -5247,7 +5830,7 @@ async function runInstallFlow(projectPath: string): Promise<boolean> {
     status.textContent = `${baseStatus} (${secs}s)`;
   }, 1000);
 
-  return new Promise<boolean>((resolve) => {
+  return new Promise<InstallFlowResult>((resolve) => {
     let done = false;
     // `done` also covers "user sent the install to the background": the
     // completion handler must then stay silent (no closeModal/setStatus) so
@@ -5263,7 +5846,7 @@ async function runInstallFlow(projectPath: string): Promise<boolean> {
             stopHeartbeat();
             unsub();
             closeModal();
-            resolve(false);
+            resolve("backgrounded");
           }
         },
       },
@@ -5280,11 +5863,16 @@ async function runInstallFlow(projectPath: string): Promise<boolean> {
           status.textContent = "Dependencies installed. You're ready to go.";
           setStatus("Dependencies installed.");
           closeModal();
-          resolve(true);
+          resolve("installed");
         } else {
-          status.textContent = "Install failed: " + friendlyError(result.error);
+          // Failure must never leave the install modal open with a dead
+          // "Run in Background" button: close it and surface the error.
+          closeModal();
           setStatus("Dependency install failed.");
-          resolve(false);
+          showModal("Install Failed", friendlyError(result.error), [
+            { label: "OK", kind: "primary", onClick: closeModal },
+          ]);
+          resolve("failed");
         }
       })
       .catch(() => {
@@ -5292,7 +5880,14 @@ async function runInstallFlow(projectPath: string): Promise<boolean> {
         done = true;
         stopHeartbeat();
         unsub();
-        resolve(false);
+        closeModal();
+        setStatus("Dependency install failed.");
+        showModal(
+          "Install Failed",
+          "Dependencies could not be installed. Check the network connection or your project's package.json.",
+          [{ label: "OK", kind: "primary", onClick: closeModal }],
+        );
+        resolve("failed");
       });
   });
 }
@@ -5304,7 +5899,7 @@ async function ensureDependencies(): Promise<boolean> {
     state.project.path,
   );
   if (installed) return true;
-  return runInstallFlow(state.project.path);
+  return (await runInstallFlow(state.project.path)) === "installed";
 }
 
 function updatePreviewButton(running: boolean): void {
@@ -5316,14 +5911,34 @@ function updatePreviewButton(running: boolean): void {
   refreshIcons();
 }
 
+// Every live preview-log subscription, tracked as a set: togglePreview can be
+// re-entered (double-click) and a single-slot reference would leak the first
+// subscription when the second call overwrites it.
+const previewLogSubscriptions = new Set<() => void>();
+
+/** Removes ONE live preview-log subscription (the caller's own). */
+function unsubscribePreviewLog(unsub: () => void): void {
+  previewLogSubscriptions.delete(unsub);
+  unsub();
+}
+
+function unsubscribeAllPreviewLogs(): void {
+  for (const unsub of previewLogSubscriptions) unsub();
+  previewLogSubscriptions.clear();
+}
+
 function resetPreviewState(message?: string): void {
   state.previewUrl = null;
-  state.unsubLog?.();
-  state.unsubLog = null;
+  unsubscribeAllPreviewLogs();
   updatePreviewButton(false);
   refreshGuidancePanels();
   if (message) setStatus(message);
 }
+
+// Guards the start sequence: double-clicking Start would fire two
+// startPreview calls (the second fails with "already starting") and the
+// loser's cleanup would kill the winner's log subscription.
+let previewStartInFlight = false;
 
 async function togglePreview(): Promise<void> {
   if (!state.project) return;
@@ -5336,95 +5951,157 @@ async function togglePreview(): Promise<void> {
     return;
   }
 
-  if (isGlobalDirty(state)) {
-    const resolved = await maybeResolveUnsavedWork({
-      reloadCurrentPageOnDiscard: true,
-    });
-    if (!resolved) return;
-  }
-  if (!(await ensureDependencies())) return;
-  setStatus("Starting dev server (npm run dev)…");
-  state.unsubLog = window.zephus.onPreviewLog((chunk) => {
-    const logEl = $("dev-log");
-    appendCappedLog(logEl, chunk);
-  });
+  if (previewStartInFlight) return;
+  previewStartInFlight = true;
+  const projectPathAtStart = state.project.path;
   try {
-    const result = await window.zephus.startPreview(state.project.path);
-    if (!result.ok || !result.url) {
-      setStatus("Preview failed: " + friendlyError(result.error));
-      return;
+    if (isGlobalDirty(state)) {
+      const resolved = await maybeResolveUnsavedWork({
+        reloadCurrentPageOnDiscard: true,
+      });
+      if (!resolved) return;
     }
-    const opened = await window.zephus.openPreviewWindow(result.url);
-    if (!opened.ok) {
-      setStatus("Preview failed: " + friendlyError(opened.error));
-      await window.zephus.stopPreview();
-      return;
+    // The project may have been closed while the prompt/dep-check awaited;
+    // continuing would open a preview window + dev server for a nulled
+    // project (orphan window, dead server, "Stop Preview" stuck in start
+    // view).
+    if (state.project?.path !== projectPathAtStart) return;
+    if (!(await ensureDependencies())) return;
+    if (state.project?.path !== projectPathAtStart) return;
+    setStatus("Starting dev server (npm run dev)…");
+    const unsub = window.zephus.onPreviewLog((chunk) => {
+      const logEl = $("dev-log");
+      appendCappedLog(logEl, chunk);
+    });
+    previewLogSubscriptions.add(unsub);
+    try {
+      const result = await window.zephus.startPreview(projectPathAtStart);
+      if (state.project?.path !== projectPathAtStart) {
+        // Closed mid-start: tear the started server down rather than orphaning it.
+        await window.zephus.stopPreview().catch(() => {});
+        return;
+      }
+      if (!result.ok || !result.url) {
+        setStatus("Preview failed: " + friendlyError(result.error));
+        return;
+      }
+      const opened = await window.zephus.openPreviewWindow(result.url);
+      if (state.project?.path !== projectPathAtStart) {
+        await window.zephus.stopPreview().catch(() => {});
+        return;
+      }
+      if (!opened.ok) {
+        setStatus("Preview failed: " + friendlyError(opened.error));
+        await window.zephus.stopPreview();
+        return;
+      }
+      state.previewUrl = result.url;
+      updatePreviewButton(true);
+      refreshGuidancePanels();
+      setStatus("Preview open in a separate window: " + result.url);
+    } catch (error) {
+      // An IPC rejection must not leave the log listener attached or the
+      // Preview button wedged in "Starting…".
+      setStatus(
+        "Preview failed: " +
+          (error instanceof Error ? error.message : String(error)),
+      );
+    } finally {
+      // A successful start keeps the subscription for the server's lifetime
+      // (main streams logs until the preview stops) — only failures tear it
+      // down. Unsubscribing the WHOLE set here would freeze the Dev Server
+      // Log panel immediately after startup.
+      if (!state.previewUrl) unsubscribePreviewLog(unsub);
     }
-    state.previewUrl = result.url;
-    updatePreviewButton(true);
-    refreshGuidancePanels();
-    setStatus("Preview open in a separate window: " + result.url);
-  } catch (error) {
-    // An IPC rejection must not leave the log listener attached or the
-    // Preview button wedged in "Starting…".
-    setStatus(
-      "Preview failed: " +
-        (error instanceof Error ? error.message : String(error)),
-    );
   } finally {
-    state.unsubLog?.();
-    state.unsubLog = null;
+    previewStartInFlight = false;
   }
 }
 
 /* ---------- Publish ---------- */
 
+// Guards the build sequence: double-clicking Publish (or Publish during a
+// build) would fire two full builds; the main process rejects the second with
+// "A build is already running", which the old code surfaced as a scary
+// "Build Failed" modal.
+let publishInFlight = false;
+
 async function publishSite(): Promise<void> {
-  if (!state.project) return;
-  // A build publishes whatever is on disk, so unsaved edits must be saved (or
-  // discarded) first — otherwise the user confirms "built!" while their newer
-  // content is not what got published.
-  if (isGlobalDirty(state)) {
-    const resolved = await maybeResolveUnsavedWork({
-      reloadCurrentPageOnDiscard: true,
+  if (!state.project || publishInFlight) return;
+  publishInFlight = true;
+  try {
+    const project = state.project;
+    const dirtyAtStart = isGlobalDirty(state);
+    // A build publishes whatever is on disk, so unsaved edits must be saved
+    // (or discarded) first — otherwise the user confirms "built!" while their
+    // newer content is not what got published.
+    if (dirtyAtStart) {
+      const resolved = await maybeResolveUnsavedWork({
+        reloadCurrentPageOnDiscard: true,
+      });
+      if (!resolved) return;
+    }
+    if (!(await ensureDependencies())) return;
+    // The project may have been closed while the dependency check ran.
+    if (state.project?.path !== project.path) return;
+    setStatus("Building site for production (npm run build)…");
+    const r = await window.zephus.publish(project.path, project.astro.outDir);
+    if (state.project?.path !== project.path) return;
+    if (!r.ok) {
+      showModal("Build Failed", friendlyError(r.error), [
+        { label: "OK", kind: "primary", onClick: closeModal },
+      ]);
+      setStatus("Build failed.");
+      return;
+    }
+    // Edits that arrived while the build ran are NOT in the published output.
+    // Say so instead of a misleading "Build complete". We resolved any
+    // pre-existing unsaved work above, so the state was clean when the build
+    // started — any dirtiness NOW is an edit made during the build. (Checking
+    // `!dirtyAtStart` instead false-negatived when the user started dirty,
+    // resolved, then edited again mid-build.)
+    const newerEdits = isGlobalDirty(state);
+    const outputDir = r.outputDir ?? project.astro.outDir;
+    setStatus(
+      newerEdits
+        ? `Build complete, but newer unsaved edits are NOT included. Output: ${outputDir}`
+        : `Build complete. Output: ${outputDir}`,
+    );
+    const pubWrap = document.createElement("div");
+    renderPublishSuccessModalBody(pubWrap, {
+      outputDir,
+      newerEditsNotIncluded: newerEdits,
     });
-    if (!resolved) return;
-  }
-  if (!(await ensureDependencies())) return;
-  setStatus("Building site for production (npm run build)…");
-  const r = await window.zephus.publish(
-    state.project.path,
-    state.project.astro.outDir,
-  );
-  if (!r.ok) {
-    showModal("Build Failed", friendlyError(r.error), [
-      { label: "OK", kind: "primary", onClick: closeModal },
-    ]);
-    setStatus("Build failed.");
-    return;
-  }
-  setStatus(
-    "Build complete. Output: " + (r.outputDir ?? state.project.astro.outDir),
-  );
-  const pubWrap = document.createElement("div");
-  renderPublishSuccessModalBody(pubWrap, {
-    outputDir: r.outputDir ?? state.project.astro.outDir,
-  });
-  showModalNode("Site Built — Ready to Go Online", pubWrap, [
-    {
-      label: "Open Output Folder",
-      kind: "ghost",
-      onClick: () => {
-        // Reveal only: calling publish() again would run a second full build.
-        if (!state.project) return;
-        void window.zephus.revealOutputFolder(
-          state.project.path,
-          state.project.astro.outDir,
-        );
+    showModalNode("Site Built — Ready to Go Online", pubWrap, [
+      {
+        label: "Open Output Folder",
+        kind: "ghost",
+        onClick: () => {
+          // Reveal only: calling publish() again would run a second full build.
+          if (!state.project) return;
+          void window.zephus
+            .revealOutputFolder(state.project.path, state.project.astro.outDir)
+            .then((res) => {
+              if (res && !res.ok) {
+                // The output folder is often deleted/cleaned after a rebuild
+                // or never created (custom build script) — say so instead of
+                // a silent no-op.
+                setStatus(
+                  "Could not open the output folder: " +
+                    (res.error ?? "it may not exist yet"),
+                );
+              }
+            })
+            .catch(() => {
+              setStatus("Could not open the output folder.");
+            });
+        },
       },
-    },
-    { label: "Done", kind: "primary", onClick: closeModal },
-  ]);
+      { label: "Done", kind: "primary", onClick: closeModal },
+    ]);
+  } finally {
+    publishInFlight = false;
+  }
 }
 
 /* ---------- Close ---------- */
@@ -5456,10 +6133,18 @@ function resetOpenPageState(): void {
 }
 
 async function closeProject(): Promise<void> {
-  if (closingProject || !(await maybeResolveUnsavedWork())) return;
+  if (closingProject) return;
+  // Set the guard BEFORE the await: two rapid Close invocations (double-click,
+  // or Enter on the confirm dialog) must not both pass the unsaved-work prompt
+  // and run the teardown twice.
+  closingProject = true;
+  const proceed = await maybeResolveUnsavedWork();
+  if (!proceed) {
+    closingProject = false;
+    return;
+  }
 
   const editorView = $("view-editor");
-  closingProject = true;
   editorView.setAttribute("inert", "");
   setStatus("Closing project…");
   updateUndoRedoButtons();
@@ -5475,9 +6160,22 @@ async function closeProject(): Promise<void> {
       resetPreviewState();
     }
     await window.zephus.stopWatch();
+    // A preview starting while the project closed (previewUrl not yet set)
+    // would otherwise keep the dev server + window alive for a nulled
+    // project, and the next project's log panel would receive its stream.
+    unsubscribeAllPreviewLogs();
+    state.previewUrl = null;
+    updatePreviewButton(false);
     state.unsubExternal?.();
     state.unsubExternal = null;
     state.project = null;
+    // Cross-project paste: a block/section copied in project A must not be
+    // insertable into project B.
+    editorClipboard = null;
+    // Saved sections are per-project: the palette must not expose project
+    // A's saved sections inside project B (a stale unawaited renderTemplates
+    // could also re-fill the cache after close).
+    reusableSectionsCache = [];
     clearAssetCache();
     state.siteDocument = null;
     state.pendingSiteDocument = null;
@@ -5485,6 +6183,9 @@ async function closeProject(): Promise<void> {
     state.pageMeta = [];
     state.recoveredSiteDraft = null;
     resetOpenPageState();
+    // A fresh session should start on the desktop viewport, not inherit the
+    // previous project's mobile/tablet preview.
+    state.currentViewport = "desktop";
     clearSiteChanges(state);
     markSiteDirty(state, false);
     editorView.classList.add("hidden");
@@ -5498,6 +6199,9 @@ async function closeProject(): Promise<void> {
     renderThemePlaceholder();
     await renderRecent();
     setStatus("");
+    // A transient mount failure must not poison every later session's status
+    // bar and banner (they are re-rendered on the next open).
+    panelMountFailures.length = 0;
   } catch (error) {
     setStatus(
       `Could not close project: ${error instanceof Error ? error.message : String(error)}`,
@@ -5530,6 +6234,10 @@ function updateUndoRedoButtons(): void {
 }
 
 function doUndo(): void {
+  // An active resize drag holds the pre-drag snapshot on the stack; popping
+  // it mid-drag restores clones the drag keeps mutating — the resize would
+  // be silently lost and the undo entry wasted. Wait for the drag to finish.
+  if (inspectorEditLatch.isActive()) return;
   const prev = popEditorUndoEntry(state);
   if (!prev) return;
   const sectionsChanged = editorSnapshotSectionsChanged(prev, state.sections);
@@ -5540,6 +6248,7 @@ function doUndo(): void {
     trackChange("Undid a change");
     markDirty(true);
   }
+  clearStaleSiteDraftAfterRevert();
   renderLayers();
   renderCanvas();
   renderProperties();
@@ -5547,6 +6256,10 @@ function doUndo(): void {
 }
 
 function doRedo(): void {
+  // Mirror the doUndo guard: mid-drag redo would replace the sections the
+  // drag keeps mutating, silently losing the resize and polluting the stacks
+  // with mid-drag state.
+  if (inspectorEditLatch.isActive()) return;
   const next = popEditorRedoEntry(state);
   if (!next) return;
   const sectionsChanged = editorSnapshotSectionsChanged(next, state.sections);
@@ -5557,10 +6270,20 @@ function doRedo(): void {
     trackChange("Redid a change");
     markDirty(true);
   }
+  clearStaleSiteDraftAfterRevert();
   renderLayers();
   renderCanvas();
   renderProperties();
   updateUndoRedoButtons();
+}
+
+/** Undoing a site change back to the saved baseline leaves the site clean —
+ *  any site draft on disk is then stale, and clearing it stops the spurious
+ *  "Restore Site Draft" prompt on the next launch and the permanent home
+ *  recovery card. No-op when no draft exists. */
+function clearStaleSiteDraftAfterRevert(): void {
+  if (!state.project || state.siteDirty || state.pendingSiteDocument) return;
+  void window.zephus.clearDraft(state.project.path, "site", SITE_DRAFT_TARGET);
 }
 
 function onKeydown(e: KeyboardEvent): void {
@@ -5584,8 +6307,37 @@ function onKeydown(e: KeyboardEvent): void {
     return;
   }
 
+  // A modal being open must not let canvas shortcuts mutate the page behind
+  // it: Cmd+Z/Y/C/X/V/D, Delete/Backspace, Cmd+S and Cmd+F all operate on the
+  // editor canvas/state, and the modal's background is inert only for focus
+  // and screen readers — document keydown still fires. (Modal-owned keys —
+  // Escape/Tab — live in the modal controller's own capture handler.)
+  const modalOpen = modalController.isOpen();
+  if (
+    modalOpen &&
+    (mod ||
+      e.key === "Delete" ||
+      e.key === "Backspace" ||
+      e.key === "?" ||
+      e.key === "h" ||
+      e.key === "H")
+  ) {
+    return;
+  }
+
   if ((e.key === "?" || e.key === "h" || e.key === "H") && !editing) {
-    openHelpModal();
+    if (!modalController.isOpen()) {
+      // Only fire from the page background or the canvas itself — a bare
+      // "h" while a palette item, template card, toolbar button, block shell
+      // or workspace tab holds focus would otherwise hijack the keystroke.
+      const isBackgroundFocus =
+        active === null ||
+        active === document.body ||
+        active.id === "canvas" ||
+        active.id === "app" ||
+        active.classList.contains("start-container");
+      if (isBackgroundFocus) openHelpModal();
+    }
     e.preventDefault();
     return;
   }
@@ -5598,11 +6350,22 @@ function onKeydown(e: KeyboardEvent): void {
     return;
   }
   if (mod && e.key === "f" && !editing) {
-    void openFindReplaceModal();
+    // CodeMirror's own search keymap also binds Mod-f; when it already handled
+    // the keystroke (its panel is open), don't stack the app's modal too.
+    if (!e.defaultPrevented) void openFindReplaceModal();
     e.preventDefault();
     return;
   }
   if (state.mode === "code" && mod) {
+    // CodeMirror's history keymap binds Mod-z/Mod-y and calls preventDefault
+    // (without stopPropagation), so the event still reaches this document
+    // handler. Skipping handled events keeps one keystroke from reverting two
+    // edit steps.
+    if (e.defaultPrevented) return;
+    // A plain input (find modal field, page-settings prompt) focused in code
+    // mode must keep NATIVE undo — running cm.undo() here hijacked it (the
+    // visual-mode editing guard was bypassed by this branch).
+    if (editing) return;
     if (e.key === "z" && !e.shiftKey) {
       cm?.undo();
       updateUndoRedoButtons();
@@ -6001,7 +6764,21 @@ async function renderAboutAndLicensesInTab(): Promise<void> {
   }
 }
 
+// Guards the create flow: double-clicks (or Enter on a card) could otherwise
+// launch two folder pickers / two scaffold runs that interleave.
+let siteCreateInFlight = false;
+
 async function createSiteFromTabFlow(): Promise<void> {
+  if (siteCreateInFlight) return;
+  siteCreateInFlight = true;
+  try {
+    await createSiteFromTabFlowInner();
+  } finally {
+    siteCreateInFlight = false;
+  }
+}
+
+async function createSiteFromTabFlowInner(): Promise<void> {
   if (!selectedTabTheme) return;
   const theme = selectedTabTheme;
   const folder = await window.zephus.chooseNewSiteFolder();
@@ -6022,9 +6799,17 @@ async function createSiteFromTabFlow(): Promise<void> {
     ]);
     return;
   }
-  await openProjectByPath(folder);
   // First-run convenience: install deps now so preview/publish just work.
-  await runInstallFlow(folder);
+  const installResult = await runInstallFlow(folder);
+  if (installResult === "failed") return;
+  await openProjectByPath(folder);
+  if (!state.project) {
+    setStatus(
+      "Site created, but Zephus could not open it. Check the project folder and try again.",
+    );
+  } else if (installResult === "backgrounded") {
+    setStatus("Site opened; dependency installation continues in background.");
+  }
 }
 
 function installEditorSmokeHook(): void {
@@ -6059,6 +6844,12 @@ function installEditorSmokeHook(): void {
       ],
     };
     state.sections = [section];
+    // A project object enables the document-level keyboard shortcuts
+    // (undo/redo/delete) the smoke exercises below.
+    state.project = {
+      path: "/smoke-project",
+      name: "Smoke Project",
+    } as ProjectOpenResult;
     state.selectedSectionId = section.id;
     state.selectedId = "smoke-heading";
     state.page = "src/pages/index.astro";
@@ -6155,6 +6946,127 @@ function installEditorSmokeHook(): void {
       assert(!allowed, "Editor smoke: canvas link was not inert.");
     }
 
+    // The canvas-link click above selected the button block; restore the
+    // heading selection so the inspector edits the heading again.
+    state.selectedId = "smoke-heading";
+    state.selectedSectionId = section.id;
+    renderProperties();
+
+    // Undo/redo through the real inspector latch: typing commits one undo
+    // entry on blur, Ctrl+Z reverts it, Ctrl+Shift+Z (or Cmd+Y) redoes.
+    // Re-query the input: renderProperties() replaced the panel element.
+    const redoKeys = (): void => {
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          bubbles: true,
+          key: "z",
+          ctrlKey: true,
+          shiftKey: true,
+        }),
+      );
+    };
+    const undoKey = (): void => {
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          bubbles: true,
+          key: "z",
+          ctrlKey: true,
+        }),
+      );
+    };
+    const freshInput = document.querySelector<HTMLInputElement>(
+      "#properties input.text",
+    );
+    assert(
+      !!freshInput,
+      "Editor smoke: inspector input missing after re-render.",
+    );
+    if (freshInput) {
+      freshInput.focus();
+      let directFired = false;
+      const directListener = () => {
+        directFired = true;
+      };
+      freshInput.addEventListener("input", directListener);
+      freshInput.value = "Undo Me";
+      freshInput.dispatchEvent(new Event("input", { bubbles: true }));
+      freshInput.removeEventListener("input", directListener);
+      const afterInput = section.children[0]?.props["text"];
+      freshInput.blur();
+      const afterBlur = section.children[0]?.props["text"];
+      assert(
+        afterBlur === "Undo Me",
+        `Editor smoke: inspector blur did not commit (afterInput=${JSON.stringify(afterInput)} afterBlur=${JSON.stringify(afterBlur)} attached=${document.contains(freshInput)} direct=${directFired} selected=${state.selectedId} dirty=${state.pageDirty})`,
+      );
+      undoKey();
+      assert(
+        section.children[0]?.props["text"] !== "Undo Me",
+        "Editor smoke: Ctrl+Z did not revert the inspector edit.",
+      );
+      redoKeys();
+      assert(
+        section.children[0]?.props["text"] === "Undo Me",
+        "Editor smoke: redo did not restore the inspector edit.",
+      );
+    }
+
+    // Add a block, duplicate the section, then undo both back to baseline.
+    const beforeAdd = state.sections[0]?.children.length ?? 0;
+    addBlockAt("text", 1, section.id);
+    assert(
+      (state.sections[0]?.children.length ?? 0) === beforeAdd + 1,
+      "Editor smoke: addBlockAt did not insert a block.",
+    );
+    undoKey();
+    assert(
+      state.sections[0]?.children.length === beforeAdd,
+      "Editor smoke: undo did not remove the added block.",
+    );
+
+    // The block-add above changed the selection; re-select the heading.
+    state.selectedId = "smoke-heading";
+    state.selectedSectionId = section.id;
+    renderCanvas();
+    renderProperties();
+
+    // Keyboard resize of the selected block writes width + undo restores it.
+    const selBlock = findBlockLocation(state.selectedId);
+    const originalWidth = selBlock?.block.style?.width;
+    const handle =
+      document.querySelector<HTMLButtonElement>(".resize-handle.se");
+    assert(!!handle, "Editor smoke: resize handle missing for keyboard test.");
+    if (handle) {
+      handle.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          bubbles: true,
+          key: "ArrowRight",
+        }),
+      );
+      assert(
+        selBlock?.block.style?.width !== originalWidth,
+        `Editor smoke: keyboard resize did not change the width (before=${JSON.stringify(originalWidth)} after=${JSON.stringify(selBlock?.block.style?.width)} selected=${state.selectedId} handles=${document.querySelectorAll(".resize-handle").length})`,
+      );
+      undoKey();
+      const restored = findBlockLocation("smoke-heading");
+      assert(
+        restored?.block.style?.width === originalWidth,
+        `Editor smoke: undo did not restore the pre-resize width (before=${JSON.stringify(originalWidth)} after=${JSON.stringify(restored?.block.style?.width)})`,
+      );
+    }
+
+    // Inline edit Escape cancels and restores the original text.
+    if (target) {
+      target.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+      target.textContent = "Should Not Stick";
+      target.dispatchEvent(
+        new KeyboardEvent("keydown", { bubbles: true, key: "Escape" }),
+      );
+      assert(
+        section.children[0]?.props["text"] === "Undo Me",
+        "Editor smoke: Escape did not cancel the inline edit.",
+      );
+    }
+
     return failures;
   };
 }
@@ -6174,12 +7086,31 @@ function init(): void {
 
   // Warn before closing/reloading with unsaved work. Drafts also auto-save,
   // but this is an explicit last-chance rail.
-  window.addEventListener("beforeunload", (event) => {
-    if (state.project && isGlobalDirty(state)) {
-      event.preventDefault();
-      event.returnValue = "";
-    }
-  });
+  // NOTE: in Electron, preventing beforeunload CANCELS the close with NO
+  // dialog (Chromium's confirm is suppressed) — the app used to silently
+  // refuse to quit. Instead, surface the app's own save/discard/cancel modal
+  // and, once resolved, re-close with the guard lifted.
+  let forceCloseAllowed = false;
+  const onBeforeUnload = (event: BeforeUnloadEvent): void => {
+    if (forceCloseAllowed) return;
+    if (!state.project || !isGlobalDirty(state)) return;
+    event.preventDefault();
+    event.returnValue = "";
+    void (async () => {
+      const resolved = await maybeResolveUnsavedWork();
+      if (!resolved) return;
+      forceCloseAllowed = true;
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      window.close();
+    })();
+  };
+  window.addEventListener("beforeunload", onBeforeUnload);
+  // Update installs quit the app programmatically; the dirty guard must not
+  // strand the update. restartToApplyUpdate resolves unsaved work first and
+  // then calls this.
+  window.zephusMarkForceCloseAllowed = () => {
+    forceCloseAllowed = true;
+  };
 
   // Populate sidebar version label.
   const sidebarVersion = $("sidebar-app-version");
@@ -6521,9 +7452,15 @@ function init(): void {
     try {
       mountHomeDraftRecovery(homeDraftRecoveryContainer);
       registerHomeDraftRecoveryHandlers({
-        onResumeDraft: (projectPath) => {
+        onResumeDraft: (projectPath, scope, target) => {
+          // Match by scope+target too: a project with BOTH a page draft and a
+          // site draft shows two cards; clicking either must resume THAT one,
+          // not the newest summary.
           const draft = homeDraftSummaries.find(
-            (entry) => entry.projectPath === projectPath,
+            (entry) =>
+              entry.projectPath === projectPath &&
+              (scope === undefined || entry.scope === scope) &&
+              (target === undefined || entry.target === target),
           );
           if (!draft) return;
           pendingHomeDraftResume = draft;
@@ -6610,12 +7547,20 @@ function init(): void {
           openBlockInsertModal(index, sectionId),
         onOpenSectionInsert: (index) => openSectionInsertModal(index),
         onQuickInsertSection: (index, template) => {
-          if (template === "hero") {
-            addSectionAt(index, TEMPLATES[0]);
+          const tpl =
+            template === "hero"
+              ? (TEMPLATES[0] ?? null)
+              : template === "features"
+                ? (TEMPLATES[1] ?? null)
+                : null;
+          if (tpl && !templateAllowed(tpl)) {
+            setStatus(
+              "This section's blocks are not allowed by the project's rules.",
+            );
             return;
           }
-          if (template === "features") {
-            addSectionAt(index, TEMPLATES[1]);
+          if (tpl) {
+            addSectionAt(index, tpl);
             return;
           }
           addSectionAt(index);
@@ -6733,12 +7678,37 @@ function init(): void {
         },
         onSectionDragEnd: resetDragState,
         onSectionDragOver: (event, sectionIndex, shell) => {
-          if (!draggingSectionId) return;
+          // Section MOVES and TEMPLATE drops both place a whole section:
+          // templates dragged from the palette showed a block-line indicator
+          // yet inserted after the section — now they use the same section
+          // slot machinery.
+          const hasSectionPayload =
+            draggingSectionId !== null ||
+            Boolean(event.dataTransfer?.getData("text/zephus-template"));
+          if (!hasSectionPayload) return;
           event.preventDefault();
           const rect = shell.getBoundingClientRect();
           const after = event.clientY > rect.top + rect.height / 2;
           sectionDropIndex = after ? sectionIndex + 1 : sectionIndex;
           showIndicator($("canvas"), shell, after);
+        },
+        // The "Add section" rails sit BETWEEN sections, outside any section
+        // shell: dropping there must target the rail's own position, not fall
+        // through to the canvas handler (which appends at the END of the page).
+        onSectionRailDragOver: (event, index) => {
+          if (!draggingSectionId) return;
+          event.preventDefault();
+          sectionDropIndex = index;
+          // For block drags the rail targets the section BEFORE the rail.
+          const target = state.sections[index - 1];
+          if (target) {
+            dropSectionId = target.id;
+            dropIndex = target.children.length;
+          } else {
+            // Above the first section: the first section (or the empty page).
+            dropSectionId = state.sections[0]?.id ?? null;
+            dropIndex = 0;
+          }
         },
         onSectionDrop: (event) => handleDrop(event),
         onSectionBodyDragOver: (event, sectionId) => {
@@ -6843,6 +7813,10 @@ function init(): void {
     try {
       mountTemplatePalette(templatePaletteContainer);
       registerInsertTemplateCallback((tpl) => {
+        if (!templateAllowed(tpl)) {
+          setStatus("This section contains blocks not allowed by site rules.");
+          return;
+        }
         addSectionAt(state.sections.length, tpl);
       });
     } catch (e) {
@@ -6884,6 +7858,20 @@ async function bootstrap(): Promise<void> {
       promptDownloadedUpdate();
     }
   });
+  // The startup check can resolve before this listener attaches; claim the
+  // cached status so the sidebar does not falsely say "Up to date".
+  window.zephus
+    .getLastUpdaterStatus()
+    .then((cached) => {
+      if (cached) {
+        updaterSnapshot = cached;
+        renderHomeStatusPanels();
+        refreshUpdaterControls();
+      }
+    })
+    .catch(() => {
+      /* non-fatal */
+    });
   refreshIcons();
 
   // Reopen last project if the user opted in and it still resolves. A failed
@@ -6899,6 +7887,11 @@ async function bootstrap(): Promise<void> {
 async function showOnboardingIfNew(): Promise<void> {
   const settings = await window.zephus.readGlobalSettings();
   if (settings.recentProjects.length > 0) return;
+  try {
+    if (localStorage.getItem("zephus.onboarding.dismissed") === "1") return;
+  } catch {
+    // Continue showing onboarding if storage is unavailable.
+  }
   showModal(
     "Welcome to Zephus",
     "Zephus builds real websites visually — no coding needed. " +
@@ -6916,7 +7909,18 @@ async function showOnboardingIfNew(): Promise<void> {
           if (tabCreate) tabCreate.click();
         },
       },
-      { label: "I'll look around first", kind: "ghost", onClick: closeModal },
+      {
+        label: "I'll look around first",
+        kind: "ghost",
+        onClick: () => {
+          try {
+            localStorage.setItem("zephus.onboarding.dismissed", "1");
+          } catch {
+            // Non-fatal; modal still closes.
+          }
+          closeModal();
+        },
+      },
     ],
   );
 }

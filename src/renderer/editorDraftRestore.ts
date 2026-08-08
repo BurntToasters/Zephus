@@ -54,7 +54,9 @@ function cleanupWarning(scope: "page" | "site", error?: string): string {
 }
 
 export function createEditorDraftRestoreActions(deps: EditorDraftRestoreDeps) {
-  async function maybeRestoreSiteDraft(): Promise<string | null> {
+  async function maybeRestoreSiteDraft(
+    options: { skipPrompt?: boolean } = {},
+  ): Promise<string | null> {
     const state = deps.getState();
     if (!state.project || !state.siteDocument) return null;
     const draft = await deps.zephus.readDraft(
@@ -64,6 +66,47 @@ export function createEditorDraftRestoreActions(deps: EditorDraftRestoreDeps) {
     );
     if (!draft.ok || !draft.draft?.content) return null;
     if (siteDraftContentMatchesSaved(draft.draft.content, state.siteDocument)) {
+      // The draft is stale (its content now equals the saved site — e.g. the
+      // user staged a change and reverted it). Leaving it on disk makes the
+      // home screen show a permanent "Unsaved Work Recovery" card whose
+      // "Resume Draft" silently does nothing; clear it.
+      const cleared = await deps.zephus.clearDraft(
+        state.project.path,
+        "site",
+        SITE_DRAFT_TARGET,
+      );
+      if (!cleared.ok) {
+        const warning = cleanupWarning("site", cleared.error);
+        deps.setStatus(warning);
+        return warning;
+      }
+      return null;
+    }
+    // Home-screen resume already asked the user; restore without re-prompting.
+    if (options.skipPrompt) {
+      try {
+        const restored = JSON.parse(draft.draft.content) as SiteDocument;
+        state.pendingSiteDocument = restored;
+        state.pendingSiteEditorKind = "shell";
+        state.recoveredSiteDraft = draft.draft;
+        trackSiteChange(state, "Recovered unsaved site settings");
+        markSiteDirty(state, true);
+        deps.onSiteDraftRestored();
+        deps.setStatus(
+          `Recovered site settings draft from ${new Date(draft.draft.savedAt).toLocaleString()}.`,
+        );
+      } catch {
+        const cleared = await deps.zephus.clearDraft(
+          state.project.path,
+          "site",
+          SITE_DRAFT_TARGET,
+        );
+        if (!cleared.ok) {
+          const warning = cleanupWarning("site", cleared.error);
+          deps.setStatus(warning);
+          return warning;
+        }
+      }
       return null;
     }
     const choice = await deps.confirmRestoreDraft(
@@ -115,12 +158,39 @@ export function createEditorDraftRestoreActions(deps: EditorDraftRestoreDeps) {
     page: string,
     pageLabel: string,
     rawCode: string,
+    options: { skipPrompt?: boolean } = {},
   ): Promise<PageDraftRestoreOutcome> {
     const state = deps.getState();
     if (!state.project) return { restored: false };
     const draft = await deps.zephus.readDraft(state.project.path, "page", page);
     if (!draft.ok || !draft.draft?.content) return { restored: false };
-    if (draft.draft.content === rawCode) return { restored: false };
+    if (draft.draft.content === rawCode) {
+      // Stale draft: its content now equals the saved page (user edited and
+      // reverted). Clear it so the home card does not linger forever.
+      const cleared = await deps.zephus.clearDraft(
+        state.project.path,
+        "page",
+        page,
+      );
+      if (!cleared.ok) {
+        const warning = cleanupWarning("page", cleared.error);
+        deps.setStatus(warning);
+        return { restored: false, cleanupWarning: warning };
+      }
+      return { restored: false };
+    }
+
+    // Home-screen resume already asked the user; restore without re-prompting.
+    if (options.skipPrompt) {
+      deps.setStatus(
+        `Recovered draft from ${new Date(draft.draft.savedAt).toLocaleString()}.`,
+      );
+      return {
+        restored: true,
+        restoredContent: draft.draft.content,
+        restoredDraft: draft.draft,
+      };
+    }
 
     const choice = await deps.confirmRestoreDraft(
       "Restore Page Draft",

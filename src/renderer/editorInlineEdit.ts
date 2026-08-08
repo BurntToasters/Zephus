@@ -50,8 +50,13 @@ export function updateLineValue(
     lines[index] = value;
   } else {
     const [left, right] = splitPair(lines[index] ?? "");
+    // "::" is the line's PAIR SEPARATOR, not legal inside one side: typing
+    // it into a value made the split shift on the next read (the label side
+    // silently absorbed the remainder) and compound on every edit. Normalize
+    // it to an em-dash so the user's intent survives verbatim instead.
+    const safe = value.replace(/::/g, "—");
     lines[index] =
-      pairSide === "left" ? `${value} :: ${right}` : `${left} :: ${value}`;
+      pairSide === "left" ? `${safe} :: ${right}` : `${left} :: ${safe}`;
   }
   return lines.join("\n");
 }
@@ -91,6 +96,9 @@ export function createInlineEditController(deps: InlineEditDeps) {
   // re-enter edit mode and collapse the user's text selection — e.g. when
   // double-clicking a word to highlight it).
   let isInlineEditing = false;
+  // The active session's commit function, so a save can flush the DOM edit
+  // into the section tree before serializing.
+  let activeFinish: (() => void) | null = null;
 
   /**
    * Applies an inline formatting command to the current selection.
@@ -327,8 +335,26 @@ export function createInlineEditController(deps: InlineEditDeps) {
       ? createInlineFormatToolbar(el, { allowLinks })
       : null;
 
+    // When focus moves INTO the toolbar (e.g. the link input), the text's blur
+    // handler must not end the session — but once focus leaves the toolbar
+    // entirely (click elsewhere on the canvas), the session must finish.
+    // Without this, the link-input hop (el -> input -> outside) never fires a
+    // blur on `el` and the session stays stuck, swallowing all canvas clicks.
+    const onToolbarFocusOut = (event: FocusEvent): void => {
+      const next = event.relatedTarget;
+      if (
+        next instanceof Node &&
+        (toolbar!.element.contains(next) || el.contains(next))
+      ) {
+        return;
+      }
+      finish();
+    };
+    toolbar?.element.addEventListener("focusout", onToolbarFocusOut);
+
     const cleanup = (): void => {
       isInlineEditing = false;
+      activeFinish = null;
       el.removeAttribute("contenteditable");
       el.removeAttribute("role");
       el.removeAttribute("aria-label");
@@ -336,6 +362,7 @@ export function createInlineEditController(deps: InlineEditDeps) {
       el.removeEventListener("blur", onBlur);
       el.removeEventListener("keydown", onKeydown);
       el.removeEventListener("paste", onPaste);
+      toolbar?.element.removeEventListener("focusout", onToolbarFocusOut);
       toolbar?.destroy();
     };
     const readValue = (): string =>
@@ -346,10 +373,15 @@ export function createInlineEditController(deps: InlineEditDeps) {
             allowLineBreaks:
               target.multiline === true && target.lineIndex === undefined,
           }).trim()
-        : el.innerText.trim();
+        : // Non-rich targets are single-line props (stat numbers/labels, icons).
+          // A pasted newline would corrupt line-encoded props (a "\n" inside
+          // one "left :: right" line shifts every following pair), so collapse
+          // it like the rich path does.
+          el.innerText.trim().replace(/\s*\n+\s*/g, " ");
     const finish = () => {
       if (finished) return;
       finished = true;
+      activeFinish = null;
       const newText = readValue();
       cleanup();
       if (newText !== original) {
@@ -364,6 +396,7 @@ export function createInlineEditController(deps: InlineEditDeps) {
     const cancel = (): void => {
       if (finished) return;
       finished = true;
+      activeFinish = null;
       el.innerText = original;
       cleanup();
       deps.renderCanvas();
@@ -381,6 +414,11 @@ export function createInlineEditController(deps: InlineEditDeps) {
       finish();
     };
     const onKeydown = (event: KeyboardEvent): void => {
+      // IME composition (CJK etc.): Enter confirms a candidate and Esc
+      // cancels it — neither must finish/cancel the edit session mid-
+      // composition (previously Enter committed partial text and Esc wiped
+      // the whole edit).
+      if (event.isComposing) return;
       if (event.key === "Escape") {
         event.preventDefault();
         cancel();
@@ -412,6 +450,7 @@ export function createInlineEditController(deps: InlineEditDeps) {
         }
       }
     };
+    activeFinish = finish;
     el.addEventListener("blur", onBlur);
     el.addEventListener("keydown", onKeydown);
     el.addEventListener("paste", onPaste);
@@ -560,6 +599,14 @@ export function createInlineEditController(deps: InlineEditDeps) {
   return {
     /** True while a contenteditable edit session is active. */
     isInlineEditing: (): boolean => isInlineEditing,
+    /**
+     * Commits the active edit session into the block tree immediately (used
+     * before a save, so the serialized content includes the in-flight edit).
+     * No-op when no session is active.
+     */
+    finishInlineEdit: (): void => {
+      activeFinish?.();
+    },
     attachInlineEditors,
     startFirstInlineEdit,
   };

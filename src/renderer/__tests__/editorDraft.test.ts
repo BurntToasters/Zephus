@@ -90,4 +90,35 @@ describe("editorDraft", () => {
     vi.advanceTimersByTime(DRAFT_WRITE_DEBOUNCE_MS);
     expect(writeDraft).not.toHaveBeenCalled();
   });
+
+  it("swallows rejected draft writes (fire-and-forget)", async () => {
+    // Regression: a rejected IPC draft write must not become an unhandled
+    // rejection — the timer fires and forgets by design.
+    const state = createEditorSession();
+    state.project = { path: "/proj", name: "P" } as ProjectOpenResult;
+    state.page = "index.astro";
+    state.pageDirty = true;
+    state.siteDirty = true;
+    state.siteDocument = { design: {} } as SiteDocument;
+
+    const writeDraft = vi.fn(async () => {
+      throw new Error("project no longer approved");
+    });
+    let unhandled: unknown = null;
+    const onUnhandled = (event: PromiseRejectionEvent) => {
+      unhandled = event.reason;
+    };
+    window.addEventListener("unhandledrejection", onUnhandled);
+    scheduleEditorDraftWrite(state, {
+      writeDraft,
+      pageDraftContent: () => "x",
+      siteDraftContent: () => "y",
+    });
+    await vi.advanceTimersByTimeAsync(DRAFT_WRITE_DEBOUNCE_MS);
+    window.removeEventListener("unhandledrejection", onUnhandled);
+
+    // Both the page and the site draft writes are attempted and rejected.
+    expect(writeDraft).toHaveBeenCalledTimes(2);
+    expect(unhandled).toBeNull();
+  });
 });

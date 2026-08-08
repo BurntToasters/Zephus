@@ -206,23 +206,6 @@ const api = {
   ): Promise<{ ok: boolean; content?: string; error?: string }> =>
     ipcRenderer.invoke(IPC.fileRead, projectPath, rel),
 
-  writeFile: (
-    projectPath: string,
-    rel: string,
-    content: string,
-  ): Promise<OperationResult> =>
-    ipcRenderer.invoke(IPC.fileWrite, projectPath, rel, content),
-
-  importImage: (
-    projectPath: string,
-    publicDir: string,
-  ): Promise<{
-    ok: boolean;
-    webPath?: string;
-    canceled?: boolean;
-    error?: string;
-  }> => ipcRenderer.invoke(IPC.importImage, projectPath, publicDir),
-
   importAssets: (
     projectPath: string,
     publicDir: string,
@@ -436,8 +419,10 @@ const api = {
   cancelUpdateDownload: (): Promise<unknown> =>
     ipcRenderer.invoke(IPC.updaterCancel),
   installUpdate: (): Promise<unknown> => ipcRenderer.invoke(IPC.updaterInstall),
+  getLastUpdaterStatus: (): Promise<unknown> =>
+    ipcRenderer.invoke(IPC.updaterStatusGet),
   getAppVersion: (): Promise<string> => ipcRenderer.invoke(IPC.getAppVersion),
-  openConfigFolder: (): Promise<unknown> =>
+  openConfigFolder: (): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke(IPC.openConfigFolder),
 
   getNodeStatus: (): Promise<unknown> => ipcRenderer.invoke(IPC.nodeStatus),

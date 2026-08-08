@@ -23,8 +23,20 @@ export function isBlockTypeAllowed(
 export function handlePlainTextPaste(event: ClipboardEvent): void {
   event.preventDefault();
   const text = event.clipboardData?.getData("text/plain") ?? "";
-  if (!text) return;
-  document.execCommand("insertText", false, text);
+  if (text) {
+    document.execCommand("insertText", false, text);
+    return;
+  }
+  // Some apps expose only text/html (no text/plain fallback); without this,
+  // the native paste is already suppressed and the paste silently vanishes.
+  const html = event.clipboardData?.getData("text/html") ?? "";
+  if (html) {
+    // insertHTML would smuggle arbitrary markup into the contenteditable; only
+    // its text content is wanted here, matching the plain-text contract.
+    const container = document.createElement("div");
+    container.innerHTML = html;
+    document.execCommand("insertText", false, container.textContent ?? "");
+  }
 }
 
 export function syncUndoRedoToolbar(options: {

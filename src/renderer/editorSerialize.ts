@@ -15,7 +15,7 @@ export interface SplitManagedPage {
 
 /** Quote-aware tag matcher: a `>` inside a quoted attribute must not end the
  *  tag (mirrors the main-process parser). */
-const TAG_PATTERN_SOURCE = "(?:[^>\"'\\n]|\"[^\"]*\"|'[^']*')*>";
+const TAG_PATTERN_SOURCE = "(?:[^>\"']|\"[^\"]*\"|'[^']*')*>";
 
 /**
  * Splits raw managed page source into Astro frontmatter, outer frame, and inner
@@ -37,7 +37,7 @@ export function splitManagedPageSource(raw: string): SplitManagedPage {
 
   const bodyMatch = rest.match(
     new RegExp(
-      `([\\s\\S]*<body\\b${TAG_PATTERN_SOURCE})([\\s\\S]*?)(<\\/body>[\\s\\S]*)`,
+      `([\\s\\S]*?<body\\b${TAG_PATTERN_SOURCE})([\\s\\S]*?)(<\\/body>[\\s\\S]*)`,
       "i",
     ),
   );
@@ -47,15 +47,31 @@ export function splitManagedPageSource(raw: string): SplitManagedPage {
     inner = bodyMatch[2] ?? "";
     frame.suffix = bodyMatch[3] ?? "";
   } else {
+    // Generic root wrapper (e.g. <BaseLayout>): case-insensitive on both the
+    // open and close tags, matching extractManagedInner in the main process.
+    // The LAST closing tag ends the frame; content after it is hand-authored
+    // and stays part of the editable inner.
     const rootMatch = rest.match(
       new RegExp(
-        `^(\\s*<([A-Za-z][\\w.-]*)\\b${TAG_PATTERN_SOURCE})([\\s\\S]*)(<\\/\\2>\\s*)$`,
+        `^(\\s*<([A-Za-z][\\w.-]*)\\b${TAG_PATTERN_SOURCE})([\\s\\S]*)`,
+        "i",
       ),
     );
-    if (rootMatch) {
+    const openEnd = rootMatch?.[1]?.length ?? 0;
+    const openName = rootMatch?.[2];
+    const lastClose = openName
+      ? [...rest.matchAll(new RegExp(`</${openName}\\s*>`, "gi"))].pop()
+      : undefined;
+    if (
+      rootMatch &&
+      lastClose &&
+      lastClose.index !== undefined &&
+      lastClose.index >= openEnd &&
+      /^\s*$/.test(rest.slice(lastClose.index + lastClose[0].length))
+    ) {
       frame.prefix = rootMatch[1] ?? "";
-      inner = rootMatch[3] ?? "";
-      frame.suffix = rootMatch[4] ?? "";
+      inner = rest.slice(openEnd, lastClose.index);
+      frame.suffix = rest.slice(lastClose.index);
     } else {
       inner = rest;
     }

@@ -4,9 +4,9 @@ exports[`build render parity (renderBlockNode goldens) > renders accordion-17 to
 
 exports[`build render parity (renderBlockNode goldens) > renders accordion-18 to stable markup 1`] = `"<div data-zephus-id="fix-accordion" data-zephus-block="accordion" data-zephus-props="%7B%22items%22%3A%22Q1%20%3A%3A%20A1%5CnQ2%20%3A%3A%20A2%22%2C%22cls%22%3A%22%22%7D" class="zephus-accordion"><details><summary>Q1</summary><p>A1</p></details><details><summary>Q2</summary><p>A2</p></details></div>"`;
 
-exports[`build render parity (renderBlockNode goldens) > renders button-3 to stable markup 1`] = `"<a data-zephus-id="fix-button" data-zephus-block="button" data-zephus-props="%7B%22text%22%3A%22Go%22%2C%22href%22%3A%22%2Fcontact%22%2C%22cls%22%3A%22%22%7D" href="/contact">Go</a>"`;
+exports[`build render parity (renderBlockNode goldens) > renders button-3 to stable markup 1`] = `"<a data-zephus-id="fix-button" data-zephus-block="button" data-zephus-props="%7B%22text%22%3A%22Go%22%2C%22href%22%3A%22%2Fcontact%22%2C%22cls%22%3A%22%22%7D" class="button" href="/contact">Go</a>"`;
 
-exports[`build render parity (renderBlockNode goldens) > renders button-4 to stable markup 1`] = `"<a data-zephus-id="fix-button" data-zephus-block="button" data-zephus-props="%7B%22text%22%3A%22Bad%22%2C%22href%22%3A%22javascript%3Aalert(1)%22%2C%22cls%22%3A%22%22%7D" href="#">Bad</a>"`;
+exports[`build render parity (renderBlockNode goldens) > renders button-4 to stable markup 1`] = `"<a data-zephus-id="fix-button-bad" data-zephus-block="button" data-zephus-props="%7B%22text%22%3A%22Bad%22%2C%22href%22%3A%22javascript%3Aalert(1)%22%2C%22cls%22%3A%22%22%7D" class="button" href="#">Bad</a>"`;
 
 exports[`build render parity (renderBlockNode goldens) > renders card-9 to stable markup 1`] = `"<article data-zephus-id="fix-card" data-zephus-block="card" data-zephus-props="%7B%22title%22%3A%22Card%22%2C%22text%22%3A%22Body%22%2C%22cls%22%3A%22%22%7D"><h3>Card</h3><p>Body</p></article>"`;
 

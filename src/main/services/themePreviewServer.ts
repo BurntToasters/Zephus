@@ -26,10 +26,13 @@ interface RunningThemePreviewServer {
 }
 
 let current: RunningThemePreviewServer | null = null;
-// Serializes concurrent ensure calls: two callers must not both listen(0) —
-// the loser would leak an open port and its `current` assignment would be
-// overwritten.
-let pendingEnsure: Promise<ThemePreviewServerResult> | null = null;
+// Per-root pending promises: a second caller for the same root shares the
+// in-flight listen, while a caller for a DIFFERENT root no longer receives
+// the wrong bundle (previously the single pending promise served everyone).
+const pendingEnsures = new Map<string, Promise<ThemePreviewServerResult>>();
+// Bumped on every stop; a listen callback that observes a newer generation
+// knows a stop raced its startup and must not register as `current`.
+let serverGeneration = 0;
 
 export function getThemePreviewDistDir(): string {
   return path.join(__dirname, "..", "..", "..", "template-previews", "dist");
@@ -167,11 +170,13 @@ export function ensureThemePreviewServer(
     });
   }
 
+  const shared = pendingEnsures.get(resolvedRoot);
+  if (shared) return shared;
+
   if (current) stopThemePreviewServer();
+  const generation = ++serverGeneration;
 
-  if (pendingEnsure) return pendingEnsure;
-
-  pendingEnsure = new Promise<ThemePreviewServerResult>((resolve) => {
+  const pending = new Promise<ThemePreviewServerResult>((resolve) => {
     const server = http.createServer(
       createThemePreviewRequestHandler(resolvedRoot),
     );
@@ -192,6 +197,22 @@ export function ensureThemePreviewServer(
     });
 
     server.listen(0, HOST, () => {
+      if (generation !== serverGeneration) {
+        // stopThemePreviewServer raced the listen: do not register this
+        // server, or an orphaned listener would serve a bundle nobody bound.
+        try {
+          server.close();
+        } catch {
+          /* already closed */
+        }
+        resolve({
+          ok: false,
+          baseUrl: null,
+          error:
+            "Theme preview server was stopped before it finished starting.",
+        });
+        return;
+      }
       const address = server.address() as AddressInfo | null;
       if (!address) {
         server.close();
@@ -208,13 +229,17 @@ export function ensureThemePreviewServer(
       resolve({ ok: true, baseUrl });
     });
   }).finally(() => {
-    pendingEnsure = null;
+    if (pendingEnsures.get(resolvedRoot) === pending) {
+      pendingEnsures.delete(resolvedRoot);
+    }
   });
+  pendingEnsures.set(resolvedRoot, pending);
 
-  return pendingEnsure;
+  return pending;
 }
 
 export function stopThemePreviewServer(): void {
+  serverGeneration += 1;
   if (!current) return;
   const { server } = current;
   current = null;

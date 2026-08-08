@@ -46,6 +46,8 @@ export interface GitStatus {
   zephusIgnored?: boolean;
   /** True when the project folder is not a git repository. */
   notARepository?: boolean;
+  /** True when the repo has at least one remote (push is possible). */
+  hasRemote?: boolean;
   error?: string;
   /** Commits on the current branch not on @{upstream} (when upstream is set). */
   ahead?: number;
@@ -385,6 +387,8 @@ export interface FindReplaceResult {
   ok: boolean;
   matches: SearchMatch[];
   totalMatches: number;
+  /** Pages with matches that replaceAll will skip (detached/out-of-sync). */
+  skippedDetachedPages?: number;
   error?: string;
 }
 

@@ -59,8 +59,16 @@ export function readGlobalSettings(): GlobalSettings {
     // breaks).
     theme,
     recentProjects: Array.isArray(data.recentProjects)
-      ? data.recentProjects
+      ? // Hand-edited settings.json must not crash the project list: entries
+        // that are not strings (e.g. `123`) would throw in path.resolve.
+        data.recentProjects.filter(
+          (entry): entry is string => typeof entry === "string" && entry !== "",
+        )
       : [],
+    lastOpenedProject:
+      typeof data.lastOpenedProject === "string"
+        ? data.lastOpenedProject
+        : null,
   };
 }
 

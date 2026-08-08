@@ -26,7 +26,7 @@ export interface SettingsModalState {
   onPickNodePath: () => void | Promise<void>;
   onAutoNodePath: () => void | Promise<void>;
   onOpenProductionLicenses: () => void;
-  onOpenConfigFolder: () => void;
+  onOpenConfigFolder: () => void | Promise<void>;
 }
 
 function buttonClass(tone: SettingsModalAction["tone"]): string {

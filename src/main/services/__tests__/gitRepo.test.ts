@@ -44,8 +44,13 @@ describe("git service (real repository)", () => {
     expect(status.detachedHead).toBe(false);
     expect(status.branch).toBeTruthy();
     expect(status.modified).toEqual([]);
-    expect(status.added).toEqual([]);
     expect(status.deleted).toEqual([]);
+    // initGitRepo writes a safe default .gitignore (node_modules/, dist/,
+    // .env) so "Commit All" can never stage secrets or build output.
+    expect(status.added).toEqual([".gitignore"]);
+    expect(fs.readFileSync(path.join(repoDir, ".gitignore"), "utf8")).toContain(
+      "node_modules/",
+    );
   });
 
   it("classifies working-tree changes after a commit", async () => {
@@ -90,6 +95,25 @@ describe("git service (real repository)", () => {
 
     const status = await getGitStatus(repoDir);
     expect(status.added).toEqual(["skip.txt"]);
+  });
+
+  it("reports renamed files under their new path", async () => {
+    git(["init", "-q", "-b", "main"]);
+    git(["config", "user.email", "t@e.c"]);
+    git(["config", "user.name", "T"]);
+    fs.writeFileSync(path.join(repoDir, "old.txt"), "x");
+    await commitAllChanges(repoDir, "first");
+    fs.renameSync(path.join(repoDir, "old.txt"), path.join(repoDir, "new.txt"));
+    // Stage the rename so porcelain v1 reports "R  old.txt -> new.txt"
+    // (identical content so git's rename detection matches).
+    execFileSync("git", ["-C", repoDir, "add", "-A"]);
+
+    const status = await getGitStatus(repoDir);
+    // Regression: porcelain v1 emits "R  old.txt -> new.txt" — the old
+    // parsing kept the literal "old.txt -> new.txt" string, which per-path
+    // commits then failed to stage.
+    expect(status.modified).toContain("new.txt");
+    expect(status.modified.some((p) => p.includes("->"))).toBe(false);
   });
 
   it("pushes and pulls through a bare remote", async () => {
@@ -150,5 +174,75 @@ describe("git service (real repository)", () => {
     const result = await commitProjectPaths(repoDir, "msg", []);
     expect(result.ok).toBe(false);
     expect(result.error).toContain("Select at least one file");
+  });
+
+  it("refuses empty or whitespace commit messages", async () => {
+    git(["init", "-q", "-b", "main"]);
+    fs.writeFileSync(path.join(repoDir, "a.txt"), "x");
+    const empty = await commitAllChanges(repoDir, "   ");
+    expect(empty.ok).toBe(false);
+    expect(empty.error).toContain("Commit message is required");
+    const bare = await commitProjectPaths(repoDir, "", ["a.txt"]);
+    expect(bare.ok).toBe(false);
+  });
+
+  it("refuses push and pull in detached HEAD", async () => {
+    git(["init", "-q", "-b", "main"]);
+    git(["config", "user.email", "t@e.c"]);
+    git(["config", "user.name", "T"]);
+    fs.writeFileSync(path.join(repoDir, "a.txt"), "x");
+    await commitAllChanges(repoDir, "first");
+    execFileSync("git", ["-C", repoDir, "checkout", "-q", "--detach", "HEAD"]);
+
+    const pushed = await pushCurrentBranch(repoDir);
+    expect(pushed.ok).toBe(false);
+    expect(pushed.error).toContain("detached HEAD");
+    const pulled = await pullCurrentBranch(repoDir);
+    expect(pulled.ok).toBe(false);
+    expect(pulled.error).toContain("detached HEAD");
+  });
+
+  it("refuses push and pull when git is unavailable", async () => {
+    // A non-repository directory reports available:false.
+    const plain = path.join(tmpDir, "plain");
+    fs.mkdirSync(plain, { recursive: true });
+    const pushed = await pushCurrentBranch(plain);
+    expect(pushed.ok).toBe(false);
+    const pulled = await pullCurrentBranch(plain);
+    expect(pulled.ok).toBe(false);
+  });
+
+  it("fails cleanly when no remote exists for a first push", async () => {
+    git(["init", "-q", "-b", "main"]);
+    git(["config", "user.email", "t@e.c"]);
+    git(["config", "user.name", "T"]);
+    fs.writeFileSync(path.join(repoDir, "a.txt"), "x");
+    await commitAllChanges(repoDir, "first");
+
+    const pushed = await pushCurrentBranch(repoDir);
+    expect(pushed.ok).toBe(false);
+  });
+
+  it("commit fails cleanly when there is nothing to commit", async () => {
+    git(["init", "-q", "-b", "main"]);
+    git(["config", "user.email", "t@e.c"]);
+    git(["config", "user.name", "T"]);
+    fs.writeFileSync(path.join(repoDir, "a.txt"), "x");
+    await commitAllChanges(repoDir, "first");
+
+    const second = await commitAllChanges(repoDir, "nothing new");
+    expect(second.ok).toBe(false);
+    expect(second.error.length).toBeGreaterThan(0);
+  });
+
+  it("fetch failure still reports local ahead/behind", async () => {
+    git(["init", "-q", "-b", "main"]);
+    git(["config", "user.email", "t@e.c"]);
+    git(["config", "user.name", "T"]);
+    fs.writeFileSync(path.join(repoDir, "a.txt"), "x");
+    await commitAllChanges(repoDir, "first");
+    // No remote configured: fetch fails, status must still be available.
+    const status = await getGitStatus(repoDir, { fetchRemote: true });
+    expect(status.available).toBe(true);
   });
 });

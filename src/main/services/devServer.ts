@@ -48,6 +48,15 @@ export class DevServerUrlScanner {
     if (after === undefined && !match[0].endsWith("/")) return null;
     return match[0];
   }
+
+  /** The port of the most recent URL seen in the buffered output, if any. */
+  pendingPort(): number | null {
+    const global = new RegExp(URL_PATTERN.source, URL_PATTERN.flags + "g");
+    const matches = [...this.buffer.matchAll(global)];
+    const last = matches[matches.length - 1];
+    const port = last?.[0].match(/:(\d+)/)?.[1];
+    return port ? Number(port) : null;
+  }
 }
 
 interface RunningServer {
@@ -157,11 +166,15 @@ async function startDevServerProcess(
 
     return new Promise<DevServerStartResult>((resolve) => {
       let settled = false;
+      // Declared up front: finish() can run before the timeout is assigned
+      // (synchronous spawn failure below) — the TDZ crash would otherwise
+      // reject the promise with the wrong shape.
+      let timeout: NodeJS.Timeout | null = null;
       const finish = (r: DevServerStartResult): void => {
         if (settled) return;
         settled = true;
         starting = false;
-        clearTimeout(timeout);
+        if (timeout) clearTimeout(timeout);
         resolve(r);
       };
       // A stop issued while we were probing Node must cancel this start.
@@ -174,7 +187,12 @@ async function startDevServerProcess(
         });
         return;
       }
-      const npm = npmCommand(["run", "dev"], process.platform, spawnEnv);
+      const npm = npmCommand(
+        ["run", "dev"],
+        process.platform,
+        spawnEnv,
+        projectPath,
+      );
       let child: ChildProcess;
       try {
         child = spawn(npm.command, npm.args, {
@@ -202,13 +220,19 @@ async function startDevServerProcess(
 
       current = { projectPath, child, url: null };
 
-      const timeout = setTimeout(() => {
+      timeout = setTimeout(() => {
         stopDevServer();
+        // Distinguish "a zombie/foreign process holds the port" from a
+        // server that failed for another reason: probe the last URL's port.
+        const port = urlScanner.pendingPort();
+        const hint = port
+          ? ` (the port ${port} is already in use — another dev server or process may be holding it)`
+          : "";
         finish({
           ok: false,
           url: null,
           alreadyRunning: false,
-          error: `Dev server did not report a URL within ${STARTUP_TIMEOUT_MS / 1000}s.`,
+          error: `Dev server did not report a URL within ${STARTUP_TIMEOUT_MS / 1000}s${hint}.`,
         });
       }, STARTUP_TIMEOUT_MS);
 
@@ -280,6 +304,16 @@ export function onDevServerExit(listener: ServerExitListener): () => void {
   };
 }
 
+/**
+ * Force-kills a process tree via taskkill (Windows). Extracted so the win32
+ * stop path is testable on any platform.
+ */
+export function taskkillProcessTree(pid: number): void {
+  spawn("taskkill", ["/pid", String(pid), "/t", "/f"], {
+    windowsHide: true,
+  });
+}
+
 export function stopDevServer(): void {
   starting = false;
   stopEpoch += 1;
@@ -292,9 +326,7 @@ export function stopDevServer(): void {
     // Walk and force-kill the whole process tree (npm.cmd → node → astro).
     if (pid) {
       try {
-        spawn("taskkill", ["/pid", String(pid), "/t", "/f"], {
-          windowsHide: true,
-        });
+        taskkillProcessTree(pid);
       } catch (error) {
         log.warn("taskkill failed, falling back to child.kill", error);
         try {

@@ -35,6 +35,54 @@
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
+/* Settings theme is renderer-wide, not decoration-only. Keep token names
+   stable so existing rules switch without a second stylesheet. */
+[data-theme="light"] {
+  --bg: #f4f4f5;
+  --bg-app: #e4e4e7;
+  --bg-alt: #ffffff;
+  --panel: #ffffff;
+  --panel-card: #f4f4f5;
+  --border: #d4d4d8;
+  --border-focus: #a1a1aa;
+  --text: #18181b;
+  --muted: #52525b;
+  --accent: #4338ca;
+  --accent-hover: #3730a3;
+  --accent-bg: rgba(67, 56, 202, 0.12);
+  --shadow-sm: 0 1px 2px 0 rgba(24, 24, 27, 0.08);
+  --shadow-md:
+    0 4px 6px -1px rgba(24, 24, 27, 0.12),
+    0 2px 4px -1px rgba(24, 24, 27, 0.08);
+  --shadow-lg:
+    0 10px 15px -3px rgba(24, 24, 27, 0.14),
+    0 4px 6px -2px rgba(24, 24, 27, 0.08);
+}
+
+@media (prefers-color-scheme: light) {
+  [data-theme="system"] {
+    --bg: #f4f4f5;
+    --bg-app: #e4e4e7;
+    --bg-alt: #ffffff;
+    --panel: #ffffff;
+    --panel-card: #f4f4f5;
+    --border: #d4d4d8;
+    --border-focus: #a1a1aa;
+    --text: #18181b;
+    --muted: #52525b;
+    --accent: #4338ca;
+    --accent-hover: #3730a3;
+    --accent-bg: rgba(67, 56, 202, 0.12);
+    --shadow-sm: 0 1px 2px 0 rgba(24, 24, 27, 0.08);
+    --shadow-md:
+      0 4px 6px -1px rgba(24, 24, 27, 0.12),
+      0 2px 4px -1px rgba(24, 24, 27, 0.08);
+    --shadow-lg:
+      0 10px 15px -3px rgba(24, 24, 27, 0.14),
+      0 4px 6px -2px rgba(24, 24, 27, 0.08);
+  }
+}
+
 * {
   box-sizing: border-box;
 }
@@ -116,6 +164,22 @@ body {
     ),
     linear-gradient(180deg, #0a0a12 0%, #09090b 42%, #060608 100%);
   height: 100vh;
+}
+
+[data-theme="light"] #view-start {
+  background:
+    radial-gradient(circle at 14% 16%, rgba(67, 56, 202, 0.12), transparent 38%),
+    radial-gradient(circle at 84% 12%, rgba(5, 150, 105, 0.08), transparent 32%),
+    linear-gradient(180deg, #ffffff 0%, #f4f4f5 42%, #e4e4e7 100%);
+}
+
+@media (prefers-color-scheme: light) {
+  [data-theme="system"] #view-start {
+    background:
+      radial-gradient(circle at 14% 16%, rgba(67, 56, 202, 0.12), transparent 38%),
+      radial-gradient(circle at 84% 12%, rgba(5, 150, 105, 0.08), transparent 32%),
+      linear-gradient(180deg, #ffffff 0%, #f4f4f5 42%, #e4e4e7 100%);
+  }
 }
 
 .start-atmosphere {
@@ -3046,6 +3110,26 @@ body {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   gap: 0.75rem;
+}
+/* Auto-grid mirror of the build's `section:has(> .zephus-feature/.zephus-pricing)`
+   rule: repeated feature/pricing cards lay out in columns on the canvas too,
+   or the user designs full-width stacks that the published site renders as a
+   side-by-side grid. Block shells (with their chrome) are the grid items;
+   sibling headings/paragraphs span all columns like the build. */
+.canvas .section-body:has(> .block > .block-preview > .zephus-feature),
+.canvas .section-body:has(> .block > .block-preview > .zephus-pricing) {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.75rem;
+  align-items: start;
+}
+.canvas
+  .section-body:has(> .block > .block-preview > .zephus-feature)
+  > .block:has(> .block-preview > :is(h1, h2, h3, h4, p, .lead)),
+.canvas
+  .section-body:has(> .block > .block-preview > .zephus-pricing)
+  > .block:has(> .block-preview > :is(h1, h2, h3, h4, p, .lead)) {
+  grid-column: 1 / -1;
 }
 .canvas .zephus-gallery img {
   width: 100%;

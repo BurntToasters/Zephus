@@ -43,6 +43,7 @@ interface GitStatus {
   deleted: string[];
   zephusIgnored?: boolean;
   notARepository?: boolean;
+  hasRemote?: boolean;
   error?: string;
   ahead?: number;
   behind?: number;
@@ -373,6 +374,8 @@ interface FindReplaceResult {
   ok: boolean;
   matches: SearchMatch[];
   totalMatches: number;
+  /** Pages with matches that replaceAll will skip (detached/out-of-sync). */
+  skippedDetachedPages?: number;
   error?: string;
 }
 
@@ -549,7 +552,7 @@ interface ZephusApi {
   readGlobalSettings(): Promise<GlobalSettings>;
   writeGlobalSettings(settings: GlobalSettings): Promise<OperationResult>;
   removeRecentProject(projectPath: string): Promise<GlobalSettings>;
-  readRepoSettings(projectPath: string): Promise<unknown>;
+  readRepoSettings(projectPath: string): Promise<RepoSettings>;
   getMergedSettings(projectPath: string): Promise<{
     global: GlobalSettings;
     repo: { schemaVersion: number; editorRules: Record<string, unknown> };
@@ -561,20 +564,6 @@ interface ZephusApi {
     projectPath: string,
     rel: string,
   ): Promise<{ ok: boolean; content?: string; error?: string }>;
-  writeFile(
-    projectPath: string,
-    rel: string,
-    content: string,
-  ): Promise<OperationResult>;
-  importImage(
-    projectPath: string,
-    publicDir: string,
-  ): Promise<{
-    ok: boolean;
-    webPath?: string;
-    canceled?: boolean;
-    error?: string;
-  }>;
   importAssets(
     projectPath: string,
     publicDir: string,
@@ -686,8 +675,15 @@ interface ZephusApi {
   downloadUpdate(): Promise<unknown>;
   cancelUpdateDownload(): Promise<unknown>;
   installUpdate(): Promise<unknown>;
+  /** Cached updater status from main — closes the startup-check race. */
+  getLastUpdaterStatus(): Promise<{
+    status: string;
+    version?: string;
+    percent?: number;
+    error?: string;
+  } | null>;
   getAppVersion(): Promise<string>;
-  openConfigFolder(): Promise<unknown>;
+  openConfigFolder(): Promise<OperationResult>;
   getNodeStatus(): Promise<NodeCheckResult>;
   pickNodePath(): Promise<NodeCheckResult>;
   setNodePath(customPath: string | null): Promise<NodeCheckResult>;
@@ -705,4 +701,7 @@ interface Window {
   zephus: ZephusApi;
   __zephusRunEditorSmoke?: () => string[];
   refreshIcons?: () => void;
+  /** Set by the engine so programmatic quits (update install) bypass the
+   *  unsaved-work close guard. */
+  zephusMarkForceCloseAllowed?: () => void;
 }

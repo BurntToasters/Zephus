@@ -23,6 +23,117 @@
 
 ## Changes in `0.1.0 (unreleased):`
 
+### Audit round 9 — startup, shortcuts, git panel, updater, themes, templates
+
+**Quit/close (fixed):**
+- **The app silently refused to quit with unsaved work**: Electron cancels the close when beforeunload is prevented, with NO dialog — users clicked the close button and nothing happened (looked like a hang). Closing now surfaces the app's own save/discard/cancel modal and, once resolved, closes. Update installs resolve unsaved work first so a pending quit can never strand the update.
+
+**Keyboard (fixed):**
+- **Cmd+Z/Y in code mode hijacked plain-input undo** (find field, page-settings prompt, rename box): the code branch ran before the input-focus guard, reverting the CODE DOCUMENT instead of the field. Guard mirrored.
+- **Canvas shortcuts fired while a modal was open** — Cmd+X cut a block from the page behind the settings modal; Cmd+Z reverted the page; Delete removed blocks; Cmd+S saved the page; Cmd+F stacked find over the modal. All editor shortcuts are now inert while any modal is open (native input copy/undo inside modals still works).
+- **"h"/"?" opened the help modal from any focused element** (palette items, block shells, toolbar buttons). Now only fires from the page background or canvas.
+
+**Git panel (fixed):**
+- **Non-ASCII filenames (ü, 中文, 日本語) broke the panel and per-file commits**: porcelain's C-escaped paths (`\303\274ber.md`) were never unquoted and `git add -- "\303\274ber.md"` failed. Git now runs with `core.quotePath=false` + `LC_ALL=C` (also fixes English-only error matching on localized git — the Init button never rendered for German/French git).
+- **Commit staged the last-saved state while the editor held newer edits** (commit of a half-written file mid-save too). Commit is now blocked while the editor is dirty, with an explanation.
+- **Push without a remote was a guaranteed-error dead end** (button shown, every click failed). The panel now detects "no remote" and explains it instead of showing the button.
+- **`git init` created no .gitignore** — "Commit All" could stage node_modules/ and .env. A safe default is now written.
+
+**Updater (fixed):**
+- **The startup check raced the renderer's listener** — the "update available" event was dropped and the sidebar falsely said "Up to date". Main now caches the last status; the renderer claims it after boot.
+- **A hung download deadlocked the updater forever** ("Downloading (x%)" permanently, only recovery = Cancel or restart). The transfer now cancels after 30 minutes with a real error.
+- **Cancel showed "Up to date"** (the "cancelled" status fell into the default branch). Now says "Update cancelled".
+- **Quit-and-install could lose up to 800ms of unsaved edits** (pending draft timer destroyed by the process exit). Unsaved work resolves before install.
+
+**Startup (fixed):**
+- **The auto-restore of the last project swallowed user clicks** — clicking a different project during the ~1s restore silently opened the wrong one. Explicit user clicks are now queued and win over the automatic restore.
+- The splash screen can no longer leave zero windows if the renderer fails to paint.
+
+**Themes/templates (fixed):**
+- **Every fresh site now ships a real 404 page** (previously no theme scaffolded one — visitors hit an unbranded generic 404).
+- **The block allowlist (editorRules.allowedBlocks) was bypassed by Add Hero / quick-insert / Add Section templates** — forbidden blocks landed anyway. Template paths now filter by the allowlist.
+- The dev-server URL parser no longer false-timeouts a healthy server at a chunk boundary.
+
+### Audit round 8 — canvas internals, selection, inline editor, properties, resize, find-replace
+
+**Canvas ≠ build (fixed):**
+- **Section visual styles never reached the canvas** — every themed hero/band showed a flat 14px section with left-aligned text while the published site rendered the full surface band, centered, with 4.5rem padding. The canvas content area now carries the section's background/padding/align/radius/shadow.
+- **`--zephus-container-width` and `--zephus-shadow` were never set on the canvas** — styled sections rendered full-bleed there (build caps them at the container column). Both tokens now apply.
+- **The feature/pricing auto-grid existed only in the build** — the user designed full-width stacked cards that the published site laid out side-by-side. The canvas now mirrors the `:has()` auto-grid (sibling headings span all columns, like the build).
+- **Percentage block widths compounded 2× through the preview wrapper** (60% rendered as ~36% on canvas). Fixed via the section-visual refactor + transparent placeholder: local asset images no longer fire a document-URL request with a broken-icon flash (`src=""`), and a failed asset read is no longer cached forever — the canvas retries instead of serving a permanently broken image.
+
+**Undo/redo (fixed):**
+- **Clicking a resize handle without dragging pushed a phantom undo entry, dirtied the page, and wiped the redo stack** — and dead arrow-key presses at MIN/MAX did the same. The undo snapshot is now pushed lazily on the first actual size change (both pointer and keyboard paths).
+- Stale `selectedId` survived the code→visual switch (nothing selected on canvas while the inspector showed section 0's props; layers showed a pre-code-mode selection). The rebuild now clears both ids.
+
+**Drop placement (fixed):**
+- **Dropping into the gap between two sections landed at the END of the page** — the "Add section" rails sat outside any section shell, so their drops fell through to the append-to-last branch; the indicator showed the correct slot while the commit went elsewhere. Rails now target their own position (blocks go into the section before the rail).
+- **Template drags showed a block-line indicator but inserted after the whole section** — section shells now respond to template payloads with the correct section-slot indicator, and the drop honors it.
+
+**Inline editor (fixed):**
+- **IME composition (CJK input)**: Enter confirmed a candidate and Esc cancelled — both fired mid-composition, committing half-typed text or wiping the edit. `isComposing` now guards both.
+- **"::" typed into a stat/accordion pair value corrupted the pair** — the label side silently absorbed the remainder and compounded on every edit. The separator is now normalized to an em-dash at commit.
+
+**Property panels (fixed):**
+- **Post-list "Folder"/"Maximum posts" lied after clearing** — a cleared folder (all posts) displayed as `/posts`; cleared limit displayed as `5`. The panel now shows the actual stored value.
+- **Spacer "Height" was a plain text field** that shipped unitless values as invalid CSS (spacer collapsed to 0px) and was silently shadowed by the Layout panel's Height. It's now a px-aware field that says when it's overridden.
+- **Gallery "Columns" accepted garbage** (`0`, `-3`, `1e9`, `abc`) producing invalid CSS. Now clamped to 1–6 or cleared.
+
+**Find & replace (fixed):**
+- **The search counted matches in detached/out-of-sync pages that Replace All skips** — the confirmation dialog promised replacements that never happened. Search now skips them and reports how many hand-authored pages were skipped.
+- The dev-server URL parser no longer false-timeouts a healthy server when the Astro banner split exactly at a chunk boundary.
+
+### Audit round 7 — main services, undo, drafts, migrations, silent failures
+
+**Data loss / corruption (fixed):**
+- **Legacy `.md`/`.mdx`/`.html` pages were silently rewritten with Astro-component source** — plain markdown parsed as "canonical managed output" and was regenerated in place, breaking the page's shell/nav on build. Non-`.astro` files are now always treated as hand-authored (out-of-sync), never regenerated.
+- **Draft-vs-saved comparison could never match in visual mode**: the draft was serialized by the renderer (4-space indent) but compared against the main-side generated source (2-space indent) — byte-inequality for identical content. That forced a bogus "Restore unsaved draft" prompt (and a permanent home card) for already-saved content after a crash. The comparison now uses the renderer's own serialization of the saved document.
+- **Newer-beta projects are refused instead of downgraded**: a project with `schemaVersion` higher than this build's used to be read, re-merged, and rewritten (newer layout/nav/design overwritten, older schemaVersion stamped on every page). Opens now fail with a clear "update Zephus" message before any write.
+- **Renaming a page orphaned its old recovery draft** — the home card lingered forever. Renames now clear the old slug's draft.
+- **Duplicating a managed page produced an out-of-sync copy stuck in hand-authored mode** (null hash + copied original bytes ≠ regenerated copy). The copy now carries the original's hash — its bytes ARE the original's.
+
+**Silent failures (fixed):**
+- **Install modal hung forever on failure** — the failure branches left the modal open with a dead "Run in Background" button, freezing the app behind an undismissable dialog. Failures now close the modal and surface a proper error dialog.
+- **"Settings saved." was claimed when the write failed** (read-only config dir, invalid custom node path). Save/reset now check the result and report the real error.
+- **Crash-recovery draft writes failed silently forever** (disk full, unwritable drafts.json) — the safety net died with zero warning. A one-time status warning now surfaces.
+- **"Copied block/section." was claimed when the OS clipboard write failed** — and the section branch never touched the OS clipboard at all. Both now write the section HTML and report clipboard-unavailable honestly.
+- **"Open Output Folder" was a silent no-op** when the folder didn't exist (common after a rebuild). Now reports why.
+
+**Undo/redo (fixed):**
+- The nav eye-toggle pushed no undo entry — Ctrl+Z did nothing (or, worse, a later unrelated undo popped a pre-toggle snapshot and "reverted the toggle" as a side effect). The toggle now pushes a snapshot.
+- Discarding a staged site change left the pre-staging undo entry on the stack — the next Ctrl+Z was a visible no-op and polluted redo. No-op entries are now dropped on discard.
+- `doRedo` lacked the mid-drag latch guard `doUndo` has — Ctrl+Shift+Z during a drag silently lost the resize. Guard mirrored.
+
+**Robustness (fixed):**
+- A partial/hand-edited site.json missing `design`/`shell` crashed the open with a TypeError after partial writes. Defaults now fill every missing field (including the detected layout path).
+- The reusable-sections legacy migration re-triggered whenever a project had zero saved sections — deleted sections resurrected on the next read. Migration now runs only when the project store was never created.
+- Legacy-layout nav sync rewrote the layout on every open (mtime churn, git noise). Now short-circuits when the nav is unchanged.
+- Drafts without a `savedAt` were never pruned and accumulated forever. They're now deleted on write.
+
+### Audit round 6 — security, page CRUD, site settings, publish, code sync, assets
+
+**Data loss (fixed):**
+- **Eye-toggle / settings save / stage-navigation silently destroyed hand-authored code on a detached or out-of-sync page.** Every metadata write routed through `writePageDocument`, which regenerated the .astro from the (stale) sidecar tree and forced the page back to "managed" — with the watcher suppression hiding it. Metadata writes now detect detached/out-of-sync pages and update ONLY the JSON sidecar (`writePageMetadataPreservingSource`), leaving the file bytes untouched.
+- **Duplicating a detached page dropped all hand-authored content** (bytes copied, then regenerated from the stale tree). Copies now preserve the detached state and the copied bytes.
+- **Deleting the open page silently discarded unsaved edits** (delete path skipped the save/discard prompt the page-switch path uses). Now resolved via `maybeResolveUnsavedWork`. Deleted non-open pages also have their recovery drafts cleared now.
+- **"Reattach Visual" and "Reload From Disk" banner buttons discarded unsaved code edits silently** (bypassed the unsaved-work guard). Both now resolve save/discard/cancel first.
+- **Rename page → metadata save failure stranded the editor on the deleted old path** (next Save resurrected the file, duplicating the page). The editor now follows the rename.
+- **Site settings "changed on disk" false positive blocked every site save and deadlocked autosave page-switches**: page writes bumped `generatedAt` on disk but returned the pre-write site object, so the drift check always fired. The returned site now reflects exactly what landed on disk.
+- **Undo-to-baseline left a stale recovery draft** → spurious "Restore Site Draft" prompt on next launch + a permanent home recovery card. Reverting to the saved state now clears the stale draft; a matches-saved draft is also cleared on read.
+
+**Security (fixed):**
+- **Stored XSS via a crafted block id**: `data-zephus-id="x</style><script>…"` terminated the `<style>` raw-text element and executed in the published site. Angle brackets in CSS selectors are now hex-escaped (`\3c `/`\3e `) — no literal `<`/`>` ever reaches the style text, and the selector still matches.
+- **Arbitrary file write via `doc.page`**: a stale/compromised renderer could submit `page:"package.json"` and clobber it (bypassing the protected-target denylist). Write targets are now always derived from the normalized slug, confined to `pagesDir`.
+- **Nav merge deleted a hand-authored custom link whose href matched a page route** (silently, on every site write). Custom items now deliberately override the matching page item, keeping their own label/visibility.
+- **Asset repoint false positive**: `assets/hero.png` (no leading slash) was rewritten inside `/foo/assets/hero.png`. `/` is now a path-continuation character, so only whole-path references repoint.
+
+**Correctness (fixed):**
+- **Publish "newer edits NOT included" warning false-negative**: captured dirty-state before the save/discard resolution, so edits made mid-build after starting dirty were silently excluded with a clean "Build complete". Dirtiness is now checked after resolution.
+- **Eye-toggle stale nav panel**: the layout was updated on disk but the in-memory site baseline was not, so the nav panel showed the old visibility until a page switch/save. The baseline now refreshes.
+- **Code-mode save wiped the CodeMirror undo/redo history on every managed save** (EditorState recreated even when content was unchanged). Unchanged saves now skip the refill.
+
+**Cleanups:** asset data-URL cache invalidated on rename/delete (canvas no longer serves a deleted/replaced file's bytes for the session).
+
 ### Data safety
 
 - **Never publish stale content:** Publish now saves or prompts about unsaved edits first (like Preview did), so the build can no longer silently ship older disk state while the editor holds newer content.
@@ -103,6 +214,212 @@
 - **Theme preview server HTTP handler**: 405 for non-GET/HEAD, 404s, HEAD without a body, MIME types, missing-bundle errors, and a fix for a dead branch where an unreadable file returned 200 with an empty body instead of 500 (the response now opens the file before writing headers).
 - **Post-list rendering branches** (`blockRender.ts` at 94%): dated/undated sorting, meta toggles, empty states, content escaping, video blocks, and unknown-block placeholders.
 - **Coverage gate tightened again** for the newly-covered files: `editorInlineEdit` 66%, `editorResize` 88%, `editorParse` 78%, `git.ts` 75%, `themePreviewServer` 78%, `blockRender` 88% (each ~5 pts below measured).
+
+---
+
+### Bug hunt
+
+- **Hand-authored content after `</BaseLayout>` was silently dropped** (`extractManagedInner` in schema.ts): the main-process parser sliced up to the last layout close tag and discarded everything after it. Pages with trailing hand-written markup got false "modified" flags and lost content on regeneration. It now only slices the layout region when the close tag really ends the body — and the renderer's `splitManagedPageSource` was aligned (case-insensitive close tags, content after the close kept).
+- **Unclosed container markup was silently lost** (`splitTopLevelNodes`): an element missing its close tag (e.g. a hand-edited page with a broken layout) consumed its children into a depth counter and never emitted them — the page parsed as empty. The remaining markup is now preserved as content.
+- **Entity decoding used a 43-entry subset table**, while the renderer's DOM parser (parse5) decodes the full HTML5 spec. `&eacute;`, `&amp` (no semicolon), `&#65`, and `&notit;` all parsed differently between main and renderer, producing hash mismatches and double-escaped rewrites (`&amp;amp;`) of hand-authored pages. The main parser now uses the same `entities` decoder parse5 uses internally, so both parsers are byte-identical (verified by new parity cases).
+- **XSS: `safeUrl` bypassed by tab/newline inside the scheme** (`renderHelpers.ts`): `java<tab>script:alert(1)` passed the scheme check, but browsers strip tab/newline before executing URLs — a paste of such a link into a button/CTA rendered an executable `javascript:` link in published sites. The check now strips ASCII tab/newline first (WHATWG behavior); the canvas sanitizer in `editorBlockRender.ts` got the same fix.
+- **New parity regressions locked in**: mixed-case layout close tags, missing close tags, literal `</BaseLayout>` inside HTML blocks, and full HTML5 entity semantics.
+
+---
+
+### Full audit pass
+
+Every source file was read and audited (engine, schema, all services, all UI components, all build scripts). The confirmed bugs below were fixed with regression tests; a full `npm run test:all` + `test:cov` + smoke run passes.
+
+**Data loss / corruption**
+- **Adopting a legacy project could destroy hand-authored pages.** `ensureVisualSchema` regenerated every hash-less page from its (lossy) parse tree — frontmatter imports/consts, Astro `{...}` expressions (which then broke the build), and `<style>` blocks were silently deleted. Migration now detects non-canonical pages (anything beyond the BaseLayout import + key/value metadata) and leaves them untouched, flagged out-of-sync instead.
+- **An unterminated `<!--` comment dropped the rest of the page** (`splitTopLevelNodes`) — the unclosed-container sibling case that was missed last time. Content after the comment is now preserved.
+- **`writeProjectFile` wrote non-atomically** (truncate-in-place) — a crash mid-write left a half-written page. Now uses the same temp+rename atomic writer as everything else.
+- **The file watcher died after atomic saves on macOS** (kqueue follows the inode; editors replace files via rename). The watcher now watches the parent directory and filters on the filename, so external edits keep being detected.
+- **Asset rename repointing broke on filenames with quotes/backslashes** (`JSON.stringify` escaping made matches impossible and could produce invalid JSON that aborted mid-repoint). Repointing now walks the parsed section tree.
+- **CodeMirror Ctrl+Z/Ctrl+Y reverted two steps** — CM6's keymap handles the key with `preventDefault` (no `stopPropagation`), and the document-level handler ran the same command again. Handled events are now skipped (also fixes CM's own Ctrl+F stacking the app's find modal).
+- **Inline edits were excluded from saves**: typing in a contenteditable and hitting Ctrl+S serialized the pre-edit content (and deleted the recovery draft). Save now commits the active inline session first.
+- **`&` in inline-edited text double-encoded to visible `&amp;`** when browsers wrapped the text in spellcheck/execCommand elements — the escaped walk output was stored without markup and re-escaped on render. Wrapper-only output is now decoded back to plain text.
+- **Keyboard resize pushed a no-op undo entry** (snapshot after the mutation) — Ctrl+Z lit up and did nothing. Snapshots now happen before mutating, like the pointer path.
+
+**Correctness**
+- **Page rename silently killed the file watcher** (stopped before the rename, never re-armed on failure or for non-open pages). The watcher now survives renames it doesn't touch and is re-armed on failure.
+- **Undo of site edits did nothing when the snapshot had no site document** (`site: null` fell through every branch). Staged edits are now cleared back to the captured state.
+- **`// srcDir: './old'` comments and template-literal config values were read as the real Astro config**, sending the editor and build to a garbage folder. Config scanning now skips comments and unmatched shapes.
+- **Responsive CSS selectors used HTML entities inside `<style>`** (never decoded there) — ids with `&`/`"` never got responsive rules. Now escaped with CSS string rules.
+- **Section chrome clicks selected then immediately deselected** (missing `stopPropagation`) — section label/breadcrumb clicks were dead.
+- **Prerelease ordering was wrong across tags**: `rc.2` was "downgraded" to `beta.9` (shared rank, numeric-only compare), and non-standard `-beta10`/`-db7` tags were classified as stable. Tags now rank alpha < beta < rc, and digits after a tag still mean prerelease.
+- **Inline-edit session stuck forever** when focus hopped text → link input → canvas (blur chain missed the second hop) — every canvas click was swallowed. A toolbar `focusout` listener now ends the session.
+- **Git ops had no timeout** — a stalled network hung the Git panel forever. All git calls now time out at 60s.
+- **`npm install` timeout killed only npm, not its tree** (postinstall/node-gyp kept running into the next install) — the whole process group is now terminated (with SIGKILL escalation), and a spawn-start TDZ crash was fixed.
+- **`update-available`/`download` could race**: checking while a download ran re-configured the feed mid-transfer; cancelling could report "downloaded" afterward. Both are now guarded.
+- **Theme preview server races**: a second `ensure` with a different root got the first root's pending bundle; a stop during listen orphaned a live server. Now per-root pending + generation counter.
+
+**Security / hardening**
+- **`importAssetsFromPaths` could copy the project's own files into itself** (including renamed secrets). In-project sources are now rejected.
+- **Hand-edited settings.json crashed the project list** (non-string entries in `recentProjects`/`lastOpenedProject` threw in `path.resolve`). Entries are now type-filtered on read.
+- **Canvas sanitizer missed `<form action="javascript:...">`** — `action` is now stripped like `formaction`.
+- **Node resolution cache never expired** — a user installing Node mid-session was stuck with "missing" until restart. The cache now expires after 30s.
+
+**Build tooling**
+- **`dist-tools.js` cleaned cwd-relative paths** — running it from any other directory deleted that directory's `dist`/`release`. Paths now resolve against the repo root.
+- **`ensure-draft-release.js` exited 0 without a GH_TOKEN**, letting per-platform jobs race on draft creation. It now fails loudly.
+- **Coverage gate only whitelisted known files** — brand-new files could ship at 0%. An overall statements/lines floor (80%/82%) is now enforced.
+- Diverged-branch Git advice told users to fast-forward pull with local commits ahead (guaranteed to fail); the label now suggests merge/rebase.
+
+---
+
+### Audit follow-up
+
+- **Pasted newlines corrupted line-encoded blocks** (stats numbers, list items, accordions): a multi-line paste into a stat/label put a literal `\n` inside one `left :: right` line, shifting every following pair. Newlines are now collapsed for single-line targets in both the plain-text read path and the rich-text walk.
+- **Case-only asset renames produced `Hero-1.png`** on macOS/Windows (case-insensitive filesystems treated the new casing as a collision). The collision check now ignores case there.
+- **Git rename entries parsed wrong**: porcelain v1's `R  old -> new` was reported (and later committed) as the literal `"old -> new"` path. Renames/typechanges now resolve to the new path.
+- **Page saves became non-atomic again** (`writePageDocument`) — the .astro write now uses the atomic writer, so a crash can't corrupt a page whose sidecar hash was already updated.
+- **Legacy layout nav could emit `javascript:` hrefs** (`syncLegacyLayoutNav` bypassed `safeUrl`) — now gated like every other nav render.
+- **Astro configs using `outDir: new URL('./build', import.meta.url)`** fell back to `dist`, so "Open Output Folder" revealed the wrong directory. The pattern is now parsed.
+- **Builds that exceeded the 20MB log buffer reported a confusing `maxBuffer` error** — raised to 100MB with a clear message for genuinely huge output.
+- **Close Project double-invocation raced**: the guard was set after an await, so two rapid closes ran the teardown twice. The guard now applies before the unsaved-work prompt.
+- **Link-picker kind switches discarded typed text** — switching to page/anchor/email/phone replaced the user's typed URL with a prefill. Typed input is now preserved.
+- **Esc on a modal with no Cancel button hung the awaiting code forever** (only third-party `choose()` callers, but a permanent hang). An escape hook now settles the promise as a cancellation.
+- **Find/Replace kept stale results visible after editing the query** — the results list now re-renders into the "Search text changed — press Find" hint (typing focus preserved).
+- **An all-dev lockfile emptied the license list** (empty allowlist filtered everything); an empty production set now means "no filter".
+- **`file://` containment check was always-false** (trailing-slash root made `root + sep` unreachable) — the app's own frame allowlist is now functional.
+- **Asset repointing and usage counts are NFC-normalized** so macOS NFD filenames match hand-authored references.
+- The updater's hardcoded `"updater-status"` channel string now uses the shared IPC constant.
+
+---
+
+### Deep audit round (verified against the real Astro compiler)
+
+Four parallel audits (unverified-spot verification, test-suite quality, IPC contract, undo/redo mechanics) plus empirical verification of every external claim using the actual Astro 6 compiler.
+
+**Build-breaking bug, empirically confirmed**
+- **Unescaped `{`/`}` in body text broke Astro builds**: the compiler turns `{ brace }` in a text node into `${ brace }` (ReferenceError at runtime; `{5}` silently renders as `5`). Attributes were already brace-escaped (`escapeAstroAttr`), text was not. `escapeHtml`/`escapeRichText` now emit `&#123;`/`&#125;` (browsers render them as braces, and the DOM parsers round-trip them), verified end-to-end: Zephus-generated page → real Astro compiler → clean output, and parse-back restores the literal text.
+
+**Undo system (4 bugs)**
+- **Inspector control changes pushed post-mutation undo entries** (Clear Image, hide-on checkboxes, selects): the first Ctrl+Z was a visible no-op and wiped redo. The latch now snapshots at focus and pushes only when the session actually changed something; control-triggered changes push explicitly before mutating.
+- **Focusing an inspector field and blurring without typing destroyed the redo stack** for a phantom no-op entry — fixed by the same push-only-when-changed latch.
+- **Ctrl+Z mid-drag silently lost a resize** (undo popped the pre-drag snapshot while the drag kept mutating detached clones). Undo is now suppressed while a resize is active.
+- **Undo after a code→visual switch restored content the user had already discarded** (code-edited tree replaced, old stack still pointed into the old tree). The stack is cleared when a dirty code parse replaces the tree; same for reloads that swap the site document (a page-only undo could stage a stale site and claim "Reverted a design change").
+- Stale dirty indicators after undoing a staged site edit now refresh.
+
+**Other confirmed fixes**
+- **`withPageMetaDefaults` left `navVisible: undefined`** for sidecars predating the field — such pages silently vanished from the navigation after an upgrade. Undefined now defaults to visible, matching the frontmatter path.
+- **Editor/main body-region divergence**: the renderer matched the LAST `<body` in the file (a `<body`-looking string in a later script shifted the split); both parsers now use the first.
+- **Link picker silently replaced a valid-but-unlisted route** with the first listed page. It now warns and offers a placeholder instead.
+- **Preview log listener leaked on overlapping togglePreview calls** (single-slot reference overwritten, first subscription never removed). Subscriptions are tracked in a set.
+- **Symlinked assets**: delete/rename resolved the link and mutated the TARGET, leaving the in-project link dangling. Both operations now refuse with a clear message.
+- **Unhandled promise rejections** at fire-and-forget IPC sites (draft writes, watchFile, page-meta reads, reusable-section delete, nav staging) — all now caught with status messages.
+- **`readRepoSettings` typed `Promise<unknown>`** in the renderer contract — now `Promise<RepoSettings>`.
+- **Two dead IPC channels removed** (`importImage`, `fileWrite` — defined, typed, exposed, never called).
+
+**Test-suite quality (false-positive fixes)**
+- `caseSensitive` search/replace had zero coverage — both flags now tested end-to-end.
+- The canvas-vs-build "parity" tests compared `renderBlockNode` with itself (a wrapper calling the same function with the same defaults); a real canvas-vs-build comparison (including the `data-asset-src` and hideOn divergences) was added.
+- `nodeCheckReal` asserted the whole status union (any result passed); it now asserts the resolution-honesty contract.
+- `editorBlocks` accepted any truthy props for `html`; now requires the exact empty shape.
+- `devServerFlow` never asserted the spawn env — a broken Node path resolution would have passed green; the env merge is now checked.
+
+---
+
+### Real-Astro validation + extended smoke + audit round 4
+
+**The generated output is now proven against the real Astro compiler.**
+- New `astroBuild.test.ts`: a page containing **every block type** (with hostile prop values — braces, quotes, ampersands, entities, emoji, newlines) is generated through the schema pipeline and compiled with the real `@astrojs/compiler` (Astro 6), along with the scaffolded layout.
+- New `npm run test:astro-build`: scaffolds **all 10 bundled themes**, generates the managed schema, and runs a real `astro build` on each site. All 10 build clean today — this is the release-gate check that a generated page can never break the user's `astro build`.
+- Empirically verified with the real compiler: the `&#123;` brace-escape scheme works (Astro keeps the entity in attributes), the fixed text-node escaping works, and rendered HTML round-trips (literal `&amp;` text renders as `&amp;` via `&amp;amp;`).
+
+**Extended runtime smoke** (runs in the real Electron app):
+- Undo/redo through the actual inspector latch: type → blur commits one entry, Ctrl+Z reverts, redo restores.
+- Add block + undo, keyboard resize + undo, Escape-cancels-inline-edit.
+- This immediately caught two real runtime behaviors worth knowing: the canvas-link click legitimately re-selects the clicked block, and the inspector panel re-creates its inputs on re-render (stale references must be re-queried).
+
+**More fixes**
+- **Section duplicate/paste re-id'd only top-level children** — nested blocks (none today, but the code anticipates them) kept colliding ids and shared style references. Both paths now use the deep-cloning `cloneBlock`.
+- **Trailing-save loop reported total failure when the click-time snapshot saved but a newer flush failed** — the user was told nothing was saved when their first snapshot was on disk (the dirty flag still protects the newer edits; callers never lose them).
+- **Canvas sanitizer gaps**: `<base>` removed outright (it hijacks every relative URL), `poster` checked for dangerous schemes, and `srcset` now filters dangerous entries while keeping safe ones.
+- **Dev server timeout now hints when a port is already occupied** (zombie/foreign process) instead of the generic "did not report a URL".
+- **Test mock hardening**: `ipcRenderer.invoke` in the Electron test stub now throws "not mocked" instead of resolving `undefined` — a test reaching through preload can no longer false-pass on undefined results.
+- Wizard/page-manager coverage pushed (unknown theme, schema-failure rollback, 404 rename nav flips, duplicate-slug collisions, same-name rename no-op); app statement coverage is now **89.1%**.
+
+---
+
+### Coverage push to 94%
+
+App statement coverage is now **94.3%** (was 89.1%), with **687 tests** (was 568). The coverage gate's overall floor was raised to 88% statements / 90% lines so it keeps catching regressions.
+
+**New suites:**
+- **Feed/discovery files** (`feedDiscovery.test.ts`): sitemap/robots/rss generation for a public URL, dated-post gating of the feed, hand-authored discovery files preserved verbatim, managed files removed when the URL is cleared — all previously untested.
+- **Post-list refresh** (`postlistRefresh.test.ts`): postlist pages render posts at save time and refresh when posts are renamed.
+- **Schema edge cases**: regex-parser legacy tags (button/image/divider/quote/list/embed), full inline-style vocabulary, bare-text html blocks, wrapper-section recursion, unknown block types through the build renderer, literal `<` preservation.
+- **editorSession**: change summaries, dirty-flag/revision semantics, pending-over-saved precedence, deep cloning.
+- **editorLineValues**: the `::`-pair encoding helpers (update/target/apply) that stats/accordion/list blocks rely on.
+- **themePreviewServer error paths** (module-mocked `http`): bind failure and no-address listen both resolve clean errors.
+- **Real-binary node checks**: fake node scripts prove resolution caching (one probe per window), and outdated custom paths honestly report "outdated".
+
+**Expanded suites:**
+- updater: progress/error/rejected-update events, check-during-download guard, thrown checks, cancelled/failed transfers.
+- git: nothing-to-commit failure, fetch-failure status, detached-HEAD and unavailable push/pull, no-remote first push.
+- devServer: second-start guard, different-project handoff (first server stopped), unreadable package.json, listener unsubscribe, SIGKILL escalation.
+- drafts: legacy page-shaped entries, unwritable-store failures.
+- assetUsage: site-level repointing (favicon/footer/head), site reference reporting, missing-path errors.
+- editorSave/editorSiteSave: every draft-clear failure mode (returns false, throws, mid-flight edits), detach/write failures, missing page path, save-activity tracking.
+- editorInlineEdit: toolbar buttons (bold, clear formatting), dangerous links rejected, collapsed-selection warning, Escape on the link prompt, Ctrl+B.
+- settings/fsSafe/project/licenses/findReplace: corrupt/unwritable config files, unreadable lockfiles, allowlist filtering, empty-needle validation, unwritable-page replace failures.
+
+**Remaining sub-95% files are at their feasible ceilings**: win32-only code paths (devServer taskkill, nodeCheck candidates, npmCommand APPDATA), unreachable defensive branches (projectPaths escape, fsSafe walk-up), and failure paths whose fault injection can't interleave with synchronous writes (pageManager/wizard rollbacks). wizard/pageManager also suffer coverage-mapping drift between the compiled and source forms.
+
+---
+
+### Coverage push to 95.4%
+
+App statement coverage is now **95.4%** with **709 tests** (was 94.3/687). The gate floor now sits at 92% statements / 93% lines.
+
+**Bugs found while testing:**
+- **wizard.ts was measured at 71% because the rollback catch was genuinely untested** — every failure mode hit the empty-folder guard first. A read-only parent (`mkdirSync` EACCES) reaches the rollback; wizard is now 90.3%.
+- **devServer.ts had the same TDZ bug fixed earlier in install.ts**: a synchronous spawn failure crashed with "Cannot access 'timeout' before initialization" instead of returning an error result. Fixed (declared up front, guarded `clearTimeout`); the spawn-throw path is now tested.
+- **pageManager's rename/duplicate/delete rollbacks now tested** via read-only sidecar directories (78% → 84.3%): the rename restores the original file, delete restores it, and duplicate removes the orphaned copy.
+
+**Refactors for testability:**
+- `windowsNodePaths(homedir, env)` extracted from nodeCheck — the win32 candidate list is now tested on any platform.
+- `taskkillProcessTree(pid)` extracted from devServer's win32 stop path — tested against the spawn mock.
+- npmCommand's APPDATA resolution now tries the host-style path first (matching the PATH candidates), so POSIX test hosts can resolve temp dirs — real Windows behavior unchanged; the APPDATA branch is now covered.
+
+**New tests:** licenses default-location + no-`@` ids, drafts malformed entries, themePreviewServer default-root server, assetUsage custom-head references + corrupt-site failures + mid-repoint abort, editorSave page-changed-mid-detach + missing-document + code-mirror refresh, editorSiteSave newer-edits-with-warning race (mutation landing between the two `hasNewerEdits` checks), readPageMetadata un-normalizable slug fallback.
+
+**Verification of coverage mapping**: the v8 JSON line numbers drift from the source for several files (esbuild transform mapping), so the text reporter's line lists were used as the source of truth throughout — several "uncovered" lines were proven covered by direct branch probes.
+
+---
+
+### Audit round 4 — six fresh-angle audits
+
+**Data loss (HIGH, fixed):**
+- **Saving page A could prompt a false "modified outside Zephus" on open page B and Reload would silently discard B's unsaved edits.** The post-list refresh regenerates OTHER pages on disk → the watcher fires → the renderer's own-write guard can't recognize the (legitimately changed) disk state. The main process now marks every schema write (`writePageDocument`, `refreshPostListPages`) as self-written and the watcher suppresses those events (30s window).
+- **Renaming a detached/out-of-sync page destroyed the hand-authored file**: the rename regenerated the .astro from the stale sidecar tree. Renames now move bytes and update only the sidecar metadata for detached/out-of-sync pages.
+- **Asset repoint and Replace All clobbered detached/out-of-sync pages** with regenerated output — both sweeps now skip them.
+- **Reattach destroyed hand-authored code** (`<style>`/imports/expressions silently dropped) — now guarded by the same canonical-source check as migration.
+
+**Feature-breaking (fixed):**
+- **Theme previews were always EMPTY shells** — `generate-theme-previews.js` missed `regenerateHashlessPages: true`, so the scaffold stubs were never materialized (theme picker showed blank pages). One option; previews now build real content (verified: 5KB of real markup per page).
+- **Dev Server Log panel froze right after preview startup** — `togglePreview`'s `finally` unsubscribed ALL log listeners on success. Each invocation now owns its subscription.
+- **Every hero CTA rendered as a plain accent link** — the `button` block never emitted the `.button` class the theme CSS styles. Now merged with the user's `cls`.
+- **Restaurant menu rendered literal `&lt;h3&gt;` text** — the menu columns contained block tags the inline renderer escapes. Now rich text (`<strong>` + line breaks).
+
+**Races / UX (fixed):**
+- Publish: added an in-flight latch (double-click no longer fires two builds or a scary "Build Failed" for the rejected second) and a dirty-recheck — "newer edits not included" is now stated instead of a misleading success.
+- Preview: `previewStartInFlight` latch for double-clicks; failure paths tear down only the failed invocation's subscription.
+- Git panel operations serialized on a chain (no more `index.lock` collisions or mid-transition status snapshots).
+- `watchStart` now reports failure honestly (a refused watch means NO file is watched).
+- "Keep Mine" on an unreadable file no longer re-prompts forever (one-shot suppression for the same change).
+- Project-open re-entrancy guard; failed opens clear the pending draft-resume request; new-page flow matches normalized slugs ("My Page" now opens the created page).
+
+**Canvas fidelity (fixed):**
+- Block styles double-applied on the canvas (wrapper + inner element) — padding/margins showed ~2x the build output. The wrapper now carries only the outer layout box.
+- Length fields sanitize typed numbers — ".px"/"-px"/"1e5px" no longer write invalid CSS into saved files.
+
+**Theme/shell polish:** event theme dated to a future October date; blog footer uses the real site name; `mailto:`/`tel:` links now open externally; crawl-licenses no longer ships absolute dev-machine license paths.
+
+**Test-suite fixes:** the bold-formatting test asserted a tautology (now verifies the execCommand call); the licenses default-path test was cwd-dependent (now accepts both outcomes); the Node-version test was runner-version-dependent; the watcher tests now wait for FSEvents registration before writing and test the filename filter as a pure function (event delivery under parallel load turned out to be the flake — the suite now runs files serially, ~31s total).
 
 ---
 

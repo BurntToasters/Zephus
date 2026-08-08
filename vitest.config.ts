@@ -14,6 +14,11 @@ export default defineConfig({
   test: {
     include: ["src/**/*.test.ts"],
     exclude: ["node_modules", "dist", "release"],
+    // Real fs.watch delivery (watch.test.ts) is unreliable under parallel
+    // file execution — the OS can drop directory-watch events under load.
+    // Serializing files costs a few seconds and makes the watcher tests
+    // deterministic.
+    fileParallelism: false,
     coverage: {
       reporter: ["text", "html", "clover", "json", "json-summary"],
     },

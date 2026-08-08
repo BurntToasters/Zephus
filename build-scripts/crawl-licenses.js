@@ -50,10 +50,15 @@ function bundledRendererPackages() {
 }
 
 function normalizeEntry(data, fallbackParents) {
+  // licenseFile is an absolute dev-machine path (e.g.
+  // /Users/dev/.../node_modules/x/LICENSE) — meaningless in the packaged app;
+  // prefer a real URL and drop the raw path entirely.
+  const url = data.licenseUrl || data.licenseFile || '';
+  const licenseUrl = /^[a-z][a-z0-9+.-]*:\/\//i.test(url) ? url : '';
   return {
     licenses: data.licenses || 'Unknown',
     repository: data.repository || '',
-    licenseUrl: data.licenseUrl || data.licenseFile || '',
+    licenseUrl,
     parents: Array.isArray(data.parents)
       ? data.parents.join(', ')
       : data.parents || fallbackParents,

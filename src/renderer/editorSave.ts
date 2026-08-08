@@ -234,7 +234,13 @@ export function createEditorSaveActions(deps: EditorSaveDeps) {
           if (!state.pageDirty) deps.markDirty(true);
         } else {
           if (state.mode === "code" && state.visualEditable) {
-            deps.setCode(state.rawCode);
+            // Only refill the editor when the content actually changed.
+            // setCode() recreates the EditorState and wipes undo/redo + cursor;
+            // doing it on every managed save destroyed the user's history even
+            // when the save changed nothing in the code view.
+            if (deps.getCode() !== state.rawCode) {
+              deps.setCode(state.rawCode);
+            }
             const currentDoc = deps.pageDocumentFromState();
             if (currentDoc) {
               state.sections = deps.sectionsFromPageDocument(currentDoc);
@@ -295,12 +301,18 @@ export function createEditorSaveActions(deps: EditorSaveDeps) {
     trailingSaveRequested = false;
     const pending = (async (): Promise<boolean> => {
       let saved = await runSave();
+      let anySucceeded = saved;
       while (saved && trailingSaveRequested && isGlobalDirty(deps.getState())) {
         trailingSaveRequested = false;
         saved = await runSave();
+        if (saved) anySucceeded = true;
       }
       trailingSaveRequested = false;
-      return saved;
+      // The click-time snapshot is the save the user asked for; a failed
+      // trailing flush leaves the dirty flag set, so callers never lose the
+      // newer edits — but they must not be told everything failed when the
+      // first snapshot was already written.
+      return anySucceeded;
     })();
     activeSave = pending;
     void pending.finally(() => {

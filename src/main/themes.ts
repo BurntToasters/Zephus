@@ -881,7 +881,7 @@ function blogDef(siteName: string): ThemeDef {
     shell: {
       logoText: siteName,
       announcementText: "Welcome to the blog",
-      footerHtml: "<p>&copy; My Blog. Built with Zephus.</p>",
+      footerHtml: `<p>&copy; ${siteName}. Built with Zephus.</p>`,
     },
     pages: [
       {
@@ -1296,12 +1296,12 @@ function restaurantDef(): ThemeDef {
             heading("Menu", 1),
             paragraph("A taste of what we're serving this season.", "lead"),
             columns(2, [
-              "<h3>To Start</h3><p>Marinated olives · Whipped feta · Grilled bread</p>",
-              "<h3>Mains</h3><p>Lamb skewers · Roasted branzino · Garden orzo</p>",
+              "<strong>To Start</strong>\nMarinated olives · Whipped feta · Grilled bread",
+              "<strong>Mains</strong>\nLamb skewers · Roasted branzino · Garden orzo",
             ]),
             columns(2, [
-              "<h3>Sides</h3><p>Charred greens · Herbed potatoes</p>",
-              "<h3>Sweet</h3><p>Olive oil cake · Seasonal sorbet</p>",
+              "<strong>Sides</strong>\nCharred greens · Herbed potatoes",
+              "<strong>Sweet</strong>\nOlive oil cake · Seasonal sorbet",
             ]),
           ]),
         ],
@@ -1348,7 +1348,7 @@ function eventDef(): ThemeDef {
           hero([
             heading("DevConf 2026", 1),
             paragraph(
-              "One day, two stages, and the people building the future of the web. June 12 · Your City.",
+              "One day, two stages, and the people building the future of the web. October 9 · Your City.",
               "lead",
             ),
             button("Register now", "/register"),

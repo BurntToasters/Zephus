@@ -4,6 +4,7 @@ import {
   selectPostEntries,
   renderSectionsMarkup,
 } from "../blockRender";
+import { BLOCK_RENDER_FIXTURES } from "../blockRenderFixtures";
 import type { BlockNode, SectionNode } from "../../main/types";
 
 const POSTS = [
@@ -214,7 +215,44 @@ describe("renderSectionsMarkup", () => {
       renderBlockHtml(block),
     );
     expect(html).toMatch(/^<style>@media/);
-    expect(html).toContain('[data-zephus-id="b1"]{padding:4px}');
+    expect(html).toContain('[data-zephus-id="b1"]{padding:4px!important}');
     expect(html).toContain("<p");
+  });
+});
+
+describe("canvas vs build parity", () => {
+  it("produces identical markup for desktop-styled blocks", () => {
+    // The build and the editor canvas must serialize the same content: a
+    // divergence means what the user sees is not what gets published. Only
+    // blocks with responsive/hideOn styling or missing sources may differ.
+    // data-asset-src is a canvas-only indirection for local asset previews;
+    // strip it (and its src="" placeholder) before comparing.
+    const normalize = (html: string): string =>
+      html
+        // Canvas swaps src="…" for a transparent placeholder (single image)
+        // or src="" (gallery) + data-asset-src; fold both back.
+        .replace(
+          /\ssrc="(?:data:image\/gif;base64,[^"]*|)"\s*data-asset-src="([^"]*)"/g,
+          ' src="$1"',
+        )
+        .replace(/\s*data-asset-src="[^"]*"/g, "");
+    for (const fixture of BLOCK_RENDER_FIXTURES) {
+      const build = renderBlockHtml(fixture, {});
+      const canvas = renderBlockHtml(fixture, { forCanvas: true });
+      expect(normalize(canvas)).toBe(normalize(build));
+    }
+  });
+
+  it("keeps hidden-on-desktop blocks visible on the canvas", () => {
+    const block: BlockNode = {
+      id: "hide-me",
+      type: "text",
+      props: { text: "x", cls: "" },
+      style: { hideOn: ["desktop"] },
+    };
+    const build = renderBlockHtml(block, {});
+    const canvas = renderBlockHtml(block, { forCanvas: true });
+    expect(build).toContain("display:none");
+    expect(canvas).not.toContain("display:none");
   });
 });

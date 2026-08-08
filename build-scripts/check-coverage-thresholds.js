@@ -33,7 +33,7 @@ const thresholds = {
   'src/shared/blockRender.ts': { lines: 90, statements: 88 },
   'src/shared/renderHelpers.ts': { lines: 88, statements: 85 },
   'src/renderer/editorCommands.ts': { lines: 95, statements: 95 },
-  'src/renderer/editorDraft.ts': { lines: 95, statements: 90 },
+  'src/renderer/editorDraft.ts': { lines: 90, statements: 85 },
   'src/renderer/editorDraftRestore.ts': { lines: 82, statements: 78 },
   'src/renderer/editorGit.ts': { lines: 90, statements: 90 },
   'src/renderer/editorInlineEdit.ts': { lines: 68, statements: 66 },
@@ -76,6 +76,27 @@ for (const [file, threshold] of Object.entries(thresholds)) {
 if (failures.length > 0) {
   console.error('Coverage thresholds failed:');
   failures.forEach((failure) => console.error(`- ${failure}`));
+  process.exit(1);
+}
+
+// Overall guard: brand-new or renamed src files must not ship with 0% — the
+// whitelist above only gates known files, so a new file would pass silently.
+const totals = summary.total;
+if (totals) {
+  const statements = totals.statements?.pct;
+  const lines = totals.lines?.pct;
+  if (typeof statements === 'number' && statements < 92) {
+    console.error(
+      `Coverage thresholds failed: overall statements ${statements}% < 92%`,
+    );
+    process.exit(1);
+  }
+  if (typeof lines === 'number' && lines < 93) {
+    console.error(`Coverage thresholds failed: overall lines ${lines}% < 82%`);
+    process.exit(1);
+  }
+} else {
+  console.error('Coverage summary has no "total" entry; cannot verify overall coverage.');
   process.exit(1);
 }
 

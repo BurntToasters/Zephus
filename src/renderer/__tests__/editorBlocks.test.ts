@@ -35,7 +35,12 @@ describe("editorBlocks catalog", () => {
       const props = defaultProps(type);
       expect(props).toBeTruthy();
       if (type !== "html") {
+        // Non-HTML blocks must carry every prop the renderer reads.
         expect(props["cls"]).toBeDefined();
+        expect(Object.keys(props).length).toBeGreaterThan(0);
+      } else {
+        // HTML blocks carry no props; the raw markup is the content.
+        expect(Object.keys(props)).toHaveLength(0);
       }
     }
   });
@@ -44,6 +49,35 @@ describe("editorBlocks catalog", () => {
     for (const type of TEXT_EDITABLE) {
       expect(KNOWN_BLOCK_TYPES.has(type)).toBe(true);
     }
+  });
+
+  it("every template produces valid, known blocks", () => {
+    setUidGenerator(() => "tpl-uid");
+    for (const template of TEMPLATES) {
+      expect(template.label).toBeTruthy();
+      if (!template.blocks) {
+        // HTML-only templates still carry content.
+        expect(template.html).toBeTruthy();
+        continue;
+      }
+      const blocks = template.blocks();
+      expect(blocks.length).toBeGreaterThan(0);
+      for (const block of blocks) {
+        expect(KNOWN_BLOCK_TYPES.has(block.type)).toBe(true);
+        expect(block.id).toBeTruthy();
+        expect(block.props).toBeTruthy();
+        if (block.type !== "html") {
+          expect(block.props["cls"]).toBeDefined();
+        }
+      }
+    }
+  });
+
+  it("template blocks merge defaults with overrides", () => {
+    const hero = TEMPLATES.find((t) => t.id === "hero");
+    expect(hero).toBeTruthy();
+    const blocks = hero!.blocks?.() ?? [];
+    expect(blocks.some((b) => b.type === "heading")).toBe(true);
   });
 });
 

@@ -1,0 +1,101 @@
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
+import {
+  watchFile,
+  stopWatching,
+  markSelfWritten,
+  watchedFileMatches,
+} from "../watch";
+
+let tmpDir: string;
+let project: string;
+const pageRel = "src/pages/index.astro";
+
+beforeEach(() => {
+  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "zephus-watch-"));
+  project = path.join(tmpDir, "site");
+  fs.mkdirSync(path.join(project, "src", "pages"), { recursive: true });
+  fs.writeFileSync(path.join(project, pageRel), "<h1>v1</h1>");
+});
+
+afterEach(() => {
+  stopWatching();
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+function waitFor(onChange: () => void, ms = 10000): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const started = Date.now();
+    const timer = setInterval(() => {
+      if (onChange()) {
+        clearInterval(timer);
+        resolve();
+      } else if (Date.now() - started > ms) {
+        clearInterval(timer);
+        reject(new Error("timed out waiting for the watcher"));
+      }
+    }, 20);
+  });
+}
+
+describe("watchFile", () => {
+  it("fires for an external edit of the watched file", async () => {
+    let fired = false;
+    watchFile(project, pageRel, () => {
+      fired = true;
+    });
+    // Let the directory watch register before the write: FSEvents can miss a
+    // change made in the same tick as fs.watch().
+    await new Promise((r) => setTimeout(r, 50));
+    fs.writeFileSync(path.join(project, pageRel), "<h1>external</h1>");
+    await waitFor(() => fired);
+    expect(fired).toBe(true);
+  });
+
+  it("suppresses events for files the app itself wrote", async () => {
+    let fired = false;
+    watchFile(project, pageRel, () => {
+      fired = true;
+    });
+    // Let the directory watch register before the write (FSEvents can miss a
+    // change made in the same tick as fs.watch()).
+    await new Promise((r) => setTimeout(r, 50));
+    // The schema write path marks the file as self-written before writing.
+    markSelfWritten(pageRel);
+    fs.writeFileSync(path.join(project, pageRel), "<h1>self write</h1>");
+    // Give the watcher time to (not) fire; the debounce is 150ms.
+    await new Promise((r) => setTimeout(r, 500));
+    expect(fired).toBe(false);
+  });
+
+  it("fires again after the self-write suppression window", async () => {
+    let fires = 0;
+    watchFile(project, pageRel, () => {
+      fires += 1;
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    markSelfWritten(pageRel);
+    fs.writeFileSync(path.join(project, pageRel), "<h1>self</h1>");
+    await new Promise((r) => setTimeout(r, 500));
+    expect(fires).toBe(0);
+
+    // A genuinely external edit afterwards still fires.
+    fs.writeFileSync(path.join(project, pageRel), "<h1>external2</h1>");
+    await waitFor(() => fires > 0);
+    expect(fires).toBeGreaterThan(0);
+  });
+
+  it("matches only the watched file from event filenames", () => {
+    const full = path.join(project, "src", "pages", "index.astro");
+    const base = "index.astro";
+    expect(watchedFileMatches(base, base, full)).toBe(true);
+    expect(watchedFileMatches(full, base, full)).toBe(true);
+    expect(watchedFileMatches(null, base, full)).toBe(true);
+    expect(watchedFileMatches("other.astro", base, full)).toBe(false);
+    expect(watchedFileMatches("layouts/BaseLayout.astro", base, full)).toBe(
+      false,
+    );
+  });
+});

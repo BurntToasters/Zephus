@@ -28,7 +28,7 @@ import {
 } from "./services/git";
 import { createPage, createSite } from "./services/wizard";
 import { listThemes } from "./themes";
-import { readProjectFile, writeProjectFile } from "./services/files";
+import { readProjectFile } from "./services/files";
 import { licensesFilePath, readProductionLicenses } from "./services/licenses";
 import { startDevServer, stopDevServer } from "./services/devServer";
 import { resolveProjectRelativeDir } from "./services/projectPaths";
@@ -39,7 +39,6 @@ import {
 import { buildAndReveal } from "./services/publish";
 import { installDependencies, dependenciesInstalled } from "./services/install";
 import {
-  importImage,
   importAssets,
   importAssetsFromPaths,
   deleteAsset,
@@ -82,6 +81,7 @@ import {
   downloadUpdate,
   cancelDownload,
   installUpdate,
+  getLastUpdaterStatus,
 } from "./updater";
 import { watchFile, stopWatching } from "./services/watch";
 import { checkNodeVersion, validateNodePath } from "./services/nodeCheck";
@@ -457,7 +457,8 @@ export function registerIpcHandlers(
         message: validation.error ?? "The selected file is not valid.",
       };
     }
-    // Validate the selection before persisting it.
+    // Validate selection. Renderer persists it only when user clicks Settings
+    // Save; Cancel must not mutate global settings.
     const status = await checkNodeVersion(validation.path);
     if (status.status === "missing" || status.status === "unknown") {
       // The chosen file isn't a working Node binary; report without saving.
@@ -467,23 +468,18 @@ export function registerIpcHandlers(
       };
     }
 
-    const settings = readGlobalSettings();
-    settings.customNodePath = validation.path;
-    writeGlobalSettings(settings);
     return status;
   });
 
   ipcMain.handle(
     IPC.nodeSetPath,
     async (_e, customPath: string | null): Promise<unknown> => {
-      // Clearing the custom path is always allowed.
+      // Probe requested path. Renderer persists it only on Settings Save;
+      // choosing Auto-detect then Cancel must not change settings.json.
       if (
         customPath === null ||
         (typeof customPath === "string" && customPath.trim().length === 0)
       ) {
-        const settings = readGlobalSettings();
-        settings.customNodePath = null;
-        writeGlobalSettings(settings);
         return checkNodeVersion(null);
       }
       // Validate the path shape *before* persisting or probing it, so a
@@ -492,9 +488,6 @@ export function registerIpcHandlers(
       if (!validation.ok || !validation.path) {
         return checkNodeVersion(readGlobalSettings().customNodePath);
       }
-      const settings = readGlobalSettings();
-      settings.customNodePath = validation.path;
-      writeGlobalSettings(settings);
       return checkNodeVersion(validation.path);
     },
   );
@@ -528,20 +521,6 @@ export function registerIpcHandlers(
 
   ipcMain.handle(IPC.fileRead, (_e, projectPath: string, rel: string) =>
     approved(projectPath, () => readProjectFile(projectPath, rel)),
-  );
-
-  ipcMain.handle(
-    IPC.fileWrite,
-    (_e, projectPath: string, rel: string, content: string) =>
-      approved(projectPath, () => writeProjectFile(projectPath, rel, content)),
-  );
-
-  ipcMain.handle(
-    IPC.importImage,
-    (_e, projectPath: string, publicDir: string) =>
-      approved(projectPath, () =>
-        importImage(getWindow(), projectPath, publicDir),
-      ),
   );
 
   ipcMain.handle(
@@ -708,10 +687,20 @@ export function registerIpcHandlers(
     IPC.watchStart,
     (event, projectPath: string, rel: string): OperationResult => {
       assertApprovedProject(projectPath);
-      watchFile(projectPath, rel, (changed) => {
+      const started = watchFile(projectPath, rel, (changed) => {
         if (!event.sender.isDestroyed())
           event.sender.send(IPC.externalChange, changed);
       });
+      // A failed start means NO file is being watched (single global
+      // watcher) — the renderer must be told, or it believes external
+      // change detection is active when it is not.
+      if (!started) {
+        return {
+          ok: false,
+          error:
+            "Could not watch the page for external edits (path invalid or unreadable).",
+        };
+      }
       return { ok: true };
     },
   );
@@ -803,6 +792,15 @@ export function registerIpcHandlers(
     ),
   );
 
+  ipcMain.handle(IPC.updaterStatusGet, (event) => {
+    if (!assertUpdaterSender(event.sender.id)) {
+      return { status: "error", error: "Unauthorized sender." };
+    }
+    // The startup check can resolve before the renderer's listener attaches;
+    // this lets the renderer claim the cached status instead of showing a
+    // false "Up to date".
+    return getLastUpdaterStatus();
+  });
   ipcMain.handle(IPC.updaterCheck, (event) => {
     if (!assertUpdaterSender(event.sender.id)) {
       return { status: "error", error: "Unauthorized sender." };
@@ -839,11 +837,9 @@ export function registerIpcHandlers(
     }
   });
   ipcMain.handle(IPC.getAppVersion, () => app.getVersion());
-  ipcMain.handle(IPC.openConfigFolder, () => {
-    shell.openPath(app.getPath("userData")).catch(() => {
-      /* best-effort */
-    });
-    return { ok: true };
+  ipcMain.handle(IPC.openConfigFolder, async () => {
+    const error = await shell.openPath(app.getPath("userData"));
+    return error ? { ok: false, error } : { ok: true };
   });
 
   app.on("before-quit", () => {

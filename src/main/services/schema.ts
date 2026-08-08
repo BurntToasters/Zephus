@@ -23,7 +23,9 @@ import {
 import { detectAstro, listPages } from "./project";
 import { readRepoSettings } from "./settings";
 import { readJsonSafe, writeFileAtomic } from "./fsSafe";
+import { markSelfWritten } from "./watch";
 import { escapeAttr, escapeHtml, safeUrl } from "../../shared/renderHelpers";
+import { decodeHTML } from "entities";
 
 /**
  * Escapes text for a quoted Astro attribute: HTML-escaping plus `{`/`}` as
@@ -51,7 +53,7 @@ import {
 const FRONTMATTER_PATTERN = /^(---\r?\n[\s\S]*?\r?\n---\r?\n?)/;
 // Quote-aware tag matcher: a `>` inside a quoted attribute value must not end
 // the tag (mirrors DOM parsing used by the renderer).
-const TAG_PATTERN_SOURCE = "(?:[^>\"'\\n]|\"[^\"]*\"|'[^']*')*>";
+const TAG_PATTERN_SOURCE = "(?:[^>\"']|\"[^\"]*\"|'[^']*')*>";
 const TAG_TOKEN = new RegExp(
   `<!--[\\s\\S]*?-->|<\\/?([A-Za-z][\\w:-]*)\\b${TAG_PATTERN_SOURCE}`,
   "g",
@@ -452,10 +454,20 @@ export function mergePageNavItems(
     }
   }
 
-  // Only page-bound items are adopted: a hand-authored custom item that
-  // happens to share a page's href must keep its own label/visibility (the
-  // page's navVisible flag must not override a deliberate custom link).
+  // A hand-authored custom item that targets a page's route is a deliberate
+  // override: it must keep its own label/visibility instead of being deleted
+  // (the previous filter dropped it on every site write) or overridden by the
+  // page's navVisible flag.
+  const customByHref = new Map(
+    customItems
+      .filter((item) => typeof item.href === "string" && item.href)
+      .map((item) => [item.href, item]),
+  );
   const pageItems = pageDocs.map((doc) => {
+    const override = customByHref.get(doc.route);
+    if (override) {
+      return { ...override, page: doc.page };
+    }
     const existing = existingByPage.get(doc.page);
     return {
       id: existing?.id ?? `nav-${doc.slug}`,
@@ -694,85 +706,17 @@ function pageMetaFromFrontmatter(
   };
 }
 
-/** Common HTML named entities, decoded to match the DOM parser (editorParse). */
-const NAMED_ENTITIES: Record<string, string> = {
-  amp: "&",
-  lt: "<",
-  gt: ">",
-  quot: '"',
-  apos: "'",
-  nbsp: " ",
-  copy: "©",
-  reg: "®",
-  trade: "™",
-  ndash: "–",
-  mdash: "—",
-  hellip: "…",
-  lsquo: "‘",
-  rsquo: "’",
-  ldquo: "“",
-  rdquo: "”",
-  bull: "•",
-  middot: "·",
-  times: "×",
-  divide: "÷",
-  plusmn: "±",
-  deg: "°",
-  micro: "µ",
-  para: "¶",
-  sect: "§",
-  laquo: "«",
-  raquo: "»",
-  euro: "€",
-  pound: "£",
-  yen: "¥",
-  cent: "¢",
-  frac12: "½",
-  frac14: "¼",
-  frac34: "¾",
-  sup1: "¹",
-  sup2: "²",
-  sup3: "³",
-  iexcl: "¡",
-  iquest: "¿",
-  not: "¬",
-  ordm: "º",
-  ordf: "ª",
-};
-
 /**
- * Decodes HTML entities (named, decimal, hex) in a single left-to-right pass,
- * mirroring how the DOM parser decodes attribute/text values. A literal
- * `&amp;copy;` becomes the TEXT `&copy;` (the replacement is never re-scanned),
- * exactly like browser parsing.
+ * Decodes HTML entities (named, decimal, hex) exactly like the DOM parser:
+ * spec-conformant maximal-name matching, legacy no-semicolon references,
+ * numeric refs without semicolons, and U+FFFD for invalid code points. Uses
+ * the same `entities` decoder that parse5 (and therefore the renderer's DOM
+ * parser) uses internally, so both parsers produce byte-identical text.
+ * A literal `&amp;copy;` becomes the TEXT `&copy;` (never re-scanned).
  */
 function decodeHtmlEntities(value: string): string {
   if (!value.includes("&")) return value;
-  return value.replace(
-    /&(?:#(\d+)|#[xX]([0-9a-fA-F]+)|([a-zA-Z][a-zA-Z0-9]{1,31}));/g,
-    (
-      match: string,
-      dec: string | undefined,
-      hex: string | undefined,
-      name: string | undefined,
-    ) => {
-      if (dec !== undefined) {
-        const code = Number(dec);
-        return code > 0 && code <= 0x10ffff
-          ? String.fromCodePoint(code)
-          : match;
-      }
-      if (hex !== undefined) {
-        const code = parseInt(hex, 16);
-        return code > 0 && code <= 0x10ffff
-          ? String.fromCodePoint(code)
-          : match;
-      }
-      if (name === undefined) return match;
-      const replacement = NAMED_ENTITIES[name.toLowerCase()];
-      return replacement !== undefined ? replacement : match;
-    },
-  );
+  return decodeHTML(value);
 }
 
 function textFromHtml(html: string): string {
@@ -914,7 +858,13 @@ function splitTopLevelNodes(inner: string): string[] {
 
     if (inner.startsWith("<!--", index)) {
       const end = inner.indexOf("-->", index);
-      if (end < 0) break;
+      if (end < 0) {
+        // Unterminated comment (truncated file, typod "--!>"): keep the rest
+        // as content instead of silently dropping everything to EOF.
+        out.push(inner.slice(index));
+        index = inner.length;
+        continue;
+      }
       out.push(inner.slice(index, end + 3));
       index = end + 3;
       continue;
@@ -958,6 +908,10 @@ function splitTopLevelNodes(inner: string): string[] {
     while (depth > 0) {
       const next = tokenRe.exec(inner);
       if (!next) {
+        // Unclosed container (e.g. a hand-edited page missing its close
+        // tag): keep the remaining markup instead of silently dropping it.
+        // The DOM parser leaves the element open and preserves it too.
+        out.push(inner.slice(index));
         index = inner.length;
         break;
       }
@@ -1107,8 +1061,21 @@ export function extractManagedInner(raw: string): string {
   );
   if (layoutOpen && layoutOpen.index !== undefined) {
     const openEnd = layoutOpen.index + layoutOpen[0].length;
-    const closeIndex = body.lastIndexOf("</BaseLayout>");
-    if (closeIndex > openEnd) return body.slice(openEnd, closeIndex).trim();
+    // Case-insensitive close so "<BaseLayout>" + "</baseLayout>" still match.
+    const closeRegex = /<\/BaseLayout\s*>/gi;
+    let lastClose: RegExpExecArray | null = null;
+    let closeMatch: RegExpExecArray | null;
+    while ((closeMatch = closeRegex.exec(body))) lastClose = closeMatch;
+    // Only slice the layout region when it really wraps the whole body:
+    // content after the closing tag belongs to the page (hand-authored) and
+    // must survive parsing/regeneration — the renderer keeps it too.
+    if (
+      lastClose &&
+      lastClose.index > openEnd &&
+      body.slice(lastClose.index + lastClose[0].length).trim().length === 0
+    ) {
+      return body.slice(openEnd, lastClose.index).trim();
+    }
   }
 
   const bodyMatch = body.match(
@@ -1240,10 +1207,12 @@ function defaultSectionNode(blocks: BlockNode[]): SectionNode {
  * Sanitizes a value destined for a CSS declaration. Strips characters that
  * could break out of the declaration/rule (`;{}<>` and newlines) to prevent
  * CSS injection from design-token values in site.json. Caps length.
+ * `:` and `@` are preserved: tokens like `var(--accent)` or `calc(...)`
+ * are advertised as valid inputs and would be destroyed otherwise.
  */
 function cssValue(value: string): string {
   return (value ?? "")
-    .replace(/[;{}<>:@*\\]/g, "")
+    .replace(/[;{}<>\\]/g, "")
     .replace(/\//g, "")
     .replace(/[\r\n]+/g, " ")
     .trim()
@@ -1501,6 +1470,9 @@ function refreshPostListPages(
     }
     for (const { file, doc, html } of pending) {
       writeFileAtomic(file, html);
+      // A post-list refresh regenerates OTHER pages: suppress the watcher so
+      // the open page does not get a false "modified outside Zephus" prompt.
+      markSelfWritten(doc.page);
       writePageDocumentFile(projectPath, {
         ...doc,
         generatedHash: hashText(html),
@@ -1651,8 +1623,25 @@ function defaultSiteDocument(
  * as `undefined` would emit `lang="undefined"` into the managed layout.
  */
 function withSiteDefaults(site: SiteDocument): SiteDocument {
+  const siteName = site.siteName || "Site";
+  // A site.json missing design/shell (ancient, hand-edited, or partially
+  // corrupted shape) must not crash downstream code (syncSiteShellOutputs
+  // reads site.shell.navItems, renderManagedStyles reads site.design.accent).
+  const design =
+    site.design && typeof site.design === "object"
+      ? { ...defaultDesignTokens(), ...site.design }
+      : defaultDesignTokens();
+  const shell =
+    site.shell && typeof site.shell === "object"
+      ? { ...defaultShell(siteName, ""), ...site.shell }
+      : defaultShell(siteName, "");
   return {
     ...site,
+    schemaVersion: site.schemaVersion ?? ZEPHUS_SCHEMA_VERSION,
+    themeId: site.themeId ?? "project",
+    siteName,
+    design,
+    shell,
     siteUrl: typeof site.siteUrl === "string" ? site.siteUrl : "",
     language:
       typeof site.language === "string" && site.language.trim()
@@ -1667,7 +1656,10 @@ function withPageMetaDefaults<T extends PageMeta>(doc: T): T {
   const reservedNotFound = isNotFoundSlug(doc.slug);
   return {
     ...doc,
-    navVisible: reservedNotFound ? false : doc.navVisible,
+    // Sidecars predating the field have `navVisible: undefined` — treat that
+    // as the default (visible), matching the frontmatter path, or the page
+    // silently vanishes from the generated navigation after an upgrade.
+    navVisible: reservedNotFound ? false : doc.navVisible !== false,
     socialImage: typeof doc.socialImage === "string" ? doc.socialImage : "",
     canonicalUrl: typeof doc.canonicalUrl === "string" ? doc.canonicalUrl : "",
     noindex: reservedNotFound || doc.noindex === true,
@@ -1688,7 +1680,10 @@ function readPageDocumentFile(
   });
 }
 
-function writePageDocumentFile(projectPath: string, doc: PageDocument): void {
+export function writePageDocumentFile(
+  projectPath: string,
+  doc: PageDocument,
+): void {
   writeJsonFile(pageSchemaFile(projectPath, doc.slug), doc);
 }
 
@@ -1764,7 +1759,9 @@ function syncLegacyLayoutNav(
   const links = navItems
     .map(
       (item) =>
-        `        <a href="${escapeAttr(item.href)}">${escapeHtml(item.label)}</a>`,
+        // safeUrl before escapeAttr: a javascript: nav href must not reach
+        // the layout (matches renderManagedLayout).
+        `        <a href="${escapeAttr(safeUrl(item.href) || "#")}">${escapeHtml(item.label)}</a>`,
     )
     .join("\n");
   const navBlock = `<nav>\n${links}\n      </nav>`;
@@ -1787,10 +1784,11 @@ function syncLegacyLayoutNav(
     if (depth === 0) index = depthRe.lastIndex;
   }
   if (depth !== 0) return;
-  writeFileAtomic(
-    layoutFile,
-    content.slice(0, navOpen) + navBlock + content.slice(index),
-  );
+  const updated = content.slice(0, navOpen) + navBlock + content.slice(index);
+  // No-op short-circuit: opening a legacy-layout project rewrote this file on
+  // EVERY open (mtime churn, git noise). Only write when the nav differs.
+  if (updated === content) return;
+  writeFileAtomic(layoutFile, updated);
 }
 
 function syncSiteShellOutputs(
@@ -1867,12 +1865,58 @@ function migratePageToDocument(
   const raw = fs.readFileSync(safeResolve(projectPath, page), "utf8");
   const { frontmatter } = splitFrontmatter(raw);
   const parsedFrontmatter = parseFrontmatter(frontmatter);
-  return buildPageDocumentWithSections(
+  const doc = buildPageDocumentWithSections(
     page,
     pagesDir,
     parseSectionsFromSource(raw),
     parsedFrontmatter,
   );
+  // Non-.astro files (legacy .md/.mdx/.html pages) can never be regenerated:
+  // writing Astro-component source (BaseLayout import, <section> markup) into
+  // a .md/.mdx/.html file corrupts it in place — the file keeps its old
+  // extension while its content becomes invalid for that format. They are
+  // always reported as hand-authored (out-of-sync), never just-migrated.
+  if (path.extname(page).toLowerCase() !== ".astro") {
+    return { ...doc, managedFileStatus: "out-of-sync" };
+  }
+  // A page that parses as canonical Zephus output (BaseLayout import only,
+  // no Astro expressions/script/style blocks) round-trips losslessly and may
+  // be regenerated from its tree. Anything else is hand-authored: the parse
+  // tree cannot represent imports, consts, expressions, or style blocks, and
+  // materializing it would destroy the user's file. Such pages are kept
+  // untouched and reported as out-of-sync instead.
+  if (!isCanonicalManagedSource(raw)) {
+    return { ...doc, managedFileStatus: "out-of-sync" };
+  }
+  return doc;
+}
+
+/**
+ * True when the page source looks like canonical Zephus output that can be
+ * regenerated losslessly: frontmatter limited to the BaseLayout import,
+ * key/value metadata (legacy Zephus pages store title/navLabel etc. there),
+ * and comments — and no Astro `{...}` expressions, <script>, or <style>.
+ */
+function isCanonicalManagedSource(raw: string): boolean {
+  const { frontmatter, body } = splitFrontmatter(raw);
+  for (const line of frontmatter.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    if (trimmed === "---") continue;
+    if (trimmed.startsWith("//")) continue;
+    if (/^[A-Za-z][\w-]*\s*:/.test(trimmed)) continue;
+    if (
+      /^import\s+(?:[^'"\n]*?\s+from\s+)?['"][^'"]*BaseLayout[^'"]*['"]/i.test(
+        trimmed,
+      )
+    ) {
+      continue;
+    }
+    return false;
+  }
+  if (/<style\b|<script\b/i.test(body)) return false;
+  if (/\{[^{}\n]*\}/.test(body)) return false;
+  return true;
 }
 
 export function getVisualSchemaStatus(
@@ -1980,9 +2024,35 @@ export function ensureVisualSchema(
           "saved next to it. Restore it from version control to continue.",
       };
     }
+    // Never downgrade: a project created by a NEWER Zephus (higher
+    // schemaVersion) must not be read, re-merged, and rewritten by this older
+    // build — that silently overwrites the newer layout/nav/design with this
+    // version's markup and stamps the older schemaVersion onto the pages.
+    if (
+      siteCheck.data &&
+      typeof (siteCheck.data as SiteDocument).schemaVersion === "number" &&
+      (siteCheck.data as SiteDocument).schemaVersion! > ZEPHUS_SCHEMA_VERSION
+    ) {
+      return {
+        ok: false,
+        status: null,
+        error:
+          "This project was created with a newer version of Zephus " +
+          `(schema v${(siteCheck.data as SiteDocument).schemaVersion}). ` +
+          "Please update Zephus to open it — this build would overwrite " +
+          "newer data.",
+      };
+    }
     const site = siteCheck.data
       ? withSiteDefaults(siteCheck.data)
       : defaultSiteDocument(projectPath, layoutPath, nextThemeId);
+    // A partial/hand-edited site.json may carry an empty or missing
+    // layoutPath; the shell defaults cannot know the project layout, so fill
+    // it from the detected layout here (an empty layoutPath made
+    // syncLegacyLayoutNav read a directory and fail the whole open).
+    if (!site.shell?.layoutPath) {
+      site.shell.layoutPath = layoutPath;
+    }
 
     const pages = listPages(projectPath, pagesDir);
     const justMigratedSlugs = new Set<string>();
@@ -1992,7 +2062,13 @@ export function ensureVisualSchema(
       if (!doc) {
         doc = migratePageToDocument(projectPath, page, pagesDir);
         writePageDocumentFile(projectPath, doc);
-        justMigratedSlugs.add(slug);
+        // Only losslessly-round-trippable pages may be regenerated from their
+        // tree. Hand-authored pages (imports/expressions/style blocks) are
+        // flagged out-of-sync by migratePageToDocument; writing them back
+        // would destroy content, so they are never marked just-migrated.
+        if (doc.managedFileStatus !== "out-of-sync") {
+          justMigratedSlugs.add(slug);
+        }
       }
       return doc;
     });
@@ -2318,8 +2394,16 @@ export function writePageDocument(
     }
     const nextSlug = slugFromPage(doc.page, pagesDir);
     const nextIsNotFound = isNotFoundSlug(nextSlug);
+    // Derive the write target from the normalized slug — never trust doc.page.
+    // A stale/compromised renderer could otherwise submit page:"package.json"
+    // (or any project-relative path) and clobber that file with generated page
+    // content, bypassing the files.ts protected-target denylist. Canonicalizing
+    // to pagesDir/<slug>.astro confines every write to a real page file.
+    const nextExt = path.extname(doc.page) || ".astro";
+    const nextPage = pagePathFromSlug(pagesDir, nextSlug, nextExt);
     const nextDoc: PageDocument = {
       ...doc,
+      page: nextPage,
       slug: nextSlug,
       // The 404 route has a non-negotiable navigation/search policy, even if
       // a stale or compromised renderer submits conflicting metadata.
@@ -2344,30 +2428,105 @@ export function writePageDocument(
     );
     nextDoc.generatedHash = hashText(generatedSource);
     writePageDocumentFile(projectPath, nextDoc);
-    fs.mkdirSync(path.dirname(safeResolve(projectPath, nextDoc.page)), {
-      recursive: true,
-    });
-    fs.writeFileSync(
-      safeResolve(projectPath, nextDoc.page),
-      generatedSource,
-      "utf8",
-    );
+    // Atomic write: a crash mid-write must not corrupt the .astro (the
+    // sidecar hash was already written above, so a half-written page would
+    // be flagged out-of-sync on the next open).
+    writeFileAtomic(safeResolve(projectPath, nextDoc.page), generatedSource);
+    // The file watcher (open-page external-change detection) must not treat
+    // this save as an external edit.
+    markSelfWritten(nextDoc.page);
     syncSiteShellOutputs(projectPath, site, pagesDir);
     // This page's own metadata may have changed what other pages list.
     refreshPostListPages(projectPath, pagesDir, site, nextDoc.page);
-    writeJsonFile(siteDocumentFile(projectPath), {
+    // The returned site MUST reflect what lands on disk (fresh generatedAt).
+    // Returning the pre-write object made the renderer's drift check compare
+    // its baseline (old generatedAt) against disk (new generatedAt) and
+    // false-positive "site changed on disk" after EVERY page write — blocking
+    // site saves and deadlocking autosave page-switches.
+    const updatedSite: SiteDocument = {
       ...site,
       generatedAt: new Date().toISOString(),
-    });
+    };
+    writeJsonFile(siteDocumentFile(projectPath), updatedSite);
     return {
       ok: true,
-      site,
+      site: updatedSite,
       pageDocument: nextDoc,
       source: generatedSource,
       generatedSource,
     };
   } catch (error) {
     log.error("Failed to write page document", error);
+    return {
+      ok: false,
+      site: null,
+      pageDocument: null,
+      source: null,
+      generatedSource: null,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+/**
+ * Metadata-only write for detached / out-of-sync pages. Unlike
+ * writePageDocument it does NOT regenerate the .astro from the sidecar tree
+ * and does NOT reattach the page — the hand-authored source stays byte-for-
+ * byte intact. Only the JSON sidecar's metadata fields change, then the site
+ * shell outputs (layout nav) are resynced so visibility edits still publish.
+ *
+ * This is what protects eye-toggle / settings-save / stage-navigation on a
+ * detached page from silently destroying hand-authored code: the previous
+ * code path routed through writePageDocument, which regenerated the file from
+ * the (stale) sidecar tree and flipped the page back to "managed".
+ */
+export function writePageMetadataPreservingSource(
+  projectPath: string,
+  pagesDir: string,
+  doc: PageDocument,
+): PageDocumentResult {
+  try {
+    const site = readJsonFile<SiteDocument>(siteDocumentFile(projectPath));
+    if (!site) {
+      return {
+        ok: false,
+        site: null,
+        pageDocument: null,
+        source: null,
+        generatedSource: null,
+        error: "Site schema not found.",
+      };
+    }
+    const nextSlug = slugFromPage(doc.page, pagesDir);
+    const nextIsNotFound = isNotFoundSlug(nextSlug);
+    const nextDoc: PageDocument = {
+      ...doc,
+      slug: nextSlug,
+      navVisible: nextIsNotFound ? false : doc.navVisible,
+      noindex: nextIsNotFound ? true : doc.noindex,
+      schemaVersion: ZEPHUS_SCHEMA_VERSION,
+      // Preserve the hand-authored state exactly as read.
+      detached: doc.detached,
+      detachedAt: doc.detachedAt,
+      managedFileStatus: doc.managedFileStatus,
+      generatedHash: doc.generatedHash,
+    };
+    writePageDocumentFile(projectPath, nextDoc);
+    syncSiteShellOutputs(projectPath, site, pagesDir);
+    const updatedSite: SiteDocument = {
+      ...site,
+      generatedAt: new Date().toISOString(),
+    };
+    writeJsonFile(siteDocumentFile(projectPath), updatedSite);
+    return {
+      ok: true,
+      site: updatedSite,
+      pageDocument: nextDoc,
+      source: null,
+      generatedSource: null,
+    };
+  } catch (error) {
+    log.error("Failed to write page metadata (preserving source)", error);
     return {
       ok: false,
       site: null,
@@ -2442,6 +2601,23 @@ export function reattachPageDocument(
     }
 
     const source = fs.readFileSync(safeResolve(projectPath, page), "utf8");
+    // Same lossless guard as migration: a hand-authored page (imports beyond
+    // BaseLayout, Astro expressions, <style>/<script>) cannot be represented
+    // by the parse tree — reattaching would silently drop those and rewrite
+    // the file. Refuse instead of destroying content.
+    if (!isCanonicalManagedSource(source)) {
+      return {
+        ok: false,
+        site: null,
+        pageDocument: null,
+        source,
+        generatedSource: null,
+        error:
+          "This page contains hand-authored code that visual mode cannot " +
+          "represent (imports, expressions, or style/script blocks). " +
+          "Reattaching would discard them.",
+      };
+    }
     const { frontmatter } = splitFrontmatter(source);
     const nextDoc = buildPageDocumentWithSections(
       page,
@@ -2620,10 +2796,19 @@ export function duplicatePageSchema(
       // A duplicate must not claim the original's canonical URL, or search
       // engines are told the copy is the same page as the original.
       canonicalUrl: "",
-      detached: false,
-      detachedAt: null,
-      managedFileStatus: "managed",
-      generatedHash: null,
+      // Preserve the original's authorship state: duplicating a detached /
+      // out-of-sync page must yield a detached copy whose hand-authored bytes
+      // (copied verbatim by duplicatePage) stay intact. Forcing "managed" here
+      // made the subsequent write regenerate the copy from the stale tree and
+      // drop all hand-authored content.
+      detached: doc.detached,
+      detachedAt: doc.detachedAt,
+      managedFileStatus: doc.managedFileStatus,
+      // The copied .astro is the ORIGINAL's bytes, so its hash carries over.
+      // A null hash on a managed copy made resolveManagedStatus see "disk !=
+      // generated (title differs) + no hash" → the duplicate was flagged
+      // out-of-sync on the next open and stuck in hand-authored mode.
+      generatedHash: doc.generatedHash,
     };
     // Refuse to silently overwrite a stale sidecar (e.g. from a previously
     // deleted page whose .astro was recreated by hand).

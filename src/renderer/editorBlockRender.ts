@@ -37,7 +37,10 @@ export function sanitizeHtmlForCanvas(html: string): string {
       tag === "script" ||
       tag === "object" ||
       tag === "embed" ||
-      tag === "iframe"
+      tag === "iframe" ||
+      // <base> rewrites every relative URL on the canvas (images, links, css)
+      // to an attacker-chosen origin — remove it outright.
+      tag === "base"
     ) {
       toRemove.push(node);
     } else {
@@ -45,11 +48,23 @@ export function sanitizeHtmlForCanvas(html: string): string {
         const name = attr.name.toLowerCase();
         if (name.startsWith("on")) {
           node.removeAttribute(attr.name);
+        } else if (name === "srcset") {
+          // Filter dangerous entries; drop the attribute if none survive.
+          const safe = sanitizeSrcset(attr.value);
+          if (safe === null) node.removeAttribute(attr.name);
+          else node.setAttribute(attr.name, safe);
         } else if (
           name === "srcdoc" ||
           name === "formaction" ||
+          name === "action" ||
+          (name === "poster" &&
+            /^\s*(javascript|vbscript|data):/i.test(
+              attr.value.replace(/[\t\n\r]/g, ""),
+            )) ||
           ((name === "href" || name === "src" || name === "xlink:href") &&
-            /^\s*(javascript|vbscript|data):/i.test(attr.value))
+            /^\s*(javascript|vbscript|data):/i.test(
+              attr.value.replace(/[\t\n\r]/g, ""),
+            ))
         ) {
           node.removeAttribute(attr.name);
         }
@@ -59,6 +74,24 @@ export function sanitizeHtmlForCanvas(html: string): string {
   }
   for (const el of toRemove) el.remove();
   return tpl.innerHTML;
+}
+
+/**
+ * Filters a srcset attribute ("/a.png 1x, /b.png 2x") down to entries with
+ * safe URL schemes. Returns null when every entry is dangerous (the caller
+ * then drops the attribute). An empty srcset is treated as safe (no-op).
+ */
+function sanitizeSrcset(value: string): string | null {
+  const entries = value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  if (entries.length === 0) return null;
+  const safe = entries.filter(
+    (entry) =>
+      !/^\s*(javascript|vbscript|data):/i.test(entry.replace(/[\t\n\r]/g, "")),
+  );
+  return safe.length > 0 ? safe.join(", ") : null;
 }
 
 export function blockToHtmlForEditor(

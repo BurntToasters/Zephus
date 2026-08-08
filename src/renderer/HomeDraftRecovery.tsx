@@ -5,10 +5,12 @@ export interface HomeDraftEntry {
   projectPath: string;
   title: string;
   body: string;
+  scope?: string;
+  target?: string;
 }
 
 export interface HomeDraftRecoveryHandlers {
-  onResumeDraft: (projectPath: string) => void;
+  onResumeDraft: (projectPath: string, scope?: string, target?: string) => void;
 }
 
 const [entries, setEntries] = createSignal<HomeDraftEntry[]>([]);
@@ -35,7 +37,13 @@ export function HomeDraftRecoveryPanel() {
               <div class="home-status-actions">
                 <button
                   class="mini-btn"
-                  onClick={() => handlers?.onResumeDraft(entry.projectPath)}
+                  onClick={() =>
+                    handlers?.onResumeDraft(
+                      entry.projectPath,
+                      entry.scope,
+                      entry.target,
+                    )
+                  }
                 >
                   Resume Draft
                 </button>

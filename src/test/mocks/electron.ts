@@ -47,5 +47,15 @@ export const session = {
   defaultSession: { webRequest: { onHeadersReceived: noop } },
 };
 export const contextBridge = { exposeInMainWorld: noop };
-export const ipcRenderer = { invoke: async () => undefined, on: noop };
+// Failing loudly beats resolving `undefined` (a silent false-pass): any test
+// that reaches through preload to ipcRenderer.invoke must mock the channel
+// explicitly, or the code under test would "succeed" on undefined results.
+export const ipcRenderer = {
+  invoke: async (channel: string) => {
+    throw new Error(
+      `ipcRenderer.invoke("${String(channel)}") is not mocked. Mock the channel explicitly before exercising preload/ipc paths.`,
+    );
+  },
+  on: noop,
+};
 export const webUtils = { getPathForFile: () => "" };

@@ -58,6 +58,8 @@ describe(".zephus project structure", () => {
     expect(files).toContain("site.json");
     expect(files).toContain("settings.json");
     expect(files.filter((f) => f.startsWith("pages/"))).toEqual([
+      // Every fresh site scaffolds a 404 page (and its sidecar).
+      "pages/404.json",
       "pages/index.json",
     ]);
     // No transient caches may live in the committed state.

@@ -14,8 +14,10 @@ import {
   readPageDocument,
   renamePageSchema,
   routeFromPage,
-  writeSiteDocument,
   writePageDocument,
+  writePageDocumentFile,
+  writePageMetadataPreservingSource,
+  writeSiteDocument,
 } from "./schema";
 
 /** Resolves a project page path with symlink-aware containment. */
@@ -142,7 +144,15 @@ export function writePageMetadata(
     publishDate: partial.publishDate ?? current.pageDocument.publishDate,
     author: partial.author ?? current.pageDocument.author,
   };
-  const saved = writePageDocument(projectPath, pagesDir, next);
+  // Detached / out-of-sync pages hold hand-authored code. A metadata edit must
+  // never regenerate the .astro from the (stale) sidecar tree or reattach the
+  // page — that silently destroys the author's work. Write sidecar-only.
+  const preserveSource =
+    current.pageDocument.detached ||
+    current.pageDocument.managedFileStatus === "out-of-sync";
+  const saved = preserveSource
+    ? writePageMetadataPreservingSource(projectPath, pagesDir, next)
+    : writePageDocument(projectPath, pagesDir, next);
   return saved.ok ? { ok: true } : { ok: false, error: saved.error };
 }
 
@@ -210,7 +220,7 @@ export function renamePage(
     if (current.ok && current.pageDocument) {
       const nextIsNotFound = isNotFoundSlug(nextSlug);
       const previousWasNotFound = isNotFoundSlug(current.pageDocument.slug);
-      const saved = writePageDocument(projectPath, pagesDir, {
+      const nextDoc = {
         ...current.pageDocument,
         page: nextRel,
         slug: nextSlug,
@@ -226,7 +236,19 @@ export function renamePage(
           : previousWasNotFound
             ? false
             : current.pageDocument.noindex,
-      });
+      };
+      // Detached/out-of-sync pages carry hand-authored content ONLY on disk:
+      // the sidecar tree is stale, and writePageDocument would force them
+      // back to "managed" and regenerate the file from that stale tree —
+      // destroying the user's edits. A rename must move bytes, not content.
+      if (
+        current.pageDocument.detached ||
+        current.pageDocument.managedFileStatus === "out-of-sync"
+      ) {
+        writePageDocumentFile(projectPath, nextDoc);
+        return { ok: true };
+      }
+      const saved = writePageDocument(projectPath, pagesDir, nextDoc);
       if (!saved.ok) {
         fs.writeFileSync(from, originalSource, "utf8");
         if (fs.existsSync(to)) {
@@ -277,7 +299,20 @@ export function duplicatePage(
     }
     const next = readPageDocument(projectPath, nextRel, pagesDir);
     if (next.ok && next.pageDocument) {
-      const saved = writePageDocument(projectPath, pagesDir, next.pageDocument);
+      // Detached / out-of-sync originals were copied byte-for-byte above;
+      // regenerating them via writePageDocument would rebuild the copy from
+      // the stale sidecar tree and silently drop the hand-authored content.
+      // For those, only sync metadata + shell outputs (no .astro rewrite).
+      const preserveSource =
+        next.pageDocument.detached ||
+        next.pageDocument.managedFileStatus === "out-of-sync";
+      const saved = preserveSource
+        ? writePageMetadataPreservingSource(
+            projectPath,
+            pagesDir,
+            next.pageDocument,
+          )
+        : writePageDocument(projectPath, pagesDir, next.pageDocument);
       if (!saved.ok) {
         fs.rmSync(to, { force: true });
         deletePageSchema(projectPath, nextRel, pagesDir);

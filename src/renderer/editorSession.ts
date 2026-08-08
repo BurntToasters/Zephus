@@ -36,7 +36,6 @@ export interface EditorSessionState {
   pageChangeSummary: string[];
   siteChangeSummary: string[];
   previewUrl: string | null;
-  unsubLog: null | (() => void);
   unsubExternal: null | (() => void);
   undo: EditorSnapshot[];
   redo: EditorSnapshot[];
@@ -75,7 +74,6 @@ export function createEditorSession(): EditorSessionState {
     pageChangeSummary: [],
     siteChangeSummary: [],
     previewUrl: null,
-    unsubLog: null,
     unsubExternal: null,
     undo: [],
     redo: [],
