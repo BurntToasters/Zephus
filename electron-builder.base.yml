@@ -37,10 +37,9 @@ nsis:
   allowToChangeInstallationDirectory: false
   oneClick: false
   perMachine: false
-  # Without publisherName, Windows installers show "Unknown Publisher" at UAC
-  # and electron-updater cannot verify downloaded updates (it skips signature
-  # checks entirely). Name must match the Authenticode certificate subject.
-  publisherName: BurntToasters
+  # Publisher verification for updates lives in win.signtoolOptions (set by
+  # build-scripts/electron-builder.windows.cjs when Azure signing is active);
+  # nsis.publisherName was removed from the electron-builder 26 schema.
 mac:
   target:
     - dmg
