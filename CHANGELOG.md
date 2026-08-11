@@ -90,7 +90,7 @@ Zephus is a **local-first visual editor for Astro sites** — no coding required
 
 **Release pipeline (fixed):**
 - **The pipeline ended with assets in a GitHub DRAFT — updaters threw "No published versions on GitHub" and the CHANGELOG download links 404'd, all with green exits.** `gpg-sign.js` now publishes the draft (and creates the tag) on the final non-arch run.
-- **`GH_TOKEN` missing silently skipped the signature upload with "✓ COMPLETE"** — a release-gate script now fails the pipeline hard when GH_TOKEN, the documented GPG key, or (on Windows) CSC_LINK are missing.
+- **`GH_TOKEN` missing silently skipped the signature upload with "✓ COMPLETE"** — a release-gate script now fails the pipeline hard when GH_TOKEN or the GPG key are missing.
 - **`test:all` never ran coverage, the runtime smoke, or the Astro builds** — all wired in with real exit codes; `test-astro-build` now asserts actual `.html` output, not source counts.
 - **Alpha/rc versions got no channel metadata** (their `latest.yml` was served to stable users); arch-less artifacts were signed twice / checksum-overwritten. Both fixed.
 - **crawl-licenses silently dropped bundled-renderer attributions** when the esbuild metafile was missing — strict mode fails; license rows derive URLs from the repository field.
@@ -105,6 +105,8 @@ Zephus is a **local-first visual editor for Astro sites** — no coding required
 - **The Preview button showed no starting state** — "Starting…" while the server boots; the dev log clears between sessions.
 - **macOS Cmd+W → dock reopen left the preview dead** (services torn down on window-all-closed) — cleanup only happens on real quit.
 - **A failed renderer load left an invisible window** — the error page's Reload button now actually works (CSP-safe) and renderer crashes reload with a guard.
+
+**Windows code-signing (wired, optional):** the Azure Artifact Signing machinery from the ROSI pipeline now lives in Zephus — `build-scripts/electron-builder.windows.cjs` signs via Azure when the `AZURE_*` variables are complete (`npm run setup:win:artifact-signing` installs the client tools once per Windows VM), and produces unsigned artifacts with a clear warning otherwise. Zephus is not code-signing yet: nothing is required, `SKIP_WIN_CODESIGN=1` forces unsigned explicitly, and the release gate no longer demands `CSC_LINK`.
 
 **Content/details (fixed):**
 - Event theme CTA said "June" under an "October 9" hero — aligned; blog scaffold post now dates at creation (was 1.5 years stale); SaaS pricing CTAs pointed at "#" — now `/contact`.

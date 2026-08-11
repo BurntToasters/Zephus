@@ -38,9 +38,10 @@ if (!process.env.GPG_KEY_ID) {
   }
 }
 
-if (process.platform === "win32" && !process.env.CSC_LINK) {
-  failures.push("CSC_LINK is required on Windows — without it the installer is unsigned (Unknown Publisher) and the updater skips signature verification.");
-}
+// Windows code-signing is OPTIONAL for now: the Azure Artifact Signing
+// machinery is wired (build-scripts/electron-builder.windows.cjs signs when
+// the AZURE_* variables are complete, otherwise warns + produces unsigned
+// artifacts). A release can ship unsigned; no variable is required here.
 
 if (failures.length > 0) {
   console.error("✗ Release gate failed:");
