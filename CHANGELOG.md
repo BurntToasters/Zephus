@@ -11,9 +11,9 @@
 |                                                                                                                                                                                                                            |                                                                                                                         | **Flatpak:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.4/Zephus-Linux-x86_64.flatpak) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.4/Zephus-Linux-aarch64.flatpak) -->  |
 
 > [!IMPORTANT]
-> The `.sig` files in this repo are NOT normal GPG signatures — they are for Zephus's built-in updater to verify the integrity of updates before downloading and installing.
+> Update integrity: updates are downloaded over HTTPS and their SHA-512 checksum (from the release feed) is verified by the updater before install. The `.asc` files are GPG signatures you can verify manually with my GPG Public Key: https://tuxedo.rosie.run/GPG/BurntToasters_0xF2FBC20F_public.asc
 >
-> The `.asc` files are my normal GPG signatures which you can verify using my GPG Public Key: https://tuxedo.rosie.run/GPG/BurntToasters_0xF2FBC20F_public.asc
+> ⚠️ The updater does NOT currently verify a code signature or GPG signature on the downloaded artifacts — an attacker who could rewrite the GitHub release feed would defeat the SHA-512 check. Until release signing is enforced end-to-end (Windows Authenticode `publisherName` + macOS codesign verification + signed feed metadata), treat the update channel as HTTPS-trust only.
 >
 > ⚠️ Arm64 Linux Binaries are NOT available at the moment. The logic is setup in the repo in case people would like to build their own :)
 
@@ -22,6 +22,80 @@
 ---
 
 ## Changes in `0.1.0 (unreleased):`
+
+### Audit round 11 — save round-trips, IPC security, lifecycle, performance, updater, browser fidelity
+
+**Security (fixed):**
+- **deletePage / renamePage / duplicatePage operated on ANY in-project file** — a compromised renderer could delete `.env`/`.git/config`, rename secrets into `src/pages/` (readable as pages), or copy them into pages dir. All three now require the target to be a real page under `pagesDir` with a page extension.
+- **detachPageDocument wrote renderer-supplied bytes to a renderer-supplied path** via bare `fs.writeFileSync` — arbitrary in-root overwrite (layout, package.json) executed by later npm/dev/build spawns. The target is now canonicalized to `pagesDir` and the file is written atomically BEFORE the sidecar (a crash mid-detach previously left "detached" + truncated code).
+- **`writePageDocument` accepted `..` traversal** (`../../layouts/BaseLayout.astro`) that normalized outside pagesDir. Rejected now.
+- **`draftList` leaked every project's absolute paths** to any sender; the project-root approval map was never revoked on close/switch. Draft summaries no longer expose project paths to unauthorized callers; approved roots are revoked on project close.
+
+**Save round-trips (fixed):**
+- **The second code-mode save silently detached a managed page**: the renderer indented the body 4 spaces, the main serializer 2 — outputs never matched, so after a save-refill the next zero-edit save saw "content differs" and converted the page to hand-authored. Both now use one 2-space indent; the code view is also no longer rewritten (and CM history wiped) on every managed save.
+- **Page-settings metadata edits were reverted by the next page save** (stale session doc). Metadata writes now merge into the session document; the eye toggle and nav-editor rows do the same.
+- **Recovered site drafts always reopened as the SHELL editor** (a design-kind draft prompted a spurious save/discard conflict, and Discard threw away the restored edits). The draft now persists the editor kind; legacy raw-site drafts still restore.
+- **Save mid-page-switch skipped a dirty SITE** (early-return bypassed the site branch). It now falls through and saves the site too.
+- **Rename ignored a failed page read** (file+sidecar moved anyway, stale doc, orphan sidecar) — bails before any filesystem change now.
+- Nested `index.astro` pages emitted `/blog/index` nav/canonical/sitemap/RSS hrefs (all 404 on the published site); `routeFromPage` now strips the trailing `/index`.
+
+**Robustness (fixed):**
+- **A corrupt-but-valid-JSON page sidecar (missing `sections`) crashed the whole project open** — every read/save failed the same way with no gate. Sidecars now default `sections` to `[]` with a warning.
+- **deletePage restore could destroy hand-authored source** (writeSiteDocument failure regenerated detached pages from the stale tree; a failed read skipped the restore entirely). The file now always comes back, sidecar-only for detached pages.
+- **before-quit cleanup killed the dev server/watcher/theme server even when the quit was CANCELED** by the unsaved-work guard — cleanup moved to `will-quit` (fires only after closes confirmed).
+- **Preview reopen race**: the old window's `closed` handler could null out / tear down the newly opened preview. The handler now guards the captured window.
+- **macOS dock click / second instance after the main window closed did nothing** (only quit+relaunch recovered) — both now recreate the window.
+- **Renderer load failure left an invisible window forever** (splash gone at 30s, no UI) — `did-fail-load`/`render-process-gone` now surface an error/reload.
+- Dev-server URL from a STOPPED server's draining stdout could settle a NEW server's promise (wrong URL, timeout kill). The handler now guards the child.
+- **fs.watch self-write suppression was single-shot** — FSEvents duplicates surfaced a false "modified outside Zephus"; keeping the marker for the whole 30s suppressed genuine external edits. Now suppresses only the duplicate burst (~500ms).
+- **Electron dialogs were called with `undefined` parent** — the real options object was dropped (lost filters/createDirectory). All dialog calls now branch explicitly.
+- **Self-write markers grew unbounded** across saves; expired markers are pruned on each schema pass.
+
+**Performance (fixed):**
+- **Opening/saving a project rewrote every sidecar, layout, style and site.json unconditionally** (git churn on every open, O(N) writes per save). All outputs now content-compare before writing; site.json's `generatedAt` only bumps when something actually changed. `listPageMetadata` no longer runs the full ensure pass twice per save.
+- **The asset browser hydrated every image as a full base64 data URL in parallel** (hundreds of multi-MB IPC payloads, main-thread stalls). The hydrated set is capped at 60.
+- Hide-on-viewport toggles no longer double-repaint the whole page.
+
+**Updater (fixed):**
+- **Stable-channel users could be offered prerelease builds** (GitHub's `/releases/latest` can point at a beta). The stable feed now rejects prerelease candidates.
+- **The README's updater-integrity claims were false** (no `.sig` verification exists anywhere). The claim is corrected and the remaining trust model documented honestly.
+
+**Browser fidelity (fixed):**
+- Tablet/mobile bezels locked the canvas height with `overflow: hidden` — content below the fold was clipped AND unreachable. Now `min-height`.
+- maxWidth-capped sections sat flush-left on canvas while publishing centered — auto margins added.
+- Button/CTA labels rendered underlined on canvas only (specificity leak) — excluded.
+- `.btn:hover` hardcoded a dark color that flashed in light theme; resize-handle focus ring was invisible on light canvas. Both use theme tokens now.
+
+**Tests:** the real-Astro compile test used stale CTA keys (`title`/`ctaLabel` never exercised the renderer); `test-astro-build` now fails on schema-ensure failures and zero-page builds; the coverage-threshold failure message reported the wrong number.
+
+### Audit round 10 — modals, page settings, code editor, onboarding, editor rules
+
+**Modals (fixed):**
+- **A `choose()`-backed modal closed externally could hang its caller forever** (publish deadlocked: `publishInFlight` stayed true until restart). Every promise-backed modal now registers a close handler; bare `closeModal()` settles it.
+- **Stale `closeModal()` after an await could close a NEWER modal** the user opened in the meantime. Async action flows now guard against popping frames they don't own.
+- **Modal bodies' Solid roots were never disposed** (settings/shell/page-settings leaked one root + detached tree per open/re-render). The modal controller now runs per-frame cleanup; shell + page-settings dispose on re-render and close.
+- The navigation-preview "Stage Navigation" ignored `writePageMeta` failures (silently lost rows) — now checks the result.
+
+**Page settings (fixed):**
+- **Slug edits were not normalized before the rename** — "My Page" produced a phantom `src/pages/My Page.astro` path, deselecting the page and breaking external-edit detection. The slug is normalized client-side (mirroring main) before rename; nested 404 routes (`404/custom`) get the same forced nav/noindex treatment as the exact `404` slug.
+- Detach of a NON-open page wrote the stale modal-open source over a possibly newer disk file — reads fresh bytes at click time; the empty-code-doc falsy bug (`getCode() || rawCode`) now uses `??`.
+
+**Code editor (fixed):**
+- Empty code docs no longer fall back to stale `rawCode` on detach.
+
+**Onboarding (fixed):**
+- **Site creation opened the project BEFORE installing dependencies** — a failed/missing open still ran npm into a replacement folder. Install now runs first; open happens after, with a status message when the project can't open and background installs are reported honestly.
+- **"I'll look around first" re-showed the welcome modal every launch** — dismissal is persisted.
+- **A failed create left residue** (schema/404 generated after the theme rollback list) and refused retries — failed creates now clean the whole target when the folder was absent/empty; the npm package name is validated (214-char cap, no leading hyphen) so `npm install` can't reject it.
+- **`dependenciesInstalled` treated ANY node_modules as success** — a partial directory from a failed install made preview fail cryptically. It now verifies every declared dependency is present.
+
+**Editor rules (fixed):**
+- **Rules only loaded at open** — a mid-session git pull that tightened `allowedBlocks` was ignored until reopen. Rules now re-apply after pull and are guarded against stale project applies; templates are filtered by the allowlist everywhere (palette, quick-insert, drag-drop, template-palette click), and section paste/duplicate/import-image paths now enforce it too.
+- **`maxHeadingLevel` was cosmetic on the canvas** — the saved .astro/build emitted the un-clamped level (canvas ≠ build). The serializer now clamps like the canvas.
+
+**Settings (fixed):**
+- The settings modal never rendered the app version; "Open Config" silently no-oped on failure; node-path picking persisted settings even when Cancel was clicked (write moved to Save); the dead-custom-path lie (modal claimed the dead binary was in use) is gone — the real check message shows now; the theme setting is now REAL (light/system token sets + light start view + System follows the OS), not a dead `data-theme` attribute.
+- Modal updater controls now refresh during a download (percent + Cancel), not only after it resolves.
 
 ### Audit round 9 — startup, shortcuts, git panel, updater, themes, templates
 

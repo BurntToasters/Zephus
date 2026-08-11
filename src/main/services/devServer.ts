@@ -243,7 +243,10 @@ async function startDevServerProcess(
         const text = data.toString();
         onLog(text);
         const url = urlScanner.push(text);
-        if (url && current && !current.url) {
+        // Guard the child: a stopped server's stdout can still drain while a
+        // NEW server starts — its URL must not settle the new promise, or the
+        // new server gets killed by the timeout with the wrong URL reported.
+        if (url && current && current.child === child && !current.url) {
           current.url = url;
           finish({ ok: true, url, alreadyRunning: false });
         }

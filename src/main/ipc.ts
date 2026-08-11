@@ -141,20 +141,30 @@ export function registerIpcHandlers(
 
   ipcMain.handle(IPC.openFolder, async () => {
     const win = getWindow();
-    const result = await dialog.showOpenDialog(win ?? undefined!, {
-      title: "Open Zephus Site",
-      properties: ["openDirectory"],
-    });
+    const result = await dialog.showOpenDialog(
+      win && !win.isDestroyed()
+        ? win
+        : (undefined as unknown as Electron.BaseWindow),
+      {
+        title: "Open Zephus Site",
+        properties: ["openDirectory"],
+      },
+    );
     if (result.canceled || result.filePaths.length === 0) return null;
     return result.filePaths[0];
   });
 
   ipcMain.handle(IPC.chooseNewSiteFolder, async () => {
     const win = getWindow();
-    const result = await dialog.showOpenDialog(win ?? undefined!, {
-      title: "Choose a Folder for the New Site",
-      properties: ["openDirectory", "createDirectory", "promptToCreate"],
-    });
+    const result = await dialog.showOpenDialog(
+      win && !win.isDestroyed()
+        ? win
+        : (undefined as unknown as Electron.BaseWindow),
+      {
+        title: "Choose a Folder for the New Site",
+        properties: ["openDirectory", "createDirectory", "promptToCreate"],
+      },
+    );
     if (result.canceled || result.filePaths.length === 0) return null;
     return result.filePaths[0];
   });
@@ -431,13 +441,18 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC.nodePickPath, async () => {
     const win = getWindow();
     const isWindows = process.platform === "win32";
-    const result = await dialog.showOpenDialog(win ?? undefined!, {
-      title: "Select the Node.js Executable",
-      properties: ["openFile"],
-      filters: isWindows
-        ? [{ name: "Executable", extensions: ["exe"] }]
-        : undefined,
-    });
+    const result = await dialog.showOpenDialog(
+      win && !win.isDestroyed()
+        ? win
+        : (undefined as unknown as Electron.BaseWindow),
+      {
+        title: "Select the Node.js Executable",
+        properties: ["openFile"],
+        filters: isWindows
+          ? [{ name: "Executable", extensions: ["exe"] }]
+          : undefined,
+      },
+    );
     if (result.canceled || result.filePaths.length === 0) {
       return checkNodeVersion(readGlobalSettings().customNodePath);
     }

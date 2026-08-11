@@ -139,6 +139,18 @@ export function isChannelUpgrade(current: string, candidate: string): boolean {
   return n.pre > c.pre;
 }
 
+/** Stable-channel safety: a candidate with a prerelease tag must never be
+ *  offered on the stable feed. GitHub's /releases/latest can point at a
+ *  prerelease build (a public beta marked as the "latest" release), which
+ *  previously flowed to stable users as if it were a production release. */
+export function isStableChannelCandidate(
+  feed: ReleaseFeedChannel,
+  candidate: string,
+): boolean {
+  if (feed !== "latest") return true;
+  return versionStabilityRank(candidate) === STABLE_RANK;
+}
+
 /**
  * Whether electron-updater's `allowDowngrade` must be enabled for a given
  * feed + installed version. This is only needed when graduating to a more

@@ -14,20 +14,15 @@ export function npmCommand(
 ): NpmCommand {
   if (platform === "win32") {
     const npm = resolveWindowsNpmCmd(env);
-    const command = [quoteCmdArg(npm, true), ...args.map((arg) => quoteCmdArg(arg))].join(
-      " ",
-    );
-    const uncPrefix = cwd && /^\\\\/.test(cwd)
-      ? `pushd ${quoteCmdArg(cwd, true)} && `
-      : "";
+    const command = [
+      quoteCmdArg(npm, true),
+      ...args.map((arg) => quoteCmdArg(arg)),
+    ].join(" ");
+    const uncPrefix =
+      cwd && /^\\\\/.test(cwd) ? `pushd ${quoteCmdArg(cwd, true)} && ` : "";
     return {
       command: "cmd.exe",
-      args: [
-        "/d",
-        "/s",
-        "/c",
-        uncPrefix + command,
-      ],
+      args: ["/d", "/s", "/c", uncPrefix + command],
     };
   }
   return { command: "npm", args };

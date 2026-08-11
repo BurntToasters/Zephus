@@ -81,7 +81,13 @@ export function splitManagedPageSource(raw: string): SplitManagedPage {
 }
 
 /** Indents each non-empty line of managed inner HTML (default: 4 spaces). */
-export function indentManagedBody(core: string, indent = "    "): string {
+// MUST match the main process serializer (renderAstroPage indents the body
+// two spaces). The renderer's assembleManagedPage previously used four, so
+// its output never byte-matched the disk source: after a managed code-mode
+// save the refill rewrote the editor to 2-space output, and the NEXT save
+// (with zero edits) saw content !== managedSource and silently DETACHED the
+// page into hand-authored mode.
+export function indentManagedBody(core: string, indent = "  "): string {
   return core
     .split("\n")
     .map((line) => (line ? `${indent}${line}` : line))

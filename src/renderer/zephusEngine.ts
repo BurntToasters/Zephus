@@ -15,7 +15,10 @@ import { collectUnsavedWorkSummaryLines } from "./editorUnsavedWork";
 import { createEditorGitActions } from "./editorGit";
 import { createEditorSaveActions } from "./editorSave";
 import { createEditorSiteSaveActions } from "./editorSiteSave";
-import { createEditorDraftRestoreActions } from "./editorDraftRestore";
+import {
+  createEditorDraftRestoreActions,
+  encodeSiteDraftContent,
+} from "./editorDraftRestore";
 import { createEditorPageParser } from "./editorParse";
 import {
   blocksFromSections,
@@ -478,7 +481,11 @@ function clampSavedHeadingLevels(doc: PageDocument): PageDocument {
 function pageDocumentFromState(): PageDocument | null {
   if (!state.pageDocument || !state.page) return null;
   return clampSavedHeadingLevels(
-    buildPageDocumentFromSections(state.pageDocument, state.page, state.sections),
+    buildPageDocumentFromSections(
+      state.pageDocument,
+      state.page,
+      state.sections,
+    ),
   );
 }
 
@@ -1207,10 +1214,9 @@ function draftContentForCurrentState(): string {
 }
 
 function siteDraftContentForCurrentState(): string {
-  return JSON.stringify(
-    effectiveSiteDocument(state) ?? state.siteDocument,
-    null,
-    2,
+  return encodeSiteDraftContent(
+    effectiveSiteDocument(state) ?? state.siteDocument!,
+    state.pendingSiteEditorKind,
   );
 }
 
@@ -1438,15 +1444,15 @@ async function openSettingsModal(): Promise<void> {
         }
       },
       onOpenProductionLicenses: () => void openProductionLicensesModal(),
-       onOpenConfigFolder: async () => {
-         const result = await window.zephus.openConfigFolder();
-         if (!result.ok) {
-           setStatus(
-             "Could not open config folder: " +
-               (result.error ?? "unknown error"),
-           );
-         }
-       },
+      onOpenConfigFolder: async () => {
+        const result = await window.zephus.openConfigFolder();
+        if (!result.ok) {
+          setStatus(
+            "Could not open config folder: " +
+              (result.error ?? "unknown error"),
+          );
+        }
+      },
     });
   };
 
@@ -2134,6 +2140,15 @@ async function regenerateNav(): Promise<void> {
               );
               return;
             }
+            // Keep the session document in sync, or the next page save
+            // regenerates from the stale doc and reverts this edit.
+            if (state.pageDocument?.page === row.entry.page) {
+              state.pageDocument = {
+                ...state.pageDocument,
+                navLabel: row.label.trim() || row.entry.label,
+                navVisible: row.visible,
+              };
+            }
           } catch (error) {
             setStatus(
               "Could not save navigation: " +
@@ -2653,9 +2668,9 @@ async function applyRepoRules(): Promise<void> {
   editorRules.maxHeadingLevel = 6;
   if (!projectPath) return;
   try {
-    const settings = (await window.zephus.readRepoSettings(
-      projectPath,
-    )) as { editorRules?: Record<string, unknown> } | null;
+    const settings = (await window.zephus.readRepoSettings(projectPath)) as {
+      editorRules?: Record<string, unknown>;
+    } | null;
     if (
       state.project?.path !== projectPath ||
       editorSessionGeneration !== sessionGeneration
@@ -2846,6 +2861,11 @@ async function togglePageNavVisibility(page: string): Promise<void> {
   }
   const meta = state.pageMeta.find((m) => m.page === page);
   if (meta) meta.navVisible = nextVisible;
+  // Keep the session document in sync, or the next page save regenerates from
+  // the stale doc and silently reverts the visibility edit.
+  if (state.pageDocument?.page === page) {
+    state.pageDocument = { ...state.pageDocument, navVisible: nextVisible };
+  }
   // The layout + site.json navItems were resynced on disk by the write; the
   // in-memory site baseline is stale, and renderNavEditor prefers
   // siteDocument.shell.navItems — so refresh the baseline (without touching
@@ -3094,8 +3114,7 @@ async function openPageMetaModal(page: string): Promise<void> {
       kind: "primary",
       onClick: async () => {
         if (!state.project) return;
-         const nextSlug =
-           normalizePageSlugInput(formState.slug) ?? entry.slug;
+        const nextSlug = normalizePageSlugInput(formState.slug) ?? entry.slug;
         let nextPage = entry.page;
         if (!entry.isHome && nextSlug !== entry.slug) {
           // Suppress the app's own rename event: the file watcher would
@@ -3133,24 +3152,25 @@ async function openPageMetaModal(page: string): Promise<void> {
             nextSlug === "index" ? `index${ext}` : `${nextSlug}${ext}`;
           nextPage = pagesDir ? `${pagesDir}/${name}` : name;
         }
+        const meta = {
+          title: formState.title.trim() || entry.title,
+          navLabel:
+            formState.navLabel.trim() ||
+            formState.title.trim() ||
+            entry.navLabel,
+          metaDescription: formState.description.trim(),
+          navVisible: formState.visible,
+          socialImage: formState.socialImage.trim(),
+          canonicalUrl: formState.canonicalUrl.trim(),
+          noindex: formState.noindex,
+          publishDate: formState.publishDate.trim(),
+          author: formState.author.trim(),
+        };
         const saved = await window.zephus.writePageMeta(
           state.project.path,
           nextPage,
           state.project.astro.pagesDir,
-          {
-            title: formState.title.trim() || entry.title,
-            navLabel:
-              formState.navLabel.trim() ||
-              formState.title.trim() ||
-              entry.navLabel,
-            metaDescription: formState.description.trim(),
-            navVisible: formState.visible,
-            socialImage: formState.socialImage.trim(),
-            canonicalUrl: formState.canonicalUrl.trim(),
-            noindex: formState.noindex,
-            publishDate: formState.publishDate.trim(),
-            author: formState.author.trim(),
-          },
+          meta,
         );
         if (!saved.ok) {
           // The rename already succeeded on disk; if the open page was
@@ -3171,6 +3191,20 @@ async function openPageMetaModal(page: string): Promise<void> {
         }
         closeModal();
         await reloadPages();
+        // The session document must reflect the metadata write, or the NEXT
+        // page save regenerates from the stale doc and silently reverts the
+        // title/label/SEO edits just made.
+        if (state.page === entry.page && state.pageDocument) {
+          state.pageDocument = {
+            ...state.pageDocument,
+            page: nextPage,
+            slug: nextSlug,
+            route: nextSlug === "index" ? "/" : `/${nextSlug}`,
+            isHome: nextSlug === "index",
+            ...meta,
+          };
+          syncCurrentMeta();
+        }
         if (nextPage !== entry.page && state.project) {
           // The old slug's recovery draft is orphaned by the rename: its
           // content is unreachable under the old path and its home card
@@ -5232,11 +5266,19 @@ function openAssetBrowser(options: AssetBrowserOptions): void {
     const assets = (result.ok ? result.assets : []).filter(
       (a) => filter === "all" || a.category === filter,
     );
+    // Hydrating EVERY image as a full base64 data URL in parallel froze the
+    // main process and ballooned RAM on large asset libraries (hundreds of
+    // multi-MB payloads). Cap the hydrated set; later entries render with a
+    // placeholder icon instead of a preview.
+    const PREVIEW_HYDRATION_CAP = 60;
     modalState.assets = await Promise.all(
-      assets.map(async (asset) => ({
+      assets.map(async (asset, index) => ({
         category: asset.category,
         fileName: asset.fileName,
-        previewSrc: await resolvePreviewSrc(asset),
+        previewSrc:
+          index < PREVIEW_HYDRATION_CAP
+            ? await resolvePreviewSrc(asset)
+            : undefined,
         size: asset.size,
         webPath: asset.webPath,
       })),
@@ -5403,11 +5445,12 @@ function renderProperties(): void {
           ? [...new Set([...hideOn, viewport])]
           : hideOn.filter((v) => v !== viewport);
         if (section.style.hideOn.length === 0) delete section.style.hideOn;
+        // commitInspectorChange already repaints; the extra renderCanvas()
+        // below doubled every toggle into two full-page repaints.
         commitInspectorChange(
           `${hidden ? "Hidden" : "Shown"} section on ${viewport}`,
           false,
         );
-        renderCanvas();
       },
       onAddBlock: () =>
         openBlockInsertModal(section.children.length, section.id),
@@ -5649,7 +5692,7 @@ function setMode(mode: Mode): void {
     state.rawCode =
       state.managedStatus === "detached" ||
       state.managedStatus === "out-of-sync"
-        ? getCode() ?? state.rawCode
+        ? (getCode() ?? state.rawCode)
         : currentManagedSource();
     setCode(state.rawCode);
     codeEl.classList.remove("hidden");

@@ -32,7 +32,10 @@ async function main() {
       }
       // Give the scaffolded site access to the repo's astro/vite toolchain.
       fs.symlinkSync(path.join(ROOT, "node_modules"), path.join(project, "node_modules"), "dir");
-      schema.ensureVisualSchema(project, "src/pages");
+      const ensured = schema.ensureVisualSchema(project, "src/pages");
+      if (!ensured.ok) {
+        throw new Error("ensureVisualSchema failed: " + (ensured.error ?? "unknown"));
+      }
       execFileSync(ASTRON, ["build", "--silent"], {
         cwd: project,
         encoding: "utf8",
@@ -43,6 +46,9 @@ async function main() {
       const pages = fs
         .readdirSync(path.join(project, "src", "pages"))
         .filter((f) => f.endsWith(".astro")).length;
+      if (pages === 0) {
+        throw new Error("build produced no pages");
+      }
       console.log(`✓ ${theme.id.padEnd(14)} builds (${pages} page${pages === 1 ? "" : "s"})`);
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);

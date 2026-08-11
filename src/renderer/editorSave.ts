@@ -126,23 +126,25 @@ export function createEditorSaveActions(deps: EditorSaveDeps) {
               return false;
             }
             if (!isSamePage()) {
-              deps.setStatus(`Saved ${pagePath}; the open page changed.`);
-              return true;
-            }
-
-            const state = deps.getState();
-            state.pageDocument = detached.pageDocument;
-            state.siteDocument = detached.site;
-            state.managedStatus = detached.pageDocument.managedFileStatus;
-            state.visualEditable = false;
-            state.generatedCode =
-              detached.generatedSource ??
-              managedSource ??
-              detached.source ??
-              "";
-            state.rawCode = content;
-            if (managedStatusAtStart !== "detached") {
-              pageSaveNotice = `Saved ${pagePath} as hand-authored Astro; visual editing is now detached.`;
+              // The page switched mid-save: skip page-state updates but keep
+              // going so a dirty SITE still saves below.
+              savedPage = true;
+              pageSaveNotice = `Saved ${pagePath}; the open page changed.`;
+            } else {
+              const state = deps.getState();
+              state.pageDocument = detached.pageDocument;
+              state.siteDocument = detached.site;
+              state.managedStatus = detached.pageDocument.managedFileStatus;
+              state.visualEditable = false;
+              state.generatedCode =
+                detached.generatedSource ??
+                managedSource ??
+                detached.source ??
+                "";
+              state.rawCode = content;
+              if (managedStatusAtStart !== "detached") {
+                pageSaveNotice = `Saved ${pagePath} as hand-authored Astro; visual editing is now detached.`;
+              }
             }
           } else {
             const visualDoc = deps.pageDocumentFromState();
@@ -162,19 +164,19 @@ export function createEditorSaveActions(deps: EditorSaveDeps) {
               return false;
             }
             if (!isSamePage()) {
-              deps.setStatus(`Saved ${pagePath}; the open page changed.`);
-              return true;
+              savedPage = true;
+              pageSaveNotice = `Saved ${pagePath}; the open page changed.`;
+            } else {
+              const state = deps.getState();
+              const normalizedGenerated =
+                generated.generatedSource ?? generated.source ?? managedSource;
+              state.pageDocument = generated.pageDocument;
+              state.siteDocument = generated.site;
+              state.managedStatus = generated.pageDocument.managedFileStatus;
+              state.visualEditable = true;
+              state.generatedCode = normalizedGenerated;
+              state.rawCode = normalizedGenerated;
             }
-
-            const state = deps.getState();
-            const normalizedGenerated =
-              generated.generatedSource ?? generated.source ?? managedSource;
-            state.pageDocument = generated.pageDocument;
-            state.siteDocument = generated.site;
-            state.managedStatus = generated.pageDocument.managedFileStatus;
-            state.visualEditable = true;
-            state.generatedCode = normalizedGenerated;
-            state.rawCode = normalizedGenerated;
           }
         } else {
           const doc = deps.pageDocumentFromState();
@@ -192,18 +194,18 @@ export function createEditorSaveActions(deps: EditorSaveDeps) {
             return false;
           }
           if (!isSamePage()) {
-            deps.setStatus(`Saved ${pagePath}; the open page changed.`);
-            return true;
+            savedPage = true;
+            pageSaveNotice = `Saved ${pagePath}; the open page changed.`;
+          } else {
+            const state = deps.getState();
+            state.pageDocument = saved.pageDocument;
+            state.siteDocument = saved.site;
+            state.managedStatus = saved.pageDocument.managedFileStatus;
+            state.visualEditable = true;
+            state.generatedCode =
+              saved.generatedSource ?? saved.source ?? content;
+            state.rawCode = state.generatedCode;
           }
-
-          const state = deps.getState();
-          state.pageDocument = saved.pageDocument;
-          state.siteDocument = saved.site;
-          state.managedStatus = saved.pageDocument.managedFileStatus;
-          state.visualEditable = true;
-          state.generatedCode =
-            saved.generatedSource ?? saved.source ?? content;
-          state.rawCode = state.generatedCode;
         }
 
         const state = deps.getState();

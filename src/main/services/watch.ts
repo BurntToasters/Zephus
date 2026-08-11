@@ -46,8 +46,30 @@ export function watchedFileMatches(
 function wasSelfWritten(relativePath: string): boolean {
   const at = selfWritten.get(relativePath);
   if (at === undefined) return false;
-  selfWritten.delete(relativePath);
-  return Date.now() - at < SELF_WRITE_SUPPRESSION_MS;
+  const now = Date.now();
+  if (now - at >= SELF_WRITE_SUPPRESSION_MS) {
+    selfWritten.delete(relativePath);
+    return false;
+  }
+  // fs.watch (FSEvents) can deliver 2+ events for ONE write. Consuming the
+  // marker on the first let duplicates surface as a false "modified outside
+  // Zephus"; keeping it for the whole 30s window suppressed genuine external
+  // edits. Suppress only the duplicate burst, then clear so a real external
+  // edit after ~500ms fires normally.
+  if (now - at > 500) {
+    selfWritten.delete(relativePath);
+    return false;
+  }
+  return true;
+}
+
+/** Prunes expired self-write markers so the map stays bounded across many
+ *  saves (every post-list refresh marks every regenerated page). */
+export function pruneSelfWrittenMarkers(): void {
+  const cutoff = Date.now() - SELF_WRITE_SUPPRESSION_MS;
+  for (const [key, at] of selfWritten) {
+    if (at < cutoff) selfWritten.delete(key);
+  }
 }
 
 /**

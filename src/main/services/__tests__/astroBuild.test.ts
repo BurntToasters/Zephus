@@ -92,14 +92,20 @@ function allBlocksPage(): Array<Record<string, unknown>> {
         period: "/mo",
         features: "F1\nF2",
         ctaHref: "/signup",
-        ctaLabel: "Buy",
+        ctaText: "Buy",
         cls: "",
       },
     },
     {
       id: "b-cta",
       type: "cta",
-      props: { title: "CT", text: "B", ctaHref: "/x", ctaLabel: "Go", cls: "" },
+      props: {
+        heading: "CT",
+        text: "B",
+        buttonHref: "/x",
+        buttonText: "Go",
+        cls: "",
+      },
     },
     {
       id: "b-gallery",

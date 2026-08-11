@@ -7,6 +7,7 @@ import {
   resolveUpdateFeedChannel,
   isChannelUpgrade,
   shouldAllowFeedDowngrade,
+  isStableChannelCandidate,
 } from "./services/updateChannel";
 import type { ReleaseFeedChannel } from "./services/updateChannel";
 
@@ -103,7 +104,10 @@ export function setupAutoUpdater(
     // electron-updater compares with raw semver and may report a build that
     // our channel rules reject (e.g. a less-stable build at the same base, or
     // a base downgrade surfaced because allowDowngrade was enabled). Re-gate.
-    if (isChannelUpgrade(app.getVersion(), info.version)) {
+    if (
+      isChannelUpgrade(app.getVersion(), info.version) &&
+      isStableChannelCandidate(activeFeedChannel ?? "latest", info.version)
+    ) {
       approvedVersion = info.version;
       approvedFeedChannel = activeFeedChannel;
       downloadedVersion = null;
@@ -168,7 +172,11 @@ export async function checkForUpdates(
     // result.updateInfo is always populated with the feed's newest entry, even
     // when no update applies, so compare explicitly with channel rules rather
     // than treating its presence as "available".
-    if (latest && isChannelUpgrade(app.getVersion(), latest)) {
+    if (
+      latest &&
+      isChannelUpgrade(app.getVersion(), latest) &&
+      isStableChannelCandidate(feedChannel, latest)
+    ) {
       approvedVersion = latest;
       approvedFeedChannel = feedChannel;
       downloadedVersion = null;

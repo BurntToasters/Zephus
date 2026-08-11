@@ -92,7 +92,7 @@ if (totals) {
     process.exit(1);
   }
   if (typeof lines === 'number' && lines < 93) {
-    console.error(`Coverage thresholds failed: overall lines ${lines}% < 82%`);
+    console.error(`Coverage thresholds failed: overall lines ${lines}% < 93%`);
     process.exit(1);
   }
 } else {

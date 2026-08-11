@@ -23,7 +23,7 @@ import {
 import { detectAstro, listPages } from "./project";
 import { readRepoSettings } from "./settings";
 import { readJsonSafe, writeFileAtomic } from "./fsSafe";
-import { markSelfWritten } from "./watch";
+import { markSelfWritten, pruneSelfWrittenMarkers } from "./watch";
 import { escapeAttr, escapeHtml, safeUrl } from "../../shared/renderHelpers";
 import { decodeHTML } from "entities";
 
@@ -134,7 +134,11 @@ export function routeFromPage(page: string, pagesDir: string): string {
     .replace(/\.(astro|md|mdx|html)$/i, "")
     .replace(/\\/g, "/");
   if (!rel || rel === "index") return "/";
-  return `/${rel}`;
+  // Nested index routes: Astro serves src/pages/blog/index.astro at /blog,
+  // but the raw slug "blog/index" produced nav/canonical/sitemap/RSS hrefs
+  // of /blog/index — every one a 404 on the published site.
+  const trimmed = rel.replace(/\/index$/, "");
+  return trimmed ? `/${trimmed}` : "/";
 }
 
 function slugFromPage(page: string, pagesDir: string): string {
@@ -486,7 +490,7 @@ export function mergePageNavItems(
   ];
 }
 
-function listExistingPageDocuments(
+export function listExistingPageDocuments(
   projectPath: string,
   pagesDir: string,
 ): PageDocument[] {
@@ -655,6 +659,21 @@ function readJsonFileChecked<T>(file: string): {
 
 function writeJsonFile(file: string, value: unknown): void {
   writeFileAtomic(file, JSON.stringify(value, null, 2) + "\n");
+}
+
+/** Writes only when content differs. Opening a project / saving a page used
+ *  to rewrite layout, styles, discovery files and site.json unconditionally —
+ *  git churn on every open, and O(N) writes per save. */
+function writeFileAtomicIfChanged(file: string, content: string): void {
+  try {
+    if (fs.existsSync(file) && fs.readFileSync(file, "utf8") === content) {
+      return;
+    }
+  } catch {
+    /* unreadable file: fall through and rewrite */
+  }
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  writeFileAtomic(file, content);
 }
 
 function pageMetaFromFrontmatter(
@@ -1674,6 +1693,18 @@ function readPageDocumentFile(
 ): PageDocument | null {
   const doc = readJsonFile<PageDocument>(pageSchemaFile(projectPath, slug));
   if (!doc) return null;
+  // Shape guard: a corrupt-but-valid-JSON sidecar (hand-edited or truncated
+  // with `sections` missing/non-array) used to throw inside renderAstroPage
+  // during ensureVisualSchema — the WHOLE project refused to open and every
+  // subsequent read/save failed the same way, with no gate catching it.
+  if (!Array.isArray(doc.sections)) {
+    log.warn(
+      "Page sidecar for",
+      slug,
+      "has a malformed sections array; defaulting to empty.",
+    );
+    doc.sections = [];
+  }
   return withPageMetaDefaults({
     ...doc,
     page: toProjectRelativePath(doc.page),
@@ -1819,7 +1850,7 @@ function syncSiteShellOutputs(
       site.shell.customScriptsPath,
     );
     fs.mkdirSync(path.dirname(layoutFile), { recursive: true });
-    writeFileAtomic(
+    writeFileAtomicIfChanged(
       layoutFile,
       renderManagedLayout(
         site,
@@ -1831,7 +1862,7 @@ function syncSiteShellOutputs(
     );
     const styleFile = safeResolve(projectPath, MANAGED_STYLE_PATH);
     fs.mkdirSync(path.dirname(styleFile), { recursive: true });
-    writeFileAtomic(styleFile, renderManagedStyles(site));
+    writeFileAtomicIfChanged(styleFile, renderManagedStyles(site));
   } else {
     syncLegacyLayoutNav(projectPath, site, pagesDir);
   }
@@ -2074,8 +2105,21 @@ export function ensureVisualSchema(
     });
 
     syncSiteShellOutputs(projectPath, site, pagesDir, pageDocs, site);
-    site.generatedAt = new Date().toISOString();
-    writeJsonFile(siteDocumentFile(projectPath), site);
+    // Skip the site.json rewrite (and its generatedAt bump → git churn on
+    // every open) when nothing about the site actually changed.
+    const previousDefaults = siteCheck.data
+      ? withSiteDefaults(siteCheck.data)
+      : null;
+    const siteChanged =
+      !previousDefaults ||
+      JSON.stringify({ ...site, generatedAt: "" }) !==
+        JSON.stringify({ ...previousDefaults, generatedAt: "" });
+    if (siteChanged) {
+      site.generatedAt = new Date().toISOString();
+      writeJsonFile(siteDocumentFile(projectPath), site);
+    } else {
+      site.generatedAt = previousDefaults?.generatedAt ?? site.generatedAt;
+    }
     const postIndex = buildPostIndex(pageDocs);
     for (const doc of pageDocs) {
       if (doc.detached) continue;
@@ -2150,7 +2194,12 @@ export function ensureVisualSchema(
             ? ("managed" as const)
             : managedFileStatus,
       };
-      writePageDocumentFile(projectPath, nextDoc);
+      // No-op short-circuit: previously every open rewrote every sidecar,
+      // even when nothing changed (hundreds of writes on large projects).
+      writeFileAtomicIfChanged(
+        pageSchemaFile(projectPath, doc.slug),
+        JSON.stringify(nextDoc, null, 2) + "\n",
+      );
 
       if (shouldWriteAstro) {
         fs.mkdirSync(path.dirname(pageFile), { recursive: true });
@@ -2160,6 +2209,7 @@ export function ensureVisualSchema(
       }
     }
 
+    pruneSelfWrittenMarkers();
     return {
       ok: true,
       status: getVisualSchemaStatus(projectPath, pagesDir),
@@ -2393,6 +2443,19 @@ export function writePageDocument(
       };
     }
     const nextSlug = slugFromPage(doc.page, pagesDir);
+    if (nextSlug.split("/").some((segment) => segment === "..")) {
+      // Path traversal: "../../layouts/BaseLayout.astro" would make
+      // pagePathFromSlug normalize OUTSIDE pagesDir and clobber any project
+      // file with generated page content. Reject, never canonicalize around.
+      return {
+        ok: false,
+        site: null,
+        pageDocument: null,
+        source: null,
+        generatedSource: null,
+        error: "Page path must stay inside the pages directory.",
+      };
+    }
     const nextIsNotFound = isNotFoundSlug(nextSlug);
     // Derive the write target from the normalized slug — never trust doc.page.
     // A stale/compromised renderer could otherwise submit page:"package.json"
@@ -2545,18 +2608,44 @@ export function detachPageDocument(
   source: string,
 ): PageDocumentResult {
   try {
+    // Confine the write target to a real page under pagesDir: the renderer
+    // supplies both path and bytes, and a bare writeFileSync would overwrite
+    // ANY in-root file (BaseLayout.astro, package.json, astro.config.mjs)
+    // with attacker-chosen content executed by later npm/dev/build spawns.
+    const slug = slugFromPage(page, pagesDir);
+    if (slug.split("/").some((segment) => segment === "..")) {
+      return {
+        ok: false,
+        site: null,
+        pageDocument: null,
+        source: null,
+        generatedSource: null,
+        error: "Page path must stay inside the pages directory.",
+      };
+    }
+    const canonical = pagePathFromSlug(
+      pagesDir,
+      slug,
+      path.extname(page) || ".astro",
+    );
     const current = readPageDocument(projectPath, page, pagesDir);
     if (!current.ok || !current.pageDocument || !current.site) {
       return current;
     }
     const nextDoc: PageDocument = {
       ...current.pageDocument,
+      page: canonical,
+      slug,
       detached: true,
       detachedAt: new Date().toISOString(),
       managedFileStatus: "detached",
     };
+    // Write the FILE first, atomically, then the sidecar: the user's code is
+    // the only copy once detached (the sidecar tree is stale by definition),
+    // so a crash mid-detach must never leave the page "detached" on disk with
+    // old managed content — or a truncated file.
+    writeFileAtomic(safeResolve(projectPath, canonical), source);
     writePageDocumentFile(projectPath, nextDoc);
-    fs.writeFileSync(safeResolve(projectPath, page), source, "utf8");
     return {
       ok: true,
       site: current.site,

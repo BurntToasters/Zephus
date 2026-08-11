@@ -9,6 +9,7 @@ import {
   ensureVisualSchema,
   isNotFoundSlug,
   listPageDocuments,
+  listExistingPageDocuments,
   normalizePageSlug,
   pagePathFromSlug,
   readPageDocument,
@@ -25,6 +26,31 @@ function resolvePage(projectPath: string, relativePath: string): string {
   const full = safeResolve(projectPath, relativePath);
   assertRealpathInside(projectPath, full);
   return full;
+}
+
+/** A page path must live under pagesDir and carry a page extension. Without
+ *  this, delete/rename/duplicate accepted ANY in-root file (.env, .git/config,
+ *  package.json) — arbitrary project-file deletion and exfiltration. */
+function pageInsidePagesDir(page: string, pagesDir: string): boolean {
+  const normPage = page.replace(/\\/g, "/").replace(/^\/+/, "");
+  const normDir = pagesDir.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+  const prefix = normDir ? `${normDir}/` : "";
+  return (
+    normPage.startsWith(prefix) && /\.(astro|md|mdx|html)$/i.test(normPage)
+  );
+}
+
+function assertPageInsidePagesDir(
+  page: string,
+  pagesDir: string,
+): OperationResult {
+  if (!pageInsidePagesDir(page, pagesDir)) {
+    return {
+      ok: false,
+      error: "Not a page inside the site's pages directory.",
+    };
+  }
+  return { ok: true };
 }
 
 export { normalizePageSlug, routeFromPage };
@@ -87,17 +113,15 @@ export function listPageMetadata(
   projectPath: string,
   pagesDir: string,
 ): PageListResult {
+  // ensureVisualSchema runs the full pass; listPageDocuments runs it AGAIN.
+  // Ensure once, then read sidecars directly (no second full pass per save).
   const ensured = ensureVisualSchema(projectPath, pagesDir);
   if (!ensured.ok) {
     return { ok: false, entries: [], error: ensured.error };
   }
-  const listed = listPageDocuments(projectPath, pagesDir);
-  if (!listed.ok) {
-    return { ok: false, entries: [], error: listed.error };
-  }
   return {
     ok: true,
-    entries: listed.entries.map((doc) => ({
+    entries: listExistingPageDocuments(projectPath, pagesDir).map((doc) => ({
       page: doc.page,
       route: doc.route,
       slug: doc.slug,
@@ -197,6 +221,8 @@ export function renamePage(
   pagesDir: string,
   nextSlugInput: string,
 ): OperationResult {
+  const membership = assertPageInsidePagesDir(page, pagesDir);
+  if (!membership.ok) return membership;
   const nextSlug = normalizePageSlug(nextSlugInput);
   if (!nextSlug) return { ok: false, error: "Invalid page slug." };
   const ext = path.extname(page) || ".astro";
@@ -209,6 +235,15 @@ export function renamePage(
   }
   try {
     const current = readPageDocument(projectPath, page, pagesDir);
+    if (!current.ok || !current.pageDocument) {
+      // A corrupt/foreign project must not be renamed: the sidecar cannot be
+      // moved with the file, leaving a stale orphan behind. Bail before any
+      // filesystem change.
+      return {
+        ok: false,
+        error: current.error ?? "Page schema could not be read.",
+      };
+    }
     const originalSource = fs.readFileSync(from, "utf8");
     fs.mkdirSync(path.dirname(to), { recursive: true });
     fs.renameSync(from, to);
@@ -280,6 +315,8 @@ export function duplicatePage(
   slugInput?: string,
 ): OperationResult {
   try {
+    const membership = assertPageInsidePagesDir(page, pagesDir);
+    if (!membership.ok) return membership;
     const from = resolvePage(projectPath, page);
     const ext = path.extname(page) || ".astro";
     const currentSlug =
@@ -334,6 +371,8 @@ export function deletePage(
   pagesDir: string,
 ): OperationResult {
   try {
+    const membership = assertPageInsidePagesDir(page, pagesDir);
+    if (!membership.ok) return membership;
     const full = resolvePage(projectPath, page);
     if (!fs.existsSync(full)) {
       return { ok: false, error: "Page does not exist." };
@@ -352,9 +391,27 @@ export function deletePage(
       if (!synced.ok) {
         fs.mkdirSync(path.dirname(full), { recursive: true });
         fs.writeFileSync(full, originalSource, "utf8");
-        writePageDocument(projectPath, pagesDir, current.pageDocument!);
+        // Restore with a sidecar-only write for detached/out-of-sync pages:
+        // regenerating via writePageDocument would reattach and rebuild from
+        // the stale tree, destroying the hand-authored source just restored.
+        if (current.pageDocument) {
+          const preserveSource =
+            current.pageDocument.detached ||
+            current.pageDocument.managedFileStatus === "out-of-sync";
+          if (preserveSource) {
+            writePageDocumentFile(projectPath, current.pageDocument);
+          } else {
+            writePageDocument(projectPath, pagesDir, current.pageDocument);
+          }
+        }
         return synced;
       }
+    } else if (current.error) {
+      // The read failed (corrupt sidecar/site): the file is already deleted —
+      // restore the bytes so the user loses nothing, even though the schema
+      // cannot be synced.
+      fs.mkdirSync(path.dirname(full), { recursive: true });
+      fs.writeFileSync(full, originalSource, "utf8");
     }
     return { ok: true };
   } catch (error) {

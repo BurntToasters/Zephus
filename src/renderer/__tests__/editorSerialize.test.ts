@@ -55,7 +55,10 @@ title: About
   });
 
   it("indents non-empty lines only", () => {
-    expect(indentManagedBody("a\n\nb")).toBe("    a\n\n    b");
+    // Default indent MUST match the main-process renderAstroPage (2 spaces);
+    // a 4-space default made renderer output never byte-match disk, which
+    // silently detached managed pages on the second code-mode save.
+    expect(indentManagedBody("a\n\nb")).toBe("  a\n\n  b");
   });
 
   it("assembles frame + sections like serializeBlocks", () => {
