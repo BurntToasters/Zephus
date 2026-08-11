@@ -38,6 +38,8 @@ export interface SiteShellModalState {
 
 export interface PublishSuccessModalState {
   outputDir: string;
+  /** True when edits arrived while the build ran (not in the output). */
+  newerEditsNotIncluded?: boolean;
 }
 
 /** Common BCP 47 tags offered for `<html lang>`; any value can be typed. */
@@ -144,9 +146,9 @@ export function renderUnsavedWorkSummaryModalBody(
 export function renderSiteShellModalBody(
   container: HTMLElement,
   state: SiteShellModalState,
-): void {
+): () => void {
   container.innerHTML = "";
-  render(
+  return render(
     () => (
       <div class="meta-form">
         <p class="muted">
@@ -319,6 +321,12 @@ export function renderPublishSuccessModalBody(
   render(
     () => (
       <div class="publish-done">
+        {state.newerEditsNotIncluded ? (
+          <p class="muted" style="color: #b45309">
+            Note: edits made while the build was running were NOT included. Save
+            and build again to publish them.
+          </p>
+        ) : null}
         <p>
           Your site was built into the <strong>{state.outputDir}</strong> folder
           (now open in your file manager).

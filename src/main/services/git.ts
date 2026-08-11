@@ -1,16 +1,31 @@
 import { execFile } from "child_process";
 import { promisify } from "util";
+import * as fs from "fs";
+import * as path from "path";
 import log from "electron-log";
 import { GitStatus } from "../types";
 
 const execFileAsync = promisify(execFile);
 
 async function git(projectPath: string, args: string[]): Promise<string> {
-  const { stdout } = await execFileAsync("git", args, {
-    cwd: projectPath,
-    windowsHide: true,
-    maxBuffer: 10 * 1024 * 1024,
-  });
+  // Timeout so a stalled network (or a hung credential prompt) cannot leave
+  // the Git panel spinning forever or accumulate zombie git processes.
+  // LC_ALL=C pins git's OUTPUT to English (localized git would otherwise
+  // break the English-only error matching below), and core.quotePath=false
+  // makes porcelain emit raw UTF-8 paths instead of C-escaped ones — the
+  // parser never unquoted "M \"\303\274ber.md\"" and per-file commits of
+  // non-ASCII filenames failed with "did not match any file(s)".
+  const { stdout } = await execFileAsync(
+    "git",
+    ["-c", "core.quotePath=false", ...args],
+    {
+      cwd: projectPath,
+      windowsHide: true,
+      maxBuffer: 10 * 1024 * 1024,
+      timeout: 60_000,
+      env: { ...process.env, LC_ALL: "C" },
+    },
+  );
   return stdout;
 }
 
@@ -78,9 +93,20 @@ export async function getGitStatus(
   };
 
   try {
-    const branchRaw = (
-      await git(projectPath, ["rev-parse", "--abbrev-ref", "HEAD"])
-    ).trim();
+    let branchRaw: string;
+    try {
+      branchRaw = (
+        await git(projectPath, ["rev-parse", "--abbrev-ref", "HEAD"])
+      ).trim();
+    } catch {
+      // Unborn HEAD (fresh `git init`, no commits yet): `rev-parse HEAD`
+      // fails, but the branch still has a symbolic ref.
+      branchRaw = (
+        await git(projectPath, ["symbolic-ref", "--short", "HEAD"]).catch(
+          () => "HEAD",
+        )
+      ).trim();
+    }
     const detachedHead = branchRaw === "HEAD";
 
     const statusRaw = await git(projectPath, ["status", "--porcelain"]);
@@ -91,15 +117,27 @@ export async function getGitStatus(
     for (const line of statusRaw.split("\n")) {
       if (!line.trim()) continue;
       const code = line.slice(0, 2);
-      const file = line.slice(3).trim();
+      // Porcelain v1 rename/copy lines are "R  old -> new"; the working-tree
+      // path (the one the user commits and the panel shows) is the NEW one.
+      const arrow = line.indexOf(" -> ");
+      const file = (arrow >= 0 ? line.slice(arrow + 4) : line.slice(3)).trim();
+      if (!file) continue;
       if (code.includes("D")) deleted.push(file);
       else if (code.includes("A") || code.includes("?")) added.push(file);
-      else if (code.includes("M") || code.includes("R")) modified.push(file);
+      // R (renamed) and T (typechange: the file's mode/content kind changed)
+      // belong with the modified files so per-path commits can stage them.
+      else if (code.includes("M") || code.includes("R") || code.includes("T")) {
+        modified.push(file);
+      }
     }
 
     const upstream = !detachedHead
       ? await readUpstreamAheadBehind(projectPath, options.fetchRemote ?? false)
       : null;
+
+    const hasRemote = (await git(projectPath, ["remote"]).catch(() => ""))
+      .split("\n")
+      .some(Boolean);
 
     return {
       available: true,
@@ -108,6 +146,7 @@ export async function getGitStatus(
       modified,
       added,
       deleted,
+      hasRemote,
       zephusIgnored: await isZephusIgnored(projectPath),
       ...(upstream ? { ahead: upstream.ahead, behind: upstream.behind } : {}),
     };
@@ -124,6 +163,14 @@ export async function getGitStatus(
 
 export async function initGitRepo(projectPath: string): Promise<void> {
   await git(projectPath, ["init"]);
+  // A panel-initiated repo has no .gitignore (the wizard's is only written at
+  // scaffold time): without one, "Commit All Changes" would stage
+  // node_modules/, dist/ and possibly .env. Write a safe default when the
+  // project has none — never overwrite an existing one.
+  const gitignorePath = path.join(projectPath, ".gitignore");
+  if (!fs.existsSync(gitignorePath)) {
+    fs.writeFileSync(gitignorePath, "node_modules/\ndist/\n.env\n.DS_Store\n");
+  }
 }
 
 /** Returns trimmed message or null when empty/whitespace-only. */
@@ -194,8 +241,31 @@ export async function pushCurrentBranch(
         error: "Cannot push while in detached HEAD. Check out a branch first.",
       };
     }
-    await git(projectPath, ["push"]);
-    return { ok: true };
+    try {
+      await git(projectPath, ["push"]);
+      return { ok: true };
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      // First push on a freshly initialized repo has no upstream; set it to
+      // origin (or the first configured remote) so subsequent pushes behave
+      // normally.
+      if (detail.includes("no upstream branch") && status.branch) {
+        const remotes = (await git(projectPath, ["remote"]))
+          .split("\n")
+          .filter(Boolean);
+        const remote = remotes.includes("origin") ? "origin" : remotes[0];
+        if (remote) {
+          await git(projectPath, [
+            "push",
+            "--set-upstream",
+            remote,
+            status.branch,
+          ]);
+          return { ok: true };
+        }
+      }
+      throw error;
+    }
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     log.warn("Git push failed", projectPath, error);
@@ -233,11 +303,17 @@ export async function pullCurrentBranch(
  * and must be committed so the project opens correctly on other machines.
  */
 export async function isZephusIgnored(projectPath: string): Promise<boolean> {
-  try {
-    // `git check-ignore` exits 0 when the path IS ignored, 1 when it is not.
-    await git(projectPath, ["check-ignore", "-q", ".zephus"]);
-    return true;
-  } catch {
-    return false;
-  }
+  // `git check-ignore` exits 0 when the path IS ignored, 1 when it is not.
+  // --no-index makes the check work even when .zephus does not exist yet, and
+  // both path forms are checked because `.zephus/` (dir pattern) vs `.zephus`
+  // (file pattern) match different spellings of the path.
+  const ignored = async (rel: string): Promise<boolean> => {
+    try {
+      await git(projectPath, ["check-ignore", "--no-index", "-q", rel]);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  return (await ignored(".zephus")) || (await ignored(".zephus/"));
 }

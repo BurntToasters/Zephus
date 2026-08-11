@@ -46,6 +46,25 @@ export interface SearchOptions {
   wholeWord?: boolean;
 }
 
+const MAX_QUERY_LENGTH = 500;
+const MAX_REPLACEMENT_LENGTH = 5000;
+
+/** Rejects oversized or degenerate search payloads before they hit regex. */
+function validatePayload(query: string, replacement?: string): string | null {
+  const needle = String(query ?? "");
+  if (!needle.trim()) return "Enter text to find.";
+  if (needle.length > MAX_QUERY_LENGTH) {
+    return `Search text is too long (max ${MAX_QUERY_LENGTH} characters).`;
+  }
+  if (
+    replacement !== undefined &&
+    replacement.length > MAX_REPLACEMENT_LENGTH
+  ) {
+    return `Replacement is too long (max ${MAX_REPLACEMENT_LENGTH} characters).`;
+  }
+  return null;
+}
+
 function occurrences(
   haystack: string,
   needle: string,
@@ -54,9 +73,27 @@ function occurrences(
   if (!needle) return 0;
   const flags = options.caseSensitive ? "g" : "gi";
   const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const pattern = options.wholeWord ? `\\b${escaped}\\b` : escaped;
+  // Whole-word = not surrounded by word characters. Explicit lookarounds (not
+  // `\b`, which requires word characters and so can never match needles that
+  // start or end with non-word characters like "C++").
+  const pattern = options.wholeWord
+    ? `(?<![A-Za-z0-9_])${escaped}(?![A-Za-z0-9_])`
+    : escaped;
   const matches = haystack.match(new RegExp(pattern, flags));
   return matches ? matches.length : 0;
+}
+
+/** Counts occurrences across every searchable prop of one document. */
+function countOnDoc(
+  doc: PageDocument,
+  needle: string,
+  options: SearchOptions,
+): number {
+  let count = 0;
+  eachSearchableProp(doc.sections, (_node, _prop, value) => {
+    count += occurrences(value, needle, options);
+  });
+  return count;
 }
 
 function replaceOccurrences(
@@ -68,7 +105,9 @@ function replaceOccurrences(
   if (!needle) return haystack;
   const flags = options.caseSensitive ? "g" : "gi";
   const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const pattern = options.wholeWord ? `\\b${escaped}\\b` : escaped;
+  const pattern = options.wholeWord
+    ? `(?<![A-Za-z0-9_])${escaped}(?![A-Za-z0-9_])`
+    : escaped;
   // `$` sequences in the replacement must be literal, not capture references.
   return haystack.replace(
     new RegExp(pattern, flags),
@@ -127,6 +166,10 @@ export function searchPages(
 ): FindReplaceResult {
   try {
     const needle = String(query ?? "");
+    const payloadError = validatePayload(needle);
+    if (payloadError) {
+      return { ok: false, matches: [], totalMatches: 0, error: payloadError };
+    }
     if (!needle) return { ok: true, matches: [], totalMatches: 0 };
 
     const listed = listPageDocuments(projectPath, pagesDir);
@@ -141,7 +184,17 @@ export function searchPages(
 
     const matches: SearchMatch[] = [];
     let totalMatches = 0;
+    let skippedDetachedPages = 0;
     for (const doc of listed.entries) {
+      // Detached/out-of-sync pages hold hand-authored content: replaceAll
+      // SKIPS them (replacing via the stale sidecar would un-detach the page
+      // and overwrite the file). The search must skip them too, or the
+      // confirmation dialog counts matches that will never be replaced.
+      if (doc.detached || doc.managedFileStatus === "out-of-sync") {
+        const pageCount = countOnDoc(doc, needle, options);
+        if (pageCount > 0) skippedDetachedPages += 1;
+        continue;
+      }
       let pageCount = 0;
       const samples: string[] = [];
       eachSearchableProp(doc.sections, (node, _prop, value) => {
@@ -164,12 +217,13 @@ export function searchPages(
       }
     }
 
-    return { ok: true, matches, totalMatches };
+    return { ok: true, matches, totalMatches, skippedDetachedPages };
   } catch (error) {
     return {
       ok: false,
       matches: [],
       totalMatches: 0,
+      skippedDetachedPages: 0,
       error: error instanceof Error ? error.message : String(error),
     };
   }
@@ -185,6 +239,16 @@ export function replaceAllInPages(
 ): ReplaceAllResult {
   try {
     const needle = String(query ?? "");
+    const next = String(replacement ?? "");
+    const payloadError = validatePayload(needle, next);
+    if (payloadError) {
+      return {
+        ok: false,
+        replaced: 0,
+        pagesChanged: 0,
+        error: payloadError,
+      };
+    }
     if (!needle) {
       return {
         ok: false,
@@ -193,7 +257,6 @@ export function replaceAllInPages(
         error: "Enter text to find.",
       };
     }
-    const next = String(replacement ?? "");
 
     const listed = listPageDocuments(projectPath, pagesDir);
     if (!listed.ok) {
@@ -211,6 +274,10 @@ export function replaceAllInPages(
 
     for (const doc of listed.entries) {
       if (limit && !limit.has(doc.page)) continue;
+      // Detached/out-of-sync pages have hand-authored content only on disk:
+      // replacing through their stale sidecar tree would un-detach them and
+      // overwrite the file. Their text cannot be replaced safely.
+      if (doc.detached || doc.managedFileStatus === "out-of-sync") continue;
       let pageReplacements = 0;
       const sections = JSON.parse(
         JSON.stringify(doc.sections),

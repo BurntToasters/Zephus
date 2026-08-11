@@ -19,10 +19,16 @@ describe("render helper sourcing", () => {
     expect(schemaSrc).not.toMatch(/function escapeHtml\(/);
   });
 
-  it("zephusEngine.ts imports shared render helpers", () => {
-    expect(engineSrc).toContain("shared/renderHelpers");
+  it("zephusEngine.ts routes rendering through the shared modules", () => {
+    // The engine must never reimplement sanitization: escaping/URL/rich-text
+    // helpers live in the shared modules and the extracted editor modules.
     expect(engineSrc).toContain("./editorBlockRender");
+    expect(engineSrc).toContain("./editorInlineEdit");
+    expect(engineSrc).toContain("./editorResize");
     expect(engineSrc).not.toMatch(/function escapeHtml\(/);
+    expect(engineSrc).not.toMatch(/function safeUrl\(/);
+    expect(engineSrc).not.toMatch(/function richTextToHtml\(/);
+    expect(engineSrc).not.toMatch(/function plainTextToHtml\(/);
   });
 
   it("schema.ts imports shared block renderer", () => {

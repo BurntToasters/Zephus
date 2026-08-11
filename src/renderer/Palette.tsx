@@ -1,27 +1,6 @@
 import { render } from "solid-js/web";
 import { createSignal, For, createEffect } from "solid-js";
-
-export type BlockType =
-  | "heading"
-  | "text"
-  | "image"
-  | "button"
-  | "section"
-  | "divider"
-  | "spacer"
-  | "columns"
-  | "card"
-  | "gallery"
-  | "quote"
-  | "list"
-  | "embed"
-  | "feature"
-  | "testimonial"
-  | "accordion"
-  | "stats"
-  | "pricing"
-  | "cta"
-  | "html";
+import { PALETTE, PALETTE_ICONS, type BlockType } from "./editorBlocks";
 
 interface PaletteItem {
   type: BlockType;
@@ -29,28 +8,14 @@ interface PaletteItem {
   icon: string;
 }
 
-const PALETTE: PaletteItem[] = [
-  { type: "heading", label: "Heading", icon: "heading" },
-  { type: "text", label: "Text", icon: "align-left" },
-  { type: "image", label: "Image", icon: "image" },
-  { type: "button", label: "Button", icon: "square" },
-  { type: "section", label: "Section", icon: "layout" },
-  { type: "divider", label: "Divider", icon: "align-left" },
-  { type: "spacer", label: "Spacer", icon: "layout" },
-  { type: "columns", label: "Columns", icon: "layout-template" },
-  { type: "card", label: "Card", icon: "square" },
-  { type: "gallery", label: "Gallery", icon: "image" },
-  { type: "quote", label: "Quote", icon: "align-left" },
-  { type: "list", label: "List", icon: "align-left" },
-  { type: "embed", label: "Embed", icon: "link" },
-  { type: "feature", label: "Feature", icon: "star" },
-  { type: "testimonial", label: "Testimonial", icon: "quote" },
-  { type: "accordion", label: "FAQ / Accordion", icon: "chevron-down" },
-  { type: "stats", label: "Stats", icon: "bar-chart" },
-  { type: "pricing", label: "Pricing", icon: "tag" },
-  { type: "cta", label: "Call to Action", icon: "megaphone" },
-  { type: "html", label: "HTML", icon: "code-xml" },
-];
+// Single source of truth: the catalog in editorBlocks.ts (palette order,
+// labels, icons). This palette must never drift from what the engine can
+// insert.
+const PALETTE_ITEMS: PaletteItem[] = PALETTE.map((entry) => ({
+  type: entry.type,
+  label: entry.label,
+  icon: PALETTE_ICONS[entry.type],
+}));
 
 const [allowedBlocks, setAllowedBlocks] = createSignal<string[] | null>(null);
 let onInsertBlockCallback: ((type: BlockType) => void) | null = null;
@@ -71,8 +36,8 @@ export function BlockPalette() {
 
   const filteredPalette = () => {
     const allowed = allowedBlocks();
-    if (!allowed) return PALETTE;
-    return PALETTE.filter((item) => allowed.includes(item.type));
+    if (!allowed) return PALETTE_ITEMS;
+    return PALETTE_ITEMS.filter((item) => allowed.includes(item.type));
   };
 
   const handleKeyDown = (e: KeyboardEvent, item: PaletteItem) => {

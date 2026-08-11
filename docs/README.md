@@ -11,7 +11,7 @@ This guide explains how to create, edit, preview, and publish Astro sites with Z
    - Add pages and content
    - Preview and publish your site
 
-2. **[Block Reference](./BLOCK_REFERENCE.md)**: All 21 content block types
+2. **[Block Reference](./BLOCK_REFERENCE.md)**: All 22 content block types
    - Text, images, galleries, buttons
    - Cards, columns, pricing, testimonials
    - Sections, embeds, HTML custom blocks
@@ -121,12 +121,12 @@ Press **Ctrl/Cmd+F** (or the magnifier in the Pages panel) to find and replace t
 
 ## Content Blocks at a Glance
 
-Zephus provides **21 content block types** organized by category:
+Zephus provides **22 content block types** organized by category:
 
 | Category            | Blocks                                               |
 | ------------------- | ---------------------------------------------------- |
 | **Text**            | Heading, Text, Quote, List, Divider, Spacer          |
-| **Media**           | Image, Gallery, Embed                                |
+| **Media**           | Image, Gallery, Embed, Video                         |
 | **Interactive**     | Button, HTML                                         |
 | **Cards & Layouts** | Card, Columns, Section                               |
 | **Marketing**       | Feature, Testimonial, Stats, Pricing, CTA, Accordion |
@@ -327,7 +327,7 @@ If you edit a page outside Zephus (in VS Code, Git, etc.), Zephus detects it and
 ✅ **Enable auto-save** in Settings (prevents losing work)
 ✅ **Use meaningful page slugs** (e.g., `/blog/my-post` instead of `/post-1`)
 ✅ **Add alt text to images** (helps accessibility and SEO)
-✅ **Test on mobile** (use preview browser devtools)
+✅ **Test on mobile** (open the responsive preview viewports in the editor, or use the preview window's devtools in development builds)
 ✅ **Commit to Git regularly** (version control backup)
 ✅ **Use Ctrl+S frequently** (extra safety before publishing)
 ✅ **Avoid editing the same file in two places** (Git conflicts)
@@ -337,7 +337,7 @@ If you edit a page outside Zephus (in VS Code, Git, etc.), Zephus detects it and
 ## Limitations & Important Notes
 
 - **Zephus-only projects**: Can't edit existing Astro sites
-- **No custom components**: Fixed 21 block types (no component builder)
+- **No custom components**: Fixed 22 block types (no component builder)
 - **Single schema version**: Major Zephus updates may require migration
 - **Detach/reattach**: Reattaching overwrites code changes
 - **Design tokens**: Live preview, including Google Fonts loaded in the editor workspace
@@ -358,7 +358,7 @@ If you edit a page outside Zephus (in VS Code, Git, etc.), Zephus detects it and
 **External Links:**
 
 - [Astro Documentation](https://docs.astro.build): The framework Zephus uses
-- [Zephus GitHub](https://github.com/yourusername/zephus): Source code
+- [Zephus GitHub](https://github.com/BurntToasters/zephus): Source code
 
 ---
 

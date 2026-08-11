@@ -151,7 +151,19 @@ export function LengthField(props: {
   const emit = () => {
     if (unit() === "auto") props.onChange("auto");
     else if (unit() === "custom") props.onChange(raw().trim());
-    else props.onChange(num() ? `${num()}${unit()}` : "");
+    else {
+      // Sanitize the typed number: ".", "-", "e" mid-typing produce values
+      // like ".px" that are invalid CSS and silently drop the declaration
+      // (both on the canvas and in the build). Normalize what parses; skip
+      // what doesn't.
+      const typed = num().trim();
+      if (!typed) {
+        props.onChange("");
+        return;
+      }
+      const n = Number(typed);
+      if (Number.isFinite(n)) props.onChange(`${n}${unit()}`);
+    }
   };
 
   const friendly: Record<string, string> = {
@@ -341,6 +353,7 @@ export interface SectionPropertiesState {
   background: string;
   color: string;
   radius: string;
+  hideOn: string[] | undefined;
   locked: boolean;
   onFocus: () => void;
   onBlur: () => void;
@@ -356,6 +369,10 @@ export interface SectionPropertiesState {
   onBackgroundChange: (value: string) => void;
   onColorChange: (value: string) => void;
   onRadiusChange: (value: string) => void;
+  onHideOnChange: (
+    viewport: "desktop" | "tablet" | "mobile",
+    hidden: boolean,
+  ) => void;
   onAddBlock: () => void;
   onDuplicate: () => void;
   onMoveUp: () => void;
@@ -473,6 +490,34 @@ export function renderSectionProperties(
               onFocus={state.onFocus}
               onBlur={state.onBlur}
             />
+          </Group>
+
+          <Group title="Visibility">
+            <ToggleField
+              label="Hide on desktop"
+              checked={(state.hideOn ?? []).includes("desktop")}
+              onFocus={state.onFocus}
+              onBlur={state.onBlur}
+              onChange={(next) => state.onHideOnChange("desktop", next)}
+            />
+            <ToggleField
+              label="Hide on tablet"
+              checked={(state.hideOn ?? []).includes("tablet")}
+              onFocus={state.onFocus}
+              onBlur={state.onBlur}
+              onChange={(next) => state.onHideOnChange("tablet", next)}
+            />
+            <ToggleField
+              label="Hide on mobile"
+              checked={(state.hideOn ?? []).includes("mobile")}
+              onFocus={state.onFocus}
+              onBlur={state.onBlur}
+              onChange={(next) => state.onHideOnChange("mobile", next)}
+            />
+            <p class="meta-hint">
+              Hidden content stays editable on the canvas (dashed outline) and
+              disappears from the published site at that width.
+            </p>
           </Group>
 
           <Group title="Style">

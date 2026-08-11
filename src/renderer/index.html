@@ -177,9 +177,7 @@
                 <div class="about-hero">
                   <div class="about-brand-logo"></div>
                   <h3 class="about-app-name">Zephus</h3>
-                  <p id="about-app-version" class="about-app-version">
-                    v0.1.0-db.5
-                  </p>
+                  <p id="about-app-version" class="about-app-version">Zephus</p>
                   <p class="about-lead">
                     Zephus is a local-first, schema-backed visual editor for
                     Astro websites. Your sites live on your machine and are
@@ -217,7 +215,7 @@
                   </div>
                   <div
                     id="about-licenses-list"
-                    class="about-licenses-list-container"
+                    class="about-licenses-list-container hidden"
                   >
                     <!-- Populated dynamically when requested -->
                   </div>
@@ -328,6 +326,14 @@
             aria-label="View Keyboard Shortcuts and Help"
           >
             <i data-lucide="info"></i> Help
+          </button>
+          <button
+            id="btn-settings"
+            class="btn ghost"
+            title="Settings"
+            aria-label="Open Settings"
+          >
+            <i data-lucide="settings"></i> Settings
           </button>
           <button
             id="btn-close"
@@ -493,7 +499,6 @@
             aria-label="Visual page canvas"
           ></div>
           <div id="code-editor" class="code-editor hidden"></div>
-          <iframe id="preview-frame" class="preview-frame hidden"></iframe>
         </main>
 
         <aside

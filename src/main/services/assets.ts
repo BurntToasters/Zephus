@@ -68,10 +68,21 @@ export function categoryForExtension(ext: string): AssetCategory {
   return "other";
 }
 
-function uniqueName(dir: string, base: string): string {
+function uniqueName(dir: string, base: string, skipPath = ""): string {
   let candidate = base;
   let i = 1;
+  // macOS/Windows filesystems are case-insensitive: "Hero.png" and "hero.png"
+  // are the SAME file. The skip comparison must be case-insensitive there, or
+  // a pure case rename would be rejected as a collision and produce Hero-1.png.
+  const caseInsensitive = process.platform !== "linux";
+  const skipMatches = (full: string): boolean =>
+    caseInsensitive
+      ? full.toLowerCase() === skipPath.toLowerCase()
+      : full === skipPath;
   while (fs.existsSync(path.join(dir, candidate))) {
+    // The file being renamed itself exists at the target name — that is a
+    // no-op, not a collision.
+    if (skipPath && skipMatches(path.join(dir, candidate))) return candidate;
     const ext = path.extname(base);
     const stem = path.basename(base, ext);
     candidate = `${stem}-${i}${ext}`;
@@ -159,11 +170,16 @@ export async function importImage(
   projectPath: string,
   publicDir: string,
 ): Promise<ImportImageResult> {
-  const result = await dialog.showOpenDialog(win ?? undefined!, {
-    title: "Choose an Image",
-    properties: ["openFile"],
-    filters: [{ name: "Images", extensions: IMAGE_EXTENSIONS }],
-  });
+  const result = await dialog.showOpenDialog(
+    win && !win.isDestroyed()
+      ? win
+      : (undefined as unknown as Electron.BaseWindow),
+    {
+      title: "Choose an Image",
+      properties: ["openFile"],
+      filters: [{ name: "Images", extensions: IMAGE_EXTENSIONS }],
+    },
+  );
   if (result.canceled || result.filePaths.length === 0) {
     return { ok: false, canceled: true };
   }
@@ -190,16 +206,21 @@ export async function importAssets(
   projectPath: string,
   publicDir: string,
 ): Promise<ImportAssetsResult> {
-  const result = await dialog.showOpenDialog(win ?? undefined!, {
-    title: "Choose Assets",
-    properties: ["openFile", "multiSelections"],
-    filters: [
-      { name: "All Assets", extensions: ALL_ASSET_EXTENSIONS },
-      { name: "Images", extensions: EXTENSIONS_BY_CATEGORY.images },
-      { name: "Media", extensions: EXTENSIONS_BY_CATEGORY.media },
-      { name: "Documents", extensions: EXTENSIONS_BY_CATEGORY.documents },
-    ],
-  });
+  const result = await dialog.showOpenDialog(
+    win && !win.isDestroyed()
+      ? win
+      : (undefined as unknown as Electron.BaseWindow),
+    {
+      title: "Choose Assets",
+      properties: ["openFile", "multiSelections"],
+      filters: [
+        { name: "All Assets", extensions: ALL_ASSET_EXTENSIONS },
+        { name: "Images", extensions: EXTENSIONS_BY_CATEGORY.images },
+        { name: "Media", extensions: EXTENSIONS_BY_CATEGORY.media },
+        { name: "Documents", extensions: EXTENSIONS_BY_CATEGORY.documents },
+      ],
+    },
+  );
   if (result.canceled || result.filePaths.length === 0) {
     return { ok: false, imported: [], errors: [] };
   }
@@ -230,6 +251,18 @@ export function importAssetsFromPaths(
           `${path.basename(source)}: unsupported file type` +
             (ext ? ` (.${ext})` : ""),
         );
+        continue;
+      }
+      // Reject sources inside the project: importing the project's own files
+      // into its own public dir is never intended and copies secrets that
+      // happen to sit in the tree (e.g. .env snapshots renamed .png).
+      const resolvedSource = path.resolve(source);
+      const resolvedRoot = path.resolve(projectPath);
+      if (
+        resolvedSource === resolvedRoot ||
+        resolvedSource.startsWith(resolvedRoot + path.sep)
+      ) {
+        errors.push(`${path.basename(source)}: already inside the project`);
         continue;
       }
       const stat = fs.statSync(source);
@@ -286,13 +319,6 @@ function collectAssets(
     }
   }
   walk(baseDir, "");
-}
-
-export function listProjectImages(
-  projectPath: string,
-  publicDir: string,
-): AssetListResult {
-  return listProjectAssets(projectPath, publicDir);
 }
 
 const MIME_BY_EXTENSION: Record<string, string> = {
@@ -408,6 +434,17 @@ function resolveManagedAssetFile(
   // Both paths must be realpaths, or deriving a web path from them produces
   // traversal garbage on platforms where the temp/home root is a symlink
   // (e.g. macOS /var -> /private/var).
+  // A symlink INSIDE the project pointing at this asset: mutating it would
+  // change the symlink's target (leaving the in-project link pointing at a
+  // dead name) while the web path refers to the link. Reject so the user can
+  // decide instead of silently operating on a different file. (Compare the
+  // LEXICAL path: resolving first would hide the link — e.g. macOS /var is
+  // itself a symlink to /private/var.)
+  if (fs.lstatSync(resolved).isSymbolicLink()) {
+    throw new Error(
+      "This asset is a symlink. Deleting or renaming it would affect the file it points to; remove the link manually instead.",
+    );
+  }
   return { file: realResolved, publicRoot: realPublicRoot };
 }
 
@@ -461,7 +498,7 @@ export function renameAsset(
     if (!stem) return { ok: false, error: "Enter a file name." };
 
     const dir = path.dirname(file);
-    const target = path.join(dir, uniqueName(dir, `${stem}${ext}`));
+    const target = path.join(dir, uniqueName(dir, `${stem}${ext}`, file));
     if (target === file) {
       return { ok: true, webPath: webPathForFile(publicRoot, file) };
     }

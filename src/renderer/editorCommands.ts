@@ -23,8 +23,51 @@ export function isBlockTypeAllowed(
 export function handlePlainTextPaste(event: ClipboardEvent): void {
   event.preventDefault();
   const text = event.clipboardData?.getData("text/plain") ?? "";
-  if (!text) return;
-  document.execCommand("insertText", false, text);
+  if (text) {
+    document.execCommand("insertText", false, text);
+    return;
+  }
+  // Some apps expose only text/html (no text/plain fallback); without this,
+  // the native paste is already suppressed and the paste silently vanishes.
+  const html = event.clipboardData?.getData("text/html") ?? "";
+  if (html) {
+    // insertHTML would smuggle arbitrary markup into the contenteditable; only
+    // its text content is wanted here, matching the plain-text contract.
+    const container = document.createElement("div");
+    container.innerHTML = html;
+    document.execCommand(
+      "insertText",
+      false,
+      // Collapse br + block-boundary doubles ("one<br>two</p><p>three"
+      // produced "one\ntwo\n\nthree").
+      (htmlTextContent(container) ?? "").replace(/\n{2,}/g, "\n").trim(),
+    );
+  }
+}
+
+/** Extracts the TEXT of an HTML fragment, mapping <br> and block boundaries
+ *  to newlines — container.textContent fused "a<br>b" into "ab" for sources
+ *  that expose only text/html. */
+function htmlTextContent(root: Element): string {
+  let out = "";
+  for (const node of Array.from(root.childNodes)) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      out += node.textContent ?? "";
+    } else if (node.nodeType === Node.ELEMENT_NODE) {
+      const el = node as HTMLElement;
+      const tag = el.tagName;
+      const before =
+        /^(BR|P|DIV|LI|H[1-6]|BLOCKQUOTE|PRE|UL|OL|TABLE|TR)$/i.test(tag)
+          ? "\n"
+          : "";
+      out += before + htmlTextContent(el);
+      const after = /^(P|DIV|LI|H[1-6]|BLOCKQUOTE|PRE|TABLE|TR)$/i.test(tag)
+        ? "\n"
+        : "";
+      out += after;
+    }
+  }
+  return out;
 }
 
 export function syncUndoRedoToolbar(options: {

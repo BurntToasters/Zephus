@@ -33,6 +33,54 @@
     system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
     Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --font-sans: var(--font-ui);
+}
+
+/* Settings theme is renderer-wide, not decoration-only. Keep token names
+   stable so existing rules switch without a second stylesheet. */
+[data-theme="light"] {
+  --bg: #f4f4f5;
+  --bg-app: #e4e4e7;
+  --bg-alt: #ffffff;
+  --panel: #ffffff;
+  --panel-card: #f4f4f5;
+  --border: #d4d4d8;
+  --border-focus: #a1a1aa;
+  --text: #18181b;
+  --muted: #52525b;
+  --accent: #4338ca;
+  --accent-hover: #3730a3;
+  --accent-bg: rgba(67, 56, 202, 0.12);
+  --shadow-sm: 0 1px 2px 0 rgba(24, 24, 27, 0.08);
+  --shadow-md:
+    0 4px 6px -1px rgba(24, 24, 27, 0.12), 0 2px 4px -1px rgba(24, 24, 27, 0.08);
+  --shadow-lg:
+    0 10px 15px -3px rgba(24, 24, 27, 0.14),
+    0 4px 6px -2px rgba(24, 24, 27, 0.08);
+}
+
+@media (prefers-color-scheme: light) {
+  [data-theme="system"] {
+    --bg: #f4f4f5;
+    --bg-app: #e4e4e7;
+    --bg-alt: #ffffff;
+    --panel: #ffffff;
+    --panel-card: #f4f4f5;
+    --border: #d4d4d8;
+    --border-focus: #a1a1aa;
+    --text: #18181b;
+    --muted: #52525b;
+    --accent: #4338ca;
+    --accent-hover: #3730a3;
+    --accent-bg: rgba(67, 56, 202, 0.12);
+    --shadow-sm: 0 1px 2px 0 rgba(24, 24, 27, 0.08);
+    --shadow-md:
+      0 4px 6px -1px rgba(24, 24, 27, 0.12),
+      0 2px 4px -1px rgba(24, 24, 27, 0.08);
+    --shadow-lg:
+      0 10px 15px -3px rgba(24, 24, 27, 0.14),
+      0 4px 6px -2px rgba(24, 24, 27, 0.08);
+  }
 }
 
 * {
@@ -116,6 +164,38 @@ body {
     ),
     linear-gradient(180deg, #0a0a12 0%, #09090b 42%, #060608 100%);
   height: 100vh;
+}
+
+[data-theme="light"] #view-start {
+  background:
+    radial-gradient(
+      circle at 14% 16%,
+      rgba(67, 56, 202, 0.12),
+      transparent 38%
+    ),
+    radial-gradient(
+      circle at 84% 12%,
+      rgba(5, 150, 105, 0.08),
+      transparent 32%
+    ),
+    linear-gradient(180deg, #ffffff 0%, #f4f4f5 42%, #e4e4e7 100%);
+}
+
+@media (prefers-color-scheme: light) {
+  [data-theme="system"] #view-start {
+    background:
+      radial-gradient(
+        circle at 14% 16%,
+        rgba(67, 56, 202, 0.12),
+        transparent 38%
+      ),
+      radial-gradient(
+        circle at 84% 12%,
+        rgba(5, 150, 105, 0.08),
+        transparent 32%
+      ),
+      linear-gradient(180deg, #ffffff 0%, #f4f4f5 42%, #e4e4e7 100%);
+  }
 }
 
 .start-atmosphere {
@@ -892,7 +972,7 @@ body {
 
 .btn:hover {
   border-color: var(--border-focus);
-  background: #323238;
+  background: var(--bg-alt);
 }
 
 .btn:active {
@@ -1187,6 +1267,33 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
   transition: all 0.15s ease;
+}
+
+/* Nav entries are real buttons now; the button must fill the li and match
+   the list's hover affordance, with a split label/route layout so a long
+   label cannot clip the route. */
+.list li .nav-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.list li .nav-entry:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+.list li .nav-entry-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .list li:hover {
@@ -1568,7 +1675,7 @@ body {
 }
 
 .resize-handle:focus-visible {
-  outline: 2px solid #ffffff;
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -1601,7 +1708,9 @@ body {
   border-radius: var(--radius-lg);
   padding: 14px;
   background: rgba(255, 255, 255, 0.012);
-  margin: 10px 0;
+  /* The build centers content via .zephus-shell-main; auto margins keep a
+     maxWidth-capped band centered on canvas too (no-op at full width). */
+  margin: 10px auto;
   position: relative;
   box-sizing: border-box;
   max-width: 100%;
@@ -1621,6 +1730,24 @@ body {
 
 .canvas-section.locked {
   opacity: 0.82;
+}
+
+/* Blocks/sections hidden on the active viewport stay visible on the canvas
+   (marked) so they can still be selected and edited — the built site hides
+   them via the responsive CSS. */
+.canvas .block.hidden-on-viewport,
+.canvas-section.hidden-on-viewport {
+  outline: 2px dashed var(--border-focus);
+  outline-offset: 3px;
+  opacity: 0.55;
+}
+.canvas .block.hidden-on-viewport:hover,
+.canvas-section.hidden-on-viewport:hover {
+  opacity: 0.9;
+}
+.canvas .block.hidden-on-viewport.selected,
+.canvas-section.hidden-on-viewport.selected {
+  opacity: 1;
 }
 
 .canvas .block:hover {
@@ -1935,6 +2062,12 @@ body {
   pointer-events: none;
 }
 
+.block-preview video {
+  max-width: 100%;
+  display: block;
+  background: #000000;
+}
+
 .block-preview [data-zephus-block="columns"],
 .block-preview [data-zephus-block="gallery"] {
   display: grid;
@@ -2015,56 +2148,11 @@ body {
   box-shadow: var(--shadow-md);
 }
 
-.preview-frame {
-  position: absolute;
-  inset: 24px;
-  width: calc(100% - 48px);
-  height: calc(100% - 48px);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: #ffffff;
-  box-shadow: var(--shadow-md);
-  transition:
-    max-width 0.3s cubic-bezier(0.16, 1, 0.3, 1),
-    height 0.3s cubic-bezier(0.16, 1, 0.3, 1),
-    border 0.35s cubic-bezier(0.16, 1, 0.3, 1),
-    border-radius 0.35s cubic-bezier(0.16, 1, 0.3, 1),
-    box-shadow 0.35s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
 /* Responsive Viewports with sleek mock hardware bezels */
 .canvas-wrap.vp-tablet #canvas,
-.canvas-wrap.vp-tablet .preview-frame {
-  max-width: 768px;
-  height: calc(100% - 48px);
-  align-self: center;
-  border: 16px solid #1a1a1f; /* Sleek tablet bezel */
-  border-radius: 28px; /* Tablet roundness */
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.1),
-    0 25px 60px -15px rgba(0, 0, 0, 0.8),
-    0 0 0 4px #0c0c0e; /* Outer tablet ring */
-  overflow: hidden;
-  padding: 12px;
-}
-
+.canvas-wrap.vp-tablet 
 .canvas-wrap.vp-mobile #canvas,
-.canvas-wrap.vp-mobile .preview-frame {
-  max-width: 390px;
-  height: calc(100% - 48px);
-  align-self: center;
-  border: 14px solid #1a1a1f; /* Sleek phone bezel */
-  border-top-width: 24px; /* Taller top to simulate speaker/camera zone */
-  border-bottom-width: 24px; /* Taller bottom */
-  border-radius: 40px; /* Phone roundness */
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.1),
-    0 25px 60px -15px rgba(0, 0, 0, 0.8),
-    0 0 0 4px #0c0c0e; /* Outer phone ring */
-  overflow: hidden;
-  padding: 12px;
-}
-
+.canvas-wrap.vp-mobile 
 /* Properties Side Panel widgets */
 .properties {
   display: flex;
@@ -2281,22 +2369,6 @@ body {
   font-size: 12px;
 }
 
-.asset-row {
-  width: 100%;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--bg-alt);
-  color: var(--text);
-  padding: 10px 12px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.asset-row:hover {
-  border-color: var(--accent);
-  background: var(--panel-card);
-}
-
 .asset-dropzone {
   border: 2px dashed var(--border);
   border-radius: var(--radius-md);
@@ -2502,6 +2574,12 @@ body {
   color: var(--zephus-accent, var(--accent));
   text-decoration: underline;
 }
+/* The generic anchor rule above outranks .canvas .button (text-decoration
+   none) — button/CTA labels rendered underlined on canvas only, not in the
+   build. Exclude .button anchors. */
+.canvas .block .button {
+  text-decoration: none;
+}
 
 .asset-tile-wrap {
   position: relative;
@@ -2624,28 +2702,6 @@ body {
   white-space: nowrap;
 }
 
-.font-control {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.font-custom {
-  width: 100%;
-}
-
-.font-preview {
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg-alt);
-  color: var(--text);
-  font-size: 15px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .insert-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
@@ -2756,21 +2812,6 @@ body {
   width: 100%;
 }
 
-.properties .prop-row {
-  margin-bottom: 8px;
-}
-
-.properties .prop-error {
-  border-color: var(--danger) !important;
-}
-
-.properties .err-msg {
-  color: var(--danger);
-  font-size: 11px;
-  margin: 4px 0 0;
-  font-weight: 500;
-}
-
 /* Git Panel */
 .git-panel {
   font-size: 12px;
@@ -2778,10 +2819,6 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   padding: 12px;
-}
-
-.git-panel .g-group {
-  margin-bottom: 10px;
 }
 
 .git-panel .g-file {
@@ -2797,15 +2834,6 @@ body {
 .git-panel .g-file input[type="checkbox"] {
   margin-top: 2px;
   flex-shrink: 0;
-}
-
-.git-panel .g-left {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .git-panel .g-badge {
@@ -3044,6 +3072,26 @@ body {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   gap: 0.75rem;
+}
+/* Auto-grid mirror of the build's `section:has(> .zephus-feature/.zephus-pricing)`
+   rule: repeated feature/pricing cards lay out in columns on the canvas too,
+   or the user designs full-width stacks that the published site renders as a
+   side-by-side grid. Block shells (with their chrome) are the grid items;
+   sibling headings/paragraphs span all columns like the build. */
+.canvas .section-body:has(> .block > .block-preview > .zephus-feature),
+.canvas .section-body:has(> .block > .block-preview > .zephus-pricing) {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.75rem;
+  align-items: start;
+}
+.canvas
+  .section-body:has(> .block > .block-preview > .zephus-feature)
+  > .block:has(> .block-preview > :is(h1, h2, h3, h4, p, .lead)),
+.canvas
+  .section-body:has(> .block > .block-preview > .zephus-pricing)
+  > .block:has(> .block-preview > :is(h1, h2, h3, h4, p, .lead)) {
+  grid-column: 1 / -1;
 }
 .canvas .zephus-gallery img {
   width: 100%;
@@ -3394,52 +3442,7 @@ body {
   }
 }
 
-@media (max-width: 1100px) {
-  .start-shell {
-    width: min(100vw - 28px, 1400px);
-    padding-top: 24px;
-  }
-
-  .start-hero,
-  .home-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .home-panel-header {
-    flex-direction: column;
-  }
-
-  .panel-meta {
-    max-width: none;
-    text-align: left;
-  }
-}
-
 @media (max-width: 760px) {
-  .start-shell {
-    padding-bottom: 28px;
-  }
-
-  .start-hero-copy,
-  .start-hero-tools,
-  .home-panel {
-    padding: 18px;
-    border-radius: 18px;
-  }
-
-  .brand {
-    font-size: 40px;
-  }
-
-  .start-lead {
-    font-size: 14px;
-  }
-
-  .home-quick-actions {
-    display: grid;
-    grid-template-columns: 1fr;
-  }
-
   .recent-project-head,
   .overview-row,
   .overview-title,
@@ -4115,4 +4118,74 @@ kbd {
   .workspace-tab span {
     display: none;
   }
+}
+
+/* Light theme surfaces: token text on dark glass was unreadable in light
+   mode — these surfaces switch to light tokens. */
+[data-theme="light"] .start-sidebar,
+[data-theme="light"] .recent-grid li,
+[data-theme="light"] .welcome-card,
+[data-theme="light"] .about-hero,
+[data-theme="light"] .theme-card,
+[data-theme="light"] .home-status-card {
+  background: var(--panel);
+  border-color: var(--border);
+  box-shadow: 0 1px 3px rgba(24, 24, 27, 0.08);
+}
+[data-theme="light"] .workspace-tab.active {
+  color: var(--text);
+}
+[data-theme="light"] .project-name.dirty {
+  color: var(--warning);
+}
+[data-theme="light"] kbd {
+  color: var(--muted);
+  background: var(--bg-alt);
+  border-color: var(--border);
+}
+[data-theme="light"] .overview-pill.info,
+[data-theme="light"] .pane-kicker,
+[data-theme="light"] .help-section h4 {
+  color: var(--accent);
+}
+[data-theme="light"] .page-item.hidden-page {
+  color: var(--warning);
+}
+[data-theme="light"] .licenses-table tr:hover td {
+  background: rgba(0, 0, 0, 0.03);
+}
+[data-theme="light"] .theme-card-icon-pill {
+  color: var(--muted);
+  background: rgba(0, 0, 0, 0.05);
+}
+[data-theme="light"] .settings-section {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+/* Keyboard focus for theme cards: outline:none removed the global indicator. */
+.theme-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Native-select styling (the settings theme/font selects had NO rules at all:
+   white controls flashed in the dark start view). */
+.field select,
+.settings-form select,
+.settings-row select {
+  background: var(--bg-alt);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  font-family: var(--font-ui);
+  font-size: 13px;
+}
+[data-theme="light"] .field select,
+[data-theme="light"] .settings-form select,
+[data-theme="light"] .settings-row select {
+  background: var(--bg-alt);
+  color: var(--text);
 }

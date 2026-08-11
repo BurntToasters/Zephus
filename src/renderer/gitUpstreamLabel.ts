@@ -17,7 +17,10 @@ export function formatGitUpstreamPanelNote(
 ): string | null {
   if (ahead === 0 && behind === 0) return null;
   if (behind > 0 && ahead > 0) {
-    return `Remote is ${behind} commit(s) ahead and you have ${ahead} local commit(s) to push. Pull (fast-forward) or push as needed.`;
+    // With local commits ahead AND remote commits behind, both a fast-forward
+    // pull and a plain push are guaranteed to fail — advise a merge/rebase
+    // instead of suggesting actions that cannot succeed.
+    return `Remote is ${behind} commit(s) ahead and you have ${ahead} local commit(s) to push. Pull with a merge/rebase to reconcile (force-push would discard the remote commits).`;
   }
   if (behind > 0) {
     return `Remote has ${behind} commit(s) you can fast-forward pull.`;

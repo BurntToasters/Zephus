@@ -78,6 +78,8 @@ function ThemeCard(props: { theme: ThemeCardEntry }) {
       onClick={() => handlers?.onSelect(props.theme.id)}
       onDblClick={() => handlers?.onCreateFromTheme(props.theme.id)}
       onKeyDown={(event) => {
+        // Let the inner Preview/Select buttons handle their own keys.
+        if (event.target !== event.currentTarget) return;
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
           handlers?.onSelect(props.theme.id);

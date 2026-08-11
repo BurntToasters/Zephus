@@ -8,6 +8,7 @@ import {
   INSPECTOR_CANVAS_REPAINT_MS,
   isInspectorTextInputFocused,
 } from "../editorInspector";
+import type { EditorSnapshot } from "../editorSession";
 
 describe("editorInspector", () => {
   beforeEach(() => {
@@ -54,16 +55,49 @@ describe("editorInspector", () => {
     expect(repaint).toHaveBeenCalledTimes(1);
   });
 
-  it("pushes undo once per inspector edit session", () => {
-    const pushUndo = vi.fn();
-    const latch = createInspectorUndoLatch(pushUndo);
+  it("pushes undo once per inspector edit session, only when changed", () => {
+    const pushSnapshot = vi.fn();
+    let captured: EditorSnapshot = { sections: [], site: null };
+    const latch = createInspectorUndoLatch({
+      captureSnapshot: () => captured,
+      pushSnapshot,
+    });
     const flush = vi.fn();
+
     latch.begin();
     latch.begin();
-    expect(pushUndo).toHaveBeenCalledTimes(1);
+    // No mutation between begin and end: nothing pushed, redo preserved.
     latch.end(flush);
     expect(flush).toHaveBeenCalled();
+    expect(pushSnapshot).not.toHaveBeenCalled();
+
+    // Changed during the session: the pre-change snapshot is pushed once.
     latch.begin();
-    expect(pushUndo).toHaveBeenCalledTimes(2);
+    captured = { sections: [], site: null };
+    latch.end(flush);
+    expect(pushSnapshot).toHaveBeenCalledTimes(0);
+
+    latch.begin();
+    captured = {
+      sections: [{ id: "s", type: "section" } as never],
+      site: null,
+    };
+    latch.end(flush);
+    expect(pushSnapshot).toHaveBeenCalledTimes(1);
+    expect(pushSnapshot).toHaveBeenCalledWith({ sections: [], site: null });
+  });
+
+  it("markActive defers undo to the caller and never re-pushes", () => {
+    const pushSnapshot = vi.fn();
+    const latch = createInspectorUndoLatch({
+      captureSnapshot: () => ({ sections: [], site: null }),
+      pushSnapshot,
+    });
+    // Drag/resize flows push undo themselves before mutating.
+    latch.markActive();
+    latch.begin();
+    expect(latch.isActive()).toBe(true);
+    latch.end(() => undefined);
+    expect(pushSnapshot).not.toHaveBeenCalled();
   });
 });

@@ -126,23 +126,25 @@ export function createEditorSaveActions(deps: EditorSaveDeps) {
               return false;
             }
             if (!isSamePage()) {
-              deps.setStatus(`Saved ${pagePath}; the open page changed.`);
-              return true;
-            }
-
-            const state = deps.getState();
-            state.pageDocument = detached.pageDocument;
-            state.siteDocument = detached.site;
-            state.managedStatus = detached.pageDocument.managedFileStatus;
-            state.visualEditable = false;
-            state.generatedCode =
-              detached.generatedSource ??
-              managedSource ??
-              detached.source ??
-              "";
-            state.rawCode = content;
-            if (managedStatusAtStart !== "detached") {
-              pageSaveNotice = `Saved ${pagePath} as hand-authored Astro; visual editing is now detached.`;
+              // The page switched mid-save: skip page-state updates but keep
+              // going so a dirty SITE still saves below.
+              savedPage = true;
+              pageSaveNotice = `Saved ${pagePath}; the open page changed.`;
+            } else {
+              const state = deps.getState();
+              state.pageDocument = detached.pageDocument;
+              state.siteDocument = detached.site;
+              state.managedStatus = detached.pageDocument.managedFileStatus;
+              state.visualEditable = false;
+              state.generatedCode =
+                detached.generatedSource ??
+                managedSource ??
+                detached.source ??
+                "";
+              state.rawCode = content;
+              if (managedStatusAtStart !== "detached") {
+                pageSaveNotice = `Saved ${pagePath} as hand-authored Astro; visual editing is now detached.`;
+              }
             }
           } else {
             const visualDoc = deps.pageDocumentFromState();
@@ -162,19 +164,19 @@ export function createEditorSaveActions(deps: EditorSaveDeps) {
               return false;
             }
             if (!isSamePage()) {
-              deps.setStatus(`Saved ${pagePath}; the open page changed.`);
-              return true;
+              savedPage = true;
+              pageSaveNotice = `Saved ${pagePath}; the open page changed.`;
+            } else {
+              const state = deps.getState();
+              const normalizedGenerated =
+                generated.generatedSource ?? generated.source ?? managedSource;
+              state.pageDocument = generated.pageDocument;
+              state.siteDocument = generated.site;
+              state.managedStatus = generated.pageDocument.managedFileStatus;
+              state.visualEditable = true;
+              state.generatedCode = normalizedGenerated;
+              state.rawCode = normalizedGenerated;
             }
-
-            const state = deps.getState();
-            const normalizedGenerated =
-              generated.generatedSource ?? generated.source ?? managedSource;
-            state.pageDocument = generated.pageDocument;
-            state.siteDocument = generated.site;
-            state.managedStatus = generated.pageDocument.managedFileStatus;
-            state.visualEditable = true;
-            state.generatedCode = normalizedGenerated;
-            state.rawCode = normalizedGenerated;
           }
         } else {
           const doc = deps.pageDocumentFromState();
@@ -192,18 +194,18 @@ export function createEditorSaveActions(deps: EditorSaveDeps) {
             return false;
           }
           if (!isSamePage()) {
-            deps.setStatus(`Saved ${pagePath}; the open page changed.`);
-            return true;
+            savedPage = true;
+            pageSaveNotice = `Saved ${pagePath}; the open page changed.`;
+          } else {
+            const state = deps.getState();
+            state.pageDocument = saved.pageDocument;
+            state.siteDocument = saved.site;
+            state.managedStatus = saved.pageDocument.managedFileStatus;
+            state.visualEditable = true;
+            state.generatedCode =
+              saved.generatedSource ?? saved.source ?? content;
+            state.rawCode = state.generatedCode;
           }
-
-          const state = deps.getState();
-          state.pageDocument = saved.pageDocument;
-          state.siteDocument = saved.site;
-          state.managedStatus = saved.pageDocument.managedFileStatus;
-          state.visualEditable = true;
-          state.generatedCode =
-            saved.generatedSource ?? saved.source ?? content;
-          state.rawCode = state.generatedCode;
         }
 
         const state = deps.getState();
@@ -234,7 +236,13 @@ export function createEditorSaveActions(deps: EditorSaveDeps) {
           if (!state.pageDirty) deps.markDirty(true);
         } else {
           if (state.mode === "code" && state.visualEditable) {
-            deps.setCode(state.rawCode);
+            // Only refill the editor when the content actually changed.
+            // setCode() recreates the EditorState and wipes undo/redo + cursor;
+            // doing it on every managed save destroyed the user's history even
+            // when the save changed nothing in the code view.
+            if (deps.getCode() !== state.rawCode) {
+              deps.setCode(state.rawCode);
+            }
             const currentDoc = deps.pageDocumentFromState();
             if (currentDoc) {
               state.sections = deps.sectionsFromPageDocument(currentDoc);
@@ -295,12 +303,18 @@ export function createEditorSaveActions(deps: EditorSaveDeps) {
     trailingSaveRequested = false;
     const pending = (async (): Promise<boolean> => {
       let saved = await runSave();
+      let anySucceeded = saved;
       while (saved && trailingSaveRequested && isGlobalDirty(deps.getState())) {
         trailingSaveRequested = false;
         saved = await runSave();
+        if (saved) anySucceeded = true;
       }
       trailingSaveRequested = false;
-      return saved;
+      // The click-time snapshot is the save the user asked for; a failed
+      // trailing flush leaves the dirty flag set, so callers never lose the
+      // newer edits — but they must not be told everything failed when the
+      // first snapshot was already written.
+      return anySucceeded;
     })();
     activeSave = pending;
     void pending.finally(() => {

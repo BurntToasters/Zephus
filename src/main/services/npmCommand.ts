@@ -10,19 +10,19 @@ export function npmCommand(
   args: string[],
   platform: NodeJS.Platform = process.platform,
   env: NodeJS.ProcessEnv = process.env,
+  cwd?: string,
 ): NpmCommand {
   if (platform === "win32") {
     const npm = resolveWindowsNpmCmd(env);
+    const command = [
+      quoteCmdArg(npm, true),
+      ...args.map((arg) => quoteCmdArg(arg)),
+    ].join(" ");
+    const uncPrefix =
+      cwd && /^\\\\/.test(cwd) ? `pushd ${quoteCmdArg(cwd, true)} && ` : "";
     return {
       command: "cmd.exe",
-      args: [
-        "/d",
-        "/s",
-        "/c",
-        [quoteCmdArg(npm, true), ...args.map((arg) => quoteCmdArg(arg))].join(
-          " ",
-        ),
-      ],
+      args: ["/d", "/s", "/c", uncPrefix + command],
     };
   }
   return { command: "npm", args };
@@ -30,7 +30,9 @@ export function npmCommand(
 
 function quoteCmdArg(value: string, forceQuote = false): string {
   if (!forceQuote && /^[A-Za-z0-9_./:=+-]+$/.test(value)) return value;
-  return `"${value.replace(/"/g, '""')}"`;
+  // cmd.exe expands %VAR% even inside double quotes — a path containing % is
+  // corrupted before the command runs. Doubling escapes it.
+  return `"${value.replace(/"/g, '""').replace(/%/g, "%%")}"`;
 }
 
 function pathEnvKey(env: NodeJS.ProcessEnv): string {
@@ -62,7 +64,12 @@ export function resolveWindowsNpmCmd(
     }
   }
   if (env.APPDATA) {
-    candidates.push(path.win32.join(env.APPDATA, "npm", "npm.cmd"));
+    // Host-style first (like the PATH candidates) so POSIX test hosts can
+    // resolve temp dirs exactly; win32 join covers real Windows installs.
+    candidates.push(path.join(env.APPDATA, "npm", "npm.cmd"));
+    if (path.win32.isAbsolute(env.APPDATA)) {
+      candidates.push(path.win32.join(env.APPDATA, "npm", "npm.cmd"));
+    }
   }
   const programFiles = env.ProgramFiles || "C:\\Program Files";
   const programFilesX86 = env["ProgramFiles(x86)"] || "C:\\Program Files (x86)";

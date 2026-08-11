@@ -21,6 +21,19 @@ describe("updateChannel", () => {
     expect(isBetaVersion("0.1.0-rc.3")).toBe(true);
     expect(isBetaVersion("0.1.0-db.1")).toBe(false);
     expect(isBetaVersion("0.1.0")).toBe(false);
+    // Non-standard tags without a separator are still prereleases.
+    expect(isBetaVersion("0.1.0-beta10")).toBe(true);
+    expect(isDeveloperVersion("0.1.0-db7")).toBe(true);
+  });
+
+  it("ranks rc above beta above alpha at the same base", () => {
+    // Regression: alpha/beta/rc shared one rank and compared only build
+    // numbers, so beta.9 looked like an upgrade over rc.2.
+    expect(isChannelUpgrade("0.1.0-rc.2", "0.1.0-beta.9")).toBe(false);
+    expect(isChannelUpgrade("0.1.0-beta.9", "0.1.0-rc.2")).toBe(true);
+    expect(isChannelUpgrade("0.1.0-beta.2", "0.1.0-alpha.9")).toBe(false);
+    expect(isChannelUpgrade("0.1.0-alpha.9", "0.1.0-beta.1")).toBe(true);
+    expect(isChannelUpgrade("0.1.0-rc.1", "0.1.0-rc.2")).toBe(true);
   });
 
   it("maps installed versions to the correct feed for auto channel", () => {
@@ -66,7 +79,7 @@ describe("updateChannel", () => {
       expect(isChannelUpgrade("0.1.0-db.1", "0.1.0-db.2")).toBe(true);
       expect(isChannelUpgrade("0.1.0-db.2", "0.1.0-db.1")).toBe(false);
       expect(isChannelUpgrade("0.1.0-db.2", "0.1.0-db.2")).toBe(false);
-      expect(isChannelUpgrade("0.1.0-beta.1", "0.1.0-beta.4")).toBe(true);
+      expect(isChannelUpgrade("0.1.0-beta.1", "0.1.0-beta.5")).toBe(true);
     });
 
     it("returns false for unparseable versions", () => {

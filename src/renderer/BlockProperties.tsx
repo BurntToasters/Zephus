@@ -72,7 +72,7 @@ function ButtonVariantField(props: {
   onFocus: () => void;
   onBlur: () => void;
 }) {
-  const currentVariant = /\bsecondary\b/.test(props.cls ?? "")
+  const currentVariant = (props.cls ?? "").split(/\s+/).includes("secondary")
     ? "secondary"
     : "primary";
   return (
@@ -175,16 +175,28 @@ function AssetPreviewImage(props: {
     }
 
     setPreviewSrc("");
-    void props.resolveAssetPreviewSrc(source).then((resolved) => {
-      if (!cancelled) setPreviewSrc(resolved ?? "");
-    });
+    void props.resolveAssetPreviewSrc(source).then(
+      (resolved) => {
+        if (!cancelled) setPreviewSrc(resolved ?? "");
+      },
+      () => {
+        if (!cancelled) setPreviewSrc("");
+      },
+    );
 
     onCleanup(() => {
       cancelled = true;
     });
   });
 
-  return <img class={props.class} src={previewSrc()} alt={props.alt} />;
+  return (
+    <img
+      class={props.class}
+      src={previewSrc()}
+      alt={props.alt}
+      draggable={false}
+    />
+  );
 }
 
 function ImageContentGroup(props: {
@@ -275,6 +287,7 @@ function ImageContentGroup(props: {
               }}
               class="focal-box"
               onPointerDown={(event) => {
+                event.preventDefault();
                 dragging = true;
                 props.state.onFocus();
                 event.currentTarget.setPointerCapture(event.pointerId);
@@ -602,12 +615,42 @@ function ContentGroup(props: { state: BlockPropertiesState }) {
           />
         </Group>
       );
-    case "spacer":
+    case "video":
       return (
         <Group title="Content">
           <TextField
-            label="Height"
-            value={value("height") || "48px"}
+            label="Video URL"
+            value={value("src")}
+            onFocus={state.onFocus}
+            onBlur={state.onBlur}
+            onChange={(next) => state.onPropChange("src", next)}
+          />
+          <TextField
+            label="Title"
+            value={value("title")}
+            onFocus={state.onFocus}
+            onBlur={state.onBlur}
+            onChange={(next) => state.onPropChange("title", next)}
+          />
+          <p class="muted">
+            Use an .mp4 or .webm URL (https, or a project file under
+            public/assets). Project files play in the preview browser.
+          </p>
+        </Group>
+      );
+    case "spacer":
+      return (
+        <Group title="Content">
+          {/* The Layout panel's "Height" (style.height) takes precedence over
+              this prop in the renderer; when set, this field is inert. Use
+              LengthField so bare numbers get px and invalid CSS never ships. */}
+          <LengthField
+            label={
+              state.style?.height
+                ? "Height (overridden by Layout Height)"
+                : "Height"
+            }
+            value={value("height")}
             onFocus={state.onFocus}
             onBlur={state.onBlur}
             onChange={(next) => state.onPropChange("height", next)}
@@ -809,14 +852,20 @@ function ContentGroup(props: { state: BlockPropertiesState }) {
         <Group title="Content">
           <TextField
             label="Folder (route prefix)"
-            value={value("folder") || "/posts"}
+            // Show the ACTUAL stored value: an empty folder means "all
+            // posts", but falling back to "/posts" here made a cleared field
+            // display as a /posts filter on reload — the panel claimed a
+            // state the build did not honor.
+            value={value("folder")}
             onFocus={state.onFocus}
             onBlur={state.onBlur}
             onChange={(next) => state.onPropChange("folder", next)}
           />
           <TextField
             label="Maximum posts (0 for all)"
-            value={value("limit") || "5"}
+            // Same lie: cleared limit means 0 = all, but the fallback "5"
+            // displayed a filter that was not applied.
+            value={value("limit")}
             onFocus={state.onFocus}
             onBlur={state.onBlur}
             onChange={(next) => state.onPropChange("limit", next)}
@@ -902,10 +951,19 @@ export function renderBlockProperties(
             {state.blockType === "gallery" ? (
               <TextField
                 label="Columns"
+                // Sanitized on commit: gallery columns map to
+                // `repeat(N, ...)` — 0/negative/huge/garbage values silently
+                // produce invalid CSS or a broken grid. Clamp to 1..6.
                 value={state.style?.columns ?? ""}
                 onFocus={state.onFocus}
                 onBlur={state.onBlur}
-                onChange={(next) => state.onStyleChange("columns", next)}
+                onChange={(next) => {
+                  const parsed = Math.floor(Number(next));
+                  const clamped = Number.isFinite(parsed)
+                    ? String(Math.min(6, Math.max(1, parsed)))
+                    : "";
+                  state.onStyleChange("columns", clamped);
+                }}
               />
             ) : null}
             <ToggleField
@@ -915,6 +973,55 @@ export function renderBlockProperties(
               onBlur={state.onBlur}
               onChange={(next) => state.onStyleChange("stackOnMobile", next)}
             />
+            <ToggleField
+              label="Hide on desktop"
+              checked={(state.style?.hideOn ?? []).includes("desktop")}
+              onFocus={state.onFocus}
+              onBlur={state.onBlur}
+              onChange={(next) => {
+                const current = state.style?.hideOn ?? [];
+                state.onStyleChange(
+                  "hideOn",
+                  next
+                    ? [...new Set([...current, "desktop"])]
+                    : current.filter((v) => v !== "desktop"),
+                );
+              }}
+            />
+            <ToggleField
+              label="Hide on tablet"
+              checked={(state.style?.hideOn ?? []).includes("tablet")}
+              onFocus={state.onFocus}
+              onBlur={state.onBlur}
+              onChange={(next) => {
+                const current = state.style?.hideOn ?? [];
+                state.onStyleChange(
+                  "hideOn",
+                  next
+                    ? [...new Set([...current, "tablet"])]
+                    : current.filter((v) => v !== "tablet"),
+                );
+              }}
+            />
+            <ToggleField
+              label="Hide on mobile"
+              checked={(state.style?.hideOn ?? []).includes("mobile")}
+              onFocus={state.onFocus}
+              onBlur={state.onBlur}
+              onChange={(next) => {
+                const current = state.style?.hideOn ?? [];
+                state.onStyleChange(
+                  "hideOn",
+                  next
+                    ? [...new Set([...current, "mobile"])]
+                    : current.filter((v) => v !== "mobile"),
+                );
+              }}
+            />
+            <p class="meta-hint">
+              Hidden content stays editable on the canvas (dashed outline) and
+              disappears from the published site at that width.
+            </p>
           </Group>
 
           <Group title="Style">

@@ -11,6 +11,7 @@ export interface GitStatusData {
   branch: string | null;
   zephusIgnored?: boolean;
   notARepository?: boolean;
+  hasRemote?: boolean;
   error?: string;
   ahead?: number;
   behind?: number;
@@ -20,6 +21,11 @@ export interface GitStatusData {
 }
 
 const [gitStatus, setGitStatus] = createSignal<GitStatusData | null>(null);
+
+// The editor holds unsaved page/site changes: a commit would stage the
+// LAST-SAVED disk state and silently exclude the newer edits (which then
+// still show as "modified" — looking like a failed commit).
+const [gitPanelEditorDirty, setGitPanelEditorDirty] = createSignal(false);
 
 let gitPanelHandlers: {
   onRefresh: () => void;
@@ -92,6 +98,12 @@ export function GitPanelContent() {
     new Set(),
   );
 
+  const busy = () => committing() || pushing() || pulling() || initializing();
+
+  const changedFilesSignature = (status: GitStatusData | null): string =>
+    status ? listChangedFiles(status).join("\u0000") : "";
+  let lastFilesSignature = "";
+
   createEffect(() => {
     gitStatus();
     runIconRefresh();
@@ -100,10 +112,18 @@ export function GitPanelContent() {
   createEffect(() => {
     const status = gitStatus();
     if (!status) {
+      lastFilesSignature = "";
       setSelectedFiles(new Set<string>());
       return;
     }
-    setSelectedFiles(new Set(listChangedFiles(status)));
+    const signature = changedFilesSignature(status);
+    // Only auto-select when the working-tree file set actually changed. A plain
+    // refresh (or a post-commit/push/pull status update) must not clobber a
+    // manual subset selection the user made.
+    if (signature !== lastFilesSignature) {
+      lastFilesSignature = signature;
+      setSelectedFiles(new Set(listChangedFiles(status)));
+    }
   });
 
   const toggleFile = (file: string, checked: boolean) => {
@@ -135,12 +155,20 @@ export function GitPanelContent() {
 
   const canSyncRemote = () => {
     const status = gitStatus();
-    return !!status?.available && !status.detachedHead && !!status.branch;
+    return (
+      !!status?.available &&
+      !status.detachedHead &&
+      !!status.branch &&
+      // A repo with NO remote has nothing to push/pull to: previously the
+      // Push button appeared anyway and every click failed with a raw
+      // "No configured push destination" (a guaranteed-error dead end).
+      !!status.hasRemote
+    );
   };
 
   const submitCommit = async () => {
     const message = commitMessage().trim();
-    if (!message || !gitPanelHandlers || committing()) return;
+    if (!message || !gitPanelHandlers || busy()) return;
     const paths = [...selectedFiles()];
     if (paths.length === 0) return;
     const status = gitStatus();
@@ -220,7 +248,11 @@ export function GitPanelContent() {
                 <button
                   type="button"
                   class="btn ghost"
-                  onClick={() => gitPanelHandlers?.onRefresh()}
+                  disabled={busy()}
+                  onClick={() => {
+                    if (busy()) return;
+                    gitPanelHandlers?.onRefresh();
+                  }}
                 >
                   Refresh
                 </button>
@@ -245,7 +277,11 @@ export function GitPanelContent() {
               <button
                 type="button"
                 class="btn ghost"
-                onClick={() => gitPanelHandlers?.onRefresh()}
+                disabled={busy()}
+                onClick={() => {
+                  if (busy()) return;
+                  gitPanelHandlers?.onRefresh();
+                }}
                 title="Fetch remote and refresh working tree status"
               >
                 Refresh
@@ -254,7 +290,7 @@ export function GitPanelContent() {
                 <button
                   type="button"
                   class="btn"
-                  disabled={committing() || pushing() || pulling()}
+                  disabled={busy()}
                   onClick={() => void runPull()}
                 >
                   {pulling() ? "Pulling…" : "Pull (Fast-Forward)"}
@@ -262,7 +298,7 @@ export function GitPanelContent() {
                 <button
                   type="button"
                   class="btn"
-                  disabled={committing() || pushing() || pulling()}
+                  disabled={busy()}
                   onClick={() => void runPush()}
                 >
                   {pushing() ? "Pushing…" : "Push to Remote"}
@@ -274,6 +310,19 @@ export function GitPanelContent() {
               <p class="muted git-detached-note">
                 Detached HEAD — commits won't update a branch until you check
                 one out.
+              </p>
+            </Show>
+
+            <Show
+              when={(() => {
+                const s = gitStatus();
+                if (!s?.available || s.detachedHead || !s.branch) return false;
+                return !s.hasRemote;
+              })()}
+            >
+              <p class="muted git-detached-note">
+                No git remote configured — add one on the command line (git
+                remote add origin &lt;url&gt;) to enable push and pull.
               </p>
             </Show>
 
@@ -366,13 +415,19 @@ export function GitPanelContent() {
                 </For>
               </div>
 
+              <Show when={gitPanelEditorDirty()}>
+                <p class="muted git-detached-note">
+                  Save your page first — a commit now would stage the last saved
+                  state and silently exclude your newer edits.
+                </p>
+              </Show>
               <label class="meta-field git-commit-field">
                 <span>Commit message</span>
                 <textarea
                   rows={3}
                   value={commitMessage()}
                   placeholder="Describe your changes"
-                  disabled={committing()}
+                  disabled={committing() || gitPanelEditorDirty()}
                   onInput={(event) =>
                     setCommitMessage(event.currentTarget.value)
                   }
@@ -383,8 +438,9 @@ export function GitPanelContent() {
                 class="btn primary"
                 disabled={
                   !commitMessage().trim() ||
-                  committing() ||
-                  selectedCount() === 0
+                  busy() ||
+                  selectedCount() === 0 ||
+                  gitPanelEditorDirty()
                 }
                 onClick={() => void submitCommit()}
               >
@@ -420,4 +476,9 @@ export function mountGitBranch(container: HTMLElement): void {
 export function mountGitPanel(container: HTMLElement): void {
   container.innerHTML = "";
   render(() => <GitPanelContent />, container);
+}
+
+/** Reflects the editor's dirty state into the panel (commit gating). */
+export function updateGitPanelEditorDirty(dirty: boolean): void {
+  setGitPanelEditorDirty(dirty);
 }

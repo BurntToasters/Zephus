@@ -264,6 +264,27 @@ function run() {
   runSyntaxChecks();
   runConfigChecks();
 
+  // End-to-end gates that used to live OUTSIDE test:all — the renderer could
+  // fail to boot, coverage could regress, and generated pages could break the
+  // Astro build while this script exited 0 green.
+  const smokeResult = runCommand('smoke', 'npm run smoke:runtime', (out) => ({
+    ok: /Smoke run: renderer checks passed/.test(out),
+    passed: /Smoke run: renderer checks passed/.test(out) ? 1 : 0,
+  }));
+  results.smoke = { status: smokeResult.ok ? 'passed' : 'failed' };
+
+  const astroResult = runCommand('astro-build', 'npm run test:astro-build', (out) => ({
+    ok: !/fail|error/i.test(out) && /All themes build successfully/.test(out),
+    passed: /All themes build successfully/.test(out) ? 1 : 0,
+  }));
+  results.astroBuild = { status: astroResult.ok ? 'passed' : 'failed' };
+
+  const covResult = runCommand('coverage', 'npm run test:cov', (out) => ({
+    ok: /Coverage thresholds passed/.test(out),
+    passed: /Coverage thresholds passed/.test(out) ? 1 : 0,
+  }));
+  results.coverage = { status: covResult.ok ? 'passed' : 'failed' };
+
   printBanner('SUMMARY');
 
   const summaryLines = [
@@ -274,6 +295,9 @@ function run() {
     `${colors.bold}Typecheck:${colors.reset} ${results.typecheck.status === 'passed' ? colors.green + '✓ PASS' : colors.red + '✗ FAIL'}${colors.reset}`,
     `${colors.bold}Syntax:${colors.reset}    ${results.syntax.status === 'passed' ? colors.green + '✓ PASS' : colors.red + '✗ FAIL'}${colors.reset} (${results.syntax.checked} checked${results.syntax.failed > 0 ? `, ${results.syntax.failed} failed` : ''})`,
     `${colors.bold}Config:${colors.reset}    ${results.config.status === 'passed' ? colors.green + '✓ PASS' : colors.red + '✗ FAIL'}${colors.reset} (${results.config.checks} checks${results.config.failed > 0 ? `, ${results.config.failed} failed` : ''})`,
+    `${colors.bold}Smoke:${colors.reset}     ${results.smoke.status === 'passed' ? colors.green + '✓ PASS' : colors.red + '✗ FAIL'}${colors.reset}`,
+    `${colors.bold}Astro build:${colors.reset} ${results.astroBuild.status === 'passed' ? colors.green + '✓ PASS' : colors.red + '✗ FAIL'}${colors.reset}`,
+    `${colors.bold}Coverage:${colors.reset}  ${results.coverage.status === 'passed' ? colors.green + '✓ PASS' : colors.red + '✗ FAIL'}${colors.reset}`,
   ];
   for (const line of summaryLines) {
     console.log(line);

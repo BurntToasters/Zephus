@@ -22,11 +22,15 @@ export const BLOCK_RENDER_FIXTURES: BlockNode[] = [
     cls: "",
   }),
   blockRenderFixture("button", { text: "Go", href: "/contact", cls: "" }),
-  blockRenderFixture("button", {
-    text: "Bad",
-    href: "java" + "script:alert(1)",
-    cls: "",
-  }),
+  blockRenderFixture(
+    "button",
+    {
+      text: "Bad",
+      href: "java" + "script:alert(1)",
+      cls: "",
+    },
+    { id: "fix-button-bad" },
+  ),
   blockRenderFixture("section", { text: "Body", wrapper: "box", cls: "" }),
   blockRenderFixture("divider", { cls: "" }),
   blockRenderFixture("spacer", { height: "64px", cls: "" }),
@@ -42,6 +46,11 @@ export const BLOCK_RENDER_FIXTURES: BlockNode[] = [
   blockRenderFixture("embed", {
     src: "https://example.com",
     title: "Map",
+    cls: "",
+  }),
+  blockRenderFixture("video", {
+    src: "https://example.com/movie.mp4",
+    title: "Showreel",
     cls: "",
   }),
   blockRenderFixture("html", {}, { raw: "<div>raw <b>html</b></div>" }),

@@ -16,6 +16,9 @@ files:
   - "licenses.json"
   - "!**/node_modules/*/{test,__tests__,tests}/**"
   - "!**/*.md"
+  - "!**/*.map"
+  - "!dist/test/**"
+  - "!dist/shared/blockRenderFixtures.js"
 directories:
   output: release
 publish:
@@ -25,17 +28,32 @@ publish:
 win:
   target: nsis
   icon: build/app-icon.ico
+  # Signature verification for downloaded updates requires publisherName;
+  # enabled once the certificate subject matches (kept off until then so
+  # unsigned dev builds do not hard-fail the updater).
+  verifyUpdateCodeSignature: false
 nsis:
   artifactName: Zephus-Windows-${arch}.${ext}
   allowToChangeInstallationDirectory: false
   oneClick: false
   perMachine: false
+  # Without publisherName, Windows installers show "Unknown Publisher" at UAC
+  # and electron-updater cannot verify downloaded updates (it skips signature
+  # checks entirely). Name must match the Authenticode certificate subject.
+  publisherName: BurntToasters
 mac:
   target:
     - dmg
     - zip
   icon: build/app-icon.icns
   artifactName: Zephus-MacOS-universal.${ext}
+  # Hardened runtime + entitlements in BASE: build:mac:* (base only) used to
+  # produce unsigned, never-notarized builds that Gatekeeper rejects on other
+  # machines. The github release config inherits these and adds notarize.
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
 linux:
   target:
     - AppImage

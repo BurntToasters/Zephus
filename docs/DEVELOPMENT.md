@@ -9,14 +9,14 @@ Notes for working on the Zephus Electron app and editor.
 
 ## Common commands
 
-| Command | Purpose |
-|--------|---------|
-| `npm test` | Run Vitest unit tests |
-| `npm run compile:renderer` | Bundle `src/renderer/zephusEngine.ts` → `src/renderer/zephusEngine.js` |
-| `npm run compile:main` | Compile main process + preload bundle |
-| `npm run compile` | Full compile used before desktop builds |
-| `npm run typecheck:main` | Typecheck main process |
-| `npm run typecheck:renderer` | Typecheck renderer |
+| Command                      | Purpose                                                                |
+| ---------------------------- | ---------------------------------------------------------------------- |
+| `npm test`                   | Run Vitest unit tests                                                  |
+| `npm run compile:renderer`   | Bundle `src/renderer/zephusEngine.ts` → `src/renderer/zephusEngine.js` |
+| `npm run compile:main`       | Compile main process + preload bundle                                  |
+| `npm run compile`            | Full compile used before desktop builds                                |
+| `npm run typecheck:main`     | Typecheck main process                                                 |
+| `npm run typecheck:renderer` | Typecheck renderer                                                     |
 
 After changing **renderer TypeScript**, run `npm run compile:renderer` before manual app testing. The shipped app loads the bundled `zephusEngine.js`, not the `.ts` sources directly.
 
@@ -44,11 +44,11 @@ Managed pages must stay consistent between:
 
 Shared pieces live in:
 
-| Module | Role |
-|--------|------|
-| `src/shared/renderHelpers.ts` | Escaping, `styleAttr`, `blockMetadataAttrs`, list helpers |
-| `src/shared/blockRender.ts` | Block + section HTML, responsive `<style>` collection |
-| `src/shared/blockRenderFixtures.ts` | Golden test fixtures |
+| Module                              | Role                                                      |
+| ----------------------------------- | --------------------------------------------------------- |
+| `src/shared/renderHelpers.ts`       | Escaping, `styleAttr`, `blockMetadataAttrs`, list helpers |
+| `src/shared/blockRender.ts`         | Block + section HTML, responsive `<style>` collection     |
+| `src/shared/blockRenderFixtures.ts` | Golden test fixtures                                      |
 
 Tests to run when changing markup:
 
@@ -61,28 +61,31 @@ If you change `renderBlockHtml`, update snapshots deliberately and mirror behavi
 
 ## Renderer module slices
 
-`zephusEngine.ts` is still the central orchestrator (~7.2k lines). Prefer adding logic to focused modules:
+`zephusEngine.ts` is still the central orchestrator (~6.9k lines). Prefer adding logic to focused modules:
 
-| Module | Responsibility |
-|--------|----------------|
-| `editorCommands.ts` | Mode guard, clipboard rules, paste, toolbar undo state |
-| `editorGit.ts` | Git panel IPC (status, commit, push, pull, init) |
-| `editorSave.ts` | Page/site save flow, status messages, draft clear on save |
-| `editorParse.ts` | DOM parse of managed inner HTML → sections/blocks (code/visual load) |
-| `editorPageModel.ts` | Clone sections, flatten blocks, build page document snapshots |
-| `editorUndo.ts` | Unified page + site undo snapshots, stack limit, restore |
-| `editorDraft.ts` | Debounced crash-recovery draft writes (`site-shell` target) |
-| `editorInspector.ts` | Inspector undo latch + debounced canvas repaint while typing |
-| `editorUnsavedWork.ts` | Unsaved page/site summary lines for confirm modals |
-| `editorLog.ts` | Capped install/dev log append helper |
-| `editorSiteSave.ts` | Persist or discard pending site shell/design changes |
-| `editorDraftRestore.ts` | Page/site crash-recovery draft restore prompts |
-| `editorSerialize.ts` | Split/assemble managed page source (frontmatter + frame) |
-| `editorBlockRender.ts` | Canvas HTML sanitization, heading caps, section/block HTML for editor |
-| `editorSession.ts` | Dirty tracking, site/page session snapshots, page/site edit revisions |
-| `editorWorkspace.ts` | Left/right rail tab switching (`activateWorkspaceTab`) + focus handoff |
-| `inlineRichText.ts` | Reads an inline-edited element back into a stored text prop |
-| `*Panel.tsx`, `CanvasView.tsx`, … | Solid UI mounted from `init()` |
+| Module                            | Responsibility                                                                                      |
+| --------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `editorCommands.ts`               | Mode guard, clipboard rules, paste, toolbar undo state                                              |
+| `editorGit.ts`                    | Git panel IPC (status, commit, push, pull, init)                                                    |
+| `editorSave.ts`                   | Page/site save flow, status messages, draft clear on save                                           |
+| `editorParse.ts`                  | DOM parse of managed inner HTML → sections/blocks (code/visual load)                                |
+| `editorPageModel.ts`              | Clone sections, flatten blocks, build page document snapshots                                       |
+| `editorUndo.ts`                   | Unified page + site undo snapshots, stack limit, restore                                            |
+| `editorDraft.ts`                  | Debounced crash-recovery draft writes (`site-shell` target)                                         |
+| `editorInspector.ts`              | Inspector undo latch + debounced canvas repaint while typing                                        |
+| `editorUnsavedWork.ts`            | Unsaved page/site summary lines for confirm modals                                                  |
+| `editorLog.ts`                    | Capped install/dev log append helper                                                                |
+| `editorSiteSave.ts`               | Persist or discard pending site shell/design changes                                                |
+| `editorDraftRestore.ts`           | Page/site crash-recovery draft restore prompts                                                      |
+| `editorSerialize.ts`              | Split/assemble managed page source (frontmatter + frame)                                            |
+| `editorBlockRender.ts`            | Canvas HTML sanitization, heading caps, section/block HTML for editor                               |
+| `editorBlocks.ts`                 | Block catalog: palette order/icons, default props, section templates, `KNOWN_BLOCK_TYPES` allowlist |
+| `editorInlineEdit.ts`             | Inline contenteditable editing + floating format toolbar (deps-injected controller)                 |
+| `editorResize.ts`                 | Canvas resize handles, pointer/keyboard resizing, viewport-aware style writes                       |
+| `editorSession.ts`                | Dirty tracking, site/page session snapshots, page/site edit revisions                               |
+| `editorWorkspace.ts`              | Left/right rail tab switching (`activateWorkspaceTab`) + focus handoff                              |
+| `inlineRichText.ts`               | Reads an inline-edited element back into a stored text prop                                         |
+| `*Panel.tsx`, `CanvasView.tsx`, … | Solid UI mounted from `init()`                                                                      |
 
 New editor features should follow the same pattern: pure helpers + Vitest in `src/renderer/__tests__/`.
 
@@ -112,9 +115,9 @@ Saves, loads, draft cleanup, and site writes are all async, and the user can kee
 
 **Save gates return "safe to leave", not "a write happened".** A save can succeed while newer edits remain unsaved. Navigation, preview, and close therefore go through `saveUnsavedWorkAndVerify()` / `maybeResolveUnsavedWork()`, which re-check `isGlobalDirty(state)` afterwards. Never continue a destructive action on the raw boolean from a write call.
 
-**Page loads are staged, then committed.** `loadPageNow` builds the whole candidate page (document, sections, restored draft) *before* assigning any of it to `state`, then commits synchronously. This is what stops a superseded or canceled load from leaving the canvas, code editor, inspector, and page list on different pages. Do not move `state.page = …` earlier.
+**Page loads are staged, then committed.** `loadPageNow` builds the whole candidate page (document, sections, restored draft) _before_ assigning any of it to `state`, then commits synchronously. This is what stops a superseded or canceled load from leaving the canvas, code editor, inspector, and page list on different pages. Do not move `state.page = …` earlier.
 
-**Two different generations.** `latestPageLoadRequest` identifies one navigation (latest-wins). `editorSessionGeneration` identifies one open project. External-change handling must use the *session* generation, otherwise an unrelated page load silently discards a pending "changed on disk" prompt.
+**Two different generations.** `latestPageLoadRequest` identifies one navigation (latest-wins). `editorSessionGeneration` identifies one open project. External-change handling must use the _session_ generation, otherwise an unrelated page load silently discards a pending "changed on disk" prompt.
 
 **Draft cleanup is fail-visible and revision-bound.** `clearDraft` returns an `OperationResult`; a failure must reach the user rather than being ignored, and cleanup after a forced reload is skipped when the revision advanced (deleting the newer recovery copy would be data loss).
 

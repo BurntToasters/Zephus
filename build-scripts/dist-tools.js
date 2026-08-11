@@ -2,13 +2,17 @@ const fs = require("fs");
 const path = require("path");
 
 const FLATPAK_BUILD_DIR_PREFIX = "build-dir";
-const RENDERER_DIR = path.join("src", "renderer");
+// Resolve everything against the repo root (this script's directory), never
+// the caller's cwd: `node build-scripts/dist-tools.js clean` from a foreign
+// directory must not delete that directory's dist/release folders.
+const ROOT = path.resolve(__dirname, "..");
+const RENDERER_DIR = path.join(ROOT, "src", "renderer");
 const RENDERER_BUILD_ARTIFACTS = ["zephusEngine.js", "zephusEngine.js.map"];
 
 function listFlatpakBuildDirs() {
   try {
     return fs
-      .readdirSync(".", { withFileTypes: true })
+      .readdirSync(ROOT, { withFileTypes: true })
       .filter(
         (entry) =>
           entry.isDirectory() &&
@@ -23,10 +27,10 @@ function listFlatpakBuildDirs() {
 
 function cleanBuildArtifacts() {
   const dirs = [
-    "dist",
-    "template-previews/dist",
-    "template-previews/.tmp",
-    ...listFlatpakBuildDirs(),
+    path.join(ROOT, "dist"),
+    path.join(ROOT, "template-previews", "dist"),
+    path.join(ROOT, "template-previews", ".tmp"),
+    ...listFlatpakBuildDirs().map((dir) => path.join(ROOT, dir)),
   ];
   for (const dir of dirs) {
     try {
@@ -53,7 +57,7 @@ function cleanBuildArtifacts() {
 }
 
 function cleanReleaseArtifacts() {
-  const dirs = ["release"];
+  const dirs = [path.join(ROOT, "release")];
   for (const dir of dirs) {
     try {
       fs.rmSync(dir, {

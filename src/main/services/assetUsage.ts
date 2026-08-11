@@ -12,6 +12,14 @@ import {
   writeSiteDocument,
 } from "./schema";
 
+/** A match boundary: neither side may continue a filename/path token. `/` is
+ *  a path-continuation character, NOT a boundary: otherwise a `from` lacking a
+ *  leading slash would match inside a longer directory-prefixed path (e.g.
+ *  `assets/hero.png` inside `/foo/assets/hero.png`) and corrupt it. */
+function isTokenBoundary(char: string): boolean {
+  return !/[A-Za-z0-9._/-]/.test(char);
+}
+
 /** Replaces whole-token occurrences of `from` with `to`, counting replacements. */
 function replaceReferences(
   value: string,
@@ -28,9 +36,12 @@ function replaceReferences(
       out += value.slice(index);
       break;
     }
+    // A filename character before or after the match means this is a longer,
+    // different path (e.g. `/a/hero.png` inside `/my/a/hero.png`) — leave it.
+    const before = found > 0 ? value.charAt(found - 1) : "";
     const after = value.charAt(found + from.length);
     out += value.slice(index, found);
-    if (/[A-Za-z0-9._-]/.test(after)) {
+    if (!isTokenBoundary(before) || !isTokenBoundary(after)) {
       out += from;
     } else {
       out += to;
@@ -39,6 +50,43 @@ function replaceReferences(
     index = found + from.length;
   }
   return { value: out, count };
+}
+
+/**
+ * Recursively replaces references inside every string of a section tree.
+ * Operates on the parsed structure, never on JSON.stringify output: filenames
+ * containing `"` or `\` (legal on macOS) would otherwise never match the
+ * escaped serialization, and a `to` needing escaping would produce invalid
+ * JSON and abort the repoint half-way.
+ */
+function replaceInStrings(
+  value: unknown,
+  from: string,
+  to: string,
+): { value: unknown; count: number } {
+  if (typeof value === "string") {
+    return replaceReferences(value, from, to);
+  }
+  if (Array.isArray(value)) {
+    let count = 0;
+    const out = value.map((item) => {
+      const next = replaceInStrings(item, from, to);
+      count += next.count;
+      return next.value;
+    });
+    return { value: out, count };
+  }
+  if (value && typeof value === "object") {
+    let count = 0;
+    const out: Record<string, unknown> = {};
+    for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
+      const next = replaceInStrings(val, from, to);
+      count += next.count;
+      out[key] = next.value;
+    }
+    return { value: out, count };
+  }
+  return { value, count: 0 };
 }
 
 /**
@@ -53,8 +101,15 @@ export function repointAssetReferences(
   to: string,
 ): { ok: boolean; updated: number; error?: string } {
   try {
-    const previous = String(from ?? "").trim();
-    const next = String(to ?? "").trim();
+    // NFC-normalize both sides: macOS filenames can come back NFD (or NFC)
+    // depending on how they were created, and references written by hand may
+    // use the other form — matching must be form-agnostic.
+    const previous = String(from ?? "")
+      .trim()
+      .normalize("NFC");
+    const next = String(to ?? "")
+      .trim()
+      .normalize("NFC");
     if (!previous || !next || previous === next) {
       return { ok: true, updated: 0 };
     }
@@ -70,11 +125,12 @@ export function repointAssetReferences(
 
     let updated = 0;
     for (const doc of listed.entries) {
-      const sections = replaceReferences(
-        JSON.stringify(doc.sections),
-        previous,
-        next,
-      );
+      // Detached/out-of-sync pages carry hand-authored content only on disk;
+      // writing their (stale) sidecar tree back would un-detach them and
+      // overwrite the user's file with regenerated output. Their references
+      // can only be fixed by hand (the tooling cannot see inside them).
+      if (doc.detached || doc.managedFileStatus === "out-of-sync") continue;
+      const sections = replaceInStrings(doc.sections, previous, next);
       const socialImage = replaceReferences(
         doc.socialImage ?? "",
         previous,
@@ -84,7 +140,7 @@ export function repointAssetReferences(
 
       const result = writePageDocument(projectPath, pagesDir, {
         ...doc,
-        sections: JSON.parse(sections.value) as PageDocument["sections"],
+        sections: sections.value as PageDocument["sections"],
         socialImage: socialImage.value,
       });
       if (!result.ok) {
@@ -156,9 +212,11 @@ function referenceCount(haystack: string, webPath: string): number {
   let count = 0;
   let index = haystack.indexOf(webPath);
   while (index !== -1) {
+    // A filename character on either side means this is a longer, different
+    // path — not a reference to this asset.
+    const before = index > 0 ? haystack.charAt(index - 1) : "";
     const after = haystack.charAt(index + webPath.length);
-    // A following filename character means this is a longer, different path.
-    if (!/[A-Za-z0-9._-]/.test(after)) count += 1;
+    if (isTokenBoundary(before) && isTokenBoundary(after)) count += 1;
     index = haystack.indexOf(webPath, index + webPath.length);
   }
   return count;
@@ -196,7 +254,9 @@ export function findAssetUsage(
   webPath: string,
 ): AssetUsageResult {
   try {
-    const normalized = String(webPath ?? "").trim();
+    const normalized = String(webPath ?? "")
+      .trim()
+      .normalize("NFC");
     if (!normalized) {
       return {
         ok: false,

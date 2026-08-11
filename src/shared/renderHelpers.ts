@@ -1,10 +1,19 @@
 /** Shared HTML/CSS serialization helpers used by schema.ts and the renderer. */
 
 export function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+  return (
+    value
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      // Astro evaluates {...} in text as JS expressions ("{ brace }" compiles
+      // to "${ brace }" → ReferenceError at build). Entity-escape braces in
+      // text too — the browser renders &#123; as "{" — matching what the attr
+      // path (escapeAstroAttr) already does. The entity round-trips through the
+      // DOM parsers, so stored text and built output stay in sync.
+      .replace(/\{/g, "&#123;")
+      .replace(/\}/g, "&#125;")
+  );
 }
 
 export function escapeAttr(value: string): string {
@@ -13,11 +22,14 @@ export function escapeAttr(value: string): string {
 
 /**
  * Blocks dangerous URL schemes for href/src values. Returns "" for
- * javascript:/data:/vbscript:/file:.
+ * javascript:/data:/vbscript:/file:. ASCII tabs/newlines are stripped first,
+ * mirroring WHATWG URL parsing (browsers execute "java<tab>script:..." since
+ * they strip those characters before scheme detection).
  */
 export function safeUrl(value: string): string {
   const trimmed = (value ?? "").trim();
-  if (/^(javascript|vbscript|data|file):/i.test(trimmed)) return "";
+  const normalized = trimmed.replace(/[\t\n\r]/g, "");
+  if (/^(javascript|vbscript|data|file):/i.test(normalized)) return "";
   return trimmed;
 }
 
@@ -96,6 +108,11 @@ function escapeRichText(value: string): string {
       out += "&lt;";
     } else if (char === ">") {
       out += "&gt;";
+    } else if (char === "{") {
+      // Same Astro expression hazard as escapeHtml.
+      out += "&#123;";
+    } else if (char === "}") {
+      out += "&#125;";
     } else if (char === "\n") {
       out += "<br />";
     } else {
@@ -369,8 +386,11 @@ export function styleAttr(
   ) {
     css.push(`grid-template-columns:1fr`);
   }
-  if (style.hideOn?.includes(viewport) && forCanvas) {
-    css.push(`display:none`);
+  if (style.hideOn?.includes(viewport) && !forCanvas) {
+    // Build: hide inline for the desktop viewport (tablet/mobile hiding comes
+    // from collectResponsiveCss media queries). The canvas keeps hidden
+    // elements visible with a dashed outline so they stay selectable.
+    css.push("display:none");
   }
   if (block.type === "spacer" && !style.height) {
     addCssValue(css, "height", block.props["height"] || "48px");

@@ -206,23 +206,6 @@ const api = {
   ): Promise<{ ok: boolean; content?: string; error?: string }> =>
     ipcRenderer.invoke(IPC.fileRead, projectPath, rel),
 
-  writeFile: (
-    projectPath: string,
-    rel: string,
-    content: string,
-  ): Promise<OperationResult> =>
-    ipcRenderer.invoke(IPC.fileWrite, projectPath, rel, content),
-
-  importImage: (
-    projectPath: string,
-    publicDir: string,
-  ): Promise<{
-    ok: boolean;
-    webPath?: string;
-    canceled?: boolean;
-    error?: string;
-  }> => ipcRenderer.invoke(IPC.importImage, projectPath, publicDir),
-
   importAssets: (
     projectPath: string,
     publicDir: string,
@@ -314,17 +297,23 @@ const api = {
   ): Promise<{ ok: boolean; dataUrl?: string; error?: string }> =>
     ipcRenderer.invoke(IPC.assetDataUrl, projectPath, publicDir, webPath),
 
-  listReusableSections: (): Promise<ReusableSectionsResult> =>
-    ipcRenderer.invoke(IPC.listReusableSections),
+  listReusableSections: (
+    projectPath: string,
+  ): Promise<ReusableSectionsResult> =>
+    ipcRenderer.invoke(IPC.listReusableSections, projectPath),
 
   saveReusableSection: (
+    projectPath: string,
     label: string,
     html: string,
   ): Promise<ReusableSectionsResult> =>
-    ipcRenderer.invoke(IPC.saveReusableSection, label, html),
+    ipcRenderer.invoke(IPC.saveReusableSection, projectPath, label, html),
 
-  deleteReusableSection: (id: string): Promise<OperationResult> =>
-    ipcRenderer.invoke(IPC.deleteReusableSection, id),
+  deleteReusableSection: (
+    projectPath: string,
+    id: string,
+  ): Promise<OperationResult> =>
+    ipcRenderer.invoke(IPC.deleteReusableSection, projectPath, id),
 
   readDraft: (
     projectPath: string,
@@ -383,14 +372,35 @@ const api = {
     return () => ipcRenderer.removeListener(IPC.previewClosed, listener);
   },
 
+  onPreviewExited: (callback: () => void): (() => void) => {
+    const listener = () => callback();
+    ipcRenderer.on(IPC.previewExited, listener);
+    return () => ipcRenderer.removeListener(IPC.previewExited, listener);
+  },
+
   ensureThemePreviewServer: (): Promise<ThemePreviewServerResult> =>
     ipcRenderer.invoke(IPC.themePreviewEnsure),
 
   publish: (
     projectPath: string,
     outDir: string,
-  ): Promise<{ ok: boolean; outputDir?: string; error?: string }> =>
-    ipcRenderer.invoke(IPC.publish, projectPath, outDir),
+  ): Promise<{
+    ok: boolean;
+    outputDir?: string;
+    revealed?: boolean;
+    error?: string;
+  }> => ipcRenderer.invoke(IPC.publish, projectPath, outDir),
+  onPublishLog: (listener: (chunk: string) => void): (() => void) => {
+    const wrapped = (_event: unknown, chunk: string): void => listener(chunk);
+    ipcRenderer.on(IPC.publishLog, wrapped);
+    return () => ipcRenderer.removeListener(IPC.publishLog, wrapped);
+  },
+
+  revealOutputFolder: (
+    projectPath: string,
+    outDir: string,
+  ): Promise<OperationResult> =>
+    ipcRenderer.invoke(IPC.revealOutputFolder, projectPath, outDir),
 
   dependenciesInstalled: (projectPath: string): Promise<boolean> =>
     ipcRenderer.invoke(IPC.depsInstalled, projectPath),
@@ -399,6 +409,8 @@ const api = {
     projectPath: string,
   ): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke(IPC.depsInstall, projectPath),
+  cancelInstall: (): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke(IPC.depsCancel),
 
   onInstallLog: (callback: (chunk: string) => void): (() => void) => {
     const listener = (_e: unknown, chunk: string) => callback(chunk);
@@ -418,8 +430,10 @@ const api = {
   cancelUpdateDownload: (): Promise<unknown> =>
     ipcRenderer.invoke(IPC.updaterCancel),
   installUpdate: (): Promise<unknown> => ipcRenderer.invoke(IPC.updaterInstall),
+  getLastUpdaterStatus: (): Promise<unknown> =>
+    ipcRenderer.invoke(IPC.updaterStatusGet),
   getAppVersion: (): Promise<string> => ipcRenderer.invoke(IPC.getAppVersion),
-  openConfigFolder: (): Promise<unknown> =>
+  openConfigFolder: (): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke(IPC.openConfigFolder),
 
   getNodeStatus: (): Promise<unknown> => ipcRenderer.invoke(IPC.nodeStatus),

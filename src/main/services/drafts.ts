@@ -17,6 +17,10 @@ function draftsPath(): string {
   return path.join(app.getPath("userData"), "drafts.json");
 }
 
+// Recovery drafts older than this are dropped on the next write: they can no
+// longer be restored meaningfully and would otherwise accumulate forever.
+const DRAFT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+
 function draftKey(
   projectPath: string,
   scope: DraftScope,
@@ -71,6 +75,18 @@ function normalizeDraft(
 }
 
 function writeStore(store: DraftStore): void {
+  // Prune expired drafts so the store stays bounded for long-running use.
+  // Entries without a savedAt (legacy/corrupt) can never be valid and would
+  // otherwise accumulate forever — delete them too.
+  const cutoff = Date.now() - DRAFT_RETENTION_MS;
+  for (const [key, draft] of Object.entries(store)) {
+    if (!draft || !draft.savedAt) {
+      delete store[key];
+      continue;
+    }
+    const time = Date.parse(draft.savedAt);
+    if (Number.isNaN(time) || time < cutoff) delete store[key];
+  }
   writeFileAtomic(draftsPath(), JSON.stringify(store, null, 2) + "\n");
 }
 

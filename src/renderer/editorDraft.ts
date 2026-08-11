@@ -15,6 +15,9 @@ export interface EditorDraftWriteDeps {
   writeDraft: Pick<Window["zephus"], "writeDraft">["writeDraft"];
   pageDraftContent: () => string;
   siteDraftContent: () => string;
+  /** Surfaced once per session: the crash-recovery net is silently dead
+   *  (disk full, unwritable drafts.json) and every write fails. */
+  onDraftWriteFailure?: () => void;
 }
 
 export function cancelScheduledEditorDraftWrite(
@@ -37,20 +40,29 @@ export function scheduleEditorDraftWrite(
     const project = state.project;
     if (!project || !isGlobalDirty(state)) return;
     if (state.pageDirty && state.page) {
-      void deps.writeDraft(
-        project.path,
-        "page",
-        state.page,
-        deps.pageDraftContent(),
-      );
+      // Fire-and-forget: an IPC rejection (e.g. project path no longer
+      // approved) must not become an unhandled rejection. A failed WRITE
+      // (ok:false) is surfaced once via onDraftWriteFailure — a silently
+      // dead recovery net is worse than a warning.
+      void deps
+        .writeDraft(project.path, "page", state.page, deps.pageDraftContent())
+        .then((res) => {
+          if (res && !res.ok) deps.onDraftWriteFailure?.();
+        })
+        .catch(() => deps.onDraftWriteFailure?.());
     }
     if (state.siteDirty && effectiveSiteDocument(state)) {
-      void deps.writeDraft(
-        project.path,
-        "site",
-        SITE_DRAFT_TARGET,
-        deps.siteDraftContent(),
-      );
+      void deps
+        .writeDraft(
+          project.path,
+          "site",
+          SITE_DRAFT_TARGET,
+          deps.siteDraftContent(),
+        )
+        .then((res) => {
+          if (res && !res.ok) deps.onDraftWriteFailure?.();
+        })
+        .catch(() => deps.onDraftWriteFailure?.());
     }
   }, DRAFT_WRITE_DEBOUNCE_MS);
 }

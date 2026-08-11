@@ -1,3 +1,4 @@
+import * as fs from "fs";
 import { app, BrowserWindow, dialog, shell, session, ipcMain } from "electron";
 import { pathToFileURL } from "url";
 import * as path from "path";
@@ -11,8 +12,16 @@ import { setupAutoUpdater, checkForUpdates } from "./updater";
 import { checkNodeVersion, validateNodePath } from "./services/nodeCheck";
 import { IPC } from "./ipcChannels";
 
+// Dev mode ONLY when not packaged: a shipped binary launched with --dev (or
+// NODE_ENV=development) previously got devTools AND silently disabled the
+// auto-updater. Gate on app.isPackaged so release builds always update.
 const isDev =
-  process.argv.includes("--dev") || process.env.NODE_ENV === "development";
+  !app.isPackaged &&
+  (process.argv.includes("--dev") ||
+    process.env.NODE_ENV === "development" ||
+    // `electron .` (npm start) runs the app WITHOUT the --dev flag; it is
+    // still a dev run and needs devtools.
+    !process.defaultApp);
 const isSmoke =
   process.argv.includes("--smoke") || process.env.ZEPHUS_SMOKE === "1";
 const isPrimaryInstance =
@@ -299,10 +308,39 @@ async function completeSmokeRun(windowRef: BrowserWindow): Promise<void> {
   }
 }
 
+/** Decodes a file:// URL to a normalized absolute path (Windows drive aware). */
+function fileUrlToPath(url: URL): string {
+  let p = decodeURIComponent(url.pathname);
+  if (/^\/[A-Za-z]:/.test(p)) p = p.slice(1);
+  return path.normalize(p);
+}
+
+function isWithinPath(root: string, target: string): boolean {
+  // Trailing separators (a URL root like file://…/renderer/) must not make
+  // every containment test false: root + sep would become "…/renderer//".
+  const normalizedRoot = root.replace(/[\\/]+$/, "");
+  return (
+    target === normalizedRoot || target.startsWith(normalizedRoot + path.sep)
+  );
+}
+
 /** True for the renderer's own file:// origin or the localhost dev-server preview. */
 function isAllowedFrameUrl(target: string, rendererRootUrl: string): boolean {
-  if (target.startsWith(rendererRootUrl)) return true;
   if (target === "about:blank") return true;
+  if (target.startsWith("file://")) {
+    // Normalize the path (resolving `..` and percent-encoding) before the
+    // containment check: a raw prefix match would let
+    // file://…/renderer/../../../../etc/passwd through while Chromium
+    // normalizes the navigation to a file outside the app.
+    try {
+      return isWithinPath(
+        fileUrlToPath(new URL(rendererRootUrl)),
+        fileUrlToPath(new URL(target)),
+      );
+    } catch {
+      return false;
+    }
+  }
   return isLocalhostPreviewUrl(target);
 }
 
@@ -317,10 +355,21 @@ function installNavigationGuards(contents: Electron.WebContents): void {
   const rendererRootUrl = rendererRoot.endsWith("/")
     ? rendererRoot
     : `${rendererRoot}/`;
-  const isInternal = (target: string): boolean =>
-    target.startsWith(rendererRootUrl);
+  const isInternal = (target: string): boolean => {
+    if (!target.startsWith("file://")) return false;
+    try {
+      return isWithinPath(
+        fileUrlToPath(new URL(rendererRootUrl)),
+        fileUrlToPath(new URL(target)),
+      );
+    } catch {
+      return false;
+    }
+  };
   const openExternal = (url: string): void => {
-    if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
+    // mailto:/tel: links (portfolio CTAs, restaurant reservation buttons)
+    // must reach the OS handlers too, or clicking them silently does nothing.
+    if (/^(https?:\/\/|mailto:|tel:)/i.test(url)) void shell.openExternal(url);
   };
 
   contents.setWindowOpenHandler(({ url }) => {
@@ -365,6 +414,27 @@ function installGlobalNavigationGuards(): void {
   });
 }
 
+/** Electron dialogs route by parent INSTANCE: passing undefined makes the
+ *  second argument become the options object and the real options are
+ *  dropped. Branch explicitly instead of passing undefined. */
+function showOpenDialogFor(
+  parent: BrowserWindow | null | undefined,
+  options: Electron.OpenDialogOptions,
+): Promise<Electron.OpenDialogReturnValue> {
+  return parent && !parent.isDestroyed()
+    ? dialog.showOpenDialog(parent, options)
+    : dialog.showOpenDialog(options);
+}
+
+function showMessageBoxFor(
+  parent: BrowserWindow | null | undefined,
+  options: Electron.MessageBoxOptions,
+): Promise<Electron.MessageBoxReturnValue> {
+  return parent && !parent.isDestroyed()
+    ? dialog.showMessageBox(parent, options)
+    : dialog.showMessageBox(options);
+}
+
 /** True for an http(s) localhost/127.0.0.1 URL (the dev-server preview). */
 function isLocalhostPreviewUrl(target: string): boolean {
   return /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/|$)/i.test(
@@ -387,7 +457,7 @@ function openPreviewWindow(url: string): { ok: boolean; error?: string } {
     previewWindow.focus();
     return { ok: true };
   }
-  previewWindow = new BrowserWindow({
+  const win = new BrowserWindow({
     width: 1280,
     height: 860,
     minWidth: 480,
@@ -404,9 +474,16 @@ function openPreviewWindow(url: string): { ok: boolean; error?: string } {
       devTools: isDev,
     },
   });
-  void previewWindow.loadURL(url);
-  previewWindow.once("ready-to-show", () => previewWindow?.show());
-  previewWindow.on("closed", () => {
+  previewWindow = win;
+  void win.loadURL(url);
+  win.once("ready-to-show", () => {
+    if (previewWindow === win) win.show();
+  });
+  win.on("closed", () => {
+    // Guard the captured window: a close/reopen race must not let the OLD
+    // window's closed handler null out or tear down the NEW one (orphan
+    // window, dev server killed, renderer UI reset while preview B stays up).
+    if (previewWindow !== win) return;
     previewWindow = null;
     // Closing the preview always tears down the dev server it was showing.
     stopDevServer();
@@ -424,12 +501,54 @@ function closePreviewWindow(): void {
   previewWindow = null;
 }
 
+const WINDOW_STATE_FILE = "window-state.json";
+
+interface WindowState {
+  width?: number;
+  height?: number;
+  x?: number;
+  y?: number;
+  maximized?: boolean;
+}
+
+function readWindowState(): WindowState {
+  try {
+    const raw = fs.readFileSync(
+      path.join(app.getPath("userData"), WINDOW_STATE_FILE),
+      "utf8",
+    );
+    const parsed = JSON.parse(raw) as WindowState;
+    if (typeof parsed.width !== "number" || typeof parsed.height !== "number") {
+      return {};
+    }
+    return parsed;
+  } catch {
+    return {};
+  }
+}
+
+function writeWindowState(state: WindowState): void {
+  try {
+    fs.writeFileSync(
+      path.join(app.getPath("userData"), WINDOW_STATE_FILE),
+      JSON.stringify(state),
+    );
+  } catch {
+    // Non-fatal: window-state persistence is best effort.
+  }
+}
+
 function createMainWindow(): void {
-  mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 820,
+  // Restore the window size/position from the previous session (every launch
+  // used to reset to 1280x820 at an OS-chosen spot).
+  const state = readWindowState();
+  const win = new BrowserWindow({
+    width: state.width ?? 1280,
+    height: state.height ?? 820,
     minWidth: 960,
     minHeight: 640,
+    x: state.x,
+    y: state.y,
     show: false,
     backgroundColor: "#1e1e2e",
     title: "Zephus",
@@ -442,6 +561,29 @@ function createMainWindow(): void {
       devTools: isDev,
     },
   });
+  mainWindow = win;
+  if (state.maximized) win.maximize();
+
+  // Persist bounds on close (and while moving/resizing, debounced) so the
+  // layout survives restarts.
+  let boundsTimer: NodeJS.Timeout | null = null;
+  const persistBounds = (): void => {
+    if (boundsTimer) clearTimeout(boundsTimer);
+    boundsTimer = setTimeout(() => {
+      boundsTimer = null;
+      if (!win || win.isDestroyed()) return;
+      const bounds = win.getNormalBounds();
+      writeWindowState({
+        width: bounds.width,
+        height: bounds.height,
+        x: bounds.x,
+        y: bounds.y,
+        maximized: win.isMaximized(),
+      });
+    }, 300);
+  };
+  win.on("resize", persistBounds);
+  win.on("move", persistBounds);
 
   void mainWindow.loadFile(rendererPath("index.html"), {
     query: isSmoke ? { smoke: "1" } : undefined,
@@ -476,6 +618,38 @@ function createMainWindow(): void {
 
   mainWindow.on("closed", () => {
     mainWindow = null;
+  });
+
+  // A failed renderer load used to leave the window hidden forever (splash
+  // closed after 30s, no UI, no error). Surface it instead of hanging.
+  mainWindow.webContents.on(
+    "did-fail-load",
+    (_event, errorCode, errorDescription) => {
+      log.error("Renderer failed to load", errorCode, errorDescription);
+      if (splashWindow) {
+        splashWindow.close();
+        splashWindow = null;
+      }
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.show();
+        mainWindow.webContents.executeJavaScript(
+          `document.body.innerHTML =
+            '<div style="font-family:system-ui;padding:2rem;color:#18181b">' +
+            '<h2>Zephus could not load its interface</h2>' +
+            '<p>Reload the window to try again. If it keeps failing, reinstall Zephus.</p>' +
+            '<button id="z-reload">Reload Window</button></div>';` +
+            `document.getElementById('z-reload').addEventListener('click', () => location.reload());`,
+        );
+      }
+    },
+  );
+  mainWindow.webContents.on("render-process-gone", (_event, details) => {
+    log.error("Renderer process gone", details.reason);
+    cleanupBackgroundServices();
+    // Reload once on transient crashes (Chromium recovers most).
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.reload();
+    }
   });
 }
 
@@ -531,7 +705,7 @@ async function promptLocateNode(): Promise<void> {
   const target =
     mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
   const isWindows = process.platform === "win32";
-  const picked = await dialog.showOpenDialog(target as BrowserWindow, {
+  const picked = await showOpenDialogFor(target, {
     title: "Select the Node.js Executable",
     properties: ["openFile"],
     filters: isWindows
@@ -544,7 +718,7 @@ async function promptLocateNode(): Promise<void> {
   if (!selected) return;
   const validation = validateNodePath(selected);
   if (!validation.ok || !validation.path) {
-    await dialog.showMessageBox(target as BrowserWindow, {
+    await showMessageBoxFor(target, {
       type: "error",
       title: "Invalid Node.js Location",
       message: validation.error ?? "That file is not a valid Node.js path.",
@@ -556,7 +730,7 @@ async function promptLocateNode(): Promise<void> {
   }
   const status = await checkNodeVersion(validation.path);
   if (status.status === "missing" || status.status === "unknown") {
-    await dialog.showMessageBox(target as BrowserWindow, {
+    await showMessageBoxFor(target, {
       type: "error",
       title: "Invalid Node.js Location",
       message: "That file is not a working Node.js executable.",
@@ -571,7 +745,7 @@ async function promptLocateNode(): Promise<void> {
   settings.customNodePath = validation.path;
   writeGlobalSettings(settings);
 
-  await dialog.showMessageBox(target as BrowserWindow, {
+  await showMessageBoxFor(target, {
     type: status.status === "ok" ? "info" : "warning",
     title: "Node.js Location Saved",
     message:
@@ -601,7 +775,7 @@ async function runNodeVersionCheck(): Promise<void> {
           : "Node.js Check";
     const target =
       mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
-    const response = await dialog.showMessageBox(target as BrowserWindow, {
+    const response = await showMessageBoxFor(target, {
       type: "warning",
       title,
       message: title,
@@ -624,6 +798,10 @@ if (!isPrimaryInstance) {
   app.quit();
 } else {
   app.on("second-instance", () => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      createMainWindow();
+      return;
+    }
     focusMainWindow();
   });
 
@@ -671,6 +849,13 @@ if (!isPrimaryInstance) {
     initNodeVersionCheck();
 
     app.on("activate", () => {
+      // macOS dock click: recreate when the main window is gone, even if a
+      // preview window is still open (previously a no-op — only quit+relaunch
+      // recovered the app).
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        createMainWindow();
+        return;
+      }
       if (BrowserWindow.getAllWindows().length === 0) {
         createMainWindow();
         return;
@@ -681,18 +866,27 @@ if (!isPrimaryInstance) {
 }
 
 app.on("window-all-closed", () => {
-  cleanupBackgroundServices();
-  if (process.platform !== "darwin") app.quit();
+  // On macOS the app stays alive after the window closes; tearing the dev
+  // server/watcher down here made every Cmd+W -> dock-reopen a dead preview
+  // that never restarted. Cleanup happens on real quit (will-quit).
+  if (process.platform !== "darwin") {
+    cleanupBackgroundServices();
+    app.quit();
+  }
 });
 
 app.on("before-quit", () => {
   if (isInstallingUpdate) {
     log.info("App quitting to install an update.");
   }
-  cleanupBackgroundServices();
+  // NOTE: cleanup intentionally does NOT run here. before-quit fires before
+  // window close; the renderer's unsaved-work guard can CANCEL the close, and
+  // a cancel after cleanup left the dev server/watcher/theme server dead while
+  // the app kept running. will-quit fires only after every close confirmed.
 });
 
 app.on("will-quit", (event) => {
+  cleanupBackgroundServices();
   if (smokeExitCode === null) return;
   event.preventDefault();
   const exitCode = smokeExitCode;

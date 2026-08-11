@@ -14,11 +14,13 @@ const BETA_RANK = 1;
 const STABLE_RANK = 2;
 
 export function isDeveloperVersion(version: string): boolean {
-  return /-db(?:[.-]|$)/i.test(version);
+  // A digit directly after the tag ("-db10", non-standard semver) still means
+  // a prerelease build, not a stable release.
+  return /-db(?:[.-]|$|[0-9])/i.test(version);
 }
 
 export function isBetaVersion(version: string): boolean {
-  return /-(beta|alpha|rc)(?:[.-]|$)/i.test(version);
+  return /-(beta|alpha|rc)(?:[.-]|$|[0-9])/i.test(version);
 }
 
 export function detectInstalledUpdateFeed(version: string): ReleaseFeedChannel {
@@ -54,7 +56,17 @@ export function feedStabilityRank(feed: ReleaseFeedChannel): number {
 interface ParsedVersion {
   base: [number, number, number];
   rank: number;
+  /** Stability of the prerelease tag itself: alpha < beta < rc. */
+  preType: number;
   pre: number;
+}
+
+/** alpha < beta < rc; 0 for builds without a type tag (e.g. -db.3). */
+function prereleaseTypeRank(version: string): number {
+  if (/-rc(?:[.-]|$|[0-9])/i.test(version)) return 3;
+  if (/-beta(?:[.-]|$|[0-9])/i.test(version)) return 2;
+  if (/-alpha(?:[.-]|$|[0-9])/i.test(version)) return 1;
+  return 0;
 }
 
 function parseVersion(version: string): ParsedVersion | null {
@@ -75,7 +87,12 @@ function parseVersion(version: string): ParsedVersion | null {
     }
   }
 
-  return { base, rank: versionStabilityRank(version), pre };
+  return {
+    base,
+    rank: versionStabilityRank(version),
+    preType: prereleaseTypeRank(version),
+    pre,
+  };
 }
 
 function compareBase(
@@ -101,7 +118,7 @@ function compareBase(
  *  - Within the same base + same channel, a higher prerelease build wins.
  *
  * Examples (all return true):
- *   isChannelUpgrade("0.1.0-db.1", "0.1.0-beta.4")
+ *   isChannelUpgrade("0.1.0-db.1", "0.1.0-beta.5")
  *   isChannelUpgrade("0.1.0-db.1", "0.1.0")
  *   isChannelUpgrade("0.1.0-db.1", "0.1.0-db.2")
  *
@@ -118,7 +135,20 @@ export function isChannelUpgrade(current: string, candidate: string): boolean {
   const baseCmp = compareBase(n.base, c.base);
   if (baseCmp !== 0) return baseCmp > 0;
   if (n.rank !== c.rank) return n.rank > c.rank;
+  if (n.preType !== c.preType) return n.preType > c.preType;
   return n.pre > c.pre;
+}
+
+/** Stable-channel safety: a candidate with a prerelease tag must never be
+ *  offered on the stable feed. GitHub's /releases/latest can point at a
+ *  prerelease build (a public beta marked as the "latest" release), which
+ *  previously flowed to stable users as if it were a production release. */
+export function isStableChannelCandidate(
+  feed: ReleaseFeedChannel,
+  candidate: string,
+): boolean {
+  if (feed !== "latest") return true;
+  return versionStabilityRank(candidate) === STABLE_RANK;
 }
 
 /**

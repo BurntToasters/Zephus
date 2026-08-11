@@ -69,31 +69,52 @@ export function richTextFromElement(
   const allowLinks = options.allowLinks !== false;
   const allowLineBreaks = options.allowLineBreaks !== false;
   let usedMarkup = false;
+  // True once any non-text child was seen (br, script, span, formatting…).
+  // The walk output is authoritative then; the innerText fallback (which is
+  // layout-dependent and browser-inconsistent) only applies to pure text.
+  let sawElement = false;
 
   const lineBreak = (): string => {
-    if (!allowLineBreaks) return " ";
+    if (!allowLineBreaks) {
+      sawElement = true;
+      return " ";
+    }
     usedMarkup = true;
     return "<br />";
   };
 
-  const walk = (node: Node): string => {
+  const walk = (node: Node, anchorDepth = 0): string => {
     if (node.nodeType === Node.TEXT_NODE) {
-      return escapeStored(node.textContent ?? "");
+      let text = node.textContent ?? "";
+      if (!allowLineBreaks) {
+        // Line-encoded props (list items, accordion, stats) must stay on one
+        // line; some browsers/pastes produce literal "\n" text nodes that
+        // bypass the BR/block handling.
+        text = text.replace(/\s*\n+\s*/g, " ");
+      }
+      return escapeStored(text);
     }
     if (node.nodeType !== Node.ELEMENT_NODE) return "";
 
+    sawElement = true;
     const element = node as HTMLElement;
     const tag = element.tagName;
     if (tag === "BR") return lineBreak();
     if (tag === "SCRIPT" || tag === "STYLE") return "";
 
-    const inner = Array.from(element.childNodes).map(walk).join("");
+    const inner = Array.from(element.childNodes)
+      .map((child) => walk(child, tag === "A" ? anchorDepth + 1 : anchorDepth))
+      .join("");
 
+    // Track anchor nesting: createLink can nest an anchor inside an existing
+    // one; the renderer drops the inner link, so storing the nested markup
+    // silently loses the user's new link on every render. Mirror the
+    // render-side guard — inside an anchor, drop the tag, keep the text.
     if (tag === "A") {
       const href = allowLinks
         ? safeUrl(element.getAttribute("href") ?? "")
         : "";
-      if (!href || !inner) return inner;
+      if (anchorDepth > 0 || !href || !inner) return inner;
       usedMarkup = true;
       return `<a href="${escapeAttr(href)}">${inner}</a>`;
     }
@@ -124,10 +145,22 @@ export function richTextFromElement(
 
   const markup = parts.join("");
   if (!usedMarkup) {
-    // No formatting: keep the prop as plain text (what the editor did before
-    // inline formatting existed).
-    const text = root.innerText ?? root.textContent ?? "";
-    return allowLineBreaks ? text : text.replace(/\s*\n+\s*/g, " ");
+    if (!sawElement) {
+      // Pure text (no markup, no tags): keep the prop as plain text (what the
+      // editor did before inline formatting existed).
+      const text = root.innerText ?? root.textContent ?? "";
+      return allowLineBreaks ? text : text.replace(/\s*\n+\s*/g, " ");
+    }
+    // Only browser-generated wrappers were seen (spellcheck spans, execCommand
+    // divs) — no formatting was actually applied. The walk already escaped the
+    // text, so decode it back: storing "A &amp; B" here would render as the
+    // literal text "&amp;" (plainTextToHtml escapes again). Scripts are
+    // dropped by the walk, so this stays safe where innerText is not.
+    return markup
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&amp;/g, "&")
+      .replace(/<br \/>/g, allowLineBreaks ? "\n" : " ");
   }
   return markup;
 }

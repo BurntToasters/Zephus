@@ -164,7 +164,7 @@ Click **Preview** to:
 
 The preview window stays open while you edit. Click **Stop Preview** to shut down the server.
 
-> 💡 **Note**: If you're using custom Google Fonts, they won't load in the editor preview due to security settings, but they will load in the real dev server and production build.
+> 💡 **Note**: Custom Google Fonts load in the editor canvas too, so what you see in Zephus matches the dev server and production build.
 
 ## Publishing Your Site
 
@@ -183,7 +183,7 @@ From here, you can deploy to:
 
 ## Next Steps
 
-- **Learn all content blocks**: See [Block Reference](./BLOCK_REFERENCE.md) for the 21 available block types
+- **Learn all content blocks**: See [Block Reference](./BLOCK_REFERENCE.md) for the 22 available block types
 - **Customize your site design**: See [Workflows: Configure Design](./WORKFLOWS.md#configure-your-site-design)
 - **Configure the site header/footer**: See [Workflows: Site Shell](./WORKFLOWS.md#configure-site-shell-header-nav-footer)
 - **Manage reusable sections**: See [Workflows: Reusable Sections](./WORKFLOWS.md#save--reuse-sections)

@@ -1,3 +1,4 @@
+import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 
 export type LinkPickerKind = "page" | "url" | "email" | "phone" | "anchor";
@@ -11,6 +12,9 @@ export interface LinkPickerModalState {
   kind: LinkPickerKind;
   pageOptions: LinkPickerPageOption[];
   pageValue: string;
+  /** The current link is a route not present in pageOptions — never silently
+   *  replace it with the first listed page. */
+  pageValueMissing?: boolean;
   rawValue: string;
   onKindChange: (value: LinkPickerKind) => void;
   onPageValueChange: (value: string) => void;
@@ -50,10 +54,14 @@ function placeholder(kind: LinkPickerKind): string {
 export function renderLinkPickerModal(
   container: HTMLElement,
   state: LinkPickerModalState,
-): void {
+): () => void {
   container.innerHTML = "";
-  render(
-    () => (
+  return render(() => {
+    // Local signals keep focus while typing: re-rendering the whole body on
+    // every keystroke would destroy the focused input and drop input.
+    const [raw, setRaw] = createSignal(state.rawValue);
+    const [pageValue, setPageValue] = createSignal(state.pageValue);
+    return (
       <div class="meta-form">
         <label class="meta-field">
           <span>Link type</span>
@@ -74,12 +82,26 @@ export function renderLinkPickerModal(
         {state.kind === "page" ? (
           <label class="meta-field">
             <span>{fieldLabel(state.kind)}</span>
+            {state.pageValueMissing ? (
+              <p class="muted" style="margin: 4px 0 8px">
+                The current link target is not in the page list (it may be a
+                hand-authored or detached page). Choose a listed page below, or
+                switch to URL to keep the exact address.
+              </p>
+            ) : null}
             <select
-              value={state.pageValue}
-              onChange={(event) =>
-                state.onPageValueChange(event.currentTarget.value)
-              }
+              value={pageValue()}
+              onChange={(event) => {
+                const value = event.currentTarget.value;
+                setPageValue(value);
+                state.onPageValueChange(value);
+              }}
             >
+              {state.pageValueMissing ? (
+                <option value="" disabled>
+                  Choose a page…
+                </option>
+              ) : null}
               {state.pageOptions.map((option) => (
                 <option value={option.value}>{option.label}</option>
               ))}
@@ -90,16 +112,17 @@ export function renderLinkPickerModal(
             <span>{fieldLabel(state.kind)}</span>
             <input
               class="text"
-              value={state.rawValue}
+              value={raw()}
               placeholder={placeholder(state.kind)}
-              onInput={(event) =>
-                state.onRawValueChange(event.currentTarget.value)
-              }
+              onInput={(event) => {
+                const value = event.currentTarget.value;
+                setRaw(value);
+                state.onRawValueChange(value);
+              }}
             />
           </label>
         )}
       </div>
-    ),
-    container,
-  );
+    );
+  }, container);
 }

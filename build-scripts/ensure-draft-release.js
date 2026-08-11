@@ -281,14 +281,15 @@ async function waitForDraftRelease() {
 
 async function main() {
   if (!GH_TOKEN) {
+    // Skipping quietly (exit 0) let concurrent per-platform release jobs race
+    // to create drafts — the exact duplicate-draft problem this script
+    // exists to prevent. Fail loudly instead.
+    console.error('✖ GH_TOKEN is not set. Cannot ensure the draft release.');
+    console.error('   Export GH_TOKEN (or set it in the environment) and re-run.');
     if (WAIT_MODE) {
-      console.warn('⚠ WARN: GH_TOKEN not set - cannot check for the draft release. Skipping wait.');
-    } else {
-      console.warn('⚠ WARN: GH_TOKEN not set - cannot pre-create draft release. Skipping.');
-      console.warn('   (electron-builder will create the draft itself, but the duplicate-draft');
-      console.warn('    race may reoccur without a pre-created draft.)');
+      console.error('   In wait mode this would otherwise skip the wait and race the other jobs.');
     }
-    return;
+    process.exit(1);
   }
 
   if (WAIT_MODE) {

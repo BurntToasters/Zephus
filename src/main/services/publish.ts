@@ -13,20 +13,45 @@ import { ensureVisualSchema } from "./schema";
 const execFileAsync = promisify(execFile);
 
 export interface PublishResult extends OperationResult {
+  /** True when the output folder was actually opened in the file manager. */
+  revealed?: boolean;
   outputDir?: string;
 }
+
+let activeBuild: Promise<PublishResult> | null = null;
 
 /**
  * Runs `npm run build` (Astro production build) in the project directory.
  * On success, opens the output folder in the system file manager.
  */
-export async function buildAndReveal(
+export function buildAndReveal(
   projectPath: string,
   outDir: string,
+  onBuildLog?: (chunk: string) => void,
 ): Promise<PublishResult> {
   if (typeof projectPath !== "string" || !projectPath) {
-    return { ok: false, error: "Invalid project path." };
+    return Promise.resolve({ ok: false, error: "Invalid project path." });
   }
+  // Serialize concurrent builds: two overlapping runs would regenerate the
+  // same managed files and race writing the same dist/ directory.
+  if (activeBuild) {
+    return Promise.resolve({
+      ok: false,
+      error: "A build is already running. Wait for it to finish.",
+    });
+  }
+  activeBuild = runBuild(projectPath, outDir, onBuildLog);
+  void activeBuild.finally(() => {
+    if (activeBuild) activeBuild = null;
+  });
+  return activeBuild;
+}
+
+async function runBuild(
+  projectPath: string,
+  outDir: string,
+  onBuildLog?: (chunk: string) => void,
+): Promise<PublishResult> {
   try {
     // Astro builds whatever .astro files are on disk. Refresh managed pages
     // from their sidecars first, so a page that is stale relative to its saved
@@ -42,22 +67,46 @@ export async function buildAndReveal(
     }
 
     const env = await buildSpawnEnv(readGlobalSettings().customNodePath);
-    const npm = npmCommand(["run", "build"], process.platform, env);
-    await execFileAsync(npm.command, npm.args, {
-      cwd: projectPath,
-      windowsHide: true,
-      maxBuffer: 20 * 1024 * 1024,
-      env: { ...env, FORCE_COLOR: "0" },
-    });
+    const npm = npmCommand(
+      ["run", "build"],
+      process.platform,
+      env,
+      projectPath,
+    );
+    try {
+      // Stream output so a long first build does not read as a hang
+      // (previously the status bar sat on "Building…" with zero feedback).
+      const { stdout } = await execFileAsync(npm.command, npm.args, {
+        cwd: projectPath,
+        windowsHide: true,
+        maxBuffer: 100 * 1024 * 1024,
+        env: { ...env, FORCE_COLOR: "0" },
+      });
+      onBuildLog?.(stdout);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      // A maxBuffer blowout means the build produced a huge amount of log
+      // output — report that, not the misleading buffer error.
+      if (/maxBuffer/.test(msg)) {
+        return {
+          ok: false,
+          error:
+            "The build produced too much log output and was stopped. Check the build logs for warnings.",
+        };
+      }
+      throw error;
+    }
     const output = resolveProjectRelativeDir(
       projectPath,
       outDir,
       "dist",
     ).absolute;
-    shell.openPath(output).catch(() => {
-      /* best-effort */
-    });
-    return { ok: true, outputDir: output };
+    const openError = await shell.openPath(output);
+    return {
+      ok: true,
+      outputDir: output,
+      revealed: !openError,
+    };
   } catch (error) {
     log.error("Publish (astro build) failed", error);
     const message =

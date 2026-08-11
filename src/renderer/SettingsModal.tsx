@@ -26,7 +26,7 @@ export interface SettingsModalState {
   onPickNodePath: () => void | Promise<void>;
   onAutoNodePath: () => void | Promise<void>;
   onOpenProductionLicenses: () => void;
-  onOpenConfigFolder: () => void;
+  onOpenConfigFolder: () => void | Promise<void>;
 }
 
 function buttonClass(tone: SettingsModalAction["tone"]): string {
@@ -40,9 +40,9 @@ function buttonClass(tone: SettingsModalAction["tone"]): string {
 export function renderSettingsModalBody(
   container: HTMLElement,
   state: SettingsModalState,
-): void {
+): () => void {
   container.innerHTML = "";
-  render(
+  return render(
     () => (
       <div class="settings-form">
         <div class="settings-section">
@@ -53,7 +53,7 @@ export function renderSettingsModalBody(
             <input
               id="set-auto-update-modal"
               type="checkbox"
-              checked={state.settings.autoCheckUpdates}
+              checked={state.settings.autoCheckUpdates ?? true}
               onChange={(event) =>
                 state.onSettingChange(
                   "autoCheckUpdates",
@@ -68,7 +68,7 @@ export function renderSettingsModalBody(
             <select
               id="set-update-channel-modal"
               class="select"
-              value={state.settings.updateChannel}
+              value={state.settings.updateChannel ?? "auto"}
               onChange={(event) =>
                 state.onSettingChange(
                   "updateChannel",
@@ -135,7 +135,7 @@ export function renderSettingsModalBody(
             <select
               id="set-theme-modal"
               class="select"
-              value={state.settings.theme}
+              value={state.settings.theme ?? "system"}
               onChange={(event) =>
                 state.onSettingChange(
                   "theme",
@@ -154,7 +154,7 @@ export function renderSettingsModalBody(
             <select
               id="set-font-size-modal"
               class="select"
-              value={String(state.settings.codeFontSize)}
+              value={String(state.settings.codeFontSize ?? 13)}
               onChange={(event) =>
                 state.onSettingChange(
                   "codeFontSize",
@@ -177,7 +177,7 @@ export function renderSettingsModalBody(
             <input
               id="set-restore-modal"
               type="checkbox"
-              checked={state.settings.restoreLastProject}
+              checked={state.settings.restoreLastProject ?? false}
               onChange={(event) =>
                 state.onSettingChange(
                   "restoreLastProject",
@@ -192,7 +192,7 @@ export function renderSettingsModalBody(
             <input
               id="set-autosave-modal"
               type="checkbox"
-              checked={state.settings.autosave}
+              checked={state.settings.autosave ?? false}
               onChange={(event) =>
                 state.onSettingChange("autosave", event.currentTarget.checked)
               }
@@ -208,7 +208,7 @@ export function renderSettingsModalBody(
             <input
               id="set-confirm-del-modal"
               type="checkbox"
-              checked={state.settings.confirmBlockDelete}
+              checked={state.settings.confirmBlockDelete ?? true}
               onChange={(event) =>
                 state.onSettingChange(
                   "confirmBlockDelete",
