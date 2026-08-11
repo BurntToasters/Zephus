@@ -94,7 +94,7 @@ Zephus is a **local-first visual editor for Astro sites** — no coding required
 - **`test:all` never ran coverage, the runtime smoke, or the Astro builds** — all wired in with real exit codes; `test-astro-build` now asserts actual `.html` output, not source counts.
 - **Alpha/rc versions got no channel metadata** (their `latest.yml` was served to stable users); arch-less artifacts were signed twice / checksum-overwritten. Both fixed.
 - **crawl-licenses silently dropped bundled-renderer attributions** when the esbuild metafile was missing — strict mode fails; license rows derive URLs from the repository field.
-- Window size/position now persists between launches; `nsis.publisherName` set (Unknown Publisher gone, updater signature checks possible); hardened runtime + entitlements moved into the base mac config; dev artifacts (`*.map`, test mocks, fixtures) excluded from the asar; **`--dev` on a shipped binary no longer enables devTools or disables updates**.
+- Window size/position now persists between launches; the Windows signing config moved to `build-scripts/electron-builder.windows.cjs` (`signtoolOptions` publisher verification when Azure signing is active); hardened runtime + entitlements moved into the base mac config; dev artifacts (`*.map`, test mocks, fixtures) excluded from the asar; **`--dev` on a shipped binary no longer enables devTools or disables updates**.
 
 **Beta-blocking UX (fixed):**
 - **A failed dependency install stranded the user on the home screen** with the site never opened or recorded — the site now opens anyway with a retry hint.
