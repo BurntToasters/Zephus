@@ -106,3 +106,11 @@ describe("findReplace payload validation", () => {
     expect(result.skippedDetachedPages).toBe(1);
   });
 });
+
+describe("replaceAll details", () => {
+  it("rejects an empty replacement needle", () => {
+    const result = replaceAllInPages(projectDir, "src/pages", "", "x");
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("Enter text to find");
+  });
+});

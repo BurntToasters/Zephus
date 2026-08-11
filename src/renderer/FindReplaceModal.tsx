@@ -6,7 +6,6 @@ export interface FindReplaceModalState {
   replacement: string;
   caseSensitive: boolean;
   wholeWord: boolean;
-  searching: boolean;
   /** Null until a search has been run. */
   matches: SearchMatch[] | null;
   totalMatches: number;

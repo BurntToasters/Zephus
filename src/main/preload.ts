@@ -384,8 +384,17 @@ const api = {
   publish: (
     projectPath: string,
     outDir: string,
-  ): Promise<{ ok: boolean; outputDir?: string; error?: string }> =>
-    ipcRenderer.invoke(IPC.publish, projectPath, outDir),
+  ): Promise<{
+    ok: boolean;
+    outputDir?: string;
+    revealed?: boolean;
+    error?: string;
+  }> => ipcRenderer.invoke(IPC.publish, projectPath, outDir),
+  onPublishLog: (listener: (chunk: string) => void): (() => void) => {
+    const wrapped = (_event: unknown, chunk: string): void => listener(chunk);
+    ipcRenderer.on(IPC.publishLog, wrapped);
+    return () => ipcRenderer.removeListener(IPC.publishLog, wrapped);
+  },
 
   revealOutputFolder: (
     projectPath: string,
@@ -400,6 +409,8 @@ const api = {
     projectPath: string,
   ): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke(IPC.depsInstall, projectPath),
+  cancelInstall: (): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke(IPC.depsCancel),
 
   onInstallLog: (callback: (chunk: string) => void): (() => void) => {
     const listener = (_e: unknown, chunk: string) => callback(chunk);

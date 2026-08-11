@@ -74,7 +74,7 @@ export interface EditorParseDeps {
  * `textFromHtml` behavior in schema.ts so both parsers produce the same
  * stored value.
  */
-function elementText(el: Element): string {
+function elementTextRaw(el: Element): string {
   let out = "";
   for (const child of Array.from(el.childNodes)) {
     if (child.nodeType === Node.TEXT_NODE) {
@@ -82,14 +82,46 @@ function elementText(el: Element): string {
     } else if (child.nodeType === Node.ELEMENT_NODE) {
       const childEl = child as Element;
       if (childEl.tagName === "BR") out += "\n";
-      else out += elementText(childEl);
+      else out += elementTextRaw(childEl);
     }
   }
   return out;
 }
 
+function elementText(el: Element): string {
+  // Trim ONCE at the top level, mirroring the main-process parser
+  // (schema.ts textFromHtml trims the whole string). Trimming inside the
+  // recursive walk would strip the leading space of nested elements
+  // (<p>before <span> after</span></p> would lose a space).
+  return elementTextRaw(el).trim();
+}
+
+/** The serializer indents every interior line of a raw html block by 2
+ *  spaces (indentManagedBody). Without dedenting on parse, each save cycle
+ *  added 2 more spaces to the stored raw — indefinite file growth, hash
+ *  mismatch, postlist-refresh rewrites. Strip the common indent prefix. */
+function dedentHtmlRaw(raw: string): string {
+  const lines = raw.split("\n");
+  if (lines.length <= 1) return raw;
+  let indent = Infinity;
+  for (const line of lines.slice(1)) {
+    if (!line.trim()) continue;
+    const leading = line.match(/^[ \t]*/)?.[0].length ?? 0;
+    if (leading < indent) indent = leading;
+  }
+  if (!Number.isFinite(indent) || indent === 0) return raw;
+  return lines
+    .map((line, index) => (index === 0 ? line : line.slice(indent)))
+    .join("\n");
+}
+
 export function createEditorPageParser(deps: EditorParseDeps) {
-  function parseInner(inner: string): Block[] {
+  // Mirrors the main-process parser's `Section ${sections.length + 1}` label
+  // for legacy <section> wrappers (schema.ts). Counted in parse order so both
+  // parsers emit identical labels — a divergence landed in data-zephus-props
+  // and changed bytes on the first save.
+  let legacySectionCount = 0;
+  function parseInner(inner: string, topLevel = false): Block[] {
     const doc = new DOMParser().parseFromString(
       `<div id="z-root">${inner}</div>`,
       "text/html",
@@ -126,8 +158,9 @@ export function createEditorPageParser(deps: EditorParseDeps) {
       const tag = el.tagName.toLowerCase();
       const cls = el.getAttribute("class") ?? "";
       // Match the main-process parser: a top-level <style> is dropped, never
-      // stored as content.
-      if (tag === "style") continue;
+      // stored as content. NESTED <style> (inside a section) is preserved as
+      // an html block — dropping it deleted hand-authored CSS on save.
+      if (tag === "style" && topLevel) continue;
       const storedType = el.dataset["zephusBlock"];
       const storedProps = parseZephusJsonAttr<Record<string, unknown>>(
         el.dataset["zephusProps"] ?? null,
@@ -143,7 +176,7 @@ export function createEditorPageParser(deps: EditorParseDeps) {
           props: sanitizeStringRecord(storedProps),
           style: storedStyle,
           locked: el.dataset["zephusLocked"] === "true",
-          raw: storedType === "html" ? el.outerHTML : undefined,
+          raw: storedType === "html" ? dedentHtmlRaw(el.outerHTML) : undefined,
         });
         continue;
       }
@@ -283,10 +316,11 @@ export function createEditorPageParser(deps: EditorParseDeps) {
       };
     }
     const cls = el.getAttribute("class") ?? "";
+    legacySectionCount += 1;
     return {
       id: storedId || deps.uid(),
       type: "section",
-      label: `Section ${index + 1}`,
+      label: `Section ${legacySectionCount}`,
       props: { wrapper: "box", cls },
       children: parseInner(el.innerHTML),
     };
@@ -314,7 +348,9 @@ export function createEditorPageParser(deps: EditorParseDeps) {
 
     if (!hasManagedSection && !hasLegacySectionWrapper) {
       const sec = deps.createFallbackSection();
-      sec.children = parseInner(inner);
+      // This is the top level: a <style> here must be dropped like the main
+      // parser drops it (the default false kept it as an html block).
+      sec.children = parseInner(inner, true);
       return [sec];
     }
 
@@ -324,10 +360,10 @@ export function createEditorPageParser(deps: EditorParseDeps) {
     const flushLoose = (): void => {
       if (looseBlocks.length === 0) return;
       const sec = deps.createFallbackSection();
-      sec.label =
-        sections.length === 0
-          ? "Main Content"
-          : `Section ${sections.length + 1}`;
+      // Mirror the main-process parser: trailing loose blocks always label
+      // the section "Main Content" — a differing label landed in
+      // data-zephus-props and changed bytes on the first save.
+      sec.label = "Main Content";
       sec.children = looseBlocks;
       looseBlocks = [];
       sections.push(sec);
@@ -362,7 +398,6 @@ export function createEditorPageParser(deps: EditorParseDeps) {
       }
       const el = node as HTMLElement;
       const tag = el.tagName.toLowerCase();
-      if (tag === "style") continue;
       if (
         tag === "section" &&
         (el.dataset["zephusBlock"] === "section" || !el.dataset["zephusBlock"])
@@ -370,7 +405,7 @@ export function createEditorPageParser(deps: EditorParseDeps) {
         flushLoose();
         sections.push(sectionNodeFromElement(el, sections.length));
       } else {
-        looseBlocks.push(...parseInner(el.outerHTML));
+        looseBlocks.push(...parseInner(el.outerHTML, true));
       }
     }
 

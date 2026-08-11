@@ -99,3 +99,40 @@ describe("watchFile", () => {
     );
   });
 });
+
+describe("self-write suppression semantics", () => {
+  it("suppresses a burst then lets external edits through", async () => {
+    let fires = 0;
+    watchFile(project, pageRel, () => {
+      fires += 1;
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    markSelfWritten(pageRel);
+    fs.writeFileSync(path.join(project, pageRel), "<h1>burst1</h1>");
+    fs.writeFileSync(path.join(project, pageRel), "<h1>burst2</h1>");
+    await new Promise((r) => setTimeout(r, 400));
+    expect(fires).toBe(0);
+
+    // Let the 500ms burst window lapse before the external edit.
+    await new Promise((r) => setTimeout(r, 500));
+
+    // A genuine external edit after the burst window fires.
+    fs.writeFileSync(path.join(project, pageRel), "<h1>external</h1>");
+    await waitFor(() => fires > 0);
+    expect(fires).toBeGreaterThan(0);
+  }, 15000);
+});
+
+describe("stopWatching", () => {
+  it("stops delivering events after stop", async () => {
+    let fires = 0;
+    watchFile(project, pageRel, () => {
+      fires += 1;
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    stopWatching();
+    fs.writeFileSync(path.join(project, pageRel), "<h1>after-stop</h1>");
+    await new Promise((r) => setTimeout(r, 400));
+    expect(fires).toBe(0);
+  });
+});

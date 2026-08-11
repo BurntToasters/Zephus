@@ -67,6 +67,15 @@ export function renderAssetBrowserModalBody(
             dragDepth = Math.max(0, dragDepth - 1);
             if (dragDepth === 0) markDrag(false);
           }}
+          onDragEnd={() => {
+            // Esc/gesture-cancel mid-drag used to leave dragDepth > 0 — a
+            // permanent "dragover" highlight until the next drag. dragend
+            // fires after both drop and cancel.
+            if (dragDepth > 0) {
+              dragDepth = 0;
+              markDrag(false);
+            }
+          }}
           onDrop={(event) => {
             event.preventDefault();
             dragDepth = 0;

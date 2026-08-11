@@ -33,6 +33,7 @@
     system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
     Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --font-sans: var(--font-ui);
 }
 
 /* Settings theme is renderer-wide, not decoration-only. Keep token names
@@ -1268,6 +1269,33 @@ body {
   transition: all 0.15s ease;
 }
 
+/* Nav entries are real buttons now; the button must fill the li and match
+   the list's hover affordance, with a split label/route layout so a long
+   label cannot clip the route. */
+.list li .nav-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.list li .nav-entry:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+.list li .nav-entry-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .list li:hover {
   background: var(--panel-card);
   color: var(--text);
@@ -2120,59 +2148,11 @@ body {
   box-shadow: var(--shadow-md);
 }
 
-.preview-frame {
-  position: absolute;
-  inset: 24px;
-  width: calc(100% - 48px);
-  height: calc(100% - 48px);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: #ffffff;
-  box-shadow: var(--shadow-md);
-  transition:
-    max-width 0.3s cubic-bezier(0.16, 1, 0.3, 1),
-    height 0.3s cubic-bezier(0.16, 1, 0.3, 1),
-    border 0.35s cubic-bezier(0.16, 1, 0.3, 1),
-    border-radius 0.35s cubic-bezier(0.16, 1, 0.3, 1),
-    box-shadow 0.35s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
 /* Responsive Viewports with sleek mock hardware bezels */
 .canvas-wrap.vp-tablet #canvas,
-.canvas-wrap.vp-tablet .preview-frame {
-  max-width: 768px;
-  /* height (not min-height) locked the canvas to the wrap with overflow
-     hidden — content below the fold was clipped AND unreachable on the
-     tablet/mobile bezels. The wrap scrolls only when the canvas overflows. */
-  min-height: calc(100% - 48px);
-  align-self: center;
-  border: 16px solid #1a1a1f; /* Sleek tablet bezel */
-  border-radius: 28px; /* Tablet roundness */
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.1),
-    0 25px 60px -15px rgba(0, 0, 0, 0.8),
-    0 0 0 4px #0c0c0e; /* Outer tablet ring */
-  overflow: hidden;
-  padding: 12px;
-}
-
+.canvas-wrap.vp-tablet 
 .canvas-wrap.vp-mobile #canvas,
-.canvas-wrap.vp-mobile .preview-frame {
-  max-width: 390px;
-  min-height: calc(100% - 48px);
-  align-self: center;
-  border: 14px solid #1a1a1f; /* Sleek phone bezel */
-  border-top-width: 24px; /* Taller top to simulate speaker/camera zone */
-  border-bottom-width: 24px; /* Taller bottom */
-  border-radius: 40px; /* Phone roundness */
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.1),
-    0 25px 60px -15px rgba(0, 0, 0, 0.8),
-    0 0 0 4px #0c0c0e; /* Outer phone ring */
-  overflow: hidden;
-  padding: 12px;
-}
-
+.canvas-wrap.vp-mobile 
 /* Properties Side Panel widgets */
 .properties {
   display: flex;
@@ -2387,22 +2367,6 @@ body {
   padding: 8px 10px;
   color: var(--muted);
   font-size: 12px;
-}
-
-.asset-row {
-  width: 100%;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--bg-alt);
-  color: var(--text);
-  padding: 10px 12px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.asset-row:hover {
-  border-color: var(--accent);
-  background: var(--panel-card);
 }
 
 .asset-dropzone {
@@ -2848,21 +2812,6 @@ body {
   width: 100%;
 }
 
-.properties .prop-row {
-  margin-bottom: 8px;
-}
-
-.properties .prop-error {
-  border-color: var(--danger) !important;
-}
-
-.properties .err-msg {
-  color: var(--danger);
-  font-size: 11px;
-  margin: 4px 0 0;
-  font-weight: 500;
-}
-
 /* Git Panel */
 .git-panel {
   font-size: 12px;
@@ -2870,10 +2819,6 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   padding: 12px;
-}
-
-.git-panel .g-group {
-  margin-bottom: 10px;
 }
 
 .git-panel .g-file {
@@ -2889,15 +2834,6 @@ body {
 .git-panel .g-file input[type="checkbox"] {
   margin-top: 2px;
   flex-shrink: 0;
-}
-
-.git-panel .g-left {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .git-panel .g-badge {
@@ -3506,52 +3442,7 @@ body {
   }
 }
 
-@media (max-width: 1100px) {
-  .start-shell {
-    width: min(100vw - 28px, 1400px);
-    padding-top: 24px;
-  }
-
-  .start-hero,
-  .home-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .home-panel-header {
-    flex-direction: column;
-  }
-
-  .panel-meta {
-    max-width: none;
-    text-align: left;
-  }
-}
-
 @media (max-width: 760px) {
-  .start-shell {
-    padding-bottom: 28px;
-  }
-
-  .start-hero-copy,
-  .start-hero-tools,
-  .home-panel {
-    padding: 18px;
-    border-radius: 18px;
-  }
-
-  .brand {
-    font-size: 40px;
-  }
-
-  .start-lead {
-    font-size: 14px;
-  }
-
-  .home-quick-actions {
-    display: grid;
-    grid-template-columns: 1fr;
-  }
-
   .recent-project-head,
   .overview-row,
   .overview-title,
@@ -4227,4 +4118,74 @@ kbd {
   .workspace-tab span {
     display: none;
   }
+}
+
+/* Light theme surfaces: token text on dark glass was unreadable in light
+   mode — these surfaces switch to light tokens. */
+[data-theme="light"] .start-sidebar,
+[data-theme="light"] .recent-grid li,
+[data-theme="light"] .welcome-card,
+[data-theme="light"] .about-hero,
+[data-theme="light"] .theme-card,
+[data-theme="light"] .home-status-card {
+  background: var(--panel);
+  border-color: var(--border);
+  box-shadow: 0 1px 3px rgba(24, 24, 27, 0.08);
+}
+[data-theme="light"] .workspace-tab.active {
+  color: var(--text);
+}
+[data-theme="light"] .project-name.dirty {
+  color: var(--warning);
+}
+[data-theme="light"] kbd {
+  color: var(--muted);
+  background: var(--bg-alt);
+  border-color: var(--border);
+}
+[data-theme="light"] .overview-pill.info,
+[data-theme="light"] .pane-kicker,
+[data-theme="light"] .help-section h4 {
+  color: var(--accent);
+}
+[data-theme="light"] .page-item.hidden-page {
+  color: var(--warning);
+}
+[data-theme="light"] .licenses-table tr:hover td {
+  background: rgba(0, 0, 0, 0.03);
+}
+[data-theme="light"] .theme-card-icon-pill {
+  color: var(--muted);
+  background: rgba(0, 0, 0, 0.05);
+}
+[data-theme="light"] .settings-section {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+/* Keyboard focus for theme cards: outline:none removed the global indicator. */
+.theme-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Native-select styling (the settings theme/font selects had NO rules at all:
+   white controls flashed in the dark start view). */
+.field select,
+.settings-form select,
+.settings-row select {
+  background: var(--bg-alt);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  font-family: var(--font-ui);
+  font-size: 13px;
+}
+[data-theme="light"] .field select,
+[data-theme="light"] .settings-form select,
+[data-theme="light"] .settings-row select {
+  background: var(--bg-alt);
+  color: var(--text);
 }

@@ -41,9 +41,14 @@ export function createSite(
   const hadZephusDir = fs.existsSync(zephusDir);
   try {
     if (fs.existsSync(targetPath) && fs.readdirSync(targetPath).length > 0) {
+      const looksLikeZephus =
+        fs.existsSync(path.join(targetPath, ".zephus")) ||
+        fs.existsSync(path.join(targetPath, "astro.config.mjs"));
       return {
         ok: false,
-        error: "Choose an empty folder for the new site.",
+        error: looksLikeZephus
+          ? "This folder already contains a Zephus site. Pick a new, empty folder — or delete/rename this one if a previous creation attempt failed."
+          : "Choose an empty folder for the new site.",
       };
     }
     fs.mkdirSync(targetPath, { recursive: true });

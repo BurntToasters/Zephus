@@ -83,7 +83,7 @@ export function richTextFromElement(
     return "<br />";
   };
 
-  const walk = (node: Node): string => {
+  const walk = (node: Node, anchorDepth = 0): string => {
     if (node.nodeType === Node.TEXT_NODE) {
       let text = node.textContent ?? "";
       if (!allowLineBreaks) {
@@ -102,13 +102,19 @@ export function richTextFromElement(
     if (tag === "BR") return lineBreak();
     if (tag === "SCRIPT" || tag === "STYLE") return "";
 
-    const inner = Array.from(element.childNodes).map(walk).join("");
+    const inner = Array.from(element.childNodes)
+      .map((child) => walk(child, tag === "A" ? anchorDepth + 1 : anchorDepth))
+      .join("");
 
+    // Track anchor nesting: createLink can nest an anchor inside an existing
+    // one; the renderer drops the inner link, so storing the nested markup
+    // silently loses the user's new link on every render. Mirror the
+    // render-side guard — inside an anchor, drop the tag, keep the text.
     if (tag === "A") {
       const href = allowLinks
         ? safeUrl(element.getAttribute("href") ?? "")
         : "";
-      if (!href || !inner) return inner;
+      if (anchorDepth > 0 || !href || !inner) return inner;
       usedMarkup = true;
       return `<a href="${escapeAttr(href)}">${inner}</a>`;
     }

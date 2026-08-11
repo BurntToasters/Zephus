@@ -392,7 +392,9 @@ a {
   flex-wrap: wrap;
 }
 
-.zephus-shell-nav a {
+/* :where() keeps specificity at zero so a .button-classed nav link keeps
+   its pill styling (the plain nav-link color must not override it). */
+.zephus-shell-nav a:where(:not(.button)) {
   color: var(--zephus-foreground);
   text-decoration: none;
 }
@@ -450,13 +452,18 @@ export function mergePageNavItems(
 ): NavItem[] {
   const existingByPage = new Map<string, NavItem>();
   const customItems: NavItem[] = [];
-  for (const item of navItems) {
+  // Original ORDER of the surviving items: rebuilding page items in docs
+  // (alphabetical) order discarded any reorder the user made in the editor —
+  // the nav snapped back on the next sync.
+  const order = new Map<string, number>();
+  navItems.forEach((item, index) => {
+    order.set(item.page || item.href || item.id, index);
     if (item.page) {
       existingByPage.set(item.page, item);
     } else {
       customItems.push(item);
     }
-  }
+  });
 
   // A hand-authored custom item that targets a page's route is a deliberate
   // override: it must keep its own label/visibility instead of being deleted
@@ -470,7 +477,14 @@ export function mergePageNavItems(
   const pageItems = pageDocs.map((doc) => {
     const override = customByHref.get(doc.route);
     if (override) {
-      return { ...override, page: doc.page };
+      // Keep the old page item's children (hand-authored subnav) when an
+      // override replaces it — previously they vanished silently.
+      const existing = existingByPage.get(doc.page);
+      return {
+        ...override,
+        page: doc.page,
+        children: override.children ?? existing?.children ?? [],
+      };
     }
     const existing = existingByPage.get(doc.page);
     return {
@@ -484,10 +498,20 @@ export function mergePageNavItems(
   });
 
   const pageHrefs = new Set(pageItems.map((item) => item.href));
-  return [
+  const merged = [
     ...pageItems,
     ...customItems.filter((item) => !pageHrefs.has(item.href)),
   ];
+  // Restore the user's original order for items that survived, appending
+  // anything new (a page just added) at the end.
+  merged.sort((a, b) => {
+    const ka = a.page || a.href || a.id;
+    const kb = b.page || b.href || b.id;
+    const oa = order.get(ka) ?? Number.MAX_SAFE_INTEGER;
+    const ob = order.get(kb) ?? Number.MAX_SAFE_INTEGER;
+    return oa - ob;
+  });
+  return merged;
 }
 
 export function listExistingPageDocuments(
@@ -533,8 +557,8 @@ function renderManagedLayout(
   const customScriptTag = customScriptHref
     ? `\n    <script type="module" src="${escapeAttr(customScriptHref)}"></script>`
     : "";
-  const fontLinks = /^https:\/\/fonts\.googleapis\.com\//.test(
-    site.design.fontImportUrl ?? "",
+  const fontLinks = /^https?:\/\/fonts\.googleapis\.com\//i.test(
+    (site.design.fontImportUrl ?? "").trim(),
   )
     ? `    <link rel="preconnect" href="https://fonts.googleapis.com" />\n    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />\n    <link rel="stylesheet" href="${escapeAttr(
         site.design.fontImportUrl as string,
@@ -623,8 +647,8 @@ const socialImageUrl = absolute(socialImage);
     {description ? <meta name="twitter:description" content={description} /> : null}
     {socialImageUrl ? <meta name="twitter:image" content={socialImageUrl} /> : null}${faviconLink}${feedLink}
 ${fontLinks}    <link rel="stylesheet" href="/styles/global.css" />
-${customCssLink}
     <link rel="stylesheet" href="/styles/zephus-managed.css" />
+${customCssLink}
     {customHeadHtml ? <Fragment set:html={customHeadHtml} /> : null}
   </head>
   <body>
@@ -1141,9 +1165,12 @@ export function parseSectionsFromSource(raw: string): SectionNode[] {
       } else {
         // Legacy <section> wrapper without Zephus metadata: an editable
         // SectionNode, matching the renderer's parseSections so both parsers
-        // migrate the same tree.
+        // migrate the same tree. Honor a stored data-zephus-id even when the
+        // props payload failed to parse — a fresh id would change bytes on
+        // the first save and break the responsive-CSS anchor.
+        const storedSectionId = dataAttrValue(tag, "data-zephus-id").trim();
         sections.push({
-          id: "b" + Math.random().toString(36).slice(2, 9),
+          id: storedSectionId || "b" + Math.random().toString(36).slice(2, 9),
           type: "section",
           label: `Section ${sections.length + 1}`,
           props: {
@@ -1390,7 +1417,7 @@ function removeManagedPublicFile(publicRoot: string, fileName: string): void {
 }
 
 /** Resolves discovery metadata against the configured deployment base. */
-function resolveAbsoluteHttpUrl(siteUrl: string, value: string): string {
+export function resolveAbsoluteHttpUrl(siteUrl: string, value: string): string {
   if (!value.trim()) return "";
   try {
     const base = new URL(siteUrl);
@@ -1399,11 +1426,35 @@ function resolveAbsoluteHttpUrl(siteUrl: string, value: string): string {
     base.hash = "";
     if (!base.pathname.endsWith("/")) base.pathname += "/";
 
+    // A scheme-less canonical/social value shaped like a host ("example.com/x")
+    // resolved as a RELATIVE path — sitemap loc, RSS link and canonical all
+    // became https://site/example.com/x (a guaranteed 404). Treat bare
+    // host-shaped values as absolute https URLs.
+    const trimmed = value.trim();
+    const hasScheme = /^[A-Za-z][A-Za-z\d+.-]*:/.test(trimmed);
+    const isProtocolRelative = trimmed.startsWith("//");
+    const isHostShaped =
+      !hasScheme &&
+      !isProtocolRelative &&
+      !trimmed.startsWith("/") &&
+      /^[^/\s]+\.[a-z]{2,}([/?#]|$)/i.test(trimmed);
+    const effectiveValue = isHostShaped ? `https://${trimmed}` : trimmed;
+
     const absoluteOrProtocolRelative =
-      /^[A-Za-z][A-Za-z\d+.-]*:/.test(value) || value.startsWith("//");
+      /^[A-Za-z][A-Za-z\d+.-]*:/.test(effectiveValue) ||
+      effectiveValue.startsWith("//");
+    // "/x" is ROOT-relative: it must resolve against the origin, never the
+    // siteUrl's path base ("/blog/") — otherwise every sitemap/RSS/canonical
+    // href gained a bogus base prefix while the published site kept serving
+    // the root path.
     const resolved = absoluteOrProtocolRelative
-      ? new URL(value, base)
-      : new URL(value.replace(/^\/+/, ""), base);
+      ? new URL(effectiveValue, base)
+      : new URL(
+          effectiveValue.startsWith("/")
+            ? effectiveValue
+            : effectiveValue.replace(/^\/+/, ""),
+          effectiveValue.startsWith("/") ? base.origin : base,
+        );
     return resolved.protocol === "http:" || resolved.protocol === "https:"
       ? resolved.href
       : "";
@@ -1521,7 +1572,36 @@ function rssDate(value: string): string {
   return parsed.toUTCString();
 }
 
-function renderRssFeed(
+/** XML-1.0-safe escaping: like escapeHtml plus stripping of C0 control
+ *  characters XML forbids (pasted Word/terminal text carries them; a raw
+ *  \u0000- would make the whole feed invalid for every reader). */
+function escapeXml(value: string): string {
+  // C0 controls stripped individually (no-control-regex).
+  let cleaned = "";
+  for (const char of value) {
+    const code = char.charCodeAt(0);
+    if (
+      code === 0 ||
+      code === 1 ||
+      code === 2 ||
+      code === 3 ||
+      code === 4 ||
+      code === 5 ||
+      code === 6 ||
+      code === 7 ||
+      code === 8 ||
+      code === 11 ||
+      code === 12 ||
+      (code >= 14 && code <= 31)
+    ) {
+      continue;
+    }
+    cleaned += char;
+  }
+  return escapeHtml(cleaned);
+}
+
+export function renderRssFeed(
   siteUrl: string,
   site: SiteDocument,
   docs: PageDocument[],
@@ -1537,15 +1617,15 @@ function renderRssFeed(
       const pubDate = rssDate(doc.publishDate);
       return [
         "    <item>",
-        `      <title>${escapeHtml(doc.title)}</title>`,
-        `      <link>${escapeHtml(link)}</link>`,
-        `      <guid isPermaLink="true">${escapeHtml(link)}</guid>`,
+        `      <title>${escapeXml(doc.title)}</title>`,
+        `      <link>${escapeXml(link)}</link>`,
+        `      <guid isPermaLink="true">${escapeXml(link)}</guid>`,
         doc.metaDescription
-          ? `      <description>${escapeHtml(doc.metaDescription)}</description>`
+          ? `      <description>${escapeXml(doc.metaDescription)}</description>`
           : "",
-        pubDate ? `      <pubDate>${escapeHtml(pubDate)}</pubDate>` : "",
+        pubDate ? `      <pubDate>${escapeXml(pubDate)}</pubDate>` : "",
         doc.author
-          ? `      <dc:creator>${escapeHtml(doc.author)}</dc:creator>`
+          ? `      <dc:creator>${escapeXml(doc.author)}</dc:creator>`
           : "",
         "    </item>",
       ]
@@ -1654,6 +1734,34 @@ function withSiteDefaults(site: SiteDocument): SiteDocument {
     site.shell && typeof site.shell === "object"
       ? { ...defaultShell(siteName, ""), ...site.shell }
       : defaultShell(siteName, "");
+  // A hand-edited site.json with non-string nav fields used to THROW in
+  // renderManagedLayout (label.trim()/safeUrl) and refuse the whole project.
+  if (Array.isArray(shell.navItems)) {
+    const sanitized: NavItem[] = [];
+    for (const item of shell.navItems) {
+      if (typeof item !== "object" || item === null) continue;
+      sanitized.push({
+        ...item,
+        id:
+          typeof item.id === "string"
+            ? item.id
+            : `nav-${Math.random().toString(36).slice(2, 8)}`,
+        label: typeof item.label === "string" ? item.label : "",
+        href: typeof item.href === "string" ? item.href : "#",
+        visible: item.visible !== false,
+        page: typeof item.page === "string" ? item.page : undefined,
+        children: Array.isArray(item.children) ? item.children : [],
+      });
+    }
+    shell.navItems = sanitized;
+  }
+  if (typeof shell.siteTitle !== "string") shell.siteTitle = siteName;
+  if (typeof shell.logoText !== "string") shell.logoText = siteName;
+  if (typeof shell.announcementText !== "string") shell.announcementText = "";
+  if (typeof shell.navCtaLabel !== "string") shell.navCtaLabel = "";
+  if (typeof shell.navCtaHref !== "string") shell.navCtaHref = "#";
+  if (typeof shell.footerHtml !== "string") shell.footerHtml = "";
+  if (typeof shell.customHeadHtml !== "string") shell.customHeadHtml = "";
   return {
     ...site,
     schemaVersion: site.schemaVersion ?? ZEPHUS_SCHEMA_VERSION,
@@ -1746,7 +1854,10 @@ function renderAstroPage(
   const body = renderSections(doc.sections, posts)
     .split("\n")
     .map((line) => (line ? `  ${line}` : line))
-    .join("\n");
+    .join("\n")
+    // Restore real newlines inside html-block raws AFTER the indent (same
+    // sentinel the shared renderer emits) so interior lines never grow.
+    .replace(/\uE000/g, "\n");
   const importPath = pageImportPath(
     projectPath,
     pageRel,
@@ -1804,15 +1915,22 @@ function syncLegacyLayoutNav(
     new RegExp(`<nav\\b${TAG_PATTERN_SOURCE}`, "i"),
   );
   if (navOpen < 0) return;
-  let depth = 1;
+  // Depth counting from AFTER the opener: starting at 1 and re-counting the
+  // opener (depth 2) meant every balanced nav exited with depth 1 and the
+  // replacement NEVER fired — legacy-layout nav labels/visibility/CTAs were
+  // permanently stale (the function was a complete no-op).
+  let depth = 0;
   let index = navOpen;
   const depthRe = new RegExp(`<\\/?nav\\b${TAG_PATTERN_SOURCE}`, "gi");
   depthRe.lastIndex = navOpen;
   let match: RegExpExecArray | null;
-  while (depth > 0 && (match = depthRe.exec(content))) {
+  while (depth >= 0 && (match = depthRe.exec(content))) {
     if (match[0].startsWith("</")) depth -= 1;
     else depth += 1;
-    if (depth === 0) index = depthRe.lastIndex;
+    if (depth === 0) {
+      index = depthRe.lastIndex;
+      break;
+    }
   }
   if (depth !== 0) return;
   const updated = content.slice(0, navOpen) + navBlock + content.slice(index);
@@ -2498,7 +2616,13 @@ export function writePageDocument(
     // The file watcher (open-page external-change detection) must not treat
     // this save as an external edit.
     markSelfWritten(nextDoc.page);
-    syncSiteShellOutputs(projectPath, site, pagesDir);
+    // Pass the ON-DISK site as previousSite so the legacy-layout backup only
+    // fires on a genuine legacy -> managed transition. Without it, every
+    // first save committed a permanent-stale BaseLayout.zephus-legacy-backup.
+    const onDiskSite = readJsonFile<SiteDocument>(
+      siteDocumentFile(projectPath),
+    );
+    syncSiteShellOutputs(projectPath, site, pagesDir, undefined, onDiskSite);
     // This page's own metadata may have changed what other pages list.
     refreshPostListPages(projectPath, pagesDir, site, nextDoc.page);
     // The returned site MUST reflect what lands on disk (fresh generatedAt).

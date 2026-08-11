@@ -63,8 +63,10 @@ node_modules/
 # generated types
 .astro/
 # environment variables
-.env
-.env.production
+# .env.local is loaded by Vite/Astro with HIGHEST priority — it must be
+# ignored too, or "Commit All" stages local secrets.
+.env*
+!.env.example
 # macOS
 .DS_Store
 # logs
@@ -725,7 +727,7 @@ function projectDef(): ThemeDef {
             stats([
               ["2k+", "Happy customers"],
               ["4.9/5", "Average rating"],
-              ["24/7", "Support"],
+              ["Fast", "Support"],
             ]),
           ]),
           band("Social proof", [
@@ -852,11 +854,13 @@ function docsDef(): ThemeDef {
             heading("Getting Started", 1),
             paragraph("Get up and running in a few minutes.", "lead"),
             heading("1. Install", 2),
-            paragraph("Describe the first step here."),
+            paragraph("Create an account and open your first project."),
             heading("2. Configure", 2),
-            paragraph("Explain any setup the reader needs to do."),
+            paragraph("Install the CLI with npm and connect your repository."),
             heading("3. Run", 2),
-            paragraph("Show them what success looks like."),
+            paragraph(
+              "Ship your first page and watch the preview update live.",
+            ),
           ]),
         ],
       },
@@ -919,7 +923,7 @@ function blogDef(siteName: string): ThemeDef {
         navVisible: false,
         metaDescription:
           "The first post on the blog, and a place to start writing.",
-        publishDate: "2025-01-15",
+        publishDate: new Date().toISOString().slice(0, 10),
         author: "Site Owner",
         sections: [
           band("Article", [
@@ -953,10 +957,10 @@ function portfolioDef(): ThemeDef {
       ),
     }),
     shell: {
-      logoText: "Your Name",
+      logoText: "Alex Chen",
       navCtaLabel: "Contact",
       navCtaHref: "mailto:hello@example.com",
-      footerHtml: "<p>&copy; Your Name. Built with Zephus.</p>",
+      footerHtml: "<p>&copy; Alex Chen. Built with Zephus.</p>",
     },
     pages: [
       {
@@ -965,7 +969,7 @@ function portfolioDef(): ThemeDef {
         navLabel: "Work",
         sections: [
           hero([
-            heading("Hi, I'm Your Name", 1),
+            heading("Hi, I'm Alex", 1),
             paragraph(
               "I design and build things for the web. Here's a selection of my recent work.",
               "lead",
@@ -977,18 +981,18 @@ function portfolioDef(): ThemeDef {
             heading("Selected work", 2),
             feature(
               "🎨",
-              "Project One",
-              "What it is, your role, and the outcome.",
+              "Tidewatch",
+              "A public tide and surf-forecast dashboard I designed and built end to end.",
             ),
             feature(
               "🛠️",
-              "Project Two",
-              "What it is, your role, and the outcome.",
+              "Fable",
+              "An open-source storytelling toolkit; I led the design system.",
             ),
             feature(
               "📐",
-              "Project Three",
-              "What it is, your role, and the outcome.",
+              "Fieldnotes",
+              "A travel journal PWA; my role covered the offline sync engine.",
             ),
           ]),
           band("Reviews", [
@@ -1148,7 +1152,7 @@ function saasDef(): ThemeDef {
               "lead",
             ),
             button("Try it free", "/pricing"),
-            button("See features", "#features", "secondary"),
+            button("See pricing", "/pricing", "secondary"),
             image("/assets/images/placeholder-wide.svg", "Apply dashboard"),
           ]),
           band("Features", [
@@ -1194,7 +1198,7 @@ function saasDef(): ThemeDef {
               "/mo",
               ["1 project", "Community support"],
               "Get started",
-              "#",
+              "/contact",
             ),
             pricing(
               "Pro",
@@ -1202,7 +1206,7 @@ function saasDef(): ThemeDef {
               "/mo",
               ["Unlimited projects", "Automations", "Priority support"],
               "Choose Pro",
-              "#",
+              "/contact",
             ),
             pricing(
               "Business",
@@ -1210,7 +1214,7 @@ function saasDef(): ThemeDef {
               "/mo",
               ["Everything in Pro", "SSO & roles", "Dedicated support"],
               "Choose Business",
-              "#",
+              "/contact",
             ),
           ]),
           band("FAQ", [
@@ -1283,7 +1287,7 @@ function restaurantDef(): ThemeDef {
               "Tue–Thu: 5pm – 10pm",
               "Fri–Sat: 5pm – 11pm",
               "Sunday: 11am – 9pm",
-              "123 Garden Street, Your City",
+              "123 Garden Street, Portland, OR",
             ]),
           ]),
         ],
@@ -1348,7 +1352,7 @@ function eventDef(): ThemeDef {
           hero([
             heading("DevConf 2026", 1),
             paragraph(
-              "One day, two stages, and the people building the future of the web. October 9 · Your City.",
+              "One day, two stages, and the people building the future of the web. October 9 · Portland, OR.",
               "lead",
             ),
             button("Register now", "/register"),
@@ -1358,12 +1362,12 @@ function eventDef(): ThemeDef {
           band("Speakers", [
             heading("Featured speakers", 2),
             feature("🎤", "Jordan Lee", "Principal Engineer, Northwind"),
-            feature("🎤", "Sam Patel", "Creator of OpenStack UI"),
+            feature("🎤", "Sam Patel", "Principal Engineer, Fable Systems"),
             feature("🎤", "Riya Chen", "Design Lead, Lumen"),
           ]),
           band("CTA", [
             cta(
-              "Join us in June",
+              "Join us in October",
               "Seats are limited — grab yours today.",
               "Register",
               "/register",

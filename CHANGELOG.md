@@ -5,23 +5,160 @@
 
 | <img height="20" src="https://raw.githubusercontent.com/BurntToasters/bcls/main/media/windows.png" /> Windows                                                                                                              | <img height="20" src="https://raw.githubusercontent.com/BurntToasters/bcls/main/media/mac.png" /> macOS                 | <img height="20" src="https://raw.githubusercontent.com/BurntToasters/bcls/main/media/linux.png" /> Linux                                                                                                                                         |
 | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :---------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **EXE:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.4/Zephus-Windows-x64.exe) / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.4/Zephus-Windows-arm64.exe) | **[Universal DMG](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.4/Zephus-MacOS-universal.dmg)** | **AppImage:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.4/Zephus-Linux-x86_64.AppImage) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.4/Zephus-Linux-arm64.AppImage) --> |
-|                                                                                                                                                                                                                            | **[Universal ZIP](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.4/Zephus-MacOS-universal.zip)** | **DEB:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.4/Zephus-Linux-amd64.deb) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.4/Zephus-Linux-arm64.deb) -->                 |
-|                                                                                                                                                                                                                            |                                                                                                                         | **RPM:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.4/Zephus-Linux-x86_64.rpm) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.4/Zephus-Linux-aarch64.rpm) -->              |
-|                                                                                                                                                                                                                            |                                                                                                                         | **Flatpak:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.4/Zephus-Linux-x86_64.flatpak) <!-- / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.4/Zephus-Linux-aarch64.flatpak) -->  |
-
+| **EXE:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.5/Zephus-Windows-x64.exe) / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.5/Zephus-Windows-arm64.exe) | **[Universal DMG](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.5/Zephus-MacOS-universal.dmg)** | **AppImage:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.5/Zephus-Linux-x86_64.AppImage) / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.5/Zephus-Linux-arm64.AppImage) |
+|                                                                                                                                                                                                                            | **[Universal ZIP](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.5/Zephus-MacOS-universal.zip)** | **DEB:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.5/Zephus-Linux-amd64.deb) / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.5/Zephus-Linux-arm64.deb)                 |
+|                                                                                                                                                                                                                            |                                                                                                                         | **RPM:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.5/Zephus-Linux-x86_64.rpm) / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.5/Zephus-Linux-aarch64.rpm)              |
 > [!IMPORTANT]
 > Update integrity: updates are downloaded over HTTPS and their SHA-512 checksum (from the release feed) is verified by the updater before install. The `.asc` files are GPG signatures you can verify manually with my GPG Public Key: https://tuxedo.rosie.run/GPG/BurntToasters_0xF2FBC20F_public.asc
 >
 > ⚠️ The updater does NOT currently verify a code signature or GPG signature on the downloaded artifacts — an attacker who could rewrite the GitHub release feed would defeat the SHA-512 check. Until release signing is enforced end-to-end (Windows Authenticode `publisherName` + macOS codesign verification + signed feed metadata), treat the update channel as HTTPS-trust only.
 >
-> ⚠️ Arm64 Linux Binaries are NOT available at the moment. The logic is setup in the repo in case people would like to build their own :)
+> Arm64 Linux binaries (AppImage, DEB, RPM) are built by the release pipeline.
 
 ### ℹ️ Enjoying Zephus? Consider [❤️ Supporting Me! ❤️](https://rosie.run/support)
 
 ---
 
-## Changes in `0.1.0 (unreleased):`
+## Changes in `0.1.0-beta.5:`
+
+### ✨ Welcome to the Zephus 0.1.0 beta
+
+Zephus is a **local-first visual editor for Astro sites** — no coding required to build and publish a real static site. Everything runs on your machine; your project is a normal Astro repository you can open in any editor, commit to git, and host anywhere.
+
+**What you get:**
+
+- **10 starter themes** (personal, portfolio, SaaS, blog, restaurant, event, and more) — pick one, and Zephus scaffolds the whole site, installs dependencies, and opens it ready to edit.
+- **A true visual editor** — drag blocks, edit text inline, reorder sections, style with the inspector (colors, fonts, spacing, responsive viewports, and mobile/tablet previews).
+- **22 block types** — headings, text, buttons, images, galleries, columns, features, pricing, testimonials, accordions, stats, post lists, embeds, video, raw HTML, and more.
+- **Code mode with CodeMirror** — full source access; hand-edit any page and Zephus safely detaches it from visual mode instead of ever overwriting your code.
+- **A real preview window** — run the actual Astro dev server and see your site live in its own window.
+- **Publish** — one-click production build, output folder reveal, and a Git panel for commit/push/pull with first-run guidance.
+- **Crash-proof** — unsaved edits are continuously drafted and restored after a crash; page/site/settings changes prompt before you lose them; every destructive action is confirmed.
+- **Find & Replace across the whole site**, an asset manager with drag-drop import, per-page SEO settings, a 404 page on every new site, and design tokens (accent, fonts, radius, shadows) that flow into the built site.
+
+**Safety promises:**
+
+- **Your hand-authored code is never silently overwritten.** Pages you edit outside Zephus are detected and treated as hand-authored; metadata edits, renames, duplicates and reattaches all preserve hand-written bytes.
+- **What you see is what gets built.** The canvas and the published site share one renderer; parser parity between the editor and the Astro build is continuously tested.
+- **Nothing ships that breaks the build.** The test gate now runs 790+ unit tests, the runtime smoke test, a real `astro build` of every theme, and a coverage floor on every change.
+
+**Known limitations (beta):**
+
+- Updates are verified by HTTPS + SHA-512 from the release feed, but **code signatures are not yet enforced end-to-end** (Windows Authenticode, macOS notarization, and signed feed metadata are on the roadmap).
+- The Git panel is commit/push/pull only — branch management and remote setup are CLI-side for now.
+- Google Fonts load in the preview and the built site, but not in the editor canvas (CSP).
+- Linux arm64 builds ship, but are the least-tested platform.
+
+**Release checklist (this beta):** the pipeline now publishes drafts automatically and fails loudly when credentials are missing — build with `npm run release:beta:win/mac/linux`, verify the draft is published + tagged, and confirm the download links below match the released `v0.1.0-beta.5` artifacts.
+
+---
+
+### Audit round 14 — layout/feed correctness, inline editor, Windows paths, theme copy
+
+**Legacy layouts (fixed):**
+- **The legacy-layout nav sync was a complete NO-OP** — a depth-counting off-by-one (the opener was counted twice) made every balanced `<nav>` exit with depth 1, so the replacement never ran: labels, visibility and CTAs were permanently stale for legacy-mode projects. The depth math is fixed and verified for nested navs.
+- **User nav ordering is now preserved** across syncs (previously rebuilt alphabetically, discarding editor reorders); a custom override keeps the original page item's children instead of dropping them.
+- **A hand-edited site.json with non-string nav/shell fields crashed the whole project open** — `withSiteDefaults` now coerces every field.
+- The Google Fonts link was dropped for `HTTPS://` or space-padded URLs (trim + case-insensitive); **custom.css now loads AFTER managed.css** so user overrides actually win; nav-link color no longer overrides `.button`-styled nav items (`:where()`).
+
+**Feeds & SEO (fixed):**
+- **XML-forbidden control characters** (from pasted Word/terminal text) passed raw into rss.xml, invalidating the whole feed for every reader — now stripped.
+- **noindex and 404 pages were advertised in post lists** (and the derived feed/sitemap) — filtered from the index; detached pages' stale sidecar metadata no longer feeds listings either.
+- **A hand-authored rss.xml was preserved but never advertised** when no dated posts existed — the layout now links it.
+- **A scheme-less canonicalUrl/socialImage (`example.com/x`) resolved as a relative path** — sitemap loc, RSS link and canonical all became `https://site/example.com/x` (guaranteed 404). Bare host-shaped values now resolve as absolute https; root-relative routes (`/posts/x`) resolve against the origin, never a base-path prefix.
+
+**Inline editor (fixed):**
+- **Nested links silently vanished on render**: select text inside an existing link and apply a new one — `createLink` nests anchors, the stored prop carried invalid nested markup, and the renderer dropped the inner link. The read-back now mirrors the render-side guard (drop the tag, keep the text).
+- **Dragging a block while inline-editing stuck the editor** (canvas re-render replaced the focused node; blur never fired; every click no-op'd). `renderCanvas` now finishes an active session first.
+- **IME composition on blur committed partial candidate text** — finish is deferred until composition ends.
+- **text/html-only pastes fused lines** (`a<br>b` → "ab") — br/block boundaries now become newlines.
+- **Open-and-close of the inline editor on a whitespace-padded value pushed a phantom undo** — the baseline is trimmed.
+
+**Windows (fixed by inspection):**
+- **taskkill was invoked with an empty-string argument** (`hard ? "/f" : ""`) — the graceful kill always failed (and spawnSync does not throw, so the fallback never ran); the args array is now conditional and the status is checked.
+- **The Node picker dialog dropped its options** when the main window was gone (the exact undefined-parent anti-pattern main.ts works around) — branches properly; the npm.cmd path quoting now escapes `%` (cmd.exe expands `%VAR%` inside quotes).
+
+**Themes (fixed):**
+- SaaS pricing CTAs pointed at `/contact` — a page that does not exist (3 dead links on the conversion page); retargeted to `/pricing`. The hero's `#features` anchor had no target — now "See pricing".
+- The Project theme claimed "24/7 Support" while its contact page said "one business day" — aligned.
+- The Docs theme's getting-started page contained literal instruction stubs ("Describe the first step here.") — real copy now.
+- Portfolio placeholder identity ("Your Name", identical "Project One/Two/Three" blurbs) — concrete name and distinct projects; Restaurant/Event "Your City" placeholders and the invented "OpenStack UI" credential fixed.
+
+**Cleanup:** removed the dead preview-frame iframe + its toggles and CSS, orphaned git/properties/asset/legacy-start rules, the dead 'searching' modal state, and the never-present home-screen button wiring; the undefined `--font-sans` variable is now defined.
+
+### Audit round 13 — release readiness
+
+**Release pipeline (fixed):**
+- **The pipeline ended with assets in a GitHub DRAFT — updaters threw "No published versions on GitHub" and the CHANGELOG download links 404'd, all with green exits.** `gpg-sign.js` now publishes the draft (and creates the tag) on the final non-arch run.
+- **`GH_TOKEN` missing silently skipped the signature upload with "✓ COMPLETE"** — a release-gate script now fails the pipeline hard when GH_TOKEN, the documented GPG key, or (on Windows) CSC_LINK are missing.
+- **`test:all` never ran coverage, the runtime smoke, or the Astro builds** — all wired in with real exit codes; `test-astro-build` now asserts actual `.html` output, not source counts.
+- **Alpha/rc versions got no channel metadata** (their `latest.yml` was served to stable users); arch-less artifacts were signed twice / checksum-overwritten. Both fixed.
+- **crawl-licenses silently dropped bundled-renderer attributions** when the esbuild metafile was missing — strict mode fails; license rows derive URLs from the repository field.
+- Window size/position now persists between launches; `nsis.publisherName` set (Unknown Publisher gone, updater signature checks possible); hardened runtime + entitlements moved into the base mac config; dev artifacts (`*.map`, test mocks, fixtures) excluded from the asar; **`--dev` on a shipped binary no longer enables devTools or disables updates**.
+
+**Beta-blocking UX (fixed):**
+- **A failed dependency install stranded the user on the home screen** with the site never opened or recorded — the site now opens anyway with a retry hint.
+- **Git's raw "Please tell me who you are" on the first commit** — the panel now explains the two `git config` commands to run.
+- **The Node check ran AFTER the folder picker** (wasted step) — reordered; the create flow also surfaces a clear "previous scaffold in this folder" message on retry.
+- **Installs had no Cancel** (30-min worst case with no abort) — added, killing the whole process tree.
+- **Publish streamed no logs** (a 60s+ first build read as a hang) — build output now streams to the Dev Server Log; the success modal only claims the folder opened when it did.
+- **The Preview button showed no starting state** — "Starting…" while the server boots; the dev log clears between sessions.
+- **macOS Cmd+W → dock reopen left the preview dead** (services torn down on window-all-closed) — cleanup only happens on real quit.
+- **A failed renderer load left an invisible window** — the error page's Reload button now actually works (CSP-safe) and renderer crashes reload with a guard.
+
+**Content/details (fixed):**
+- Event theme CTA said "June" under an "October 9" hero — aligned; blog scaffold post now dates at creation (was 1.5 years stale); SaaS pricing CTAs pointed at "#" — now `/contact`.
+- `.env.local` (loaded by Vite with highest priority) is git-ignored — previously "Commit All" staged local secrets; the legacy-layout backup file stopped appearing in every first commit; `--dev`/version hardcodes removed from the About pane and splash (the splash's "20 schemas" was stale at 22).
+- Docs corrected: false Ctrl+H/Ctrl+Enter code-mode shortcuts, port 3000→4321, wrong settings path, mobile-testing devtools claim, arm64 Linux availability.
+
+### Audit round 12 — parser parity, undo baselines, panels, dual settings, packaging, build gates
+
+**Parser parity (fixed — all previously caused silent detaches or file rewrites on identical content):**
+- **Nested-element text lost spaces**: the renderer trimmed text inside the recursive walk, so `<p>before <span> after</span></p>` stored "before after" while the main parser stored "before  after". Trim now happens once at the top level only.
+- **Raw html blocks drifted byte-by-byte per save**: the serializer re-indents every interior line by 2 spaces; without dedenting on parse, each save cycle added 2 more. Raws are now dedented on parse; top-level `<style>` handling matches the main parser (nested styles inside sections are preserved as html blocks instead of being dropped — previously hand-authored CSS vanished on the first visual save).
+- **Legacy section labels diverged** (`Section N` vs `Main Content`); trailing loose blocks now label like the main parser, and legacy wrappers count like it too.
+- **A stored `data-zephus-id` on a section with a broken props payload was discarded** (fresh id → byte change + lost responsive-CSS anchor). The main parser now honors it.
+- **Post-list blocks with an invalid publishDate** made the renderer emit `<time datetime="garbage">` while main emitted nothing — zero-edit code saves detached. The renderer applies the same validator now.
+- **`maxHeadingLevel < 6` clamped the renderer's serialized output but not the build's** (main emits up to level 6) — zero-edit detaches again. Serialization now matches the build; the canvas still clamps.
+
+**Undo / dirty state (fixed):**
+- **Page saves refresh the site baseline with a fresh `generatedAt`; every snapshot captured before the save differed ONLY in that timestamp**, so any later undo staged the old site as a spurious "Reverted a design change", marked the site dirty, and a save wrote back the pre-toggle site. Site comparisons now ignore `generatedAt`.
+- **Undoing back to the last-saved tree left a phantom dirty flag** (stale dot, redundant draft write, spurious unsaved-work prompt). `doUndo`/`doRedo` compare the restored serialization against the saved source.
+- **The nav eye-toggle swapped the site baseline under a staged site edit** (silently rebasing `pendingSiteDocument` — the next site save reverted the toggle). Guarded like reloadPages.
+- Re-staged undo snapshots now preserve the editor kind (shell/design) for crash drafts and the conflict gate.
+- CodeMirror edits now carry a change label; the summary's first-label dedupe no longer masks later different labels.
+
+**Panels (fixed):**
+- **NavList entries were plain `<li>` — clicking a nav item or pressing Enter did NOTHING** while they looked navigable (cursor, hover, href). Entries are now real buttons that open the page; custom page-less items are disabled with an explanation. The label/route layout splits so a long label can't clip the route.
+- The nav list is cleared on project close; the 404 page's eye toggle is disabled (was enabled-but-inert); PageList/Layers missing `type="button"`; Layers active state exposed via `aria-current`.
+- The dirty dot lied after switching away from a dirty page — now derives from real state per page.
+
+**Dual settings UIs (fixed):**
+- **The start-tab "Save"/"Reset" ignored the write result** — a read-only config dir printed "Settings saved." and applied values that never persisted. Both now check and surface errors like the modal.
+- **Modal reset left the tab's Node row frozen on "Checking Node.js…"** and modal save left the tab's node status stale — both now refresh it.
+- **The modal seeded from disk while the tab holds an unsaved draft** — saving then wiped the tab's edits. It now seeds from the last applied settings.
+
+**Design system (fixed):**
+- **Staging design with zero font changes silently stripped the Google Fonts link from the build** (themed sites lost their font). The existing `fontImportUrl` is preserved when no Google spec is chosen.
+- **`var(--accent)` in the accent field is rejected** (it resolved to nothing — every link/CTA lost its brand color).
+- Empty custom font stacks no longer emit an invalid CSS variable (fall back to the current stack).
+
+**Find/Replace + Asset browser (fixed):**
+- **Typing in Find while a search was in flight could drive Replace All with wrong counts and a wrong page set** (the stale response passed the seq guard). Query edits and case/whole-word toggles now invalidate in-flight searches.
+- The "Search text changed" hint compared a trimmed query against the raw input (false hint forever for trailing-space queries); Solid roots for both modals are now disposed on close (previously leaked per open); asset select invalidates the cached data URL; deletes no longer leave the canvas showing a dead image; the asset previews reuse the canvas cache (duplicated full-file base64 fetches eliminated); overlapping refreshes are seq-guarded; Esc mid-drag no longer leaves a permanent "dragover" highlight.
+
+**Module state (fixed):** a queued project open survived a thrown open (next open silently opened a project never clicked); a stale home-draft resume survived a failed enter; inspector-latch/selection echoes reset on close; the recovery card refreshes after a silent draft resume; page-only dirty now has a Discard Page action (was Save All only); the dev-server log clears between projects; the divergence note no longer suggests force-push.
+
+**Packaging (fixed):**
+- `nsis.publisherName` set (installers showed "Unknown Publisher"; the updater skipped signature checks entirely); hardened runtime + entitlements moved into the base config so `build:mac:*` produces Gatekeeper-valid builds (notarization stays release-only); dev artifacts excluded from the asar (`*.map`, test mocks, fixtures); **`--dev`/`NODE_ENV=development` on a shipped binary no longer enables devTools or disables the auto-updater**.
+
+**Build gates (fixed):**
+- **`test:all` never ran coverage, the runtime smoke, or the Astro builds** — the renderer could fail to boot while CI stayed green. All three are now wired in (with a real exit-code gate).
+- **`test:astro-build` counted SOURCE files, not build output** — a zero-HTML build passed. It now walks `dist` for `.html` files.
+- **gpg-sign silently skipped the GitHub upload when `GH_TOKEN` was unset** and printed "✓ COMPLETE" with a green exit — release pipelines now fail hard without a token. Alpha/rc versions now get channel metadata (previously their `latest.yml` was served to the stable feed). Arch-less artifacts are no longer signed twice / checksum-overwritten.
+- **crawl-licenses silently dropped bundled-renderer attributions** when the esbuild metafile was missing — strict mode fails the compile; license rows now derive a source URL from the repository field.
+
+**CSS (fixed):** the start view was unreadable in light theme (dark glass + dark token text) — sidebar, recents, welcome, about, theme and status cards now switch surfaces; workspace-tab active, dirty project name, kbd, pills, hidden-page and table hovers got light variants; theme cards regained a keyboard focus indicator (the global one was removed with `outline: none`); settings selects finally have styling.
 
 ### Audit round 11 — save round-trips, IPC security, lifecycle, performance, updater, browser fidelity
 

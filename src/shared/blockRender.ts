@@ -235,6 +235,9 @@ function responsiveCssDeclarations(
   return css.length ? css.join(";") : null;
 }
 
+/** Shown to the indent step so a multi-line html raw stays one logical line. */
+export const HTML_RAW_LINE_SENTINEL = "\uE000";
+
 /** Media-query rules for responsive block/section styles (build + editor serialize). */
 /** Escapes an attribute value for use inside a CSS attribute selector
  *  string. HTML escaping (escapeAttr) must NOT be used here: `<style>` is a
@@ -440,7 +443,11 @@ export function renderBlockHtml(
       if (forCanvas && options.sanitizeHtmlForCanvas) {
         return options.sanitizeHtmlForCanvas(block.raw ?? "");
       }
-      return block.raw ?? "";
+      // The build serializers indent every body line (+2). Without shielding,
+      // a multi-line raw html block grew 2 spaces per save cycle forever (and
+      // reparse kept the grown bytes). Sentinel the raw's newlines so the
+      // indent treats it as ONE line; the indent step restores real newlines.
+      return (block.raw ?? "").replace(/\n/g, HTML_RAW_LINE_SENTINEL);
     case "feature":
       return `<div${structuralCommon(block, "zephus-feature", options)}><div class="zephus-feature-icon">${plainTextToHtml(
         block.props["icon"] ?? "★",
@@ -480,7 +487,15 @@ export function renderBlockHtml(
       return `<div${structuralCommon(block, "zephus-stats", options)}>${items}</div>`;
     }
     case "pricing": {
-      const features = splitLines(block.props["features"] ?? "")
+      const rawFeatures = (block.props["features"] ?? "").trim();
+      if (!rawFeatures && forCanvas) {
+        return `<div${structuralCommon(
+          block,
+          "zephus-pricing",
+          options,
+        )}><div class="canvas-empty">No features yet. Add them in Properties.</div></div>`;
+      }
+      const features = splitLines(rawFeatures)
         .map((f) => `<li>${richTextToHtml(f)}</li>`)
         .join("");
       const cta = block.props["ctaText"]

@@ -66,7 +66,7 @@ export function targetCurrentValue(
   target: InlineEditTarget,
 ): string {
   const raw = block.props[target.prop] ?? "";
-  if (target.lineIndex === undefined) return raw;
+  if (target.lineIndex === undefined) return raw.trim();
   const line = splitLines(raw)[target.lineIndex] ?? "";
   if (!target.pairSide) return line;
   const [left, right] = splitPair(line);
@@ -362,6 +362,8 @@ export function createInlineEditController(deps: InlineEditDeps) {
       el.removeEventListener("blur", onBlur);
       el.removeEventListener("keydown", onKeydown);
       el.removeEventListener("paste", onPaste);
+      el.removeEventListener("compositionstart", onCompositionStart);
+      el.removeEventListener("compositionend", onCompositionEnd);
       toolbar?.element.removeEventListener("focusout", onToolbarFocusOut);
       toolbar?.destroy();
     };
@@ -406,13 +408,37 @@ export function createInlineEditController(deps: InlineEditDeps) {
       deps.handlePlainTextPaste(event);
     };
     // Focus moving into the format toolbar is still part of this edit session.
+    // Clicking away MID-COMPOSITION (CJK): committing the session would store
+    // the partial/cancelled candidate text. Defer the finish until the
+    // composition ends.
+    let composing = false;
+    const onCompositionStart = (): void => {
+      composing = true;
+    };
+    const onCompositionEnd = (): void => {
+      composing = false;
+    };
     const onBlur = (event: FocusEvent): void => {
       const next = event.relatedTarget;
       if (toolbar && next instanceof Node && toolbar.element.contains(next)) {
         return;
       }
+      if (composing) {
+        // The composition's own blur will follow; schedule the finish after
+        // it ends.
+        el.addEventListener(
+          "compositionend",
+          () => {
+            if (isInlineEditing) finish();
+          },
+          { once: true },
+        );
+        return;
+      }
       finish();
     };
+    el.addEventListener("compositionstart", onCompositionStart);
+    el.addEventListener("compositionend", onCompositionEnd);
     const onKeydown = (event: KeyboardEvent): void => {
       // IME composition (CJK etc.): Enter confirms a candidate and Esc
       // cancels it — neither must finish/cancel the edit session mid-

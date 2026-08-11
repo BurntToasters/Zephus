@@ -13,6 +13,8 @@ import { ensureVisualSchema } from "./schema";
 const execFileAsync = promisify(execFile);
 
 export interface PublishResult extends OperationResult {
+  /** True when the output folder was actually opened in the file manager. */
+  revealed?: boolean;
   outputDir?: string;
 }
 
@@ -25,6 +27,7 @@ let activeBuild: Promise<PublishResult> | null = null;
 export function buildAndReveal(
   projectPath: string,
   outDir: string,
+  onBuildLog?: (chunk: string) => void,
 ): Promise<PublishResult> {
   if (typeof projectPath !== "string" || !projectPath) {
     return Promise.resolve({ ok: false, error: "Invalid project path." });
@@ -37,7 +40,7 @@ export function buildAndReveal(
       error: "A build is already running. Wait for it to finish.",
     });
   }
-  activeBuild = runBuild(projectPath, outDir);
+  activeBuild = runBuild(projectPath, outDir, onBuildLog);
   void activeBuild.finally(() => {
     if (activeBuild) activeBuild = null;
   });
@@ -47,6 +50,7 @@ export function buildAndReveal(
 async function runBuild(
   projectPath: string,
   outDir: string,
+  onBuildLog?: (chunk: string) => void,
 ): Promise<PublishResult> {
   try {
     // Astro builds whatever .astro files are on disk. Refresh managed pages
@@ -70,12 +74,15 @@ async function runBuild(
       projectPath,
     );
     try {
-      await execFileAsync(npm.command, npm.args, {
+      // Stream output so a long first build does not read as a hang
+      // (previously the status bar sat on "Building…" with zero feedback).
+      const { stdout } = await execFileAsync(npm.command, npm.args, {
         cwd: projectPath,
         windowsHide: true,
         maxBuffer: 100 * 1024 * 1024,
         env: { ...env, FORCE_COLOR: "0" },
       });
+      onBuildLog?.(stdout);
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       // A maxBuffer blowout means the build produced a huge amount of log
@@ -94,10 +101,12 @@ async function runBuild(
       outDir,
       "dist",
     ).absolute;
-    shell.openPath(output).catch(() => {
-      /* best-effort */
-    });
-    return { ok: true, outputDir: output };
+    const openError = await shell.openPath(output);
+    return {
+      ok: true,
+      outputDir: output,
+      revealed: !openError,
+    };
   } catch (error) {
     log.error("Publish (astro build) failed", error);
     const message =

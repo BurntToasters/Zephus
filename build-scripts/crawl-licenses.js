@@ -31,7 +31,23 @@ function packageNameOf(key) {
  * they are devDependencies.
  */
 function bundledRendererPackages() {
-  if (!fs.existsSync(RENDERER_META)) return new Set();
+  if (!fs.existsSync(RENDERER_META)) {
+    // A stale/missing metafile silently dropped every bundled-renderer
+    // attribution (fresh CI container, cleared tmp). During a RELEASE run
+    // that is a licensing failure, not a warning — but `npm run u` (update +
+    // test) must not fail because a build artifact is missing.
+    if (
+      process.env.CRAWL_LICENSES_STRICT === '1' &&
+      process.env.RELEASE_PIPELINE === '1'
+    ) {
+      console.error(
+        '✗ FATAL: renderer esbuild metafile missing (' + RENDERER_META + '). ' +
+          'Run compile:renderer first.',
+      );
+      process.exit(1);
+    }
+    return new Set();
+  }
   try {
     const meta = JSON.parse(fs.readFileSync(RENDERER_META, 'utf8'));
     const names = new Set();
@@ -54,7 +70,14 @@ function normalizeEntry(data, fallbackParents) {
   // /Users/dev/.../node_modules/x/LICENSE) — meaningless in the packaged app;
   // prefer a real URL and drop the raw path entirely.
   const url = data.licenseUrl || data.licenseFile || '';
-  const licenseUrl = /^[a-z][a-z0-9+.-]*:\/\//i.test(url) ? url : '';
+  let licenseUrl = /^[a-z][a-z0-9+.-]*:\/\//i.test(url) ? url : '';
+  // license-checker rarely emits licenseUrl; derive a real source link from
+  // the repository field instead of leaving rows with no link at all.
+  if (!licenseUrl && typeof data.repository === 'string' && data.repository) {
+    const repo = data.repository.trim();
+    const https = repo.startsWith('git+') ? repo.slice(4) : repo;
+    if (/^https?:\/\//i.test(https)) licenseUrl = https.replace(/\.git$/i, '');
+  }
   return {
     licenses: data.licenses || 'Unknown',
     repository: data.repository || '',

@@ -466,6 +466,18 @@ interface ProductionLicensesResult {
   error?: string;
 }
 
+interface RepoSettings {
+  schemaVersion: number;
+  editorRules: Record<string, unknown>;
+}
+
+interface UpdaterStatusPayload {
+  status: string;
+  version?: string;
+  percent?: number;
+  error?: string;
+}
+
 interface ZephusApi {
   openFolderDialog(): Promise<string | null>;
   chooseNewSiteFolder(): Promise<string | null>;
@@ -660,7 +672,13 @@ interface ZephusApi {
   publish(
     projectPath: string,
     outDir: string,
-  ): Promise<{ ok: boolean; outputDir?: string; error?: string }>;
+  ): Promise<{
+    ok: boolean;
+    outputDir?: string;
+    revealed?: boolean;
+    error?: string;
+  }>;
+  onPublishLog(listener: (chunk: string) => void): () => void;
   revealOutputFolder(
     projectPath: string,
     outDir: string,
@@ -669,12 +687,13 @@ interface ZephusApi {
   installDependencies(
     projectPath: string,
   ): Promise<{ ok: boolean; error?: string }>;
+  cancelInstall(): Promise<OperationResult>;
   onInstallLog(callback: (chunk: string) => void): () => void;
   onPreviewLog(callback: (chunk: string) => void): () => void;
-  checkForUpdates(): Promise<unknown>;
-  downloadUpdate(): Promise<unknown>;
-  cancelUpdateDownload(): Promise<unknown>;
-  installUpdate(): Promise<unknown>;
+  checkForUpdates(): Promise<UpdaterStatusPayload>;
+  downloadUpdate(): Promise<UpdaterStatusPayload>;
+  cancelUpdateDownload(): Promise<OperationResult>;
+  installUpdate(): Promise<OperationResult>;
   /** Cached updater status from main — closes the startup-check race. */
   getLastUpdaterStatus(): Promise<{
     status: string;
@@ -687,14 +706,7 @@ interface ZephusApi {
   getNodeStatus(): Promise<NodeCheckResult>;
   pickNodePath(): Promise<NodeCheckResult>;
   setNodePath(customPath: string | null): Promise<NodeCheckResult>;
-  onUpdaterStatus(
-    callback: (data: {
-      status: string;
-      version?: string;
-      percent?: number;
-      error?: string;
-    }) => void,
-  ): () => void;
+  onUpdaterStatus(callback: (data: UpdaterStatusPayload) => void): () => void;
 }
 
 interface Window {

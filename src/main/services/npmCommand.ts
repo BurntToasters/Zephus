@@ -30,7 +30,9 @@ export function npmCommand(
 
 function quoteCmdArg(value: string, forceQuote = false): string {
   if (!forceQuote && /^[A-Za-z0-9_./:=+-]+$/.test(value)) return value;
-  return `"${value.replace(/"/g, '""')}"`;
+  // cmd.exe expands %VAR% even inside double quotes — a path containing % is
+  // corrupted before the command runs. Doubling escapes it.
+  return `"${value.replace(/"/g, '""').replace(/%/g, "%%")}"`;
 }
 
 function pathEnvKey(env: NodeJS.ProcessEnv): string {

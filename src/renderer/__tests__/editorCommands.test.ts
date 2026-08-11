@@ -130,4 +130,24 @@ describe("editorCommands", () => {
     handlePlainTextPaste(event);
     expect(insertText).toHaveBeenCalledWith("Bold and link");
   });
+
+  it("maps br and block boundaries to newlines in text/html paste", () => {
+    const insertText = vi.fn();
+    document.execCommand = vi.fn((_cmd, _ui, value) => {
+      insertText(value);
+      return true;
+    }) as typeof document.execCommand;
+    const html = "<p>one<br>two</p><p>three</p>";
+    const event = {
+      preventDefault: vi.fn(),
+      clipboardData: {
+        getData: vi.fn((kind: string) => (kind === "text/html" ? html : "")),
+      },
+    } as unknown as ClipboardEvent;
+
+    handlePlainTextPaste(event);
+    // textContent would have fused "onetwothree"; br/block boundaries must
+    // become line breaks.
+    expect(insertText).toHaveBeenCalledWith("one\ntwo\nthree");
+  });
 });

@@ -10,6 +10,7 @@ import { npmCommand } from "./npmCommand";
 export type InstallLogListener = (chunk: string) => void;
 
 let installing = false;
+let activeChild: ChildProcess | null = null;
 
 // A hung `npm install` (network stall, blocked postinstall script) must not
 // lock the install path forever: after this the child is killed and the lock
@@ -19,6 +20,15 @@ const INSTALL_TIMEOUT_MS = 30 * 60 * 1000;
 /** True when node_modules contains every declared dependency. A partial
  *  directory left by a failed npm install must not make later flows skip the
  *  install and fail cryptically during preview/build. */
+/** Cancels a running install, killing the whole process tree. */
+export function cancelInstall(): OperationResult {
+  if (!activeChild || !activeChild.pid) {
+    return { ok: false, error: "No install is running." };
+  }
+  killInstallTree(activeChild, true);
+  return { ok: true };
+}
+
 export function dependenciesInstalled(projectPath: string): boolean {
   const modules = path.join(projectPath, "node_modules");
   if (!fs.existsSync(modules)) return false;
@@ -47,14 +57,20 @@ export function dependenciesInstalled(projectPath: string): boolean {
 function killInstallTree(child: ChildProcess, hard: boolean): void {
   if (!child.pid) return;
   if (process.platform === "win32") {
+    // NOTE: an empty-string arg (hard ? "/f" : "") made taskkill reject the
+    // graceful kill with "Invalid argument/option" — and spawnSync does not
+    // throw on non-zero exit, so the child.kill fallback never ran. The
+    // graceful kill silently did nothing; only the /f escalation worked.
+    const args = ["/pid", String(child.pid), "/t"];
+    if (hard) args.push("/f");
     try {
-      spawnSync(
-        "taskkill",
-        ["/pid", String(child.pid), "/t", hard ? "/f" : ""],
-        {
-          windowsHide: true,
-        },
-      );
+      const result = spawnSync("taskkill", args, {
+        windowsHide: true,
+      });
+      if (result.status !== 0 && hard) {
+        // taskkill failed outright — fall back to a direct kill.
+        child.kill();
+      }
     } catch {
       try {
         child.kill();
@@ -101,12 +117,14 @@ export async function installDependencies(
 
   return new Promise<OperationResult>((resolve) => {
     let child: ChildProcess | null = null;
+    activeChild = null;
     let timeout: NodeJS.Timeout | null = null;
     let settled = false;
     const finish = (result: OperationResult): void => {
       if (settled) return;
       settled = true;
       installing = false;
+      activeChild = null;
       if (timeout) clearTimeout(timeout);
       resolve(result);
     };
@@ -125,6 +143,7 @@ export async function installDependencies(
         detached: process.platform !== "win32",
         env: { ...env, FORCE_COLOR: "0", NO_COLOR: "1" },
       });
+      activeChild = child;
     } catch (error) {
       finish({
         ok: false,

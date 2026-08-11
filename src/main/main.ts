@@ -1,3 +1,4 @@
+import * as fs from "fs";
 import { app, BrowserWindow, dialog, shell, session, ipcMain } from "electron";
 import { pathToFileURL } from "url";
 import * as path from "path";
@@ -11,8 +12,16 @@ import { setupAutoUpdater, checkForUpdates } from "./updater";
 import { checkNodeVersion, validateNodePath } from "./services/nodeCheck";
 import { IPC } from "./ipcChannels";
 
+// Dev mode ONLY when not packaged: a shipped binary launched with --dev (or
+// NODE_ENV=development) previously got devTools AND silently disabled the
+// auto-updater. Gate on app.isPackaged so release builds always update.
 const isDev =
-  process.argv.includes("--dev") || process.env.NODE_ENV === "development";
+  !app.isPackaged &&
+  (process.argv.includes("--dev") ||
+    process.env.NODE_ENV === "development" ||
+    // `electron .` (npm start) runs the app WITHOUT the --dev flag; it is
+    // still a dev run and needs devtools.
+    !process.defaultApp);
 const isSmoke =
   process.argv.includes("--smoke") || process.env.ZEPHUS_SMOKE === "1";
 const isPrimaryInstance =
@@ -492,12 +501,54 @@ function closePreviewWindow(): void {
   previewWindow = null;
 }
 
+const WINDOW_STATE_FILE = "window-state.json";
+
+interface WindowState {
+  width?: number;
+  height?: number;
+  x?: number;
+  y?: number;
+  maximized?: boolean;
+}
+
+function readWindowState(): WindowState {
+  try {
+    const raw = fs.readFileSync(
+      path.join(app.getPath("userData"), WINDOW_STATE_FILE),
+      "utf8",
+    );
+    const parsed = JSON.parse(raw) as WindowState;
+    if (typeof parsed.width !== "number" || typeof parsed.height !== "number") {
+      return {};
+    }
+    return parsed;
+  } catch {
+    return {};
+  }
+}
+
+function writeWindowState(state: WindowState): void {
+  try {
+    fs.writeFileSync(
+      path.join(app.getPath("userData"), WINDOW_STATE_FILE),
+      JSON.stringify(state),
+    );
+  } catch {
+    // Non-fatal: window-state persistence is best effort.
+  }
+}
+
 function createMainWindow(): void {
-  mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 820,
+  // Restore the window size/position from the previous session (every launch
+  // used to reset to 1280x820 at an OS-chosen spot).
+  const state = readWindowState();
+  const win = new BrowserWindow({
+    width: state.width ?? 1280,
+    height: state.height ?? 820,
     minWidth: 960,
     minHeight: 640,
+    x: state.x,
+    y: state.y,
     show: false,
     backgroundColor: "#1e1e2e",
     title: "Zephus",
@@ -510,6 +561,29 @@ function createMainWindow(): void {
       devTools: isDev,
     },
   });
+  mainWindow = win;
+  if (state.maximized) win.maximize();
+
+  // Persist bounds on close (and while moving/resizing, debounced) so the
+  // layout survives restarts.
+  let boundsTimer: NodeJS.Timeout | null = null;
+  const persistBounds = (): void => {
+    if (boundsTimer) clearTimeout(boundsTimer);
+    boundsTimer = setTimeout(() => {
+      boundsTimer = null;
+      if (!win || win.isDestroyed()) return;
+      const bounds = win.getNormalBounds();
+      writeWindowState({
+        width: bounds.width,
+        height: bounds.height,
+        x: bounds.x,
+        y: bounds.y,
+        maximized: win.isMaximized(),
+      });
+    }, 300);
+  };
+  win.on("resize", persistBounds);
+  win.on("move", persistBounds);
 
   void mainWindow.loadFile(rendererPath("index.html"), {
     query: isSmoke ? { smoke: "1" } : undefined,
@@ -563,7 +637,8 @@ function createMainWindow(): void {
             '<div style="font-family:system-ui;padding:2rem;color:#18181b">' +
             '<h2>Zephus could not load its interface</h2>' +
             '<p>Reload the window to try again. If it keeps failing, reinstall Zephus.</p>' +
-            '<button onclick="location.reload()">Reload Window</button></div>'`,
+            '<button id="z-reload">Reload Window</button></div>';` +
+            `document.getElementById('z-reload').addEventListener('click', () => location.reload());`,
         );
       }
     },
@@ -791,8 +866,13 @@ if (!isPrimaryInstance) {
 }
 
 app.on("window-all-closed", () => {
-  cleanupBackgroundServices();
-  if (process.platform !== "darwin") app.quit();
+  // On macOS the app stays alive after the window closes; tearing the dev
+  // server/watcher down here made every Cmd+W -> dock-reopen a dead preview
+  // that never restarted. Cleanup happens on real quit (will-quit).
+  if (process.platform !== "darwin") {
+    cleanupBackgroundServices();
+    app.quit();
+  }
 });
 
 app.on("before-quit", () => {

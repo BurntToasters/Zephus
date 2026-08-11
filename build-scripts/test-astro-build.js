@@ -13,6 +13,16 @@ const { execFileSync } = require("child_process");
 const ROOT = path.resolve(__dirname, "..");
 const ASTRON = path.join(ROOT, "node_modules", ".bin", "astro");
 
+function walkHtml(dir) {
+  let out = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) out = out.concat(walkHtml(full));
+    else if (entry.name.endsWith(".html")) out.push(full);
+  }
+  return out;
+}
+
 async function main() {
   const wizard = await import(path.join(ROOT, "dist", "main", "services", "wizard.js"));
   const schema = await import(path.join(ROOT, "dist", "main", "services", "schema.js"));
@@ -43,13 +53,14 @@ async function main() {
         env: { ...process.env, NO_COLOR: "1" },
         stdio: "pipe",
       });
-      const pages = fs
-        .readdirSync(path.join(project, "src", "pages"))
-        .filter((f) => f.endsWith(".astro")).length;
-      if (pages === 0) {
-        throw new Error("build produced no pages");
+      // Assert on BUILD OUTPUT (.html), not source count: a build emitting
+      // zero pages (server output, all-redirect routes) passed before.
+      const outDir = path.join(project, "dist");
+      const htmlFiles = fs.existsSync(outDir) ? walkHtml(outDir) : [];
+      if (htmlFiles.length === 0) {
+        throw new Error("build produced no HTML output");
       }
-      console.log(`✓ ${theme.id.padEnd(14)} builds (${pages} page${pages === 1 ? "" : "s"})`);
+      console.log(`✓ ${theme.id.padEnd(14)} builds (${htmlFiles.length} html)`);
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       console.error(`✖ ${theme.id}: build failed:\n${msg.slice(0, 1200)}`);

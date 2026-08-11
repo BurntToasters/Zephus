@@ -80,7 +80,16 @@ export function createEditorGitActions(deps: EditorGitDeps) {
       deps.zephus.commitGitChanges(projectPath, message, paths),
     );
     if (!result.ok) {
-      deps.setStatus("Git commit failed: " + (result.error ?? "unknown"));
+      const error = result.error ?? "unknown";
+      // Fresh git installs have no user.name/email — raw "Please tell me who
+      // you are" reads as the app being broken on a first commit.
+      if (/Please tell me who you are|user\.(name|email)/i.test(error)) {
+        deps.setStatus(
+          'Git needs your identity first: run `git config --global user.name "Your Name"` and `git config --global user.email you@example.com`, then commit again.',
+        );
+        return;
+      }
+      deps.setStatus("Git commit failed: " + error);
       return;
     }
     deps.setStatus(

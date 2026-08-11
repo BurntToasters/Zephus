@@ -356,7 +356,7 @@ For developers or advanced customization, edit raw Astro/JSX.
 
 - **Syntax highlighting** for HTML, JSX, CSS
 - **Line numbers** and error indicators
-- **Ctrl+Enter** to commit multi-line changes
+- **Ctrl+Enter** inserts a blank line; save multi-line edits with Ctrl/Cmd+S
 - **Ctrl+Z / Ctrl+Y** for undo/redo
 - **Ctrl+F** to find and replace
 

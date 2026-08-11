@@ -79,7 +79,7 @@ describe("updateChannel", () => {
       expect(isChannelUpgrade("0.1.0-db.1", "0.1.0-db.2")).toBe(true);
       expect(isChannelUpgrade("0.1.0-db.2", "0.1.0-db.1")).toBe(false);
       expect(isChannelUpgrade("0.1.0-db.2", "0.1.0-db.2")).toBe(false);
-      expect(isChannelUpgrade("0.1.0-beta.1", "0.1.0-beta.4")).toBe(true);
+      expect(isChannelUpgrade("0.1.0-beta.1", "0.1.0-beta.5")).toBe(true);
     });
 
     it("returns false for unparseable versions", () => {

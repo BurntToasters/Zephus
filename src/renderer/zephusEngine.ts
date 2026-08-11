@@ -510,7 +510,10 @@ function ensureCodeEditor(): void {
   cm = createCodeEditor(
     $("code-editor"),
     () => {
-      if (state.mode === "code" && !settingCode) markDirty(true);
+      if (state.mode === "code" && !settingCode) {
+        trackChange("Edited page code");
+        markDirty(true);
+      }
       updateUndoRedoButtons();
     },
     updateUndoRedoButtons,
@@ -629,7 +632,9 @@ function updaterStatusMessage(): string {
   if (updaterSnapshot?.status === "error") {
     return friendlyError(updaterSnapshot.error ?? "Update check failed.");
   }
-  return "Check the selected update channel.";
+  return updaterSnapshot?.version
+    ? `You're up to date (v${updaterSnapshot.version}).`
+    : "You're up to date.";
 }
 
 async function restartToApplyUpdate(): Promise<void> {
@@ -884,7 +889,7 @@ function renderNextActions(): void {
         {
           label: "Add Hero",
           onClick: () => {
-            const hero = TEMPLATES[0];
+            const hero = TEMPLATES.find((tpl) => tpl.id === "hero");
             if (!hero || !templateAllowed(hero)) {
               setStatus(
                 "This section's blocks are not allowed by the project's rules.",
@@ -1096,6 +1101,35 @@ function renderNextActions(): void {
       actionsList.push({
         label: "Discard Site",
         onClick: () => void discardPendingSiteChanges(),
+      });
+    }
+    if (state.pageDirty && state.page) {
+      // Page-only dirty had no discard affordance (Save All was the only
+      // action); mirror the site discard.
+      actionsList.push({
+        label: "Discard Page",
+        onClick: () => {
+          void (async () => {
+            const projectPath = state.project?.path;
+            const page = state.page;
+            if (!projectPath || !page) return;
+            const cleared = await window.zephus.clearDraft(
+              projectPath,
+              "page",
+              page,
+            );
+            void cleared;
+            clearChanges();
+            markDirty(false);
+            renderDirtyIndicators();
+            await loadPage(page, {
+              skipUnsavedGuard: true,
+              skipDraftRestore: true,
+              forceReload: true,
+            });
+            setStatus("Discarded unsaved page changes.");
+          })();
+        },
       });
     }
     cards.push({
@@ -1321,6 +1355,10 @@ async function openSettingsModal(): Promise<void> {
     setStatus("Could not load settings.");
     return;
   }
+  // The start-tab settings are an UNSAVED draft; opening the modal and saving
+  // would otherwise overwrite those edits with the stale disk values. Seed
+  // from the last-known applied settings (appSettings) when they exist.
+  if (appSettings) settings = appSettings;
 
   const wrap = document.createElement("div");
   const modalState = {
@@ -1495,6 +1533,20 @@ async function openSettingsModal(): Promise<void> {
         appSettings = defaults;
         updateSettingsTabSettings(defaults);
         updateSettingsTabNode("Checking Node.js…", true);
+        void window.zephus
+          .getNodeStatus()
+          .then((res) => {
+            updateSettingsTabNode(
+              `${nodeStatusMessage(res)} · Auto-detect (system PATH)`,
+              true,
+            );
+          })
+          .catch(() => {
+            updateSettingsTabNode(
+              "Node.js status could not be determined.",
+              true,
+            );
+          });
       },
     },
     { label: "Cancel", kind: "ghost", onClick: closeModal },
@@ -1520,6 +1572,13 @@ async function openSettingsModal(): Promise<void> {
         applyCodeFontSize(modalState.settings.codeFontSize);
         appSettings = modalState.settings;
         updateSettingsTabSettings(modalState.settings);
+        const customPath = modalState.settings.customNodePath;
+        updateSettingsTabNode(
+          customPath
+            ? `Node.js · Custom: ${customPath}`
+            : "Node.js · Auto-detect (system PATH)",
+          !customPath,
+        );
         closeModal();
         setStatus("Settings saved.");
       },
@@ -1720,6 +1779,11 @@ async function openProjectByPath(folder: string): Promise<void> {
       setStatus("Opening " + queued + "…");
       await openProjectByPathInner(queued);
     }
+  } catch (error) {
+    // A thrown open must not leave a stale queued path: the next open would
+    // silently open a project the user never clicked.
+    queuedProjectOpen = null;
+    throw error;
   } finally {
     projectOpenInFlight = false;
   }
@@ -1901,6 +1965,9 @@ async function enterEditor(result: ProjectOpenResult): Promise<void> {
       await loadPage(pendingDraft.target, {
         restoreDraftSilently: true,
       });
+      // The cleared draft's home card would otherwise linger for the whole
+      // session (stale timestamp, phantom).
+      await refreshHomeDraftSummaries();
       return;
     }
     if (pendingDraft?.scope === "page") {
@@ -1925,6 +1992,7 @@ async function enterEditor(result: ProjectOpenResult): Promise<void> {
   } catch (error) {
     // Never leave a half-open project: reset the editor session and return
     // to the start screen so the UI cannot act on a phantom project.
+    pendingHomeDraftResume = null;
     state.project = null;
     state.siteDocument = null;
     state.pendingSiteDocument = null;
@@ -2064,6 +2132,7 @@ function renderNavEditor(result: ProjectOpenResult): void {
       id: entry.id,
       label: entry.label,
       href: entry.href,
+      page: "page" in entry && entry.page ? String(entry.page) : null,
     })),
     { showPageSettings: !!state.page },
   );
@@ -2631,17 +2700,38 @@ async function openDesignSystemModal(): Promise<void> {
       label: "Stage Design",
       kind: "primary",
       onClick: async () => {
+        // A staged accent must not reference itself: --zephus-accent:
+        // var(--accent) resolves to nothing and silently strips the brand
+        // color from every link/CTA/announcement.
+        if (/var\(\s*--accent\s*\)/i.test(designState.accent.trim())) {
+          setStatus(
+            "Accent color cannot reference itself (var(--accent)). Pick a concrete color.",
+          );
+          return;
+        }
         nextSite.shell.layoutMode = "managed";
         nextSite.design.accent = designState.accent.trim();
         nextSite.design.background = designState.background.trim();
         nextSite.design.foreground = designState.foreground.trim();
         nextSite.design.surface = designState.surface.trim();
-        nextSite.design.fontFamily = designState.bodyFont;
-        nextSite.design.headingFontFamily = designState.headingFont;
-        nextSite.design.fontImportUrl = buildFontImportUrl([
+        // Empty custom font stacks silently emitted an invalid CSS variable
+        // (every font inherited). Fall back to the existing/current stack.
+        const currentFonts = nextSite.design.fontFamily;
+        nextSite.design.fontFamily =
+          designState.bodyFont.trim() || currentFonts;
+        nextSite.design.headingFontFamily =
+          designState.headingFont.trim() || currentFonts;
+        const googleSpecs = [
           designState.bodyFontGoogle,
           designState.headingFontGoogle,
-        ]);
+        ].filter(Boolean) as string[];
+        // Staging with zero font changes must PRESERVE the existing Google
+        // Fonts link — previously buildFontImportUrl([]) returned "" and the
+        // themed site's font link silently vanished from the build.
+        nextSite.design.fontImportUrl =
+          googleSpecs.length > 0
+            ? buildFontImportUrl(googleSpecs)
+            : (nextSite.design.fontImportUrl ?? "");
         nextSite.design.radius = designState.radius.trim();
         nextSite.design.containerWidth = designState.containerWidth.trim();
         nextSite.design.shadow = designState.shadow;
@@ -2873,7 +2963,11 @@ async function togglePageNavVisibility(page: string): Promise<void> {
   // visibility until the next page switch/save.
   if (state.project) {
     const fresh = await window.zephus.readSiteDocument(state.project.path);
-    if (fresh.ok && fresh.site) {
+    // Guard the baseline like reloadPages/loadPageNow do: swapping it while a
+    // staged site edit exists silently rebases pendingSiteDocument, and the
+    // next site save passes the drift check and overwrites the navItems just
+    // written to disk (reverting this toggle).
+    if (fresh.ok && fresh.site && !state.siteDirty) {
       state.siteDocument = fresh.site;
     }
     renderNavEditor(state.project);
@@ -3827,7 +3921,7 @@ function editorPostIndex(): RenderPostEntry[] {
     route: meta.route,
     title: meta.title || meta.navLabel || meta.slug,
     description: meta.metaDescription,
-    date: meta.publishDate,
+    date: isValidDateString(meta.publishDate) ? meta.publishDate : "",
     author: meta.author,
     image: meta.socialImage,
   }));
@@ -3847,7 +3941,10 @@ function editorRenderOptions(
     viewport,
     forCanvas,
     canvasMaxHeadingLevel: editorRules.maxHeadingLevel,
-    serializeMaxHeadingLevel: editorRules.maxHeadingLevel,
+    // The BUILD renderer always emits up to level 6 (no repo-rule plumbing);
+    // serialize must match it or zero-edit code-mode saves see "content
+    // differs" and detach. Clamping happens on the canvas only.
+    serializeMaxHeadingLevel: 6,
     posts: editorPostIndex(),
   };
 }
@@ -4567,6 +4664,14 @@ function makeCanvasLinksInert(root: HTMLElement): void {
 }
 
 function renderCanvas(): void {
+  // A canvas re-render while an inline text session is active REPLACES the
+  // focused contenteditable node; blur never fires on the detached element,
+  // leaving isInlineEditing stuck true — every canvas click then no-ops.
+  // Finish the session before the repaint (drag of a block/section while
+  // editing triggered this).
+  if (inlineEdit.isInlineEditing()) {
+    inlineEdit.finishInlineEdit();
+  }
   const canvas = $("canvas");
   canvas.setAttribute("data-viewport", state.currentViewport);
   resetDragState();
@@ -4921,7 +5026,6 @@ async function openFindReplaceModal(): Promise<void> {
     replacement: "",
     caseSensitive: false,
     wholeWord: false,
-    searching: false,
     matches: null as SearchMatch[] | null,
     totalMatches: 0,
     searchedQuery: "",
@@ -4937,7 +5041,6 @@ async function openFindReplaceModal(): Promise<void> {
       replacement: formState.replacement,
       caseSensitive: formState.caseSensitive,
       wholeWord: formState.wholeWord,
-      searching: formState.searching,
       matches: formState.matches,
       totalMatches: formState.totalMatches,
       searchedQuery: formState.searchedQuery,
@@ -4945,6 +5048,10 @@ async function openFindReplaceModal(): Promise<void> {
         formState.query = value;
         // Editing the query invalidates any earlier results: Replace All must
         // never act on a match list that was searched with different text.
+        // Bump searchSeq so a stale IN-FLIGHT response (old query) cannot
+        // repopulate the list past the seq guard and drive a replace with
+        // wrong counts/page sets.
+        searchSeq += 1;
         formState.matches = null;
         formState.totalMatches = 0;
         formState.searchedQuery = "";
@@ -4965,10 +5072,20 @@ async function openFindReplaceModal(): Promise<void> {
       },
       onCaseSensitiveChange: (value) => {
         formState.caseSensitive = value;
+        searchSeq += 1;
+        formState.matches = null;
+        formState.totalMatches = 0;
+        formState.searchedQuery = "";
+        formState.skippedDetachedPages = 0;
         mount();
       },
       onWholeWordChange: (value) => {
         formState.wholeWord = value;
+        searchSeq += 1;
+        formState.matches = null;
+        formState.totalMatches = 0;
+        formState.searchedQuery = "";
+        formState.skippedDetachedPages = 0;
         mount();
       },
       onSearch: () => void runSearch(),
@@ -5081,6 +5198,7 @@ async function openFindReplaceModal(): Promise<void> {
     ],
     { size: "wide" },
   );
+  registerCleanup(disposeFindBody);
 }
 
 /** Re-reads site.json after main mutated it, so the editor is not left stale. */
@@ -5124,6 +5242,8 @@ function openAssetBrowser(options: AssetBrowserOptions): void {
         void handleDroppedFiles(files);
       },
       onSelect: (webPath) => {
+        // A replaced file on disk must not serve stale cached bytes.
+        invalidateAssetCache(webPath);
         closeModal();
         options.onSelect(webPath);
       },
@@ -5246,23 +5366,20 @@ function openAssetBrowser(options: AssetBrowserOptions): void {
     asset: AssetEntry,
   ): Promise<string | undefined> => {
     if (asset.category !== "images") return undefined;
-    try {
-      const res = await window.zephus.readAssetDataUrl(
-        project.path,
-        project.astro.publicDir,
-        asset.webPath,
-      );
-      return res.ok ? (res.dataUrl ?? undefined) : undefined;
-    } catch {
-      return undefined;
-    }
+    // Reuse the canvas asset cache: the old path re-fetched and base64-encoded
+    // the same files (up to 60 per refresh) and duplicated canvas fetches.
+    const dataUrl = await fetchAssetDataUrl(asset.webPath);
+    return dataUrl ?? undefined;
   };
 
+  let refreshSeq = 0;
   const refresh = async (): Promise<void> => {
+    const seq = ++refreshSeq;
     const result = await window.zephus.listAssets(
       project.path,
       project.astro.publicDir,
     );
+    if (seq !== refreshSeq) return; // a newer refresh superseded this one
     const assets = (result.ok ? result.assets : []).filter(
       (a) => filter === "all" || a.category === filter,
     );
@@ -5339,6 +5456,9 @@ function openAssetBrowser(options: AssetBrowserOptions): void {
     },
     { label: "Close", kind: "ghost", onClick: closeModal },
   ]);
+  // Dispose the Solid root on close (not just on re-mount): every open/close
+  // previously leaked one root + its For computations.
+  registerCleanup(disposeAssetBody);
 }
 
 let lastInspectorSelectionKey = "none";
@@ -5674,7 +5794,6 @@ function setMode(mode: Mode): void {
     syncModeToggle(mode);
     codeEl.classList.toggle("hidden", mode !== "code");
     $("canvas").classList.toggle("hidden", mode !== "visual");
-    $("preview-frame").classList.add("hidden");
     if (mode === "code") {
       cm?.focus();
       renderProperties();
@@ -5697,7 +5816,6 @@ function setMode(mode: Mode): void {
     setCode(state.rawCode);
     codeEl.classList.remove("hidden");
     $("canvas").classList.add("hidden");
-    $("preview-frame").classList.add("hidden");
     cm?.focus();
     renderProperties();
     updateUndoRedoButtons();
@@ -5732,7 +5850,6 @@ function setMode(mode: Mode): void {
   syncModeToggle(mode);
   $("canvas").classList.remove("hidden");
   codeEl.classList.add("hidden");
-  $("preview-frame").classList.add("hidden");
   renderCanvas();
   renderProperties();
   updateUndoRedoButtons();
@@ -5893,6 +6010,19 @@ async function runInstallFlow(projectPath: string): Promise<InstallFlowResult> {
           }
         },
       },
+      {
+        label: "Cancel",
+        kind: "ghost",
+        onClick: async () => {
+          if (done) return;
+          done = true;
+          stopHeartbeat();
+          unsub();
+          await window.zephus.cancelInstall().catch(() => undefined);
+          closeModal();
+          resolve("failed");
+        },
+      },
     ]);
 
     void window.zephus
@@ -5945,12 +6075,19 @@ async function ensureDependencies(): Promise<boolean> {
   return (await runInstallFlow(state.project.path)) === "installed";
 }
 
-function updatePreviewButton(running: boolean): void {
+function updatePreviewButton(state_: "running" | "stopped" | "starting"): void {
   const btn = $maybe("btn-preview");
   if (!btn) return;
-  btn.innerHTML = running
-    ? `<i data-lucide="square"></i> Stop Preview`
-    : `<i data-lucide="play"></i> Start Preview`;
+  if (state_ === "starting") {
+    btn.innerHTML = `<i data-lucide="loader-circle"></i> Starting…`;
+    btn.classList.add("disabled");
+  } else {
+    btn.innerHTML =
+      state_ === "running"
+        ? `<i data-lucide="square"></i> Stop Preview`
+        : `<i data-lucide="play"></i> Start Preview`;
+    btn.classList.remove("disabled");
+  }
   refreshIcons();
 }
 
@@ -5973,7 +6110,7 @@ function unsubscribeAllPreviewLogs(): void {
 function resetPreviewState(message?: string): void {
   state.previewUrl = null;
   unsubscribeAllPreviewLogs();
-  updatePreviewButton(false);
+  updatePreviewButton("stopped");
   refreshGuidancePanels();
   if (message) setStatus(message);
 }
@@ -5996,6 +6133,7 @@ async function togglePreview(): Promise<void> {
 
   if (previewStartInFlight) return;
   previewStartInFlight = true;
+  updatePreviewButton("starting");
   const projectPathAtStart = state.project.path;
   try {
     if (isGlobalDirty(state)) {
@@ -6012,9 +6150,12 @@ async function togglePreview(): Promise<void> {
     if (!(await ensureDependencies())) return;
     if (state.project?.path !== projectPathAtStart) return;
     setStatus("Starting dev server (npm run dev)…");
+    // Clear the previous project's/server's log so output does not interleave
+    // across sessions.
+    const devLogEl = $("dev-log");
+    devLogEl.textContent = "";
     const unsub = window.zephus.onPreviewLog((chunk) => {
-      const logEl = $("dev-log");
-      appendCappedLog(logEl, chunk);
+      appendCappedLog(devLogEl, chunk);
     });
     previewLogSubscriptions.add(unsub);
     try {
@@ -6039,7 +6180,7 @@ async function togglePreview(): Promise<void> {
         return;
       }
       state.previewUrl = result.url;
-      updatePreviewButton(true);
+      updatePreviewButton("running");
       refreshGuidancePanels();
       setStatus("Preview open in a separate window: " + result.url);
     } catch (error) {
@@ -6058,6 +6199,7 @@ async function togglePreview(): Promise<void> {
     }
   } finally {
     previewStartInFlight = false;
+    if (!state.previewUrl) updatePreviewButton("stopped");
   }
 }
 
@@ -6088,7 +6230,14 @@ async function publishSite(): Promise<void> {
     // The project may have been closed while the dependency check ran.
     if (state.project?.path !== project.path) return;
     setStatus("Building site for production (npm run build)…");
+    // Stream the build output into the Dev Server Log panel so a long first
+    // build never reads as a hang.
+    const devLogEl = $("dev-log");
+    const unsubBuildLog = window.zephus.onPublishLog((chunk) => {
+      appendCappedLog(devLogEl, chunk);
+    });
     const r = await window.zephus.publish(project.path, project.astro.outDir);
+    unsubBuildLog();
     if (state.project?.path !== project.path) return;
     if (!r.ok) {
       showModal("Build Failed", friendlyError(r.error), [
@@ -6170,6 +6319,12 @@ function resetOpenPageState(): void {
   state.undo = [];
   state.redo = [];
   state.recoveredPageDraft = null;
+  // Stale selection/drag-echo state from the previous page must not carry
+  // into the next project (first click misread as double-click, spurious
+  // "activate inspect tab").
+  lastClickBlockId = null;
+  lastClickTime = 0;
+  lastInspectorSelectionKey = "none";
   cancelScheduledEditorDraftWrite(state);
   clearChanges();
   markDirty(false);
@@ -6208,7 +6363,7 @@ async function closeProject(): Promise<void> {
     // project, and the next project's log panel would receive its stream.
     unsubscribeAllPreviewLogs();
     state.previewUrl = null;
-    updatePreviewButton(false);
+    updatePreviewButton("stopped");
     state.unsubExternal?.();
     state.unsubExternal = null;
     state.project = null;
@@ -6289,7 +6444,12 @@ function doUndo(): void {
   syncSelectionAfterRestore();
   if (sectionsChanged) {
     trackChange("Undid a change");
-    markDirty(true);
+    // Undoing back to the last-saved tree must not leave a phantom dirty
+    // flag (stale dot, redundant draft write, spurious unsaved-work prompt).
+    const savedSource = state.rawCode ?? state.generatedCode ?? null;
+    const restoredMatchesSaved =
+      savedSource !== null && serializeBlocks() === savedSource;
+    markDirty(!restoredMatchesSaved);
   }
   clearStaleSiteDraftAfterRevert();
   renderLayers();
@@ -6311,7 +6471,10 @@ function doRedo(): void {
   syncSelectionAfterRestore();
   if (sectionsChanged) {
     trackChange("Redid a change");
-    markDirty(true);
+    const savedSource = state.rawCode ?? state.generatedCode ?? null;
+    const restoredMatchesSaved =
+      savedSource !== null && serializeBlocks() === savedSource;
+    markDirty(!restoredMatchesSaved);
   }
   clearStaleSiteDraftAfterRevert();
   renderLayers();
@@ -6742,7 +6905,7 @@ async function renderAboutAndLicensesInTab(): Promise<void> {
       const v = await window.zephus.getAppVersion();
       versionText.textContent = `v${v}`;
     } catch {
-      versionText.textContent = "v0.1.0-db.1";
+      versionText.textContent = "Zephus";
     }
   }
 
@@ -6824,8 +6987,8 @@ async function createSiteFromTabFlow(): Promise<void> {
 async function createSiteFromTabFlowInner(): Promise<void> {
   if (!selectedTabTheme) return;
   const theme = selectedTabTheme;
-  const folder = await window.zephus.chooseNewSiteFolder();
-  if (!folder) return;
+  // Check Node BEFORE asking for a folder: previously the user picked a
+  // folder, then hit the "Node.js Required" modal and had to back out.
   const node = await window.zephus.getNodeStatus();
   if (node.status !== "ok") {
     showModal("Node.js Required", nodeStatusMessage(node), [
@@ -6834,6 +6997,8 @@ async function createSiteFromTabFlowInner(): Promise<void> {
     ]);
     return;
   }
+  const folder = await window.zephus.chooseNewSiteFolder();
+  if (!folder) return;
   setStatus("Creating site from theme…");
   const r = await window.zephus.createSite(folder, theme);
   if (!r.ok) {
@@ -6843,8 +7008,9 @@ async function createSiteFromTabFlowInner(): Promise<void> {
     return;
   }
   // First-run convenience: install deps now so preview/publish just work.
+  // A FAILED install must not strand the user: the site exists on disk and
+  // should open anyway (preview/publish will re-offer the install).
   const installResult = await runInstallFlow(folder);
-  if (installResult === "failed") return;
   await openProjectByPath(folder);
   if (!state.project) {
     setStatus(
@@ -6852,6 +7018,10 @@ async function createSiteFromTabFlowInner(): Promise<void> {
     );
   } else if (installResult === "backgrounded") {
     setStatus("Site opened; dependency installation continues in background.");
+  } else if (installResult === "failed") {
+    setStatus(
+      "Site opened. Dependencies failed to install — open the project and try Preview or Publish to retry.",
+    );
   }
 }
 
@@ -7172,15 +7342,6 @@ function init(): void {
   if (btnCreate) btnCreate.onclick = () => void createSiteFromTabFlow();
   const btnSettings = $maybe("btn-settings");
   if (btnSettings) btnSettings.onclick = () => void openSettingsModal();
-  const btnHomeSettings = $maybe("btn-home-settings");
-  if (btnHomeSettings) btnHomeSettings.onclick = () => void openSettingsModal();
-  const btnHomeLicenses = $maybe("btn-home-licenses");
-  if (btnHomeLicenses)
-    btnHomeLicenses.onclick = () => void openProductionLicensesModal();
-  const btnHomeCreate = $maybe("btn-home-create");
-  if (btnHomeCreate)
-    btnHomeCreate.onclick = () => void activateHomeSection("create");
-
   const btnResumeLast = $("btn-resume-last");
   if (btnResumeLast) {
     btnResumeLast.onclick = () => {
@@ -7314,6 +7475,7 @@ function init(): void {
           if (state.page) void openPageMetaModal(state.page);
         },
         onReviewNavigation: () => void regenerateNav(),
+        onOpenPage: (page) => void loadPage(page),
       });
     } catch (e) {
       noteMountFailure("Nav List", e);
@@ -7386,14 +7548,29 @@ function init(): void {
             codeFontSize: 13,
             customNodePath: null,
           };
-          await window.zephus.writeGlobalSettings(defaults);
+          const reset = await window.zephus.writeGlobalSettings(defaults);
+          if (!reset.ok) {
+            setStatus(
+              "Settings could not be reset: " +
+                (reset.error ?? "unknown error"),
+            );
+            return;
+          }
           document.documentElement.setAttribute("data-theme", "system");
           applyCodeFontSize(13);
+          appSettings = defaults;
           setStatus("Settings reset to defaults.");
           await renderSettingsInTab();
         },
         onSave: async (settings) => {
-          await window.zephus.writeGlobalSettings(settings);
+          const saved = await window.zephus.writeGlobalSettings(settings);
+          if (!saved.ok) {
+            setStatus(
+              "Settings could not be saved: " +
+                (saved.error ?? "unknown error"),
+            );
+            return;
+          }
           document.documentElement.setAttribute("data-theme", settings.theme);
           applyCodeFontSize(settings.codeFontSize);
           appSettings = settings;
@@ -7592,9 +7769,9 @@ function init(): void {
         onQuickInsertSection: (index, template) => {
           const tpl =
             template === "hero"
-              ? (TEMPLATES[0] ?? null)
+              ? (TEMPLATES.find((entry) => entry.id === "hero") ?? null)
               : template === "features"
-                ? (TEMPLATES[1] ?? null)
+                ? (TEMPLATES.find((entry) => entry.id === "features") ?? null)
                 : null;
           if (tpl && !templateAllowed(tpl)) {
             setStatus(

@@ -5,6 +5,8 @@ export interface NavListEntry {
   id: string;
   label: string;
   href: string;
+  /** Project page path for the entry; null for custom (page-less) items. */
+  page?: string | null;
 }
 
 export interface NavEmptyState {
@@ -14,6 +16,8 @@ export interface NavEmptyState {
 export interface NavListHandlers {
   onPageSettings: () => void;
   onReviewNavigation: () => void;
+  /** Opens the page the nav entry points to (page-less items do nothing). */
+  onOpenPage: (page: string) => void;
 }
 
 const [entries, setEntries] = createSignal<NavListEntry[]>([]);
@@ -68,10 +72,25 @@ export function NavListPanel() {
       <For each={entries()}>
         {(entry) => (
           <li>
-            <i data-lucide="link"></i>{" "}
-            <span>
-              {entry.label} <span class="nav-route">{entry.href}</span>
-            </span>
+            <button
+              type="button"
+              class="nav-entry"
+              disabled={!entry.page}
+              title={
+                entry.page
+                  ? `Open ${entry.label}`
+                  : "Custom link — not an editable page"
+              }
+              aria-label={`Open ${entry.label} (${entry.href})`}
+              onClick={() => {
+                if (entry.page) handlers?.onOpenPage(entry.page);
+              }}
+            >
+              <i data-lucide="link"></i>{" "}
+              <span class="nav-entry-label">
+                {entry.label} <span class="nav-route">{entry.href}</span>
+              </span>
+            </button>
           </li>
         )}
       </For>

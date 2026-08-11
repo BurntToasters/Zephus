@@ -35,8 +35,39 @@ export function handlePlainTextPaste(event: ClipboardEvent): void {
     // its text content is wanted here, matching the plain-text contract.
     const container = document.createElement("div");
     container.innerHTML = html;
-    document.execCommand("insertText", false, container.textContent ?? "");
+    document.execCommand(
+      "insertText",
+      false,
+      // Collapse br + block-boundary doubles ("one<br>two</p><p>three"
+      // produced "one\ntwo\n\nthree").
+      (htmlTextContent(container) ?? "").replace(/\n{2,}/g, "\n").trim(),
+    );
   }
+}
+
+/** Extracts the TEXT of an HTML fragment, mapping <br> and block boundaries
+ *  to newlines — container.textContent fused "a<br>b" into "ab" for sources
+ *  that expose only text/html. */
+function htmlTextContent(root: Element): string {
+  let out = "";
+  for (const node of Array.from(root.childNodes)) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      out += node.textContent ?? "";
+    } else if (node.nodeType === Node.ELEMENT_NODE) {
+      const el = node as HTMLElement;
+      const tag = el.tagName;
+      const before =
+        /^(BR|P|DIV|LI|H[1-6]|BLOCKQUOTE|PRE|UL|OL|TABLE|TR)$/i.test(tag)
+          ? "\n"
+          : "";
+      out += before + htmlTextContent(el);
+      const after = /^(P|DIV|LI|H[1-6]|BLOCKQUOTE|PRE|TABLE|TR)$/i.test(tag)
+        ? "\n"
+        : "";
+      out += after;
+    }
+  }
+  return out;
 }
 
 export function syncUndoRedoToolbar(options: {

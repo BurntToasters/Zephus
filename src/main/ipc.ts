@@ -37,7 +37,11 @@ import {
   stopThemePreviewServer,
 } from "./services/themePreviewServer";
 import { buildAndReveal } from "./services/publish";
-import { installDependencies, dependenciesInstalled } from "./services/install";
+import {
+  installDependencies,
+  dependenciesInstalled,
+  cancelInstall,
+} from "./services/install";
 import {
   importAssets,
   importAssetsFromPaths,
@@ -441,18 +445,19 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC.nodePickPath, async () => {
     const win = getWindow();
     const isWindows = process.platform === "win32";
-    const result = await dialog.showOpenDialog(
+    const options: Electron.OpenDialogOptions = {
+      title: "Select the Node.js Executable",
+      properties: ["openFile"],
+      filters: isWindows
+        ? [{ name: "Executable", extensions: ["exe"] }]
+        : undefined,
+    };
+    // Passing undefined as the parent makes Electron treat it as the options
+    // object and drop the real options (no .exe filter on Windows).
+    const result =
       win && !win.isDestroyed()
-        ? win
-        : (undefined as unknown as Electron.BaseWindow),
-      {
-        title: "Select the Node.js Executable",
-        properties: ["openFile"],
-        filters: isWindows
-          ? [{ name: "Executable", extensions: ["exe"] }]
-          : undefined,
-      },
-    );
+        ? await dialog.showOpenDialog(win, options)
+        : await dialog.showOpenDialog(options);
     if (result.canceled || result.filePaths.length === 0) {
       return checkNodeVersion(readGlobalSettings().customNodePath);
     }
@@ -766,8 +771,13 @@ export function registerIpcHandlers(
     return ensureThemePreviewServer();
   });
 
-  ipcMain.handle(IPC.publish, (_e, projectPath: string, outDir: string) =>
-    approved(projectPath, () => buildAndReveal(projectPath, outDir)),
+  ipcMain.handle(IPC.publish, (event, projectPath: string, outDir: string) =>
+    approved(projectPath, () =>
+      buildAndReveal(projectPath, outDir, (chunk) => {
+        if (!event.sender.isDestroyed())
+          event.sender.send(IPC.publishLog, chunk);
+      }),
+    ),
   );
 
   ipcMain.handle(
@@ -795,6 +805,7 @@ export function registerIpcHandlers(
     },
   );
 
+  ipcMain.handle(IPC.depsCancel, () => cancelInstall());
   ipcMain.handle(IPC.depsInstalled, (_e, projectPath: string): boolean =>
     approved(projectPath, () => dependenciesInstalled(projectPath)),
   );

@@ -327,7 +327,7 @@ If you edit a page outside Zephus (in VS Code, Git, etc.), Zephus detects it and
 ✅ **Enable auto-save** in Settings (prevents losing work)
 ✅ **Use meaningful page slugs** (e.g., `/blog/my-post` instead of `/post-1`)
 ✅ **Add alt text to images** (helps accessibility and SEO)
-✅ **Test on mobile** (use preview browser devtools)
+✅ **Test on mobile** (open the responsive preview viewports in the editor, or use the preview window's devtools in development builds)
 ✅ **Commit to Git regularly** (version control backup)
 ✅ **Use Ctrl+S frequently** (extra safety before publishing)
 ✅ **Avoid editing the same file in two places** (Git conflicts)

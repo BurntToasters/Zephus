@@ -201,6 +201,27 @@ describe("editorSave runSave", () => {
     );
   });
 
+  it("still saves a dirty site when the page switched mid-write", async () => {
+    const state = makeState({ siteDirty: true });
+    const { deps, writePageDocument, persistPendingSiteDocument } =
+      makeDeps(state);
+    let resolveWrite: (value: PageDocumentResult) => void;
+    writePageDocument.mockReturnValueOnce(
+      new Promise<PageDocumentResult>((resolve) => {
+        resolveWrite = resolve;
+      }),
+    );
+    const { performSave } = createEditorSaveActions(deps);
+
+    const pending = performSave();
+    state.page = "about.astro";
+    resolveWrite!(pageResult());
+    await pending;
+
+    // The page branch must NOT early-return: the dirty site still saves.
+    expect(persistPendingSiteDocument).toHaveBeenCalled();
+  });
+
   it("detaches in code mode when the code differs from the visual model", async () => {
     const state = makeState({ mode: "code", managedStatus: "managed" });
     state.rawCode = "<p>hand written</p>";

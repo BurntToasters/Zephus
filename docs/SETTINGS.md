@@ -205,8 +205,8 @@ Control which blocks are allowed and editing behavior for this project:
 | Shortcut       | Action                  |
 | -------------- | ----------------------- |
 | **Ctrl+F**     | Find                    |
-| **Ctrl+H**     | Find & Replace          |
-| **Ctrl+Enter** | Commit multi-line edits |
+| **Ctrl/Cmd+F** | In-editor search (CodeMirror) — the cross-page Find & Replace modal is a visual-mode shortcut |
+| **Ctrl+Enter** | Insert a blank line (multi-line edits save with Ctrl/Cmd+S) |
 | **Tab**        | Indent                  |
 | **Shift+Tab**  | Unindent                |
 
@@ -273,7 +273,7 @@ For power users, you can directly edit configuration files:
 
 ### Global Settings
 
-**File:** `~/.config/Zephus/settings.json` (Linux/macOS) or `%APPDATA%\Zephus\settings.json` (Windows)
+**File:** `~/.config/Zephus/settings.json` (Linux), `~/Library/Application Support/Zephus/settings.json` (macOS) or `%APPDATA%\Zephus\settings.json` (Windows)
 
 ```json
 {

@@ -61,7 +61,7 @@ Clicking **Preview** shows an error.
 
 - Node.js not installed or wrong version
 - `npm install` hasn't been run
-- Port 3000 is already in use
+- Port 4321 is already in use
 - `astro.config.mjs` is invalid
 
 **Fix (in order):**
@@ -69,7 +69,7 @@ Clicking **Preview** shows an error.
 1. Check Node.js: `node --version` should be 22.12+
 2. In your project folder, run: `npm install`
 3. Try preview again
-4. If port conflict, kill the process: `lsof -i :3000` (Linux/macOS) or `netstat -ano` (Windows)
+4. If port conflict, kill the process: `lsof -i :4321` (Linux/macOS) or `netstat -ano` (Windows)
 5. Check `astro.config.mjs` syntax (should be valid JavaScript)
 6. In Zephus Settings, try custom Node.js path
 

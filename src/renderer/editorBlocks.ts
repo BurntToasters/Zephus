@@ -64,11 +64,11 @@ export const PALETTE_ICONS: Record<BlockType, string> = {
   image: "image",
   button: "square",
   section: "layout",
-  divider: "align-left",
-  spacer: "layout",
+  divider: "minus",
+  spacer: "move-vertical",
   columns: "layout-template",
-  card: "square",
-  gallery: "image",
+  card: "credit-card",
+  gallery: "images",
   quote: "align-left",
   list: "align-left",
   embed: "link",
@@ -328,6 +328,10 @@ export function defaultProps(type: BlockType): Record<string, string> {
       return {
         col1: "Column one content",
         col2: "Column two content",
+        // col3/col4 must exist: with count 3/4 the renderer fell back to a
+        // literal "Column 3" label while the panel showed an empty field.
+        col3: "Column three content",
+        col4: "Column four content",
         count: "2",
         cls: "",
       };

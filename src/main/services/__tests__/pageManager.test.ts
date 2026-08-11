@@ -383,6 +383,27 @@ describe("pageManager", () => {
     expect(copySidecar.title).toBe(`${doc.title} Copy`);
   });
 
+  it("readPageMetadata falls back when the schema cannot be read", () => {
+    fs.writeFileSync(
+      path.join(project, "src", "pages", "naked.astro"),
+      "<p>naked</p>",
+    );
+    // A sidecar from a NEWER Zephus refuses to read -> fallback metadata.
+    fs.mkdirSync(path.join(project, ".zephus", "pages"), { recursive: true });
+    fs.writeFileSync(
+      path.join(project, ".zephus", "pages", "naked.json"),
+      JSON.stringify({ schemaVersion: 999, page: "src/pages/naked.astro" }),
+    );
+    const meta = readPageMetadata(
+      project,
+      path.join("src", "pages", "naked.astro"),
+      "src/pages",
+    );
+    expect(meta.slug).toBe("naked");
+    expect(meta.route).toBe("/naked");
+    expect(meta.navVisible).toBe(true);
+  });
+
   it("restores the page file when the sidecar delete fails", () => {
     if (process.getuid?.() === 0) return;
     createManagedPage(project, "keeper", "src/pages");

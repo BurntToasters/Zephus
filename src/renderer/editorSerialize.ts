@@ -88,10 +88,15 @@ export function splitManagedPageSource(raw: string): SplitManagedPage {
 // (with zero edits) saw content !== managedSource and silently DETACHED the
 // page into hand-authored mode.
 export function indentManagedBody(core: string, indent = "  "): string {
-  return core
-    .split("\n")
-    .map((line) => (line ? `${indent}${line}` : line))
-    .join("\n");
+  return (
+    core
+      .split("\n")
+      .map((line) => (line ? `${indent}${line}` : line))
+      .join("\n")
+      // Restore real newlines inside html-block raws AFTER the indent so their
+      // interior lines never accumulate the serializer's prefix.
+      .replace(/\uE000/g, "\n")
+  );
 }
 
 /** Builds full managed page source from frame + sections (matches editor serialize). */

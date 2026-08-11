@@ -118,7 +118,7 @@ function compareBase(
  *  - Within the same base + same channel, a higher prerelease build wins.
  *
  * Examples (all return true):
- *   isChannelUpgrade("0.1.0-db.1", "0.1.0-beta.4")
+ *   isChannelUpgrade("0.1.0-db.1", "0.1.0-beta.5")
  *   isChannelUpgrade("0.1.0-db.1", "0.1.0")
  *   isChannelUpgrade("0.1.0-db.1", "0.1.0-db.2")
  *
