@@ -28,7 +28,7 @@ module.exports = tseslint.config(
     },
   },
   {
-    files: ['build-scripts/*.js'],
+    files: ['build-scripts/*.js', 'build-scripts/*.cjs'],
     languageOptions: {
       globals: {
         require: 'readonly',
