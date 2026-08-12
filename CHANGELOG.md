@@ -21,6 +21,14 @@
 
 ## Changes in `0.1.0-beta.5:`
 
+### Round 34 — CI smoke job, lint zero, chrome extraction (engine 3,812 → 3,554)
+
+**CI:** the 2-3 min packaged-app smoke now runs in its own ubuntu job (`test:all --skip-smoke` on the matrix), cutting ~10 min from PR cycles.
+**Lint:** 63 warnings → 0 — dead imports accumulated across the engine during extraction, dead destructures in tests, and unused vars cleared.
+**Structure:** window chrome extracted (`editorChrome.ts`, ~265 lines) — the close/reload guards, toolbar wiring, preview listeners, viewports, keyboard registration, bootstrap sequence (settings → updater → last-project restore → onboarding). The extraction surfaced a real cut: the `DOMContentLoaded → init` registration was clipped with the bootstrap block and the app failed to boot — caught by the smoke suite.
+
+
+
 ### Round 33 — audit: undo latch, site-save layer, onboarding
 
 **Audit (verified clean):**

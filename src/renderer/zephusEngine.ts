@@ -22,6 +22,7 @@ import { createKeyboardHandler } from "./editorKeyboard";
 import { createUndoOps } from "./editorUndoOps";
 import { createPageLoader } from "./editorPageLoad";
 import { createSiteEditorActions } from "./editorSiteEditor";
+import { createChromeActions } from "./editorChrome";
 import * as editorFindReplace from "./editorFindReplace";
 import { createPreviewPublishActions } from "./editorPreviewPublish";
 import { collectUnsavedWorkSummaryLines } from "./editorUnsavedWork";
@@ -3066,8 +3067,47 @@ const {
   openThemePreviewModal,
 } = startView;
 
-function init(): void {
-  if (window.location.search.includes("smoke=1")) {
+const chrome = createChromeActions({
+  getState: () => state,
+  $,
+  $maybe,
+  setStatus,
+  refreshIcons,
+  maybeResolveUnsavedWork,
+  renderLayers,
+  renderThemePlaceholder,
+  refreshGuidancePanels,
+  updateUndoRedoButtons,
+  setViewport,
+  setMode,
+  doUndo: () => doUndo(),
+  doRedo: () => doRedo(),
+  performSave: () => performSave(),
+  publishSite: () => publishSite(),
+  togglePreview: () => togglePreview(),
+  openHelpModal,
+  closeProject,
+  resetPreviewState,
+  openSettingsModal: () => openSettingsModal(),
+  createSiteFromTabFlow: () => createSiteFromTabFlow(),
+  openProjectByPath,
+  chooseFolder,
+  newPageFlow,
+  openFindReplaceModal: () => openFindReplaceModal(),
+  regenerateNav,
+  openSiteShellModal: () => openSiteShellModal(),
+  openDesignSystemModal: () => openDesignSystemModal(),
+  refreshHomeDraftSummaries,
+  renderRecent,
+  renderHomeStatusPanels,
+  refreshUpdaterControls,
+  promptDownloadedUpdate,
+  updateVersionLabel,
+  applyCodeFontSize,
+  onKeydown,
+  cmUndo: () => cm?.undo(),
+  cmRedo: () => cm?.redo(),
+  installSmokeHook: () => {
     installEditorSmokeHook({
       getState: () => state,
       $,
@@ -3084,161 +3124,20 @@ function init(): void {
       publishSite,
       closeProject,
     });
-  }
-  window.refreshIcons = refreshIcons;
+  },
+  setAppSettings: (settings) => {
+    appSettings = settings;
+  },
+  getAppSettings: () => appSettings,
+  setUpdaterSnapshot: (snapshot) => homeActions.setUpdaterSnapshot(snapshot),
+  showModal,
+  closeModal,
+});
+
+function init(): void {
+  chrome.installChrome();
   initStartTabs();
   initEditorWorkspaceTabs();
-
-  // Prevent stray file drops from navigating the window away from the app.
-  // Specific dropzones call preventDefault + stopPropagation to handle drops.
-  window.addEventListener("dragover", (event) => event.preventDefault());
-  window.addEventListener("drop", (event) => event.preventDefault());
-
-  // Warn before closing/reloading with unsaved work. Drafts also auto-save,
-  // but this is an explicit last-chance rail.
-  // NOTE: in Electron, preventing beforeunload CANCELS the close with NO
-  // dialog (Chromium's confirm is suppressed) — the app used to silently
-  // refuse to quit. Instead, surface the app's own save/discard/cancel modal
-  // and, once resolved, re-close with the guard lifted.
-  let forceCloseAllowed = false;
-  // Distinguishes CLOSE from RELOAD in beforeunload: a reload replaces the
-  // navigation entry (type "reload"); a close leaves it untouched. Closing
-  // after an earlier reload must still close — compare against the type of
-  // the FIRST load this window performed.
-  const initialNavType =
-    (
-      performance.getEntriesByType("navigation")[0] as
-        PerformanceNavigationTiming | undefined
-    )?.type ?? "navigate";
-  const onBeforeUnload = (event: BeforeUnloadEvent): void => {
-    if (forceCloseAllowed) return;
-    if (!state.project || !isGlobalDirty(state)) return;
-    event.preventDefault();
-    event.returnValue = "";
-    const navType = (
-      performance.getEntriesByType("navigation")[0] as
-        PerformanceNavigationTiming | undefined
-    )?.type;
-    const isReload = navType === "reload" && navType !== initialNavType;
-    void (async () => {
-      const resolved = await maybeResolveUnsavedWork();
-      if (!resolved) return;
-      if (isReload) {
-        location.reload();
-        return;
-      }
-      forceCloseAllowed = true;
-      window.removeEventListener("beforeunload", onBeforeUnload);
-      window.close();
-    })();
-  };
-  window.addEventListener("beforeunload", onBeforeUnload);
-  // Cmd/Ctrl+R is intercepted in the main process (the menu accelerator would
-  // otherwise fire before this keydown handler). Resolve unsaved work first,
-  // then reload for real — reloading while dirty used to resolve the modal
-  // and then CLOSE the app (the guard could not tell reload from close).
-  window.zephus.onReloadRequested(() => {
-    void (async () => {
-      if (state.project && isGlobalDirty(state)) {
-        const resolved = await maybeResolveUnsavedWork();
-        if (!resolved) return;
-      }
-      location.reload();
-    })();
-  });
-  // Update installs quit the app programmatically; the dirty guard must not
-  // strand the update. restartToApplyUpdate resolves unsaved work first and
-  // then calls this.
-  window.zephusMarkForceCloseAllowed = () => {
-    forceCloseAllowed = true;
-  };
-
-  // Populate sidebar version label.
-  const sidebarVersion = $("sidebar-app-version");
-  if (sidebarVersion) {
-    window.zephus
-      .getAppVersion()
-      .then((v) => {
-        sidebarVersion.textContent = `v${v}`;
-      })
-      .catch(() => {
-        sidebarVersion.textContent = "";
-      });
-  }
-
-  const btnCreate = $("btn-create");
-  if (btnCreate) btnCreate.onclick = () => void createSiteFromTabFlow();
-  const btnSettings = $maybe("btn-settings");
-  if (btnSettings) btnSettings.onclick = () => void openSettingsModal();
-  const previewUrlChip = $maybe("preview-url-chip");
-  if (previewUrlChip) {
-    previewUrlChip.onclick = () => {
-      const url = state.previewUrl;
-      if (!url) return;
-      void navigator.clipboard?.writeText(url).then(
-        () => setStatus("Preview URL copied."),
-        () => setStatus("Preview URL: " + url),
-      );
-    };
-  }
-  const btnResumeLast = $("btn-resume-last");
-  if (btnResumeLast) {
-    btnResumeLast.onclick = () => {
-      const lastProject = appSettings?.lastOpenedProject;
-      if (lastProject) {
-        void openProjectByPath(lastProject);
-      }
-    };
-  }
-
-  const btnOpen = $("btn-open");
-  if (btnOpen) btnOpen.onclick = () => void chooseFolder();
-
-  $("btn-new-page").onclick = () => void newPageFlow();
-  $("btn-find-replace").onclick = () => void openFindReplaceModal();
-  $("btn-regen-nav").onclick = () => void regenerateNav();
-  $("btn-site-shell").onclick = () => void openSiteShellModal();
-  $("btn-design-system").onclick = () => void openDesignSystemModal();
-  $("mode-visual").onclick = () => setMode("visual");
-  $("mode-code").onclick = () => setMode("code");
-  $("btn-undo").onclick = () => {
-    if (state.mode === "code") cm?.undo();
-    else doUndo();
-    updateUndoRedoButtons();
-  };
-  $("btn-redo").onclick = () => {
-    if (state.mode === "code") cm?.redo();
-    else doRedo();
-    updateUndoRedoButtons();
-  };
-  updateUndoRedoButtons();
-  $("btn-save").onclick = () => void performSave();
-  $("btn-publish").onclick = () => void publishSite();
-  $("btn-preview").onclick = () => void togglePreview();
-  $("btn-help").onclick = () => void openHelpModal();
-  $("btn-close").onclick = () => void closeProject();
-  // The preview window can be closed by the user (native close button); when
-  // that happens the main process tears down the dev server and tells us, so
-  // the Preview button + status reset to match.
-  window.zephus.onPreviewClosed(() => {
-    if (state.previewUrl) resetPreviewState("Preview stopped.");
-  });
-  // The dev server can die on its own (crash, port conflict, killed outside
-  // Zephus) while the preview window is still open. Reset the preview UI and
-  // close the dead window so the editor never shows a stale "preview open".
-  window.zephus.onPreviewExited(() => {
-    if (state.previewUrl) {
-      void window.zephus.closePreviewWindow().catch(() => undefined);
-      resetPreviewState("Preview server stopped.");
-    }
-  });
-  $("vp-desktop").onclick = () => setViewport("desktop");
-  $("vp-tablet").onclick = () => setViewport("tablet");
-  $("vp-mobile").onclick = () => setViewport("mobile");
-  document.addEventListener("keydown", onKeydown);
-  renderLayers();
-  renderThemePlaceholder();
-  refreshGuidancePanels();
 
   // Mount the SolidJS Next Actions app in the sidebar panel
   mountPanel("Next Actions", "next-actions", (nextActionsContainer) => {
@@ -3602,95 +3501,7 @@ function init(): void {
   );
 
   reportPanelMountFailures();
-  void bootstrap();
-}
-
-async function bootstrap(): Promise<void> {
-  try {
-    appSettings = await window.zephus.readGlobalSettings();
-    document.documentElement.setAttribute("data-theme", appSettings.theme);
-    applyCodeFontSize(appSettings.codeFontSize);
-  } catch {
-    /* defaults apply */
-  }
-  await refreshHomeDraftSummaries();
-  await renderRecent();
-  window.zephus.onUpdaterStatus((data) => {
-    homeActions.setUpdaterSnapshot(data);
-    renderHomeStatusPanels();
-    refreshUpdaterControls();
-    if (data.status === "downloaded") {
-      setStatus(
-        `Update ${updateVersionLabel(data.version)} downloaded. Restart Zephus to apply it.`,
-      );
-      promptDownloadedUpdate();
-    }
-  });
-  // The startup check can resolve before this listener attaches; claim the
-  // cached status so the sidebar does not falsely say "Up to date".
-  window.zephus
-    .getLastUpdaterStatus()
-    .then((cached) => {
-      if (cached) {
-        homeActions.setUpdaterSnapshot(cached);
-        renderHomeStatusPanels();
-        refreshUpdaterControls();
-      }
-    })
-    .catch(() => {
-      /* non-fatal */
-    });
-  refreshIcons();
-
-  // Reopen last project if the user opted in and it still resolves. A failed
-  // reopen (missing folder, removed .zephus, damaged project) must not skip
-  // the first-run onboarding for brand-new users.
-  if (appSettings?.restoreLastProject && appSettings.lastOpenedProject) {
-    await openProjectByPath(appSettings.lastOpenedProject);
-    if (state.project) return;
-  }
-  await showOnboardingIfNew();
-}
-
-async function showOnboardingIfNew(): Promise<void> {
-  const settings = await window.zephus.readGlobalSettings();
-  if (settings.recentProjects.length > 0) return;
-  try {
-    if (localStorage.getItem("zephus.onboarding.dismissed") === "1") return;
-  } catch {
-    // Continue showing onboarding if storage is unavailable.
-  }
-  showModal(
-    "Welcome to Zephus",
-    "Zephus builds real websites visually — no coding needed. " +
-      "Pick a starter template and Zephus sets everything up for you, " +
-      "including installing what the site needs to run. " +
-      "Then drag blocks, edit text, and click Preview to see it live. " +
-      "Note: Zephus needs Node.js installed on your computer to preview and build sites.",
-    [
-      {
-        label: "Create My First Site",
-        kind: "primary",
-        onClick: () => {
-          closeModal();
-          const tabCreate = $("tab-create");
-          if (tabCreate) tabCreate.click();
-        },
-      },
-      {
-        label: "I'll look around first",
-        kind: "ghost",
-        onClick: () => {
-          try {
-            localStorage.setItem("zephus.onboarding.dismissed", "1");
-          } catch {
-            // Non-fatal; modal still closes.
-          }
-          closeModal();
-        },
-      },
-    ],
-  );
+  void chrome.bootstrap();
 }
 
 document.addEventListener("DOMContentLoaded", init);
