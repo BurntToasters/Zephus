@@ -21,6 +21,14 @@
 
 ## Changes in `0.1.0-beta.5:`
 
+### Audit round 24 — home/updater extraction (engine 5,348 → 5,156)
+
+**Structure:**
+- **Home screen + updater UI extracted** into `editorHome.ts` (~220 lines) — draft-recovery cards, recent projects, sidebar update status, and the update prompts now share one module with their state (updater snapshot, draft summaries) behind accessors. The engine's updater listener and recovery-card handler feed it through `setUpdaterSnapshot` / `getHomeDraftSummaries`.
+- **5 new unit tests**: draft-summary refresh, per-state updater status/actions, single-prompt-per-version dedupe, settings seeding from renderRecent.
+
+
+
 ### Audit round 23 — block operations extraction (engine 5,813 → 5,348)
 
 **Structure:**
