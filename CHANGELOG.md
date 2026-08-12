@@ -21,6 +21,14 @@
 
 ## Changes in `0.1.0-beta.5:`
 
+### Audit round 19 — git/code-editor/save/theme audit + workspace-tab tests
+
+**Audit (verified clean):** git panel actions (serialized chain, identity-error guidance, path-based commits), the CodeMirror wrapper (history reset on document replacement), clipboard paste handling (plain-text-only, no markup smuggling), the full save orchestration (revision guards, trailing-save loop, detach-on-divergence, draft-clear error surfacing), theme application, page slug/route derivation, the resize controller (lazy undo push, clamp-bail), and the main-process git layer (execFile, timeout, locale-pinned output).
+
+**Tests:** added unit coverage for the workspace tabs module (the last extracted module without tests) — roving-tab focus, arrow-key navigation, click switching, and focus escaping a soon-hidden panel.
+
+
+
 ### Audit round 18 — find/replace extraction + draft-system audit
 
 **Fixed:**
