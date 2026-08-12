@@ -21,6 +21,27 @@
 
 ## Changes in `0.1.0-beta.5:`
 
+### Round 25 — major overhaul: decomposition completion + hardening
+
+**Structure (engine 5,156 → 4,454 lines):**
+- **Settings modal + licenses modals extracted** (`editorSettingsModal.ts`, ~340 lines) — node-path flows, updater actions, in-place status patching, reset/save with app-settings seeding.
+- **Next Actions guidance renderer extracted** (`editorNextActions.ts`, ~280 lines) — the guidance-card logic (SEO, 404, dirty state, nav gaps) is now unit-testable with a deps contract.
+- **Global keyboard handler extracted** (`editorKeyboard.ts`, ~200 lines) — all shortcuts (guards, visual/code dispatch, chrome-control focus) in one testable module.
+- The project-open orchestration stays in the engine deliberately: it is the coherent core (625-line open flow with failure recovery + git gates), and fragmenting it would split one transaction across modules.
+
+**Bundle (−46 KB minified):**
+- **The full lucide icon-catalog alias map (~120 KB, 196 KB unminified) was being bundled** for ~40 icons. Icons now deep-import per file and `createIcons` is vendored locally (a ~60-line faithful copy) — the catalog is gone from the bundle; icons render identically (smoke-verified).
+
+**IPC bridge hardening:**
+- New `ipcBridgeSync.test.ts`: every declared channel must be handled/sent in main, used by the preload, declared in the renderer typing, and every engine `window.zephus.*` call must exist in the typing — the three hand-synced surfaces can no longer drift silently.
+
+**Smoke suite expansion:**
+- The smoke hook is now async and adds chrome-level checks: Help modal open/close, Settings modal open/close, dirty-flag round-trip, and undo-button state vs stack. (Full project save/publish/git flows need a real on-disk project — the scaffold-and-open smoke harness is the natural next step.)
+
+**Session reset audit (WS5):** `closeProject`/`resetOpenPageState`/delete-page paths verified — preview teardown, watcher, subscriptions, clipboard, saved-sections cache, site doc + pending site, pageMeta, recovered drafts all reset; no gaps found.
+
+
+
 ### Audit round 24 — home/updater extraction (engine 5,348 → 5,156)
 
 **Structure:**
