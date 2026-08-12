@@ -209,4 +209,77 @@ describe("block ops", () => {
     expect(statuses.join(" ").toLowerCase()).toContain("locked");
     expect(state.sections[0]!.id).toBe("a");
   });
+
+  it("cuts a block: copies it, deletes it, and skips the confirm", async () => {
+    const { deps, state } = makeDeps({
+      appSettings: { confirmBlockDelete: true },
+    });
+    const ops = createBlockOpsActions(deps);
+    state.selectedId = "b1";
+    await ops.cutSelectionToClipboard();
+    expect(state.sections[0]!.children.map((c) => c.id)).not.toContain("b1");
+    // The copied block is on the in-app clipboard: paste restores it.
+    ops.pasteFromClipboard();
+    expect(state.sections[0]!.children.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("pastes a copied section after the selected section", () => {
+    const { deps, state } = makeDeps();
+    const ops = createBlockOpsActions(deps);
+    // Copy section A (whole-section payload), then paste.
+    state.selectedId = null;
+    state.selectedSectionId = "a";
+    ops.copySelectionToClipboard();
+    ops.pasteFromClipboard();
+    expect(state.sections).toHaveLength(3);
+    const copy = state.sections[1]!;
+    expect(copy.id).not.toBe("a");
+    // Paste preserves the label (unlike Duplicate, which suffixes "Copy").
+    expect(copy.label).toBe("A");
+  });
+
+  it("reports an empty clipboard on paste", () => {
+    const { deps, statuses } = makeDeps();
+    const ops = createBlockOpsActions(deps);
+    ops.pasteFromClipboard();
+    expect(statuses.join(" ").toLowerCase()).toContain("clipboard is empty");
+  });
+
+  it("filters the add-block palette by allowed blocks", () => {
+    const { deps, state, statuses } = makeDeps({
+      editorRules: { allowedBlocks: ["text"] },
+    });
+    const ops = createBlockOpsActions(deps);
+    ops.addBlockAt("heading", 0, "a");
+    expect(statuses.join(" ")).toContain("not allowed");
+    expect(state.sections[0]!.children).toHaveLength(2);
+  });
+
+  it("blocks a template whose blocks are disallowed", () => {
+    const { deps } = makeDeps({
+      editorRules: { allowedBlocks: ["text"] },
+    });
+    const ops = createBlockOpsActions(deps);
+    const disallowed = {
+      id: "t",
+      label: "T",
+      blocks: () => [{ id: "x", type: "heading", props: {}, style: {} }],
+    } as never;
+    expect(ops.templateAllowed(disallowed)).toBe(false);
+    const allowed = {
+      id: "t2",
+      label: "T2",
+      blocks: () => [{ id: "y", type: "text", props: {}, style: {} }],
+    } as never;
+    expect(ops.templateAllowed(allowed)).toBe(true);
+  });
+
+  it("resolves a saved section template from the cache", () => {
+    const { deps } = makeDeps();
+    const ops = createBlockOpsActions(deps);
+    ops.setReusableSections([{ id: "s1", label: "Saved", html: "<p>hi</p>" }]);
+    const tpl = ops.resolveSavedSectionTemplate("s1");
+    expect(tpl?.label).toBe("Saved");
+    expect(ops.resolveSavedSectionTemplate("missing")).toBeNull();
+  });
 });

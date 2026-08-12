@@ -21,6 +21,12 @@
 
 ## Changes in `0.1.0-beta.5:`
 
+### Round 29 (cont.) — block-ops coverage raise
+
+- **6 new block-ops unit tests** (16 total): cut-then-paste round-trip, section paste preserving label, empty-clipboard report, allowed-blocks filtering on add, templateAllowed with disallowed blocks, saved-section template resolution. Module coverage 41% → 54.5%; floor raised to 50.
+
+
+
 ### Round 29 — external-change pipeline in the smoke suite
 
 - **The watcher → IPC → reload pipeline is now exercised end to end**: the smoke writes to the open page's file from outside the app (via a detach), asserts the "File Changed on Disk" prompt appears, clicks Reload, and verifies the new text lands in the editor. This covers the fs.watch → externalChange → conflict-modal → reload path that previously had zero runtime verification.

@@ -17,7 +17,7 @@ const thresholds = {
   // (full app boot) rather than unit tests.
   'src/renderer/editorStartView.ts': { lines: 45, statements: 45 },
   'src/renderer/editorPageModals.ts': { lines: 28, statements: 28 },
-  'src/renderer/editorBlockOps.ts': { lines: 40, statements: 40 },
+  'src/renderer/editorBlockOps.ts': { lines: 50, statements: 50 },
   'src/renderer/editorHome.ts': { lines: 40, statements: 40 },
   'src/renderer/editorSettingsModal.ts': { lines: 40, statements: 40 },
   'src/renderer/editorKeyboard.ts': { lines: 65, statements: 65 },
