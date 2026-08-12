@@ -28,6 +28,9 @@ export interface SiteShellModalState {
   onFooterHtmlChange: (value: string) => void;
   onCustomHeadHtmlChange: (value: string) => void;
   siteUrl: string;
+  /** Inline validation error for the site URL (the status bar is covered by
+   *  the modal overlay, so failures were invisible). */
+  siteUrlError?: string;
   language: string;
   faviconPath: string;
   onSiteUrlChange: (value: string) => void;
@@ -247,6 +250,11 @@ export function renderSiteShellModalBody(
               state.onSiteUrlChange(event.currentTarget.value)
             }
           />
+          {state.siteUrlError ? (
+            <span class="form-error" role="alert">
+              {state.siteUrlError}
+            </span>
+          ) : null}
           <small class="meta-hint">
             Your site's public address. Required for canonical links, social
             share previews, and sitemap.xml.

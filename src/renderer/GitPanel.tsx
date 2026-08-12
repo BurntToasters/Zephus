@@ -53,38 +53,55 @@ export function GitBranchTag() {
     runIconRefresh();
   });
 
+  // Clicking the branch chip opens the Git workspace tab (it was a dead span
+  // that looked interactive).
+  const openGitTab = () => {
+    const tab = document.querySelector<HTMLButtonElement>(
+      '[data-workspace-tab="git"]',
+    );
+    tab?.click();
+  };
+
   return (
-    <Show when={gitStatus()}>
-      {(status) => (
-        <Show
-          when={status().available}
-          fallback={
-            <>
-              <i data-lucide="git-branch" aria-hidden="true"></i>{" "}
-              <span>git: unavailable</span>
-            </>
-          }
-        >
+    <button
+      type="button"
+      class="git-branch-chip"
+      title="Open Git panel"
+      aria-label="Open Git panel"
+      onClick={openGitTab}
+    >
+      <Show when={gitStatus()}>
+        {(status) => (
           <Show
-            when={!status().detachedHead}
+            when={status().available}
             fallback={
               <>
                 <i data-lucide="git-branch" aria-hidden="true"></i>{" "}
-                <span>detached HEAD</span>
+                <span>git: unavailable</span>
               </>
             }
           >
-            <>
-              <i data-lucide="git-branch" aria-hidden="true"></i>{" "}
-              <span>
-                {status().branch ?? ""}
-                {formatGitUpstreamLabel(status().ahead, status().behind)}
-              </span>
-            </>
+            <Show
+              when={!status().detachedHead}
+              fallback={
+                <>
+                  <i data-lucide="git-branch" aria-hidden="true"></i>{" "}
+                  <span>detached HEAD</span>
+                </>
+              }
+            >
+              <>
+                <i data-lucide="git-branch" aria-hidden="true"></i>{" "}
+                <span>
+                  {status().branch ?? ""}
+                  {formatGitUpstreamLabel(status().ahead, status().behind)}
+                </span>
+              </>
+            </Show>
           </Show>
-        </Show>
-      )}
-    </Show>
+        )}
+      </Show>
+    </button>
   );
 }
 

@@ -21,6 +21,29 @@
 
 ## Changes in `0.1.0-beta.5:`
 
+### Beta 6 — round 15
+
+**Build pipeline (fixed):**
+- **A missing or stale renderer bundle shipped silently** — `zephusEngine.js` is a gitignored artifact in src/, and electron-builder globs it without complaining: any build without a fresh compile packaged a blank-window app with zero errors. The copy step now verifies the bundle exists and is newer than the newest renderer source.
+- **`npm start` (`electron .`) ran without devtools** — the `!process.defaultApp` clause was inverted (`electron .` sets it true). Now correctly detected.
+- **A plain `tsc` could overwrite the esbuild bundle** with raw unbundled output (the renderer tsconfig emitted into src/). The config is now `noEmit`.
+- **The smoke harness was triggerable on shipped binaries** (`--smoke` / `?smoke=1`) — gated on `!isPackaged`.
+
+**Git noise (fixed):**
+- **Every page save bumped site.json's `generatedAt`** (churn in every commit even for body-copy-only saves). The three site-writing paths now skip the write when the site (ignoring generatedAt) is unchanged — the returned site stays byte-equal to disk so the renderer's drift check cannot false-positive.
+
+**UX (fixed):**
+- **The Site URL validation failure was invisible** — the error went to the status bar, which sits UNDER the modal overlay. Now renders inline in the modal.
+- **The git branch chip in the topbar was a dead span** that looked clickable — now opens the Git panel.
+- **The preview URL vanished after 6 seconds** (status bar auto-clear) — a persistent chip with copy-to-clipboard sits next to the Preview button while running.
+- **Mode and viewport switches were mouse-only** — new shortcuts: Ctrl/Cmd+E toggles Visual/Code, Ctrl/Cmd+1/2/3 switches desktop/tablet/mobile (documented in the Help modal).
+- **Editing a page title left the nav label stale** — the nav label now follows the title until it is hand-set.
+
+**Architecture (first engine extraction):**
+- **Preview, publish, and dependency-install moved out of zephusEngine.ts** into `editorPreviewPublish.ts` (~375 lines) using the established deps-object pattern — with their three pieces of module state (previewStartInFlight, publishInFlight, previewLogSubscriptions). The engine is ~375 lines lighter and the preview/publish logic is now unit-testable. The full gate (799 tests, smoke, astro-build, coverage) is green on the cutover.
+
+
+
 ### ✨ Welcome to the Zephus 0.1.0 beta
 
 Zephus is a **local-first visual editor for Astro sites** — no coding required to build and publish a real static site. Everything runs on your machine; your project is a normal Astro repository you can open in any editor, commit to git, and host anywhere.

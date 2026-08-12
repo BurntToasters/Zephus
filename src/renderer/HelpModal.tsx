@@ -15,6 +15,18 @@ export function HelpModalContent() {
             </tr>
             <tr>
               <td>
+                <kbd>Ctrl/Cmd</kbd> + <kbd>E</kbd>
+              </td>
+              <td>Toggle Visual / Code mode</td>
+            </tr>
+            <tr>
+              <td>
+                <kbd>Ctrl/Cmd</kbd> + <kbd>1</kbd> / <kbd>2</kbd> / <kbd>3</kbd>
+              </td>
+              <td>Desktop / Tablet / Mobile viewport</td>
+            </tr>
+            <tr>
+              <td>
                 <kbd>Ctrl/Cmd</kbd> + <kbd>Z</kbd>
               </td>
               <td>Undo Last Visual Change</td>

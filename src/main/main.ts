@@ -19,11 +19,12 @@ const isDev =
   !app.isPackaged &&
   (process.argv.includes("--dev") ||
     process.env.NODE_ENV === "development" ||
-    // `electron .` (npm start) runs the app WITHOUT the --dev flag; it is
-    // still a dev run and needs devtools.
-    !process.defaultApp);
+    // `electron .` (npm start) runs the app WITHOUT the --dev flag and with
+    // process.defaultApp === true; it is still a dev run and needs devtools.
+    process.defaultApp === true);
 const isSmoke =
-  process.argv.includes("--smoke") || process.env.ZEPHUS_SMOKE === "1";
+  !app.isPackaged &&
+  (process.argv.includes("--smoke") || process.env.ZEPHUS_SMOKE === "1");
 const isPrimaryInstance =
   isSmoke || typeof app.requestSingleInstanceLock !== "function"
     ? true
