@@ -15,11 +15,11 @@ const summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
 const thresholds = {
   // UI glue extracted from the engine: covered by the runtime smoke suite
   // (full app boot) rather than unit tests.
-  'src/renderer/editorStartView.ts': { lines: 45, statements: 45 },
+  'src/renderer/editorStartView.ts': { lines: 48, statements: 48 },
   'src/renderer/editorPageModals.ts': { lines: 28, statements: 28 },
   'src/renderer/editorBlockOps.ts': { lines: 50, statements: 50 },
   'src/renderer/editorHome.ts': { lines: 40, statements: 40 },
-  'src/renderer/editorSettingsModal.ts': { lines: 40, statements: 40 },
+  'src/renderer/editorSettingsModal.ts': { lines: 50, statements: 50 },
   'src/renderer/editorKeyboard.ts': { lines: 65, statements: 65 },
   'src/renderer/editorNextActions.ts': { lines: 40, statements: 40 },
   'src/renderer/editorUndoOps.ts': { lines: 75, statements: 75 },

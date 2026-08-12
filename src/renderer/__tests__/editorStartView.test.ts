@@ -25,7 +25,7 @@ function makeDeps() {
     },
     $maybe: (id: string) => document.getElementById(id) as HTMLElement | null,
     setStatus: (m: string) => statuses.push(m),
-    showModal: (_t: string, _b: string) => modals.push("modal"),
+    showModal: (t: string) => modals.push(t),
     showModalNode: () => modals.push("modal-node"),
     closeModal: () => undefined,
     openSettingsModal: vi.fn(async () => undefined),
@@ -161,6 +161,39 @@ describe("start view tabs", () => {
     await actions.createSiteFromTabFlow();
     expect(modals.length).toBeGreaterThan(0);
     expect(deps.runInstallFlow).not.toHaveBeenCalled();
+    expect(deps.openProjectByPath).not.toHaveBeenCalled();
+  });
+
+  it("creates a site end to end when Node is available", async () => {
+    mountStartTabs();
+    const { deps, statuses } = makeDeps();
+    (window as unknown as { zephus: Record<string, unknown> }).zephus = {
+      ...((window as unknown as { zephus: object }).zephus as object),
+      getNodeStatus: async () => ({ status: "ok", version: "22.12.0" }),
+      chooseNewSiteFolder: async () => "/tmp/new-site",
+      createSite: async () => ({ ok: true }),
+    };
+    const actions = createStartViewActions(deps as never);
+    actions.selectThemeCard("minimal");
+    await actions.createSiteFromTabFlow();
+    expect(deps.runInstallFlow).toHaveBeenCalledWith("/tmp/new-site");
+    expect(deps.openProjectByPath).toHaveBeenCalledWith("/tmp/new-site");
+    expect(statuses.join(" ")).toContain("Creating site");
+  });
+
+  it("shows a failure modal when the site scaffold fails", async () => {
+    mountStartTabs();
+    const { deps, modals } = makeDeps();
+    (window as unknown as { zephus: Record<string, unknown> }).zephus = {
+      ...((window as unknown as { zephus: object }).zephus as object),
+      getNodeStatus: async () => ({ status: "ok", version: "22.12.0" }),
+      chooseNewSiteFolder: async () => "/tmp/new-site",
+      createSite: async () => ({ ok: false, error: "disk full" }),
+    };
+    const actions = createStartViewActions(deps as never);
+    actions.selectThemeCard("minimal");
+    await actions.createSiteFromTabFlow();
+    expect(modals.join(" ")).toContain("Could Not Create Site");
     expect(deps.openProjectByPath).not.toHaveBeenCalled();
   });
 });

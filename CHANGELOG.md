@@ -21,6 +21,14 @@
 
 ## Changes in `0.1.0-beta.5:`
 
+### Round 30 — start-view + settings coverage raise
+
+- **Start view create flow completed (10 tests total)**: the success path (node ok → folder → scaffold → install → open), the scaffold-failure modal, and the node-gate stop are all locked.
+- **Settings modal node flows (7 tests total)**: custom node-path pick, auto-detect reset, updater check.
+- Module coverage: startView 47.5% → 53.6%, settingsModal 44.3% → 58.8%; floors raised accordingly.
+
+
+
 ### Round 29 (cont.) — block-ops coverage raise
 
 - **6 new block-ops unit tests** (16 total): cut-then-paste round-trip, section paste preserving label, empty-clipboard report, allowed-blocks filtering on add, templateAllowed with disallowed blocks, saved-section template resolution. Module coverage 41% → 54.5%; floor raised to 50.

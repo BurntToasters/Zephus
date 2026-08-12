@@ -5,6 +5,9 @@ import { createSettingsModalActions } from "../editorSettingsModal";
 interface ModalProps {
   onSettingChange: (key: string, value: unknown) => void;
   onUpdaterAction: (actionId: string) => Promise<void>;
+  onPickNodePath?: () => Promise<void>;
+  onAutoNodePath?: () => Promise<void>;
+  settings?: { customNodePath?: string | null };
 }
 let modalProps: ModalProps | null = null;
 let modalActions: Array<{ label: string; kind?: string; onClick: () => void }> =
@@ -158,6 +161,41 @@ describe("settings modal", () => {
     const reset = getActions().find((a) => a.label === "Reset to Defaults")!;
     await reset.onClick();
     expect(writes).toHaveLength(0);
+  });
+
+  it("picks a custom node path and updates the modal state", async () => {
+    const { deps, getProps } = makeDeps();
+    const actions = createSettingsModalActions(deps);
+    await actions.openSettingsModal();
+    await new Promise((r) => setTimeout(r, 0));
+
+    (
+      window as unknown as { zephus: { pickNodePath: unknown } }
+    ).zephus.pickNodePath = async () => ({
+      status: "ok",
+      version: "22.12.0",
+      usedCustomPath: true,
+      binaryPath: "/custom/node",
+    });
+    await getProps()!.onPickNodePath?.();
+    // The modal state must hold the picked path.
+    expect(
+      (getProps()! as unknown as { settings: { customNodePath?: string } })
+        .settings?.customNodePath,
+    ).toBe("/custom/node");
+  });
+
+  it("resets to auto-detected node on the auto path", async () => {
+    const { deps, getProps } = makeDeps();
+    const actions = createSettingsModalActions(deps);
+    await actions.openSettingsModal();
+    await new Promise((r) => setTimeout(r, 0));
+
+    await getProps()!.onAutoNodePath?.();
+    expect(
+      (getProps()! as unknown as { settings: { customNodePath?: string } })
+        .settings?.customNodePath,
+    ).toBeNull();
   });
 
   it("runs the updater check action", async () => {
