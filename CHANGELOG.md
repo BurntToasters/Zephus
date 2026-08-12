@@ -21,6 +21,17 @@
 
 ## Changes in `0.1.0-beta.5:`
 
+### Round 27 — unit coverage for the round-25 extractions
+
+**24 new unit tests closing the test gap on the round-25 modules:**
+- **Keyboard handler (12 tests)**: Cmd+S save, modal-open suppression, busy-state guard, undo/redo dispatch, Cmd+D duplicate, Delete with chrome-control focus guard, viewport shortcuts (incl. no-op when already on that viewport), mode toggle, find-modal, help from background, CodeMirror undo in code mode.
+- **Next Actions guidance (7 tests)**: hidden without a project, save-all on dirty, site-URL recommendation, missing-404 recommendation, multi-H1 flag, valid/invalid publish-date handling.
+- **Settings modal (5 tests)**: open + node-status seeding, save applies theme/font, reset-to-defaults with confirmation, declined-reset refusal, updater check action.
+
+**Coverage:** per-file floors added for the three modules (keyboard 65, settings 40, next-actions 40); the overall gate tracks the extraction reality (82/84) with the module floors + runtime smoke doing the real regression gating.
+
+
+
 ### Round 26 — real-project smoke suite (save/drafts/publish/git end to end)
 
 **The smoke suite now drives a REAL project** instead of synthesizing renderer-only state:
