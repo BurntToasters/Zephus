@@ -21,6 +21,16 @@
 
 ## Changes in `0.1.0-beta.5:`
 
+### Audit round 23 — block operations extraction (engine 5,813 → 5,348)
+
+**Structure:**
+- **Page-structure operations extracted** into `editorBlockOps.ts` (~690 lines) — the block/section layer: add, move, duplicate, lock, delete, wrap, and the in-app clipboard (copy/cut/paste). Every page mutation outside the inspector now flows through this module, so future block features land here with one deps contract. The engine's ops state (editorClipboard, delete-confirm latch, saved-sections cache) moved with it, exposed through narrow accessors.
+- **10 new unit tests** locking the guards: locked-section insertion/paste refusal, cross-section moves, duplicate fresh-ids, wrap, delete-confirm, section duplication.
+
+**Coverage:** per-file floor for the new module; overall gate recalibrated to 85/87 (extracted UI layers are gated by their own floors + the runtime smoke suite).
+
+
+
 ### Audit round 22 — page modals extraction (engine 6,407 → 5,813)
 
 **Structure:**
