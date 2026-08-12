@@ -14,9 +14,6 @@ function makeDeps(overrides: Partial<ChromeDeps> = {}) {
   let updaterSnapshot: { status: string } | null = null;
   const statuses: string[] = [];
   const modals: string[] = [];
-  const buttons: Record<string, { onclick: (() => void) | null }> = {};
-  const listeners: Record<string, Array<(e: unknown) => void>> = {};
-
   document.body.innerHTML = `
     <div id="sidebar-app-version"></div>
     <button id="btn-create"></button>
@@ -192,7 +189,6 @@ describe("chrome", () => {
   });
 
   it("bootstrap restores the last project when opted in", async () => {
-    const { deps, getAppSettings } = makeDeps();
     let opened: string | null = null;
     (window as unknown as { zephus?: unknown }).zephus = {
       readGlobalSettings: async () => ({
@@ -205,16 +201,14 @@ describe("chrome", () => {
       onUpdaterStatus: () => () => undefined,
       getLastUpdaterStatus: async () => null,
     };
-    const chrome = createChromeActions(
-      makeDeps({
-        openProjectByPath: async (folder: string) => {
-          opened = folder;
-        },
-      }).deps,
-    );
+    const chrome = createChromeActions({
+      ...makeDeps().deps,
+      openProjectByPath: async (folder: string) => {
+        opened = folder;
+      },
+    });
     await chrome.bootstrap();
     expect(opened).toBe("/last");
-    void getAppSettings;
   });
 
   it("installs the close guard that allows a force-close via the marker", () => {
