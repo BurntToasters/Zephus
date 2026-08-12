@@ -21,6 +21,13 @@
 
 ## Changes in `0.1.0-beta.5:`
 
+### Audit round 17 — canvas/properties extraction
+
+**Architecture (second engine extraction):**
+- **Canvas rendering, drag/drop, and the properties (inspector) panel moved out of zephusEngine.ts** into `editorCanvas.ts` (~485 lines) — with their module state: drag slots, the drop indicator, double-click tracking, and the inspector selection key. The engine is ~485 lines lighter; the canvas code is now unit-testable with an explicit deps contract. The engine's canvas-component callbacks read/write the drag slots through narrow accessors instead of shared mutable variables.
+
+
+
 ### Audit round 16 — publish streaming + fresh service-layer pass
 
 **Publish (fixed):**
