@@ -21,6 +21,18 @@
 
 ## Changes in `0.1.0-beta.5:`
 
+### Audit round 18 — find/replace extraction + draft-system audit
+
+**Fixed:**
+- **The "Nothing to replace" path was dead code** — Replace All re-searched first, and when the fresh search had zero matches the handler returned before the "Nothing to replace." status could fire. Now reported properly.
+
+**Architecture (third engine extraction):**
+- **Find & Replace moved out of zephusEngine.ts** into `editorFindReplace.ts` (~185 lines), with 12 new unit tests covering the search-seq guard (a stale in-flight response must never repopulate the list or drive a replace), the Replace All dirty-guard, failure paths, and option invalidation. The tests surfaced the dead-code bug above.
+
+**Audit (verified clean):** the crash-draft system end to end — debounced writes, save-path clearing, stale-draft cleanup on undo-to-baseline, main-side store (keyed hashing, 30-day retention, atomic writes, corrupt-file backup), and the home-screen recovery card flow.
+
+
+
 ### Audit round 17 — canvas/properties extraction
 
 **Architecture (second engine extraction):**
