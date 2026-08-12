@@ -19,7 +19,24 @@
 
 ---
 
-## Changes in `0.1.0-beta.5:`
+# Zephus Changelog
+
+## 0.1.0-beta.6 — Release Candidate for 0.1.0
+### Round 35 — beta.6 RC hardening
+
+- **Chrome module tests (5)**: toolbar wiring, bootstrap settings/theme apply, onboarding for brand-new users only, last-project restore, and the force-close marker.
+- **Version bumped to 0.1.0-beta.6** — the 0.1.0 release candidate.
+- **Packaged-app verification**: `electron-builder --dir` builds and signs with the Developer ID; the packaged app boots cleanly (the runtime smoke is intentionally gated off shipped binaries — round-15 hardening).
+- **Development guide updated** to the final ~34-module architecture, the testing stack, and the smoke suite.
+
+
+
+All rounds 15-34 above; this build is treated as the 0.1.0 release candidate:
+engine decomposed into ~34 tested modules, end-to-end runtime smoke (save,
+drafts, publish, git, external-change), IPC bridge drift-guarded, CI smoke
+job, zero lint warnings.
+
+
 
 ### Round 34 (cont.) — BlockProperties split + fresh audit
 

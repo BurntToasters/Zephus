@@ -61,33 +61,54 @@ If you change `renderBlockHtml`, update snapshots deliberately and mirror behavi
 
 ## Renderer module slices
 
-`zephusEngine.ts` is still the central orchestrator (~6.9k lines). Prefer adding logic to focused modules:
+`zephusEngine.ts` is the orchestration core (~3.3k lines): page/site save
+lifecycle, parse/serialize glue, undo wiring, and the composition root (each
+module below is created with an explicit deps object). Prefer adding logic to
+focused modules:
 
 | Module                            | Responsibility                                                                                      |
 | --------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `editorCommands.ts`               | Mode guard, clipboard rules, paste, toolbar undo state                                              |
-| `editorGit.ts`                    | Git panel IPC (status, commit, push, pull, init)                                                    |
-| `editorSave.ts`                   | Page/site save flow, status messages, draft clear on save                                           |
-| `editorParse.ts`                  | DOM parse of managed inner HTML → sections/blocks (code/visual load)                                |
-| `editorPageModel.ts`              | Clone sections, flatten blocks, build page document snapshots                                       |
-| `editorUndo.ts`                   | Unified page + site undo snapshots, stack limit, restore                                            |
-| `editorDraft.ts`                  | Debounced crash-recovery draft writes (`site-shell` target)                                         |
-| `editorInspector.ts`              | Inspector undo latch + debounced canvas repaint while typing                                        |
-| `editorUnsavedWork.ts`            | Unsaved page/site summary lines for confirm modals                                                  |
-| `editorLog.ts`                    | Capped install/dev log append helper                                                                |
-| `editorSiteSave.ts`               | Persist or discard pending site shell/design changes                                                |
-| `editorDraftRestore.ts`           | Page/site crash-recovery draft restore prompts                                                      |
-| `editorSerialize.ts`              | Split/assemble managed page source (frontmatter + frame)                                            |
-| `editorBlockRender.ts`            | Canvas HTML sanitization, heading caps, section/block HTML for editor                               |
-| `editorBlocks.ts`                 | Block catalog: palette order/icons, default props, section templates, `KNOWN_BLOCK_TYPES` allowlist |
-| `editorInlineEdit.ts`             | Inline contenteditable editing + floating format toolbar (deps-injected controller)                 |
-| `editorResize.ts`                 | Canvas resize handles, pointer/keyboard resizing, viewport-aware style writes                       |
-| `editorSession.ts`                | Dirty tracking, site/page session snapshots, page/site edit revisions                               |
-| `editorWorkspace.ts`              | Left/right rail tab switching (`activateWorkspaceTab`) + focus handoff                              |
-| `inlineRichText.ts`               | Reads an inline-edited element back into a stored text prop                                         |
-| `*Panel.tsx`, `CanvasView.tsx`, … | Solid UI mounted from `init()`                                                                      |
+| `editorChrome.ts`                 | Window chrome: close/reload guards, toolbar wiring, bootstrap, onboarding                            |
+| `editorProject.ts`                | Project open lifecycle: open-queue guard, failure gates, enter-editor sequence                       |
+| `editorPageLoad.ts`               | Page loading race machinery + external-change (keep/reload) conflict flow                            |
+| `editorCanvas.ts`                 | Canvas render, drag/drop slots, properties panel + canvas interaction bindings                        |
+| `editorBlockOps.ts`               | Block/section add/move/duplicate/lock/delete/wrap + in-app clipboard                                 |
+| `editorPageModals.ts`             | Page Settings + Asset Browser modals                                                                 |
+| `editorSiteEditor.ts`             | Site Shell + Design System editors (stage into the pending site document)                            |
+| `editorNextActions.ts`            | Guidance cards (SEO, 404, dirty state, nav gaps)                                                     |
+| `editorStartView.ts`              | Start tabs, theme picker, create-site flow                                                           |
+| `editorHome.ts`                   | Home screen status + updater UI                                                                      |
+| `editorSettingsModal.ts`          | App settings modal + licenses                                                                        |
+| `editorKeyboard.ts`               | Global shortcuts (guards + visual/code dispatch)                                                     |
+| `editorUndoOps.ts`                | Undo/redo state machine (stack order, dirty-on-restore invariants)                                   |
+| `editorFindReplace.ts`            | Find & Replace modal (search-seq guard, dirty-gate)                                                  |
+| `editorPreviewPublish.ts`         | Preview/publish/dependency-install flows                                                             |
+| `editorSave.ts`                   | Page/site save flow, status messages, draft clear on save                                            |
+| `editorSiteSave.ts`               | Persist or discard pending site shell/design changes                                                 |
+| `editorDraft.ts`                  | Debounced crash-recovery draft writes (`site-shell` target)                                          |
+| `editorDraftRestore.ts`           | Page/site crash-recovery draft restore prompts                                                       |
+| `editorSmoke.ts`                  | Packaged-app smoke harness (real-project save/publish/git/draft flows)                               |
+| `editorCommands.ts`               | Mode guard, clipboard rules, paste, toolbar undo state                                               |
+| `editorGit.ts`                    | Git panel IPC (status, commit, push, pull, init)                                                     |
+| `editorParse.ts`                  | DOM parse of managed inner HTML → sections/blocks (code/visual load)                                 |
+| `editorPageModel.ts`              | Clone sections, flatten blocks, build page document snapshots                                        |
+| `editorUndo.ts`                   | Unified page + site undo snapshots, stack limit, restore                                             |
+| `editorInspector.ts`              | Inspector undo latch + debounced canvas repaint while typing                                         |
+| `editorSerialize.ts`              | Split/assemble managed page source (frontmatter + frame)                                             |
+| `editorBlockRender.ts`            | Canvas HTML sanitization, heading caps, section/block HTML for editor                                |
+| `editorBlocks.ts`                 | Block catalog: palette order/icons, default props, section templates, `KNOWN_BLOCK_TYPES` allowlist  |
+| `BlockProps/*.tsx`                | Per-block-type property editors (shared fields, content, image/gallery)                              |
+| `*Panel.tsx`, `CanvasView.tsx`, … | Solid UI mounted from `init()` via `mountPanel`                                                      |
 
-New editor features should follow the same pattern: pure helpers + Vitest in `src/renderer/__tests__/`.
+**Testing:** every module ships Vitest coverage in `src/renderer/__tests__/`
+(900+ tests). The runtime smoke (`npm run smoke:runtime`, CI job) drives a real
+scaffolded project: save, crash drafts, publish (real Astro build), git commit,
+and the external-change pipeline. The IPC bridge is drift-guarded
+(`src/main/__tests__/ipcBridgeSync.test.ts`). Coverage gates are per-file plus
+an overall floor (see `build-scripts/check-coverage-thresholds.js`).
+
+New editor features should follow the same pattern: a deps-contract module +
+Vitest in `src/renderer/__tests__/`, wired in the engine's composition root.
 
 ## Inline rich text
 
