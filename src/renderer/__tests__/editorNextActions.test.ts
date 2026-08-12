@@ -30,7 +30,7 @@ function makeState(overrides: Record<string, unknown> = {}) {
     selectedId: null,
     selectedSectionId: null,
     ...overrides,
-  } as never;
+  } as unknown as import("../editorSession").EditorSessionState;
 }
 
 function makeDeps(state: ReturnType<typeof makeState>) {
@@ -65,7 +65,7 @@ function makeDeps(state: ReturnType<typeof makeState>) {
     isValidDateString: (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v),
     visibleNavCount: () => 0,
     templateAllowed: () => true,
-  } as never;
+  } as unknown as Parameters<typeof createNextActionsRenderer>[0];
   return { deps, cards, getVisible: () => visible, statuses };
 }
 
@@ -123,6 +123,53 @@ describe("next actions guidance", () => {
     const { deps, cards } = makeDeps(state);
     createNextActionsRenderer(deps).renderNextActions();
     expect(cards.some((c) => c.title === "Fix the publish date")).toBe(true);
+  });
+
+  it("fixes the second H1 via the guidance card action", () => {
+    const state = makeState();
+    state.selectedId = null;
+    state.selectedSectionId = null;
+    const { deps, cards } = makeDeps(state);
+    (deps.findBlockLocation as ReturnType<typeof vi.fn>).mockReturnValue({
+      section: { id: "a" },
+      blockIndex: 1,
+    });
+    createNextActionsRenderer(deps).renderNextActions();
+    const card = cards.find(
+      (c) => c.title === "Multiple H1 headings detected",
+    )!;
+    card.actions.find((a) => a.label === "Fix Heading")!.onClick();
+    expect(state.selectedId).toBe("h1b");
+    expect(state.selectedSectionId).toBe("a");
+  });
+
+  it("creates the 404 page from the guidance card", () => {
+    const state = makeState({
+      pageMeta: [{ slug: "index", page: "index", navVisible: true }],
+    });
+    const { deps, cards } = makeDeps(state);
+    createNextActionsRenderer(deps).renderNextActions();
+    const card = cards.find((c) => c.title === "Add a 404 page")!;
+    card.actions.find((a) => a.label === "Create 404 Page")!.onClick();
+    expect(deps.createNotFoundPage).toHaveBeenCalled();
+  });
+
+  it("opens the site shell from the site-URL card", () => {
+    const state = makeState({ siteDocument: { siteUrl: "" } });
+    const { deps, cards } = makeDeps(state);
+    createNextActionsRenderer(deps).renderNextActions();
+    const card = cards.find((c) => c.title === "Set your site address")!;
+    card.actions.find((a) => a.label === "Open Site Shell")!.onClick();
+    expect(deps.openSiteShellModal).toHaveBeenCalled();
+  });
+
+  it("discards the site changes from the dirty card", () => {
+    const state = makeState({ siteDirty: true });
+    const { deps, cards } = makeDeps(state);
+    createNextActionsRenderer(deps).renderNextActions();
+    const card = cards.find((c) => c.title === "Unsaved work pending")!;
+    card.actions.find((a) => a.label === "Discard Site")!.onClick();
+    expect(deps.discardPendingSiteChanges).toHaveBeenCalled();
   });
 
   it("does not flag a valid publish date", () => {

@@ -21,6 +21,12 @@
 
 ## Changes in `0.1.0-beta.5:`
 
+### Round 30 (cont.) — next-actions action coverage
+
+- **4 more next-actions tests (11 total)**: Fix-Heading selects the second H1, Create-404 calls through, Open-Site-Shell opens the modal, Discard-Site clears pending site changes. Module coverage 43.6% → 54.5%; floor raised to 50.
+
+
+
 ### Round 30 — start-view + settings coverage raise
 
 - **Start view create flow completed (10 tests total)**: the success path (node ok → folder → scaffold → install → open), the scaffold-failure modal, and the node-gate stop are all locked.
