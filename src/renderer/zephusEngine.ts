@@ -83,47 +83,45 @@ import {
   trackSiteChange,
 } from "./editorSession";
 import { createModalController } from "./modalController";
-import {
-  createIcons,
-  Settings,
-  Clock,
-  Compass,
-  FolderOpen,
-  Plus,
-  Eye,
-  EyeOff,
-  FilePenLine,
-  CodeXml,
-  Monitor,
-  Tablet,
-  Smartphone,
-  Undo2,
-  Redo2,
-  Play,
-  Globe,
-  Save,
-  LogOut,
-  RefreshCw,
-  Square,
-  Heading,
-  AlignLeft,
-  Image as ImageIcon,
-  Layout,
-  LayoutTemplate,
-  FileCode,
-  Link,
-  GitBranch,
-  AlertTriangle,
-  Star,
-  Quote,
-  ChevronDown,
-  BarChart,
-  Tag,
-  Megaphone,
-  Newspaper,
-  X,
-  Info,
-} from "lucide";
+import { createIcons } from "./editorIcons";
+import { default as Settings } from "lucide/dist/esm/icons/settings.mjs";
+import { default as Clock } from "lucide/dist/esm/icons/clock.mjs";
+import { default as Compass } from "lucide/dist/esm/icons/compass.mjs";
+import { default as FolderOpen } from "lucide/dist/esm/icons/folder-open.mjs";
+import { default as Plus } from "lucide/dist/esm/icons/plus.mjs";
+import { default as Eye } from "lucide/dist/esm/icons/eye.mjs";
+import { default as EyeOff } from "lucide/dist/esm/icons/eye-off.mjs";
+import { default as FilePenLine } from "lucide/dist/esm/icons/file-pen-line.mjs";
+import { default as CodeXml } from "lucide/dist/esm/icons/code-xml.mjs";
+import { default as Monitor } from "lucide/dist/esm/icons/monitor.mjs";
+import { default as Tablet } from "lucide/dist/esm/icons/tablet.mjs";
+import { default as Smartphone } from "lucide/dist/esm/icons/smartphone.mjs";
+import { default as Undo2 } from "lucide/dist/esm/icons/undo-2.mjs";
+import { default as Redo2 } from "lucide/dist/esm/icons/redo-2.mjs";
+import { default as Play } from "lucide/dist/esm/icons/play.mjs";
+import { default as Globe } from "lucide/dist/esm/icons/globe.mjs";
+import { default as Save } from "lucide/dist/esm/icons/save.mjs";
+import { default as LogOut } from "lucide/dist/esm/icons/log-out.mjs";
+import { default as RefreshCw } from "lucide/dist/esm/icons/refresh-cw.mjs";
+import { default as Square } from "lucide/dist/esm/icons/square.mjs";
+import { default as Heading } from "lucide/dist/esm/icons/heading.mjs";
+import { default as AlignLeft } from "lucide/dist/esm/icons/text-align-start.mjs";
+import { default as ImageIcon } from "lucide/dist/esm/icons/image.mjs";
+import { default as Layout } from "lucide/dist/esm/icons/panels-top-left.mjs";
+import { default as LayoutTemplate } from "lucide/dist/esm/icons/layout-template.mjs";
+import { default as FileCode } from "lucide/dist/esm/icons/file-code.mjs";
+import { default as Link } from "lucide/dist/esm/icons/link.mjs";
+import { default as GitBranch } from "lucide/dist/esm/icons/git-branch.mjs";
+import { default as AlertTriangle } from "lucide/dist/esm/icons/triangle-alert.mjs";
+import { default as Star } from "lucide/dist/esm/icons/star.mjs";
+import { default as Quote } from "lucide/dist/esm/icons/quote.mjs";
+import { default as ChevronDown } from "lucide/dist/esm/icons/chevron-down.mjs";
+import { default as BarChart } from "lucide/dist/esm/icons/chart-no-axes-column-increasing.mjs";
+import { default as Tag } from "lucide/dist/esm/icons/tag.mjs";
+import { default as Megaphone } from "lucide/dist/esm/icons/megaphone.mjs";
+import { default as Newspaper } from "lucide/dist/esm/icons/newspaper.mjs";
+import { default as X } from "lucide/dist/esm/icons/x.mjs";
+import { default as Info } from "lucide/dist/esm/icons/info.mjs";
 import type { RenderPostEntry } from "../shared/blockRender";
 import { renderSectionsMarkup } from "../shared/blockRender";
 import { renderHelpModal } from "./HelpModal";

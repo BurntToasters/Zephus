@@ -712,7 +712,7 @@ interface ZephusApi {
 
 interface Window {
   zephus: ZephusApi;
-  __zephusRunEditorSmoke?: () => string[];
+  __zephusRunEditorSmoke?: () => string[] | Promise<string[]>;
   refreshIcons?: () => void;
   /** Set by the engine so programmatic quits (update install) bypass the
    *  unsaved-work close guard. */

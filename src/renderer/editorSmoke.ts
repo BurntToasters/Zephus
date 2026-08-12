@@ -44,7 +44,7 @@ export function installEditorSmokeHook(deps: EditorSmokeDeps): void {
     findBlockLocation,
   } = deps;
 
-  window.__zephusRunEditorSmoke = () => {
+  window.__zephusRunEditorSmoke = async () => {
     const state = getState();
     const failures: string[] = [];
     const assert = (condition: unknown, message: string): void => {
@@ -296,6 +296,67 @@ export function installEditorSmokeHook(deps: EditorSmokeDeps): void {
       assert(
         section.children[0]?.props["text"] === "Undo Me",
         "Editor smoke: Escape did not cancel the inline edit.",
+      );
+    }
+
+    // Chrome-level flows that need no real project: the help modal, the
+    // settings modal's node-status seeding, and the dirty-indicator wiring.
+    const helpBtn = document.getElementById("btn-help");
+    if (helpBtn instanceof HTMLButtonElement) {
+      helpBtn.click();
+      const helpModal = document.getElementById("modal-overlay");
+      assert(
+        helpModal && !helpModal.classList.contains("hidden"),
+        "Editor smoke: Help modal did not open from the toolbar button.",
+      );
+      const closeBtn = Array.from(
+        document.querySelectorAll("#modal-actions button"),
+      ).find((button) => /close/i.test(button.textContent || ""));
+      if (closeBtn instanceof HTMLButtonElement) closeBtn.click();
+      assert(
+        helpModal && helpModal.classList.contains("hidden"),
+        "Editor smoke: Help modal did not close.",
+      );
+    }
+
+    // Settings modal: opens, seeds the node-status line, and closes. The
+    // modal body mounts after the settings read resolves, so yield first.
+    const settingsBtn = document.getElementById("btn-settings");
+    if (settingsBtn instanceof HTMLButtonElement) {
+      settingsBtn.click();
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      const settingsModal = document.getElementById("modal-overlay");
+      assert(
+        settingsModal && !settingsModal.classList.contains("hidden"),
+        "Editor smoke: Settings modal did not open.",
+      );
+      const settingsClose = Array.from(
+        document.querySelectorAll("#modal-actions button"),
+      ).find((button) => /cancel/i.test(button.textContent || ""));
+      if (settingsClose instanceof HTMLButtonElement) settingsClose.click();
+      assert(
+        settingsModal && settingsModal.classList.contains("hidden"),
+        "Editor smoke: Settings modal did not close.",
+      );
+    }
+
+    // Dirty state must be reflected in the save button + status indicator.
+    markPageDirty(state, true);
+    renderProperties();
+    assert(
+      state.pageDirty,
+      "Editor smoke: markPageDirty did not set the dirty flag.",
+    );
+    markPageDirty(state, false);
+    renderProperties();
+
+    // Undo/redo buttons must track the session stacks.
+    const undoButton = document.getElementById("btn-undo");
+    if (undoButton instanceof HTMLButtonElement) {
+      undoKey();
+      assert(
+        undoButton.disabled === (state.undo.length === 0),
+        "Editor smoke: undo button state does not match the undo stack.",
       );
     }
 

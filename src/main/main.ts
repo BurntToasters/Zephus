@@ -218,7 +218,7 @@ async function runRendererSmokeChecks(
         }
 
         if (typeof window.__zephusRunEditorSmoke === "function") {
-          const editorFailures = window.__zephusRunEditorSmoke();
+          const editorFailures = await window.__zephusRunEditorSmoke();
           for (const failure of editorFailures) failures.push(failure);
         } else {
           failures.push("Editor smoke hook is missing.");
