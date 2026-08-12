@@ -37,7 +37,6 @@ export interface KeyboardDeps {
 export function createKeyboardHandler(deps: KeyboardDeps) {
   const {
     getState,
-    isBusy,
     modalController,
     openHelpModal,
     performSave,

@@ -179,7 +179,7 @@ it("compiles every block type with the real Astro compiler", async () => {
         path.join(project, "src", "pages", page),
         "utf8",
       );
-      const result = await compiler.transform(source, { filename: page });
+      await compiler.transform(source, { filename: page });
       // The source must not contain raw {expr} outside the encoded payloads,
       // CSS <style> blocks, and the deliberate noindex={true} expression the
       // 404 page always emits (the compiler would otherwise turn text braces

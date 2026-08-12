@@ -2,7 +2,6 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { EventEmitter } from "events";
 
 const listenFailsWith: { error: Error | null; address: unknown } = {
   error: null,
@@ -15,7 +14,6 @@ vi.mock("http", async (importOriginal) => {
     ...actual,
     createServer: (handler: never) => {
       const server = actual.createServer(handler);
-      const originalListen = server.listen.bind(server);
       (server as unknown as { listen: typeof server.listen }).listen = (
         ...args: unknown[]
       ) => {

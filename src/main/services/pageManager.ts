@@ -8,7 +8,6 @@ import {
   duplicatePageSchema,
   ensureVisualSchema,
   isNotFoundSlug,
-  listPageDocuments,
   listExistingPageDocuments,
   normalizePageSlug,
   pagePathFromSlug,
@@ -113,7 +112,6 @@ export function listPageMetadata(
   projectPath: string,
   pagesDir: string,
 ): PageListResult {
-  // ensureVisualSchema runs the full pass; listPageDocuments runs it AGAIN.
   // Ensure once, then read sidecars directly (no second full pass per save).
   const ensured = ensureVisualSchema(projectPath, pagesDir);
   if (!ensured.ok) {

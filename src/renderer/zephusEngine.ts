@@ -41,28 +41,21 @@ import {
 import {
   cancelScheduledEditorDraftWrite,
   scheduleEditorDraftWrite,
-  SITE_DRAFT_TARGET,
 } from "./editorDraft";
 import {
   createDebouncedCanvasRepaint,
   createInspectorUndoLatch,
-  isInspectorTextInputFocused,
 } from "./editorInspector";
 import {
   editorSnapshotSectionsChanged,
-  popEditorRedoEntry,
-  popEditorUndoEntry,
-  pushEditorRedoFromCurrent,
   pushEditorSnapshot,
   pushEditorUndo,
-  pushEditorUndoFromCurrent,
   restoreEditorSnapshot,
   captureEditorSnapshot,
 } from "./editorUndo";
 import { blockToHtmlForEditor } from "./editorBlockRender";
 import { assembleManagedPage, splitManagedPageSource } from "./editorSerialize";
 import {
-  EditorClipboardPayload,
   formatPanelMountFailureStatus,
   handlePlainTextPaste,
   isBlockTypeAllowed,
@@ -126,47 +119,21 @@ import { default as Newspaper } from "lucide/dist/esm/icons/newspaper.mjs";
 import { default as X } from "lucide/dist/esm/icons/x.mjs";
 import { default as Info } from "lucide/dist/esm/icons/info.mjs";
 import type { RenderPostEntry } from "../shared/blockRender";
-import { renderSectionsMarkup } from "../shared/blockRender";
 import { renderHelpModal } from "./HelpModal";
-import { mountAboutLicenses, updateAboutLicenses } from "./AboutLicenses";
-import {
-  AssetBrowserModalEntry,
-  renderAssetBrowserModalBody,
-} from "./AssetBrowserModal";
-import { renderBlockProperties } from "./BlockProperties";
-import {
-  mountCanvas,
-  registerCanvasHandlers,
-  updateCanvas,
-} from "./CanvasView";
-import {
-  googleFontForStack,
-  renderDesignSystemModalBody,
-} from "./DesignSystemModal";
-import { renderInsertModal } from "./InsertModals";
-import {
-  renderProductionLicensesModalBody,
-  renderPublishSuccessModalBody,
-  renderSiteShellModalBody,
-  renderThemePreviewModalBody,
-  renderUnsavedWorkSummaryModalBody,
-} from "./MiscModals";
-import { renderFindReplaceModalBody } from "./FindReplaceModal";
+import { mountAboutLicenses } from "./AboutLicenses";
+
+import {} from "./CanvasView";
+import { googleFontForStack } from "./DesignSystemModal";
+import { renderUnsavedWorkSummaryModalBody } from "./MiscModals";
 import { mountNextActions, updateNextActions } from "./NextActions";
 import { LinkPickerKind, renderLinkPickerModal } from "./LinkPickerModal";
+import { renderPropertiesEmpty } from "./SectionProperties";
 import {
-  renderPropertiesEmpty,
-  renderSectionProperties,
-} from "./SectionProperties";
-import {
-  initializeSettingsTab,
   mountSettingsTab,
   registerSettingsTabHandlers,
   updateSettingsTabNode,
   updateSettingsTabSettings,
-  updateSettingsTabUpdater,
 } from "./SettingsTab";
-import { renderSettingsModalBody } from "./SettingsModal";
 import {
   mountGitBranch,
   mountGitPanel,
@@ -177,7 +144,6 @@ import {
 import {
   mountHomeDraftRecovery,
   registerHomeDraftRecoveryHandlers,
-  updateHomeDraftRecovery,
 } from "./HomeDraftRecovery";
 import { mountLayers, registerLayersHandlers, updateLayers } from "./Layers";
 import {
@@ -188,7 +154,6 @@ import {
 import {
   mountRecentProjects,
   registerRecentProjectsHandlers,
-  updateRecentProjects,
 } from "./RecentProjects";
 import { mountProjectOverview, updateProjectOverview } from "./ProjectOverview";
 import {
@@ -196,11 +161,7 @@ import {
   registerPageListHandlers,
   updatePageList,
 } from "./PageList";
-import {
-  renderNavigationPreviewModal,
-  renderNewPageModal,
-  renderPageSettingsModal,
-} from "./PageModals";
+import { renderNavigationPreviewModal, renderNewPageModal } from "./PageModals";
 import {
   mountNavList,
   registerNavListHandlers,
@@ -213,7 +174,6 @@ import {
 import {
   mountSidebarUpdateStatus,
   registerSidebarUpdateStatusHandlers,
-  updateSidebarUpdateStatus,
 } from "./SidebarUpdateStatus";
 import {
   mountThemesTab,
@@ -228,11 +188,8 @@ import {
 import {
   defaultProps,
   KNOWN_BLOCK_TYPES,
-  PALETTE,
   setUidGenerator,
   TEMPLATES,
-  TEXT_EDITABLE,
-  type BlockType,
   type SectionTemplate,
 } from "./editorBlocks";
 import { createInlineEditController } from "./editorInlineEdit";
@@ -358,8 +315,6 @@ const homeActions = createHomeActions({
 
 const {
   refreshHomeDraftSummaries,
-  homeDraftLabel,
-  syncHomeActionState,
   renderHomeStatusPanels,
   updateVersionLabel,
   updaterStatusMessage,
@@ -367,7 +322,6 @@ const {
   currentUpdaterActions,
   refreshUpdaterControls,
   promptDownloadedUpdate,
-  renderSidebarUpdateStatus,
   renderRecent,
 } = homeActions;
 
@@ -463,11 +417,7 @@ const settingsModalActions = createSettingsModalActions({
   getAppSettings: () => appSettings,
 });
 
-const {
-  openSettingsModal,
-  showProductionLicensesModal,
-  openProductionLicensesModal,
-} = settingsModalActions;
+const { openSettingsModal } = settingsModalActions;
 
 const blockOps = createBlockOpsActions({
   getState: () => state,
@@ -579,13 +529,7 @@ const canvasActions = createCanvasActions({
   modalController,
 });
 
-const {
-  renderCanvas,
-  handleDrop,
-  renderProperties,
-  resetDragState,
-  showIndicator,
-} = canvasActions;
+const { renderCanvas, renderProperties } = canvasActions;
 // Inline text editing (double-click, format toolbar) — created at module
 // level; all deps are hoisted function declarations.
 const inlineEdit = createInlineEditController({
@@ -2290,15 +2234,6 @@ async function clearPageDraftAfterReload(
   }
 }
 
-interface PageLoadOptions {
-  skipUnsavedGuard?: boolean;
-  skipDraftRestore?: boolean;
-  /** Restore the recovery draft WITHOUT prompting (home-screen resume). */
-  restoreDraftSilently?: boolean;
-  forceReload?: boolean;
-  afterLoad?: () => void | Promise<void>;
-}
-
 let editorSessionGeneration = 0;
 let loadingPage: string | null = null;
 let closingProject = false;
@@ -2891,7 +2826,7 @@ const pageLoader = createPageLoader({
   clearIgnoredExternalChange: () => pageLoader.clearIgnoredExternalChange(),
 });
 
-const { loadPage, onExternalChange, setPageLoading } = pageLoader;
+const { loadPage, onExternalChange } = pageLoader;
 
 const editorSave = createEditorSaveActions({
   getState: () => state,
@@ -2964,8 +2899,6 @@ const previewPublish = createPreviewPublishActions({
 
 const {
   setViewport,
-  runInstallFlow,
-  ensureDependencies,
   updatePreviewButton,
   resetPreviewState,
   togglePreview,
@@ -3129,9 +3062,7 @@ const {
   activateHomeSection,
   selectThemeCard,
   createSiteFromTabFlow,
-  renderThemesInTab,
   renderSettingsInTab,
-  renderAboutAndLicensesInTab,
   openThemePreviewModal,
 } = startView;
 

@@ -4,9 +4,8 @@
  * the engine so the guidance logic is unit-testable in isolation.
  */
 
-import { updateNextActions } from "./NextActions";
 import { effectiveSiteDocument } from "./editorSession";
-import { isBlockTypeAllowed } from "./editorCommands";
+
 import type { EditorSessionState } from "./editorSession";
 import { TEMPLATES, type SectionTemplate } from "./editorBlocks";
 

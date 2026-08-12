@@ -125,7 +125,6 @@ export function createPageLoader(deps: PageLoaderDeps) {
     trackChange,
     clearPageDraftAfterReload,
     renderPageList,
-    clearIgnoredExternalChange,
   } = deps;
 
   const state = getState();

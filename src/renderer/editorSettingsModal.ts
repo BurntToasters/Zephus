@@ -59,12 +59,10 @@ export interface SettingsModalDeps {
 
 export function createSettingsModalActions(deps: SettingsModalDeps) {
   const {
-    $,
     setStatus,
     showModal,
     showModalNode,
     closeModal,
-    registerCleanup,
     modalController,
     applyCodeFontSize,
     nodeStatusMessage,

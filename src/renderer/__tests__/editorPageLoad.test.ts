@@ -147,7 +147,7 @@ describe("page loader", () => {
   it("skips loading when the project closes mid-load (generation bump)", async () => {
     mountDom();
     const state = makeState();
-    const { deps, bumpSession } = makeDeps(state);
+    const { deps } = makeDeps(state);
     const loader = createPageLoader(deps);
     let resolveRead!: (v: unknown) => void;
     (window as unknown as { zephus?: unknown }).zephus = {

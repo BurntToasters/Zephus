@@ -94,7 +94,6 @@ describe("page operation security", () => {
 
   it("preserves page ext and canonicalizes detach target", async () => {
     const page = path.join("src", "pages", "index.astro");
-    const current = readPageDocument(project, page, "src/pages");
     const result = detachPageDocument(
       project,
       page,
