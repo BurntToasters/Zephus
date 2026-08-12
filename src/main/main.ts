@@ -361,7 +361,11 @@ function scaffoldSmokeProject(): string | null {
       try {
         // Windows: directory symlinks need admin/Developer Mode; junctions
         // work without either. macOS/Linux: plain dir symlink.
-        fs.symlinkSync(rootModules, target, process.platform === "win32" ? "junction" : "dir");
+        fs.symlinkSync(
+          rootModules,
+          target,
+          process.platform === "win32" ? "junction" : "dir",
+        );
       } catch {
         // Best-effort: the real-project flows degrade to renderer-only
         // checks when the toolchain link cannot be created.

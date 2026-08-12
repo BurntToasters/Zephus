@@ -19,6 +19,7 @@ import { createHomeActions } from "./editorHome";
 import { createSettingsModalActions } from "./editorSettingsModal";
 import { createNextActionsRenderer } from "./editorNextActions";
 import { createKeyboardHandler } from "./editorKeyboard";
+import { createUndoOps } from "./editorUndoOps";
 import * as editorFindReplace from "./editorFindReplace";
 import { createPreviewPublishActions } from "./editorPreviewPublish";
 import { collectUnsavedWorkSummaryLines } from "./editorUnsavedWork";
@@ -396,6 +397,22 @@ const nextActions = createNextActionsRenderer({
 });
 
 const { renderNextActions } = nextActions;
+
+const undoOps = createUndoOps({
+  getState: () => state,
+  isLatchActive: () => inspectorEditLatch.isActive(),
+  restoreSnapshot,
+  syncSelectionAfterRestore,
+  serializeBlocks,
+  trackChange,
+  markDirty,
+  renderLayers,
+  renderCanvas: () => renderCanvas(),
+  renderProperties: () => renderProperties(),
+  updateUndoRedoButtons,
+});
+
+const { doUndo, doRedo } = undoOps;
 
 const keyboard = createKeyboardHandler({
   getState: () => state,
@@ -3685,67 +3702,6 @@ function updateUndoRedoButtons(): void {
     undoButton.disabled = true;
     redoButton.disabled = true;
   }
-}
-
-function doUndo(): void {
-  // An active resize drag holds the pre-drag snapshot on the stack; popping
-  // it mid-drag restores clones the drag keeps mutating — the resize would
-  // be silently lost and the undo entry wasted. Wait for the drag to finish.
-  if (inspectorEditLatch.isActive()) return;
-  const prev = popEditorUndoEntry(state);
-  if (!prev) return;
-  const sectionsChanged = editorSnapshotSectionsChanged(prev, state.sections);
-  pushEditorRedoFromCurrent(state);
-  restoreSnapshot(prev);
-  syncSelectionAfterRestore();
-  if (sectionsChanged) {
-    trackChange("Undid a change");
-    // Undoing back to the last-saved tree must not leave a phantom dirty
-    // flag (stale dot, redundant draft write, spurious unsaved-work prompt).
-    const savedSource = state.rawCode ?? state.generatedCode ?? null;
-    const restoredMatchesSaved =
-      savedSource !== null && serializeBlocks() === savedSource;
-    markDirty(!restoredMatchesSaved);
-  }
-  clearStaleSiteDraftAfterRevert();
-  renderLayers();
-  renderCanvas();
-  renderProperties();
-  updateUndoRedoButtons();
-}
-
-function doRedo(): void {
-  // Mirror the doUndo guard: mid-drag redo would replace the sections the
-  // drag keeps mutating, silently losing the resize and polluting the stacks
-  // with mid-drag state.
-  if (inspectorEditLatch.isActive()) return;
-  const next = popEditorRedoEntry(state);
-  if (!next) return;
-  const sectionsChanged = editorSnapshotSectionsChanged(next, state.sections);
-  pushEditorUndoFromCurrent(state);
-  restoreSnapshot(next);
-  syncSelectionAfterRestore();
-  if (sectionsChanged) {
-    trackChange("Redid a change");
-    const savedSource = state.rawCode ?? state.generatedCode ?? null;
-    const restoredMatchesSaved =
-      savedSource !== null && serializeBlocks() === savedSource;
-    markDirty(!restoredMatchesSaved);
-  }
-  clearStaleSiteDraftAfterRevert();
-  renderLayers();
-  renderCanvas();
-  renderProperties();
-  updateUndoRedoButtons();
-}
-
-/** Undoing a site change back to the saved baseline leaves the site clean —
- *  any site draft on disk is then stale, and clearing it stops the spurious
- *  "Restore Site Draft" prompt on the next launch and the permanent home
- *  recovery card. No-op when no draft exists. */
-function clearStaleSiteDraftAfterRevert(): void {
-  if (!state.project || state.siteDirty || state.pendingSiteDocument) return;
-  void window.zephus.clearDraft(state.project.path, "site", SITE_DRAFT_TARGET);
 }
 
 /* ---------- Start view tabs and theme picker ---------- */

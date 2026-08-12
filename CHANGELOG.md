@@ -21,6 +21,17 @@
 
 ## Changes in `0.1.0-beta.5:`
 
+### Round 28 — CI hardening + undo/redo extraction
+
+**CI:**
+- **The runtime smoke suite could not run headless** (no X server on ubuntu runners) — `test:all` now wraps the smoke in `xvfb-run` when `DISPLAY` is unset on Linux.
+- **Windows smoke scaffold fallback**: directory symlinks need admin/Developer Mode — the toolchain link now uses junctions on win32 (best-effort; the real-project flows degrade gracefully when the link cannot be created).
+
+**Structure:**
+- **Undo/redo extracted** into `editorUndoOps.ts` (the visual editor's undo state machine) with **6 unit tests** locking the invariants: the mid-drag latch guard, empty-stack no-ops, stack push/pop ordering, and the dirty-flag logic (undoing away from the saved source stays dirty; undoing back to it clears the flag).
+
+
+
 ### Round 27 — unit coverage for the round-25 extractions
 
 **24 new unit tests closing the test gap on the round-25 modules:**

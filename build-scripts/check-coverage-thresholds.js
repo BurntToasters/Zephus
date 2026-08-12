@@ -22,6 +22,7 @@ const thresholds = {
   'src/renderer/editorSettingsModal.ts': { lines: 40, statements: 40 },
   'src/renderer/editorKeyboard.ts': { lines: 65, statements: 65 },
   'src/renderer/editorNextActions.ts': { lines: 40, statements: 40 },
+  'src/renderer/editorUndoOps.ts': { lines: 75, statements: 75 },
   'src/main/updater.ts': { lines: 75, statements: 75 },
   'src/main/services/assets.ts': { lines: 92, statements: 92 },
   'src/main/services/files.ts': { lines: 95, statements: 95 },
