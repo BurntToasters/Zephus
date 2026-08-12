@@ -21,6 +21,14 @@
 
 ## Changes in `0.1.0-beta.5:`
 
+### Round 32 — site editor extraction (engine 4,088 → 3,812)
+
+**Structure:**
+- **Site Shell + Design System editors extracted** into `editorSiteEditor.ts` (~290 lines) — both modals stage into the pending site document with the custom-HTML warning gate and the self-referencing-accent guard.
+- **4 new unit tests**: shell staging with site URL, the first-time custom-HTML warning gate (declined = nothing staged), the var(--accent) self-reference rejection, and design staging with a concrete accent.
+
+
+
 ### Round 31 — page-load orchestration extracted (engine 4,412 → 4,088)
 
 **Structure:**
