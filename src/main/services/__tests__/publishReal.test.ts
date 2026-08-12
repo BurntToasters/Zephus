@@ -47,6 +47,34 @@ describe("buildAndReveal (real npm build)", () => {
     expect(result.error).toBeTruthy();
   });
 
+  it("streams build output incrementally, not only after completion", async () => {
+    const project = path.join(tmp, "stream");
+    fs.mkdirSync(project);
+    const created = createSite(project, "minimal");
+    expect(created.ok).toBe(true);
+    // A build script that emits two chunks with a delay in between, so a
+    // chunk arriving before the promise resolves proves streaming.
+    const pkgPath = path.join(project, "package.json");
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+    pkg.scripts.build =
+      "node -e \"process.stdout.write('first-chunk'); setTimeout(() => { process.stdout.write('second-chunk'); process.exit(0); }, 400)\"";
+    fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2));
+
+    const chunks: string[] = [];
+    let resolved = false;
+    let firstChunkBeforeResolve = false;
+    const promise = buildAndReveal(project, "dist", (c) => {
+      if (!chunks.length) firstChunkBeforeResolve = !resolved;
+      chunks.push(c);
+    });
+    const result = await promise;
+    resolved = true;
+    expect(result.ok).toBe(true);
+    expect(chunks.join("")).toContain("first-chunk");
+    expect(chunks.join("")).toContain("second-chunk");
+    expect(firstChunkBeforeResolve).toBe(true);
+  }, 30000);
+
   it("rejects a second concurrent build", async () => {
     const project = path.join(tmp, "site2");
     fs.mkdirSync(project);

@@ -21,6 +21,15 @@
 
 ## Changes in `0.1.0-beta.5:`
 
+### Audit round 16 — publish streaming + fresh service-layer pass
+
+**Publish (fixed):**
+- **A long production build read as a hang** — `buildAndReveal` buffered the entire build output and only delivered it AFTER completion, so the log panel stayed empty for minutes on a first build. Now streamed chunk-by-chunk (spawn, like the install flow), with a regression test asserting the first chunk arrives before the build resolves.
+
+**Fresh audit (verified clean):** IPC surface argument validation + approved-project gating, path containment (safeResolve / symlink-aware checks in assets, watch, theme-preview server), updater channel-approval flow, dev-server lifecycle (stop-epoch, process-group kill, URL scanner), modal focus trap + Escape, global keyboard guards (editing, modal suppression, CodeMirror handoff), save-flow propagation of the round-15 site write fix.
+
+
+
 ### Beta 6 — round 15
 
 **Build pipeline (fixed):**
