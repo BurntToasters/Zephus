@@ -267,7 +267,13 @@ function run() {
   // End-to-end gates that used to live OUTSIDE test:all — the renderer could
   // fail to boot, coverage could regress, and generated pages could break the
   // Astro build while this script exited 0 green.
-  const smokeResult = runCommand('smoke', 'npm run smoke:runtime', (out) => ({
+  // Headless Linux CI has no X server: the packaged-app smoke needs a
+  // virtual display (xvfb-run is preinstalled on GitHub ubuntu runners).
+  const smokeCommand =
+    process.platform === 'linux' && !process.env.DISPLAY
+      ? 'xvfb-run -a npm run smoke:runtime'
+      : 'npm run smoke:runtime';
+  const smokeResult = runCommand('smoke', smokeCommand, (out) => ({
     ok: /Smoke run: renderer checks passed/.test(out),
     passed: /Smoke run: renderer checks passed/.test(out) ? 1 : 0,
   }));

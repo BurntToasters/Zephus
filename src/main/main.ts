@@ -357,7 +357,15 @@ function scaffoldSmokeProject(): string | null {
     // tests) so `npm run build` resolves astro from the symlink.
     const rootModules = path.resolve(__dirname, "..", "..", "node_modules");
     if (fs.existsSync(rootModules)) {
-      fs.symlinkSync(rootModules, path.join(project, "node_modules"), "dir");
+      const target = path.join(project, "node_modules");
+      try {
+        // Windows: directory symlinks need admin/Developer Mode; junctions
+        // work without either. macOS/Linux: plain dir symlink.
+        fs.symlinkSync(rootModules, target, process.platform === "win32" ? "junction" : "dir");
+      } catch {
+        // Best-effort: the real-project flows degrade to renderer-only
+        // checks when the toolchain link cannot be created.
+      }
     }
     return project;
   } catch (error) {
