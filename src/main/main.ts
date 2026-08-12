@@ -594,6 +594,22 @@ function createMainWindow(): void {
   // via installGlobalNavigationGuards() (registered before this window is
   // created), so no per-window installation is needed here.
 
+  // Cmd/Ctrl+R must not bypass the unsaved-work guard: the menu accelerator
+  // fires before the renderer's keydown, so intercept it here and let the
+  // renderer resolve save/discard before reloading.
+  win.webContents.on("before-input-event", (event, input) => {
+    if (
+      input.type === "keyDown" &&
+      input.key.toLowerCase() === "r" &&
+      (input.control || input.meta)
+    ) {
+      event.preventDefault();
+      if (!win.isDestroyed()) {
+        win.webContents.send(IPC.reloadRequested);
+      }
+    }
+  });
+
   mainWindow.once("ready-to-show", () => {
     if (splashCloseTimer) {
       clearTimeout(splashCloseTimer);

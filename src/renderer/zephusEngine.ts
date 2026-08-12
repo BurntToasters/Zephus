@@ -6369,20 +6369,51 @@ function init(): void {
   // refuse to quit. Instead, surface the app's own save/discard/cancel modal
   // and, once resolved, re-close with the guard lifted.
   let forceCloseAllowed = false;
+  // Distinguishes CLOSE from RELOAD in beforeunload: a reload replaces the
+  // navigation entry (type "reload"); a close leaves it untouched. Closing
+  // after an earlier reload must still close — compare against the type of
+  // the FIRST load this window performed.
+  const initialNavType =
+    (
+      performance.getEntriesByType("navigation")[0] as
+        PerformanceNavigationTiming | undefined
+    )?.type ?? "navigate";
   const onBeforeUnload = (event: BeforeUnloadEvent): void => {
     if (forceCloseAllowed) return;
     if (!state.project || !isGlobalDirty(state)) return;
     event.preventDefault();
     event.returnValue = "";
+    const navType = (
+      performance.getEntriesByType("navigation")[0] as
+        PerformanceNavigationTiming | undefined
+    )?.type;
+    const isReload = navType === "reload" && navType !== initialNavType;
     void (async () => {
       const resolved = await maybeResolveUnsavedWork();
       if (!resolved) return;
+      if (isReload) {
+        location.reload();
+        return;
+      }
       forceCloseAllowed = true;
       window.removeEventListener("beforeunload", onBeforeUnload);
       window.close();
     })();
   };
   window.addEventListener("beforeunload", onBeforeUnload);
+  // Cmd/Ctrl+R is intercepted in the main process (the menu accelerator would
+  // otherwise fire before this keydown handler). Resolve unsaved work first,
+  // then reload for real — reloading while dirty used to resolve the modal
+  // and then CLOSE the app (the guard could not tell reload from close).
+  window.zephus.onReloadRequested(() => {
+    void (async () => {
+      if (state.project && isGlobalDirty(state)) {
+        const resolved = await maybeResolveUnsavedWork();
+        if (!resolved) return;
+      }
+      location.reload();
+    })();
+  });
   // Update installs quit the app programmatically; the dirty guard must not
   // strand the update. restartToApplyUpdate resolves unsaved work first and
   // then calls this.

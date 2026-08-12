@@ -60,6 +60,7 @@ export const IPC = {
   previewWindowOpen: "preview:window-open",
   previewWindowClose: "preview:window-close",
   previewClosed: "preview:closed",
+  reloadRequested: "reload:requested",
   previewExited: "preview:exited",
   themePreviewEnsure: "theme-preview:ensure",
   publish: "project:publish",

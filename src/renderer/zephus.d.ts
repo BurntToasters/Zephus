@@ -668,6 +668,7 @@ interface ZephusApi {
   closePreviewWindow(): Promise<OperationResult>;
   onPreviewClosed(callback: () => void): () => void;
   onPreviewExited(callback: () => void): () => void;
+  onReloadRequested(callback: () => void): () => void;
   ensureThemePreviewServer(): Promise<ThemePreviewServerResult>;
   publish(
     projectPath: string,

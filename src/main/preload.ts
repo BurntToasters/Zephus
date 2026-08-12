@@ -378,6 +378,12 @@ const api = {
     return () => ipcRenderer.removeListener(IPC.previewExited, listener);
   },
 
+  onReloadRequested: (callback: () => void): (() => void) => {
+    const listener = () => callback();
+    ipcRenderer.on(IPC.reloadRequested, listener);
+    return () => ipcRenderer.removeListener(IPC.reloadRequested, listener);
+  },
+
   ensureThemePreviewServer: (): Promise<ThemePreviewServerResult> =>
     ipcRenderer.invoke(IPC.themePreviewEnsure),
 

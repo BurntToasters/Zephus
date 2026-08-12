@@ -21,6 +21,13 @@
 
 ## Changes in `0.1.0-beta.5:`
 
+### Audit round 20 — reload vs close guard
+
+**Fixed:**
+- **Cmd/Ctrl+R with unsaved work closed the app instead of reloading** — the beforeunload guard resolved the save/discard modal, then always called `window.close()`. A reload intent now reloads: the main process intercepts Cmd/Ctrl+R (before the menu accelerator can fire) and forwards it to the renderer, which resolves unsaved work first, then reloads for real. The beforeunload path distinguishes reload from close via the navigation-timing entry type (compared against the window's first-load type, so closing after an earlier reload still closes).
+
+
+
 ### Audit round 19 — git/code-editor/save/theme audit + workspace-tab tests
 
 **Audit (verified clean):** git panel actions (serialized chain, identity-error guidance, path-based commits), the CodeMirror wrapper (history reset on document replacement), clipboard paste handling (plain-text-only, no markup smuggling), the full save orchestration (revision guards, trailing-save loop, detach-on-divergence, draft-clear error surfacing), theme application, page slug/route derivation, the resize controller (lazy undo push, clamp-bail), and the main-process git layer (execFile, timeout, locale-pinned output).
