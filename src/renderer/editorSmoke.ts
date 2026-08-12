@@ -498,6 +498,52 @@ export function installEditorSmokeHook(deps: EditorSmokeDeps): void {
         `Editor smoke: git commit failed (${committed.error ?? "unknown"})`,
       );
 
+      // External-change pipeline: a write to the page file from OUTSIDE the
+      // app (here: a detach, which main performs on disk) must surface the
+      // "File Changed on Disk" prompt, and Reload must pick up the new text.
+      if (page && state.project) {
+        await zephus.detachPageDocument(
+          state.project.path,
+          page,
+          state.project.astro.pagesDir,
+          "<h1>Externally Changed</h1>",
+        );
+        let promptSeen = false;
+        for (let i = 0; i < 20; i += 1) {
+          await wait(250);
+          const title = document.getElementById("modal-title");
+          if (title && /Changed on Disk/i.test(title.textContent || "")) {
+            promptSeen = true;
+            break;
+          }
+        }
+        assert(
+          promptSeen,
+          "Editor smoke: external file change did not surface the reload prompt.",
+        );
+        const reloadBtn = Array.from(
+          document.querySelectorAll("#modal-actions button"),
+        ).find((button) => /reload/i.test(button.textContent || ""));
+        assert(
+          reloadBtn instanceof HTMLButtonElement,
+          "Editor smoke: reload action missing from the external-change prompt.",
+        );
+        if (reloadBtn instanceof HTMLButtonElement) {
+          reloadBtn.click();
+          for (
+            let i = 0;
+            i < 40 && !(state.rawCode ?? "").includes("Externally Changed");
+            i += 1
+          ) {
+            await wait(250);
+          }
+          assert(
+            (state.rawCode ?? "").includes("Externally Changed"),
+            "Editor smoke: reload did not pick up the external change.",
+          );
+        }
+      }
+
       await closeProject();
 
       assert(state.project === null, "Editor smoke: project did not close.");

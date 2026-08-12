@@ -21,6 +21,13 @@
 
 ## Changes in `0.1.0-beta.5:`
 
+### Round 29 — external-change pipeline in the smoke suite
+
+- **The watcher → IPC → reload pipeline is now exercised end to end**: the smoke writes to the open page's file from outside the app (via a detach), asserts the "File Changed on Disk" prompt appears, clicks Reload, and verifies the new text lands in the editor. This covers the fs.watch → externalChange → conflict-modal → reload path that previously had zero runtime verification.
+- Bundle analysis confirmed CodeMirror (~60% of the 1.73 MB renderer bundle) is the legit cost of the embedded editor — the earlier 400 KB solid-store attribution was a span-misattribution (actual input: 16 KB); no further bundle action warranted.
+
+
+
 ### Round 28 — CI hardening + undo/redo extraction
 
 **CI:**
