@@ -5,7 +5,11 @@
  * place with an explicit deps contract.
  */
 
-import { updateCanvas } from "./CanvasView";
+import {
+  updateCanvas,
+  mountCanvas,
+  registerCanvasHandlers,
+} from "./CanvasView";
 import { renderBlockProperties } from "./BlockProperties";
 import { renderSectionProperties } from "./SectionProperties";
 import {
@@ -15,6 +19,7 @@ import {
   type SectionTemplate,
 } from "./editorBlocks";
 import type { EditorSessionState } from "./editorSession";
+import type { ResizeTarget } from "./editorResize";
 import type {
   BlockNode,
   BlockStyle,
@@ -754,4 +759,347 @@ export function createCanvasActions(deps: CanvasDeps) {
       return isSecondClick;
     },
   };
+}
+
+export type CanvasActions = ReturnType<typeof createCanvasActions>;
+
+export interface CanvasBindDeps {
+  getState: () => EditorSessionState;
+  $maybe: (id: string) => HTMLElement | null;
+  setStatus: (message: string) => void;
+  renderLayers: () => void;
+  renderProperties: () => void;
+  openBlockInsertModal: (index: number, sectionId: string) => void;
+  openSectionInsertModal: (index: number) => void;
+  templateAllowed: (template: SectionTemplate) => boolean;
+  addSectionAt: (index: number, template?: SectionTemplate) => void;
+  moveSection: (id: string, direction: -1 | 1) => void;
+  duplicateSection: (id: string) => void;
+  toggleSectionLock: (id: string) => void;
+  deleteSection: (id: string) => Promise<void>;
+  liveCanvasBlock: (view: EditorBlock) => Block;
+  liveCanvasSection: (view: SectionNode) => SectionNode;
+  moveBlock: (block: Block, direction: -1 | 1) => void;
+  duplicateSelectedBlock: (block: Block) => void;
+  wrapBlockInSection: (block: Block) => void;
+  toggleBlockLock: (block: Block) => void;
+  deleteBlock: (block: Block) => Promise<void>;
+  makeCanvasLinksInert: (root: HTMLElement) => void;
+  hydrateCanvasAssets: (root: HTMLElement) => void;
+  inlineEdit: {
+    isInlineEditing: () => boolean;
+    startFirstInlineEdit: (preview: HTMLElement, block: Block) => void;
+    attachInlineEditors: (preview: HTMLElement, block: Block) => void;
+  };
+  resize: {
+    syncResizeHandles: (
+      shell: HTMLElement,
+      target: ResizeTarget,
+      getSubject: () => HTMLElement,
+      enabled: boolean,
+    ) => void;
+  };
+  noteMountFailure: (name: string, error: unknown) => void;
+}
+
+/**
+ * Mounts the SolidJS canvas component and binds every canvas interaction
+ * handler (selection, actions, drag/drop slots, inline editing, resize
+ * handles). Owns nothing mutable — all session mutations go through the
+ * engine-provided callbacks, and the drag-slot state lives in `canvas`.
+ */
+export function bindCanvasHandlers(
+  deps: CanvasBindDeps,
+  canvas: CanvasActions,
+): void {
+  const {
+    getState,
+    $maybe,
+    setStatus,
+    renderLayers,
+    renderProperties,
+    openBlockInsertModal,
+    openSectionInsertModal,
+    templateAllowed,
+    addSectionAt,
+    moveSection,
+    duplicateSection,
+    toggleSectionLock,
+    deleteSection,
+    liveCanvasBlock,
+    liveCanvasSection,
+    moveBlock,
+    duplicateSelectedBlock,
+    wrapBlockInSection,
+    toggleBlockLock,
+    deleteBlock,
+    makeCanvasLinksInert,
+    hydrateCanvasAssets,
+    inlineEdit,
+    resize,
+    noteMountFailure,
+  } = deps;
+  const state = getState();
+
+  const canvasContainer = $maybe("canvas");
+  if (!canvasContainer) return;
+  try {
+    mountCanvas(canvasContainer);
+    registerCanvasHandlers({
+      onInsertBlock: (index, sectionId) =>
+        openBlockInsertModal(index, sectionId),
+      onOpenSectionInsert: (index) => openSectionInsertModal(index),
+      onQuickInsertSection: (index, template) => {
+        const tpl =
+          template === "hero"
+            ? (TEMPLATES.find((entry) => entry.id === "hero") ?? null)
+            : template === "features"
+              ? (TEMPLATES.find((entry) => entry.id === "features") ?? null)
+              : null;
+        if (tpl && !templateAllowed(tpl)) {
+          setStatus(
+            "This section's blocks are not allowed by the project's rules.",
+          );
+          return;
+        }
+        if (tpl) {
+          addSectionAt(index, tpl);
+          return;
+        }
+        addSectionAt(index);
+      },
+      onSectionAction: (section, action) => {
+        if (action === "add-block") {
+          openBlockInsertModal(section.children.length, section.id);
+          return;
+        }
+        if (action === "up") {
+          moveSection(section.id, -1);
+          return;
+        }
+        if (action === "down") {
+          moveSection(section.id, 1);
+          return;
+        }
+        if (action === "duplicate") {
+          duplicateSection(section.id);
+          return;
+        }
+        if (action === "toggle-lock") {
+          toggleSectionLock(section.id);
+          return;
+        }
+        void deleteSection(section.id);
+      },
+      onBlockAction: (blockView, action) => {
+        const block = liveCanvasBlock(blockView);
+        if (action === "up") {
+          moveBlock(block, -1);
+          return;
+        }
+        if (action === "down") {
+          moveBlock(block, 1);
+          return;
+        }
+        if (action === "duplicate") {
+          duplicateSelectedBlock(block);
+          return;
+        }
+        if (action === "wrap") {
+          wrapBlockInSection(block);
+          return;
+        }
+        if (action === "toggle-lock") {
+          toggleBlockLock(block);
+          return;
+        }
+        void deleteBlock(block);
+      },
+      onSelectSection: (section) => {
+        state.selectedId = null;
+        state.selectedSectionId = section.id;
+        renderLayers();
+        canvas.renderCanvas();
+        renderProperties();
+      },
+      onBlockKeyDown: (event, sectionView, blockView, preview) => {
+        const section = liveCanvasSection(sectionView);
+        const block = liveCanvasBlock(blockView);
+        if (event.target !== event.currentTarget) return;
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          if (
+            block.id === state.selectedId &&
+            TEXT_EDITABLE.includes(block.type) &&
+            !block.locked
+          ) {
+            inlineEdit.startFirstInlineEdit(preview, block);
+            return;
+          }
+          state.selectedId = block.id;
+          state.selectedSectionId = section.id;
+          renderLayers();
+          canvas.renderCanvas();
+          renderProperties();
+        }
+      },
+      onBlockClick: (event, sectionView, blockView, preview) => {
+        const section = liveCanvasSection(sectionView);
+        const block = liveCanvasBlock(blockView);
+        event.stopPropagation();
+        if (inlineEdit.isInlineEditing()) return;
+        const isSecondClick = canvas.trackBlockClick(block.id);
+        if (
+          isSecondClick &&
+          TEXT_EDITABLE.includes(block.type) &&
+          !block.locked
+        ) {
+          inlineEdit.startFirstInlineEdit(preview, block);
+          return;
+        }
+        if (state.selectedId === block.id) return;
+        state.selectedId = block.id;
+        state.selectedSectionId = section.id;
+        renderLayers();
+        canvas.renderCanvas();
+        renderProperties();
+      },
+      onSectionDragStart: (event, section) => {
+        canvas.resetDragState();
+        if (section.locked) {
+          event.preventDefault();
+          return;
+        }
+        canvas.setDraggingSectionId(section.id);
+        event.dataTransfer?.setData("text/zephus-move-section", section.id);
+        if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+      },
+      onSectionDragEnd: canvas.resetDragState,
+      onSectionDragOver: (event, sectionIndex, shell) => {
+        // Section MOVES and TEMPLATE drops both place a whole section:
+        // templates dragged from the palette showed a block-line indicator
+        // yet inserted after the section — now they use the same section
+        // slot machinery.
+        const hasSectionPayload =
+          canvas.getDraggingSectionId() !== null ||
+          Boolean(event.dataTransfer?.getData("text/zephus-template"));
+        if (!hasSectionPayload) return;
+        event.preventDefault();
+        const rect = shell.getBoundingClientRect();
+        const after = event.clientY > rect.top + rect.height / 2;
+        canvas.setSectionDropIndex(after ? sectionIndex + 1 : sectionIndex);
+        canvas.showIndicator($maybe("canvas")!, shell, after);
+      },
+      // The "Add section" rails sit BETWEEN sections, outside any section
+      // shell: dropping there must target the rail's own position, not fall
+      // through to the canvas handler (which appends at the END of the page).
+      onSectionRailDragOver: (event, index) => {
+        if (!canvas.getDraggingSectionId()) return;
+        event.preventDefault();
+        canvas.setSectionDropIndex(index);
+        // For block drags the rail targets the section BEFORE the rail.
+        const target = state.sections[index - 1];
+        if (target) {
+          canvas.setDropSlot(target.id, target.children.length);
+        } else {
+          // Above the first section: the first section (or the empty page).
+          canvas.setDropSlot(state.sections[0]?.id ?? null, 0);
+        }
+      },
+      onSectionDrop: (event) => canvas.handleDrop(event),
+      onSectionBodyDragOver: (event, sectionId) => {
+        if (canvas.getDraggingSectionId()) return;
+        event.preventDefault();
+        canvas.setDropSectionId(sectionId);
+        // The pointer is over a block shell: onBlockDragOver already
+        // computed an exact index, so do not override it here.
+        const dragTarget = event.target as Element | null;
+        if (dragTarget?.closest(".block")) return;
+        // The pointer is over a strip between/above/below the blocks (or an
+        // insert rail). Recompute the insertion index from block geometry so
+        // a drop never lands at a stale index left over from a previous
+        // hover in this or another section.
+        const body = event.currentTarget as HTMLElement;
+        const blockShells = Array.from(
+          body.querySelectorAll<HTMLElement>(":scope > .block"),
+        );
+        if (blockShells.length === 0) {
+          canvas.setDropIndex(0);
+          return;
+        }
+        let index = blockShells.length;
+        for (let i = 0; i < blockShells.length; i += 1) {
+          const shell = blockShells[i];
+          if (!shell) continue;
+          const rect = shell.getBoundingClientRect();
+          if (event.clientY < rect.top + rect.height / 2) {
+            index = i;
+            break;
+          }
+        }
+        canvas.setDropIndex(index);
+        const lastShell = blockShells[blockShells.length - 1];
+        if (!lastShell) {
+          canvas.setDropIndex(0);
+          return;
+        }
+        if (index < blockShells.length) {
+          const anchor = blockShells[index] ?? lastShell;
+          canvas.showIndicator(body, anchor, false);
+        } else {
+          canvas.showIndicator(body, lastShell, true);
+        }
+      },
+      onBlockDragStart: (event, block) => {
+        canvas.resetDragState();
+        if (block.locked) {
+          event.preventDefault();
+          return;
+        }
+        event.dataTransfer?.setData("text/zephus-move-block", block.id);
+        if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+      },
+      onBlockDragEnd: canvas.resetDragState,
+      onBlockDragOver: (event, sectionId, blockIndex, shell, sectionBody) => {
+        if (canvas.getDraggingSectionId()) return;
+        event.preventDefault();
+        canvas.setDropSectionId(sectionId);
+        const rect = shell.getBoundingClientRect();
+        const after = event.clientY > rect.top + rect.height / 2;
+        canvas.setDropIndex(after ? blockIndex + 1 : blockIndex);
+        canvas.showIndicator(sectionBody, shell, after);
+      },
+      onBlockDrop: (event) => canvas.handleDrop(event),
+      onPreviewRendered: (preview, blockView) => {
+        const block = liveCanvasBlock(blockView);
+        makeCanvasLinksInert(preview);
+        hydrateCanvasAssets(preview);
+        if (TEXT_EDITABLE.includes(block.type) && !block.locked) {
+          inlineEdit.attachInlineEditors(preview, block);
+        }
+      },
+      onSyncSectionShell: (shell, sectionView) => {
+        const section = liveCanvasSection(sectionView);
+        resize.syncResizeHandles(
+          shell,
+          { kind: "section", node: section },
+          () => shell,
+          section.id === state.selectedSectionId &&
+            !state.selectedId &&
+            !section.locked,
+        );
+      },
+      onSyncBlockShell: (shell, blockView, preview) => {
+        const block = liveCanvasBlock(blockView);
+        resize.syncResizeHandles(
+          shell,
+          { kind: "block", node: block },
+          () => (preview.firstElementChild as HTMLElement | null) ?? preview,
+          block.id === state.selectedId && !block.locked,
+        );
+      },
+    });
+  } catch (e) {
+    noteMountFailure("Canvas", e);
+  }
 }

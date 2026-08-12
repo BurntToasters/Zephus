@@ -10,7 +10,8 @@ import {
   activateWorkspaceTab,
   initEditorWorkspaceTabs,
 } from "./editorWorkspace";
-import { createCanvasActions } from "./editorCanvas";
+import { bindCanvasHandlers, createCanvasActions } from "./editorCanvas";
+import { installEditorSmokeHook } from "./editorSmoke";
 import * as editorFindReplace from "./editorFindReplace";
 import { createPreviewPublishActions } from "./editorPreviewPublish";
 import { collectUnsavedWorkSummaryLines } from "./editorUnsavedWork";
@@ -6090,269 +6091,21 @@ async function createSiteFromTabFlowInner(): Promise<void> {
   }
 }
 
-function installEditorSmokeHook(): void {
-  window.__zephusRunEditorSmoke = () => {
-    const failures: string[] = [];
-    const assert = (condition: unknown, message: string): void => {
-      if (!condition) failures.push(message);
-    };
-
-    const section: SectionNode = {
-      id: "smoke-section",
-      type: "section",
-      label: "Smoke Section",
-      props: { wrapper: "none", cls: "" },
-      children: [
-        {
-          id: "smoke-heading",
-          type: "heading",
-          props: { text: "Smoke Title", level: "2" },
-          style: {},
-        },
-        {
-          id: "smoke-button",
-          type: "button",
-          props: {
-            text: "Smoke Link",
-            href: "https://example.com",
-            cls: "",
-          },
-          style: {},
-        },
-      ],
-    };
-    state.sections = [section];
-    // A project object enables the document-level keyboard shortcuts
-    // (undo/redo/delete) the smoke exercises below.
-    state.project = {
-      path: "/smoke-project",
-      name: "Smoke Project",
-    } as ProjectOpenResult;
-    state.selectedSectionId = section.id;
-    state.selectedId = "smoke-heading";
-    state.page = "src/pages/index.astro";
-    state.currentMeta = {
-      page: state.page,
-      route: "/",
-      slug: "index",
-      title: "Smoke",
-      navLabel: "Smoke",
-      metaDescription: "",
-      navVisible: true,
-      isHome: true,
-      detached: false,
-      socialImage: "",
-      canonicalUrl: "",
-      noindex: false,
-      publishDate: "",
-      author: "",
-    };
-    state.pageMeta = state.currentMeta ? [state.currentMeta] : [];
-    state.currentViewport = "desktop";
-    state.undo = [];
-    state.redo = [];
-    markPageDirty(state, false);
-    syncBlocksFromSections();
-
-    $("view-start").classList.add("hidden");
-    $("view-editor").classList.remove("hidden");
-    $("project-name").textContent = "Smoke Project";
-    setMode("visual");
-    renderLayers();
-    renderCanvas();
-    renderProperties();
-
-    assert(
-      !!document.querySelector(".block.selected"),
-      "Editor smoke: selected block did not render.",
-    );
-    assert(
-      document.querySelectorAll(".resize-handle").length === 4,
-      "Editor smoke: selected block resize handles missing.",
-    );
-
-    const textInput = document.querySelector<HTMLInputElement>(
-      "#properties input.text",
-    );
-    assert(!!textInput, "Editor smoke: inspector text input missing.");
-    if (textInput) {
-      textInput.focus();
-      textInput.value = "";
-      for (const char of "Smoke Typed") {
-        textInput.value += char;
-        textInput.dispatchEvent(new Event("input", { bubbles: true }));
-        assert(
-          document.activeElement === textInput,
-          "Editor smoke: inspector input lost focus while typing.",
-        );
-      }
-      assert(
-        section.children[0]?.props["text"] === "Smoke Typed",
-        "Editor smoke: inspector input did not update block props.",
-      );
-      textInput.blur();
-    }
-
-    const target = document.querySelector<HTMLElement>(
-      ".block-preview .editable-text-target",
-    );
-    assert(!!target, "Editor smoke: inline editable target missing.");
-    if (target) {
-      target.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
-      assert(
-        target.isContentEditable,
-        "Editor smoke: double-click did not start inline editing.",
-      );
-      target.textContent = "Inline Edited";
-      target.dispatchEvent(
-        new KeyboardEvent("keydown", { bubbles: true, key: "Enter" }),
-      );
-      assert(
-        section.children[0]?.props["text"] === "Inline Edited",
-        "Editor smoke: inline edit did not update block props.",
-      );
-    }
-
-    const canvasLink = document.querySelector<HTMLAnchorElement>(
-      '.block-preview a[href="https://example.com"]',
-    );
-    assert(!!canvasLink, "Editor smoke: canvas link missing.");
-    if (canvasLink) {
-      const allowed = canvasLink.dispatchEvent(
-        new MouseEvent("click", { bubbles: true, cancelable: true }),
-      );
-      assert(!allowed, "Editor smoke: canvas link was not inert.");
-    }
-
-    // The canvas-link click above selected the button block; restore the
-    // heading selection so the inspector edits the heading again.
-    state.selectedId = "smoke-heading";
-    state.selectedSectionId = section.id;
-    renderProperties();
-
-    // Undo/redo through the real inspector latch: typing commits one undo
-    // entry on blur, Ctrl+Z reverts it, Ctrl+Shift+Z (or Cmd+Y) redoes.
-    // Re-query the input: renderProperties() replaced the panel element.
-    const redoKeys = (): void => {
-      document.dispatchEvent(
-        new KeyboardEvent("keydown", {
-          bubbles: true,
-          key: "z",
-          ctrlKey: true,
-          shiftKey: true,
-        }),
-      );
-    };
-    const undoKey = (): void => {
-      document.dispatchEvent(
-        new KeyboardEvent("keydown", {
-          bubbles: true,
-          key: "z",
-          ctrlKey: true,
-        }),
-      );
-    };
-    const freshInput = document.querySelector<HTMLInputElement>(
-      "#properties input.text",
-    );
-    assert(
-      !!freshInput,
-      "Editor smoke: inspector input missing after re-render.",
-    );
-    if (freshInput) {
-      freshInput.focus();
-      let directFired = false;
-      const directListener = () => {
-        directFired = true;
-      };
-      freshInput.addEventListener("input", directListener);
-      freshInput.value = "Undo Me";
-      freshInput.dispatchEvent(new Event("input", { bubbles: true }));
-      freshInput.removeEventListener("input", directListener);
-      const afterInput = section.children[0]?.props["text"];
-      freshInput.blur();
-      const afterBlur = section.children[0]?.props["text"];
-      assert(
-        afterBlur === "Undo Me",
-        `Editor smoke: inspector blur did not commit (afterInput=${JSON.stringify(afterInput)} afterBlur=${JSON.stringify(afterBlur)} attached=${document.contains(freshInput)} direct=${directFired} selected=${state.selectedId} dirty=${state.pageDirty})`,
-      );
-      undoKey();
-      assert(
-        section.children[0]?.props["text"] !== "Undo Me",
-        "Editor smoke: Ctrl+Z did not revert the inspector edit.",
-      );
-      redoKeys();
-      assert(
-        section.children[0]?.props["text"] === "Undo Me",
-        "Editor smoke: redo did not restore the inspector edit.",
-      );
-    }
-
-    // Add a block, duplicate the section, then undo both back to baseline.
-    const beforeAdd = state.sections[0]?.children.length ?? 0;
-    addBlockAt("text", 1, section.id);
-    assert(
-      (state.sections[0]?.children.length ?? 0) === beforeAdd + 1,
-      "Editor smoke: addBlockAt did not insert a block.",
-    );
-    undoKey();
-    assert(
-      state.sections[0]?.children.length === beforeAdd,
-      "Editor smoke: undo did not remove the added block.",
-    );
-
-    // The block-add above changed the selection; re-select the heading.
-    state.selectedId = "smoke-heading";
-    state.selectedSectionId = section.id;
-    renderCanvas();
-    renderProperties();
-
-    // Keyboard resize of the selected block writes width + undo restores it.
-    const selBlock = findBlockLocation(state.selectedId);
-    const originalWidth = selBlock?.block.style?.width;
-    const handle =
-      document.querySelector<HTMLButtonElement>(".resize-handle.se");
-    assert(!!handle, "Editor smoke: resize handle missing for keyboard test.");
-    if (handle) {
-      handle.dispatchEvent(
-        new KeyboardEvent("keydown", {
-          bubbles: true,
-          key: "ArrowRight",
-        }),
-      );
-      assert(
-        selBlock?.block.style?.width !== originalWidth,
-        `Editor smoke: keyboard resize did not change the width (before=${JSON.stringify(originalWidth)} after=${JSON.stringify(selBlock?.block.style?.width)} selected=${state.selectedId} handles=${document.querySelectorAll(".resize-handle").length})`,
-      );
-      undoKey();
-      const restored = findBlockLocation("smoke-heading");
-      assert(
-        restored?.block.style?.width === originalWidth,
-        `Editor smoke: undo did not restore the pre-resize width (before=${JSON.stringify(originalWidth)} after=${JSON.stringify(restored?.block.style?.width)})`,
-      );
-    }
-
-    // Inline edit Escape cancels and restores the original text.
-    if (target) {
-      target.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
-      target.textContent = "Should Not Stick";
-      target.dispatchEvent(
-        new KeyboardEvent("keydown", { bubbles: true, key: "Escape" }),
-      );
-      assert(
-        section.children[0]?.props["text"] === "Undo Me",
-        "Editor smoke: Escape did not cancel the inline edit.",
-      );
-    }
-
-    return failures;
-  };
-}
-
-/* ---------- Wire up ---------- */
-
 function init(): void {
-  if (window.location.search.includes("smoke=1")) installEditorSmokeHook();
+  if (window.location.search.includes("smoke=1")) {
+    installEditorSmokeHook({
+      getState: () => state,
+      $,
+      setMode,
+      renderLayers,
+      renderCanvas,
+      renderProperties,
+      syncBlocksFromSections,
+      markPageDirty,
+      addBlockAt,
+      findBlockLocation,
+    });
+  }
   window.refreshIcons = refreshIcons;
   initStartTabs();
   initEditorWorkspaceTabs();
@@ -6509,129 +6262,88 @@ function init(): void {
   refreshGuidancePanels();
 
   // Mount the SolidJS Next Actions app in the sidebar panel
-  const nextActionsContainer = $("next-actions");
-  if (nextActionsContainer) {
-    try {
-      mountNextActions(nextActionsContainer);
-    } catch (e) {
-      noteMountFailure("Next Actions", e);
-    }
-  }
+  mountPanel("Next Actions", "next-actions", (nextActionsContainer) => {
+    mountNextActions(nextActionsContainer);
+  });
 
-  // Mount the SolidJS Git Branch and Git Panel in the sidebar panel
-  const gitBranchContainer = $("git-branch");
-  if (gitBranchContainer) {
-    try {
-      mountGitBranch(gitBranchContainer);
-    } catch (e) {
-      noteMountFailure("Git Branch", e);
-    }
-  }
-  const gitPanelContainer = $("git-panel");
-  if (gitPanelContainer) {
-    try {
-      mountGitPanel(gitPanelContainer);
-      registerGitPanelHandlers({
-        onRefresh: () => void editorGit.refreshGit({ fetchRemote: true }),
-        onCommit: (message, paths) =>
-          editorGit.commitGitChanges(message, paths),
-        onPush: () => editorGit.pushGitChanges(),
-        onPull: () => editorGit.pullGitChanges(),
-        onInitRepo: () => editorGit.initGitFromPanel(),
-      });
-    } catch (e) {
-      noteMountFailure("Git Panel", e);
-    }
-  }
+  mountPanel("Git Branch", "git-branch", (gitBranchContainer) => {
+    mountGitBranch(gitBranchContainer);
+  });
 
-  // Mount the SolidJS Block Palette in the left panel
-  const blockPaletteContainer = $("block-palette");
-  if (blockPaletteContainer) {
-    try {
-      mountBlockPalette(blockPaletteContainer);
-      registerInsertBlockCallback((type) => {
-        const sectionId = activeSectionId();
-        const section = findSection(sectionId) ?? state.sections[0];
-        addBlockAt(type, section ? section.children.length : 0, sectionId);
-      });
-    } catch (e) {
-      noteMountFailure("Block Palette", e);
-    }
-  }
+  mountPanel("Git Panel", "git-panel", (gitPanelContainer) => {
+    mountGitPanel(gitPanelContainer);
+    registerGitPanelHandlers({
+      onRefresh: () => void editorGit.refreshGit({ fetchRemote: true }),
+      onCommit: (message, paths) => editorGit.commitGitChanges(message, paths),
+      onPush: () => editorGit.pushGitChanges(),
+      onPull: () => editorGit.pullGitChanges(),
+      onInitRepo: () => editorGit.initGitFromPanel(),
+    });
+  });
 
-  const pageListContainer = $("page-list");
-  if (pageListContainer) {
-    try {
-      mountPageList(pageListContainer);
-      registerPageListHandlers({
-        onOpen: (page) => void loadPage(page),
-        onManage: (page) => void openPageMetaModal(page),
-        onToggleNav: (page) => void togglePageNavVisibility(page),
-      });
-    } catch (e) {
-      noteMountFailure("Page List", e);
-    }
-  }
+  mountPanel("Block Palette", "block-palette", (blockPaletteContainer) => {
+    mountBlockPalette(blockPaletteContainer);
+    registerInsertBlockCallback((type) => {
+      const sectionId = activeSectionId();
+      const section = findSection(sectionId) ?? state.sections[0];
+      addBlockAt(type, section ? section.children.length : 0, sectionId);
+    });
+  });
 
-  const navListContainer = $("nav-list");
-  if (navListContainer) {
-    try {
-      mountNavList(navListContainer);
-      registerNavListHandlers({
-        onPageSettings: () => {
-          if (state.page) void openPageMetaModal(state.page);
-        },
-        onReviewNavigation: () => void regenerateNav(),
-        onOpenPage: (page) => void loadPage(page),
-      });
-    } catch (e) {
-      noteMountFailure("Nav List", e);
-    }
-  }
+  mountPanel("Page List", "page-list", (pageListContainer) => {
+    mountPageList(pageListContainer);
+    registerPageListHandlers({
+      onOpen: (page) => void loadPage(page),
+      onManage: (page) => void openPageMetaModal(page),
+      onToggleNav: (page) => void togglePageNavVisibility(page),
+    });
+  });
 
-  const recentListContainer = $("recent-list");
-  if (recentListContainer) {
-    try {
-      mountRecentProjects(recentListContainer);
-      registerRecentProjectsHandlers({
-        onOpenFolder: () => void chooseFolder(),
-        onExploreTemplates: () => void switchStartTab("create"),
-        onOpenProject: (path) => void openProjectByPath(path),
-        onRemoveProject: async (path) => {
-          await window.zephus.removeRecentProject(path);
-          setStatus("Removed recent project: " + projectBaseName(path));
-          await renderRecent();
-        },
-      });
-    } catch (e) {
-      noteMountFailure("Recent Projects", e);
-    }
-  }
+  mountPanel("Nav List", "nav-list", (navListContainer) => {
+    mountNavList(navListContainer);
+    registerNavListHandlers({
+      onPageSettings: () => {
+        if (state.page) void openPageMetaModal(state.page);
+      },
+      onReviewNavigation: () => void regenerateNav(),
+      onOpenPage: (page) => void loadPage(page),
+    });
+  });
 
-  const themeListContainer = $("theme-list-container");
-  if (themeListContainer) {
-    try {
-      mountThemesTab(themeListContainer);
-      registerThemesTabHandlers({
-        onLoadPreviews: () => void activateHomeSection("create"),
-        onSelect: (themeId) => selectThemeCard(themeId),
-        onPreview: (themeId) => {
-          const theme = startThemes?.find((entry) => entry.id === themeId);
-          if (theme) openThemePreviewModal(theme);
-        },
-        onCreateFromTheme: (themeId) => {
-          selectThemeCard(themeId);
-          void createSiteFromTabFlow();
-        },
-      });
-    } catch (e) {
-      noteMountFailure("Themes Tab", e);
-    }
-  }
+  mountPanel("Recent Projects", "recent-list", (recentListContainer) => {
+    mountRecentProjects(recentListContainer);
+    registerRecentProjectsHandlers({
+      onOpenFolder: () => void chooseFolder(),
+      onExploreTemplates: () => void switchStartTab("create"),
+      onOpenProject: (path) => void openProjectByPath(path),
+      onRemoveProject: async (path) => {
+        await window.zephus.removeRecentProject(path);
+        setStatus("Removed recent project: " + projectBaseName(path));
+        await renderRecent();
+      },
+    });
+  });
 
-  const settingsTabContainer = $("settings-tab-container");
-  if (settingsTabContainer) {
-    try {
+  mountPanel("Themes Tab", "theme-list-container", (themeListContainer) => {
+    mountThemesTab(themeListContainer);
+    registerThemesTabHandlers({
+      onLoadPreviews: () => void activateHomeSection("create"),
+      onSelect: (themeId) => selectThemeCard(themeId),
+      onPreview: (themeId) => {
+        const theme = startThemes?.find((entry) => entry.id === themeId);
+        if (theme) openThemePreviewModal(theme);
+      },
+      onCreateFromTheme: (themeId) => {
+        selectThemeCard(themeId);
+        void createSiteFromTabFlow();
+      },
+    });
+  });
+
+  mountPanel(
+    "Settings Tab",
+    "settings-tab-container",
+    (settingsTabContainer) => {
       mountSettingsTab(settingsTabContainer);
       registerSettingsTabHandlers({
         onReset: async (settings) => {
@@ -6769,14 +6481,13 @@ function init(): void {
           }
         },
       });
-    } catch (e) {
-      noteMountFailure("Settings Tab", e);
-    }
-  }
+    },
+  );
 
-  const homeDraftRecoveryContainer = $maybe("home-recovery-list");
-  if (homeDraftRecoveryContainer) {
-    try {
+  mountPanel(
+    "Home Draft Recovery",
+    "home-recovery-list",
+    (homeDraftRecoveryContainer) => {
       mountHomeDraftRecovery(homeDraftRecoveryContainer);
       registerHomeDraftRecoveryHandlers({
         onResumeDraft: (projectPath, scope, target) => {
@@ -6794,23 +6505,21 @@ function init(): void {
           void openProjectByPath(draft.projectPath);
         },
       });
-    } catch (e) {
-      noteMountFailure("Home Draft Recovery", e);
-    }
-  }
+    },
+  );
 
-  const aboutLicensesContainer = $("about-licenses-list");
-  if (aboutLicensesContainer) {
-    try {
+  mountPanel(
+    "About Licenses",
+    "about-licenses-list",
+    (aboutLicensesContainer) => {
       mountAboutLicenses(aboutLicensesContainer);
-    } catch (e) {
-      noteMountFailure("About Licenses", e);
-    }
-  }
+    },
+  );
 
-  const sidebarUpdateStatusContainer = $("sidebar-update-status");
-  if (sidebarUpdateStatusContainer) {
-    try {
+  mountPanel(
+    "Sidebar Update Status",
+    "sidebar-update-status",
+    (sidebarUpdateStatusContainer) => {
       mountSidebarUpdateStatus(sidebarUpdateStatusContainer);
       registerSidebarUpdateStatusHandlers({
         onClick: () => {
@@ -6826,313 +6535,72 @@ function init(): void {
           }
         },
       });
-    } catch (e) {
-      noteMountFailure("Sidebar Update Status", e);
-    }
-  }
+    },
+  );
 
-  const editorStateBannerContainer = $("editor-state-banner");
-  if (editorStateBannerContainer) {
-    try {
+  mountPanel(
+    "Editor State Banner",
+    "editor-state-banner",
+    (editorStateBannerContainer) => {
       mountEditorStateBanner(editorStateBannerContainer);
-    } catch (e) {
-      noteMountFailure("Editor State Banner", e);
-    }
-  }
+    },
+  );
 
-  const layersContainer = $("layers-list");
-  if (layersContainer) {
-    try {
-      mountLayers(layersContainer);
-      registerLayersHandlers({
-        onSelectSection: (id) => {
-          state.selectedId = null;
-          state.selectedSectionId = id;
-          renderLayers();
-          renderCanvas();
-          renderProperties();
-        },
-        onSelectChild: (sectionId, childId) => {
-          state.selectedId = childId;
-          state.selectedSectionId = sectionId;
-          renderLayers();
-          renderCanvas();
-          renderProperties();
-        },
-      });
-    } catch (e) {
-      noteMountFailure("Layers", e);
-    }
-  }
+  mountPanel("Layers", "layers-list", (layersContainer) => {
+    mountLayers(layersContainer);
+    registerLayersHandlers({
+      onSelectSection: (id) => {
+        state.selectedId = null;
+        state.selectedSectionId = id;
+        renderLayers();
+        renderCanvas();
+        renderProperties();
+      },
+      onSelectChild: (sectionId, childId) => {
+        state.selectedId = childId;
+        state.selectedSectionId = sectionId;
+        renderLayers();
+        renderCanvas();
+        renderProperties();
+      },
+    });
+  });
 
-  const canvasContainer = $("canvas");
-  if (canvasContainer) {
-    try {
-      mountCanvas(canvasContainer);
-      registerCanvasHandlers({
-        onInsertBlock: (index, sectionId) =>
-          openBlockInsertModal(index, sectionId),
-        onOpenSectionInsert: (index) => openSectionInsertModal(index),
-        onQuickInsertSection: (index, template) => {
-          const tpl =
-            template === "hero"
-              ? (TEMPLATES.find((entry) => entry.id === "hero") ?? null)
-              : template === "features"
-                ? (TEMPLATES.find((entry) => entry.id === "features") ?? null)
-                : null;
-          if (tpl && !templateAllowed(tpl)) {
-            setStatus(
-              "This section's blocks are not allowed by the project's rules.",
-            );
-            return;
-          }
-          if (tpl) {
-            addSectionAt(index, tpl);
-            return;
-          }
-          addSectionAt(index);
-        },
-        onSectionAction: (section, action) => {
-          if (action === "add-block") {
-            openBlockInsertModal(section.children.length, section.id);
-            return;
-          }
-          if (action === "up") {
-            moveSection(section.id, -1);
-            return;
-          }
-          if (action === "down") {
-            moveSection(section.id, 1);
-            return;
-          }
-          if (action === "duplicate") {
-            duplicateSection(section.id);
-            return;
-          }
-          if (action === "toggle-lock") {
-            toggleSectionLock(section.id);
-            return;
-          }
-          void deleteSection(section.id);
-        },
-        onBlockAction: (blockView, action) => {
-          const block = liveCanvasBlock(blockView);
-          if (action === "up") {
-            moveBlock(block, -1);
-            return;
-          }
-          if (action === "down") {
-            moveBlock(block, 1);
-            return;
-          }
-          if (action === "duplicate") {
-            duplicateSelectedBlock(block);
-            return;
-          }
-          if (action === "wrap") {
-            wrapBlockInSection(block);
-            return;
-          }
-          if (action === "toggle-lock") {
-            toggleBlockLock(block);
-            return;
-          }
-          void deleteBlock(block);
-        },
-        onSelectSection: (section) => {
-          state.selectedId = null;
-          state.selectedSectionId = section.id;
-          renderLayers();
-          renderCanvas();
-          renderProperties();
-        },
-        onBlockKeyDown: (event, sectionView, blockView, preview) => {
-          const section = liveCanvasSection(sectionView);
-          const block = liveCanvasBlock(blockView);
-          if (event.target !== event.currentTarget) return;
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            if (
-              block.id === state.selectedId &&
-              TEXT_EDITABLE.includes(block.type) &&
-              !block.locked
-            ) {
-              inlineEdit.startFirstInlineEdit(preview, block);
-              return;
-            }
-            state.selectedId = block.id;
-            state.selectedSectionId = section.id;
-            renderLayers();
-            renderCanvas();
-            renderProperties();
-          }
-        },
-        onBlockClick: (event, sectionView, blockView, preview) => {
-          const section = liveCanvasSection(sectionView);
-          const block = liveCanvasBlock(blockView);
-          event.stopPropagation();
-          if (inlineEdit.isInlineEditing()) return;
-          const isSecondClick = canvasActions.trackBlockClick(block.id);
-          if (
-            isSecondClick &&
-            TEXT_EDITABLE.includes(block.type) &&
-            !block.locked
-          ) {
-            inlineEdit.startFirstInlineEdit(preview, block);
-            return;
-          }
-          if (state.selectedId === block.id) return;
-          state.selectedId = block.id;
-          state.selectedSectionId = section.id;
-          renderLayers();
-          renderCanvas();
-          renderProperties();
-        },
-        onSectionDragStart: (event, section) => {
-          resetDragState();
-          if (section.locked) {
-            event.preventDefault();
-            return;
-          }
-          canvasActions.setDraggingSectionId(section.id);
-          event.dataTransfer?.setData("text/zephus-move-section", section.id);
-          if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
-        },
-        onSectionDragEnd: resetDragState,
-        onSectionDragOver: (event, sectionIndex, shell) => {
-          // Section MOVES and TEMPLATE drops both place a whole section:
-          // templates dragged from the palette showed a block-line indicator
-          // yet inserted after the section — now they use the same section
-          // slot machinery.
-          const hasSectionPayload =
-            canvasActions.getDraggingSectionId() !== null ||
-            Boolean(event.dataTransfer?.getData("text/zephus-template"));
-          if (!hasSectionPayload) return;
-          event.preventDefault();
-          const rect = shell.getBoundingClientRect();
-          const after = event.clientY > rect.top + rect.height / 2;
-          canvasActions.setSectionDropIndex(
-            after ? sectionIndex + 1 : sectionIndex,
-          );
-          showIndicator($("canvas"), shell, after);
-        },
-        // The "Add section" rails sit BETWEEN sections, outside any section
-        // shell: dropping there must target the rail's own position, not fall
-        // through to the canvas handler (which appends at the END of the page).
-        onSectionRailDragOver: (event, index) => {
-          if (!canvasActions.getDraggingSectionId()) return;
-          event.preventDefault();
-          canvasActions.setSectionDropIndex(index);
-          // For block drags the rail targets the section BEFORE the rail.
-          const target = state.sections[index - 1];
-          if (target) {
-            canvasActions.setDropSlot(target.id, target.children.length);
-          } else {
-            // Above the first section: the first section (or the empty page).
-            canvasActions.setDropSlot(state.sections[0]?.id ?? null, 0);
-          }
-        },
-        onSectionDrop: (event) => handleDrop(event),
-        onSectionBodyDragOver: (event, sectionId) => {
-          if (canvasActions.getDraggingSectionId()) return;
-          event.preventDefault();
-          canvasActions.setDropSectionId(sectionId);
-          // The pointer is over a block shell: onBlockDragOver already
-          // computed an exact index, so do not override it here.
-          const dragTarget = event.target as Element | null;
-          if (dragTarget?.closest(".block")) return;
-          // The pointer is over a strip between/above/below the blocks (or an
-          // insert rail). Recompute the insertion index from block geometry so
-          // a drop never lands at a stale index left over from a previous
-          // hover in this or another section.
-          const body = event.currentTarget as HTMLElement;
-          const blockShells = Array.from(
-            body.querySelectorAll<HTMLElement>(":scope > .block"),
-          );
-          if (blockShells.length === 0) {
-            canvasActions.setDropIndex(0);
-            return;
-          }
-          let index = blockShells.length;
-          for (let i = 0; i < blockShells.length; i += 1) {
-            const shell = blockShells[i];
-            if (!shell) continue;
-            const rect = shell.getBoundingClientRect();
-            if (event.clientY < rect.top + rect.height / 2) {
-              index = i;
-              break;
-            }
-          }
-          canvasActions.setDropIndex(index);
-          const lastShell = blockShells[blockShells.length - 1];
-          if (!lastShell) {
-            canvasActions.setDropIndex(0);
-            return;
-          }
-          if (index < blockShells.length) {
-            const anchor = blockShells[index] ?? lastShell;
-            showIndicator(body, anchor, false);
-          } else {
-            showIndicator(body, lastShell, true);
-          }
-        },
-        onBlockDragStart: (event, block) => {
-          resetDragState();
-          if (block.locked) {
-            event.preventDefault();
-            return;
-          }
-          event.dataTransfer?.setData("text/zephus-move-block", block.id);
-          if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
-        },
-        onBlockDragEnd: resetDragState,
-        onBlockDragOver: (event, sectionId, blockIndex, shell, sectionBody) => {
-          if (canvasActions.getDraggingSectionId()) return;
-          event.preventDefault();
-          canvasActions.setDropSectionId(sectionId);
-          const rect = shell.getBoundingClientRect();
-          const after = event.clientY > rect.top + rect.height / 2;
-          canvasActions.setDropIndex(after ? blockIndex + 1 : blockIndex);
-          showIndicator(sectionBody, shell, after);
-        },
-        onBlockDrop: (event) => handleDrop(event),
-        onPreviewRendered: (preview, blockView) => {
-          const block = liveCanvasBlock(blockView);
-          makeCanvasLinksInert(preview);
-          hydrateCanvasAssets(preview);
-          if (TEXT_EDITABLE.includes(block.type) && !block.locked) {
-            inlineEdit.attachInlineEditors(preview, block);
-          }
-        },
-        onSyncSectionShell: (shell, sectionView) => {
-          const section = liveCanvasSection(sectionView);
-          resize.syncResizeHandles(
-            shell,
-            { kind: "section", node: section },
-            () => shell,
-            section.id === state.selectedSectionId &&
-              !state.selectedId &&
-              !section.locked,
-          );
-        },
-        onSyncBlockShell: (shell, blockView, preview) => {
-          const block = liveCanvasBlock(blockView);
-          resize.syncResizeHandles(
-            shell,
-            { kind: "block", node: block },
-            () => (preview.firstElementChild as HTMLElement | null) ?? preview,
-            block.id === state.selectedId && !block.locked,
-          );
-        },
-      });
-    } catch (e) {
-      noteMountFailure("Canvas", e);
-    }
-  }
+  bindCanvasHandlers(
+    {
+      getState: () => state,
+      $maybe,
+      setStatus,
+      renderLayers,
+      renderProperties,
+      openBlockInsertModal,
+      openSectionInsertModal,
+      templateAllowed,
+      addSectionAt,
+      moveSection,
+      duplicateSection,
+      toggleSectionLock,
+      deleteSection,
+      liveCanvasBlock,
+      liveCanvasSection,
+      moveBlock,
+      duplicateSelectedBlock,
+      wrapBlockInSection,
+      toggleBlockLock,
+      deleteBlock,
+      makeCanvasLinksInert,
+      hydrateCanvasAssets,
+      inlineEdit,
+      resize,
+      noteMountFailure,
+    },
+    canvasActions,
+  );
 
-  const templatePaletteContainer = $("template-palette");
-  if (templatePaletteContainer) {
-    try {
+  mountPanel(
+    "Template Palette",
+    "template-palette",
+    (templatePaletteContainer) => {
       mountTemplatePalette(templatePaletteContainer);
       registerInsertTemplateCallback((tpl) => {
         if (!templateAllowed(tpl)) {
@@ -7141,19 +6609,16 @@ function init(): void {
         }
         addSectionAt(state.sections.length, tpl);
       });
-    } catch (e) {
-      noteMountFailure("Template Palette", e);
-    }
-  }
+    },
+  );
 
-  const projectOverviewContainer = $("project-overview");
-  if (projectOverviewContainer) {
-    try {
+  mountPanel(
+    "Project Overview",
+    "project-overview",
+    (projectOverviewContainer) => {
       mountProjectOverview(projectOverviewContainer);
-    } catch (e) {
-      noteMountFailure("Project Overview", e);
-    }
-  }
+    },
+  );
 
   reportPanelMountFailures();
   void bootstrap();
@@ -7252,6 +6717,25 @@ document.addEventListener("DOMContentLoaded", init);
 function noteMountFailure(label: string, error: unknown): void {
   console.error(`Failed to mount SolidJS ${label}:`, error);
   if (!panelMountFailures.includes(label)) panelMountFailures.push(label);
+}
+
+/**
+ * Mounts a sidebar panel with a shared failure net: every panel uses the same
+ * container-lookup + try/catch shape, and a mount error must never break the
+ * rest of the UI. Panels that fail get one line in the failure report.
+ */
+function mountPanel(
+  name: string,
+  id: string,
+  setup: (container: HTMLElement) => void,
+): void {
+  const container = $maybe(id);
+  if (!container) return;
+  try {
+    setup(container);
+  } catch (e) {
+    noteMountFailure(name, e);
+  }
 }
 
 function reportPanelMountFailures(): void {
