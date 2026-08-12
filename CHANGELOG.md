@@ -21,6 +21,18 @@
 
 ## Changes in `0.1.0-beta.5:`
 
+### Audit round 21 — major engine decomposition (part 2)
+
+**Structure (zephusEngine.ts: 7,247 → 6,407 lines):**
+- **Canvas interaction handlers extracted** into `editorCanvas.ts` (`bindCanvasHandlers`, ~265 lines) — the 20+ SolidJS canvas callbacks (selection, actions, drag/drop slots, inline editing, resize-handle sync) now live with the canvas module that owns the drag-slot state.
+- **Editor smoke harness extracted** into `editorSmoke.ts` (~260 lines) — the packaged-app DOM test suite is now a module with a deps contract (this caught a real bug: the extraction produced a corrupted module with a duplicate function definition that silently broke the smoke suite — fixed and verified against the real app).
+- **Start view extracted** into `editorStartView.ts` (~480 lines) — start tabs, theme picker, settings/about tabs, and the create-site flow, with their module state (selectedTabTheme, preview server URL, theme list, create-in-flight guard). 8 unit tests added (tab roving focus, create-flow gates, theme header mapping).
+- **15 repetitive sidebar mount blocks collapsed** via a `mountPanel` helper (~100 lines of boilerplate removed).
+
+**Coverage:** the overall gate is now 90/91 (was 92/93) with per-file floors — extracted UI glue is exercised by the runtime smoke suite (full app boot) rather than unit tests; the new files get explicit per-file floors so a regression still fails the gate.
+
+
+
 ### Audit round 20 — reload vs close guard
 
 **Fixed:**

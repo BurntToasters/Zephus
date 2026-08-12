@@ -12,6 +12,7 @@ import {
 } from "./editorWorkspace";
 import { bindCanvasHandlers, createCanvasActions } from "./editorCanvas";
 import { installEditorSmokeHook } from "./editorSmoke";
+import { createStartViewActions } from "./editorStartView";
 import * as editorFindReplace from "./editorFindReplace";
 import { createPreviewPublishActions } from "./editorPreviewPublish";
 import { collectUnsavedWorkSummaryLines } from "./editorUnsavedWork";
@@ -306,9 +307,6 @@ function $maybe(id: string): HTMLElement | null {
 
 // Cached app settings, loaded at startup and refreshed on save.
 let appSettings: GlobalSettings | null = null;
-let selectedTabTheme: string | null = null;
-let themePreviewBaseUrl: string | null = null;
-let startThemes: ThemeMeta[] | null = null;
 let homeDraftSummaries: DraftSummary[] = [];
 let pendingHomeDraftResume: DraftSummary | null = null;
 let updaterSnapshot: {
@@ -629,7 +627,7 @@ function visibleNavCount(): number {
 }
 
 function renderThemePlaceholder(): void {
-  if (startThemes) return;
+  if (startView.hasLoadedStartThemes()) return;
   updateThemesTab({ mode: "placeholder", themes: [] });
 }
 
@@ -5709,387 +5707,34 @@ function onKeydown(e: KeyboardEvent): void {
 
 /* ---------- Start view tabs and theme picker ---------- */
 
-function initStartTabs(): void {
-  const tabs = ["recent", "create", "settings", "about"] as const;
-  const tabBtns = tabs.map((t) => $("tab-" + t));
+const startView = createStartViewActions({
+  getState: () => state,
+  $,
+  $maybe,
+  setStatus,
+  showModal,
+  showModalNode,
+  closeModal,
+  openSettingsModal,
+  openProjectByPath,
+  updaterStatusMessage,
+  currentUpdaterActions,
+  nodeStatusMessage,
+  friendlyError,
+  runInstallFlow: (folder) => previewPublish.runInstallFlow(folder),
+});
 
-  // Wire click handlers.
-  for (const [i, t] of tabs.entries()) {
-    const btn = tabBtns[i];
-    if (btn) btn.onclick = () => void switchStartTab(t);
-  }
-
-  // Arrow-key roving tabindex (ARIA Authoring Practices Guide — Tabs pattern).
-  // Only one tab is in the natural tab order at a time; Left/Right/Home/End
-  // move focus within the tablist without requiring an extra Tab keypress.
-  const tablist = document.querySelector<HTMLElement>(
-    ".start-nav[role='tablist']",
-  );
-  if (!tablist) return;
-  tablist.addEventListener("keydown", (e) => {
-    const currentIndex = tabBtns.findIndex(
-      (btn) => btn === document.activeElement,
-    );
-    if (currentIndex < 0) return;
-    let next = -1;
-    if (e.key === "ArrowDown" || e.key === "ArrowRight") {
-      next = (currentIndex + 1) % tabs.length;
-    } else if (e.key === "ArrowUp" || e.key === "ArrowLeft") {
-      next = (currentIndex - 1 + tabs.length) % tabs.length;
-    } else if (e.key === "Home") {
-      next = 0;
-    } else if (e.key === "End") {
-      next = tabs.length - 1;
-    }
-    if (next < 0) return;
-    e.preventDefault();
-    const target = tabs[next]!;
-    void switchStartTab(target);
-    tabBtns[next]?.focus();
-  });
-}
-
-async function switchStartTab(
-  target: "recent" | "create" | "settings" | "about",
-): Promise<void> {
-  const tabs = ["recent", "create", "settings", "about"] as const;
-  for (const t of tabs) {
-    const tabBtn = $("tab-" + t);
-    const pane = $("pane-" + t);
-    if (tabBtn) {
-      tabBtn.classList.toggle("active", t === target);
-      tabBtn.setAttribute("aria-selected", t === target ? "true" : "false");
-      tabBtn.setAttribute("tabindex", t === target ? "0" : "-1");
-    }
-    if (pane) {
-      pane.classList.toggle("active", t === target);
-      pane.classList.toggle("hidden", t !== target);
-    }
-  }
-  if (target === "create") {
-    await renderThemesInTab();
-  } else if (target === "settings") {
-    await renderSettingsInTab();
-  } else if (target === "about") {
-    await renderAboutAndLicensesInTab();
-  }
-}
-
-async function activateHomeSection(
-  section: "recent" | "create" | "settings" | "about",
-): Promise<void> {
-  await switchStartTab(section);
-}
-
-function syncCreateButtonState(): void {
-  const btnCreate = $("btn-create") as HTMLButtonElement;
-  if (!btnCreate) return;
-  const enabled = selectedTabTheme !== null;
-  btnCreate.disabled = !enabled;
-  btnCreate.classList.toggle("disabled", !enabled);
-}
-
-function previewUrlForTheme(theme: ThemeMeta): string | null {
-  if (!themePreviewBaseUrl) return null;
-  return new URL(theme.previewPath, themePreviewBaseUrl).toString();
-}
-
-function selectThemeCard(themeId: string): void {
-  selectedTabTheme = themeId;
-  if (startThemes) {
-    updateThemesTab({
-      mode: "ready",
-      themes: startThemes.map((theme) => ({
-        id: theme.id,
-        name: theme.name,
-        description: theme.description,
-        previewUrl: previewUrlForTheme(theme),
-        selected: theme.id === selectedTabTheme,
-        header: getThemeHeaderDetails(theme.id),
-      })),
-    });
-  }
-  syncCreateButtonState();
-}
-
-function openThemePreviewModal(theme: ThemeMeta): void {
-  const previewUrl = previewUrlForTheme(theme);
-  if (!previewUrl) {
-    showModal(
-      "Theme Preview Unavailable",
-      "The bundled theme previews are not ready yet.",
-      [{ label: "OK", kind: "primary", onClick: closeModal }],
-    );
-    return;
-  }
-
-  const wrap = document.createElement("div");
-  renderThemePreviewModalBody(wrap, {
-    description: theme.description,
-    previewUrl,
-    themeName: theme.name,
-  });
-
-  showModalNode(
-    `${theme.name} Preview`,
-    wrap,
-    [
-      { label: "Close", kind: "ghost", onClick: closeModal },
-      {
-        label: "Choose Folder & Create Site",
-        kind: "primary",
-        onClick: () => {
-          selectThemeCard(theme.id);
-          closeModal();
-          void createSiteFromTabFlow();
-        },
-      },
-    ],
-    { size: "wide" },
-  );
-}
-
-function getThemeHeaderDetails(themeId: string): {
-  gradient: string;
-  icon: string;
-} {
-  const id = themeId.toLowerCase();
-  if (id.includes("doc")) {
-    return {
-      gradient: "linear-gradient(135deg, #312e81, #1e3a8a)",
-      icon: "book-open",
-    };
-  } else if (id.includes("blog")) {
-    return {
-      gradient: "linear-gradient(135deg, #7c2d12, #451a03)",
-      icon: "edit-3",
-    };
-  } else if (id.includes("port")) {
-    return {
-      gradient: "linear-gradient(135deg, #164e63, #155e75)",
-      icon: "image",
-    };
-  } else if (id.includes("min") || id.includes("blank")) {
-    return {
-      gradient: "linear-gradient(135deg, #374151, #111827)",
-      icon: "terminal",
-    };
-  } else {
-    return {
-      gradient: "linear-gradient(135deg, #064e3b, #022c22)",
-      icon: "rocket",
-    };
-  }
-}
-
-async function renderThemesInTab(): Promise<void> {
-  updateThemesTab({ mode: "loading", themes: [] });
-
-  try {
-    if (!startThemes) {
-      startThemes = await window.zephus.listThemes();
-    }
-    if (!themePreviewBaseUrl) {
-      const previewServer = await window.zephus.ensureThemePreviewServer();
-      if (!previewServer.ok || !previewServer.baseUrl) {
-        throw new Error(
-          previewServer.error ?? "Could not start theme preview server.",
-        );
-      }
-      themePreviewBaseUrl = previewServer.baseUrl;
-    }
-
-    updateThemesTab({
-      mode: "ready",
-      themes: startThemes.map((theme) => ({
-        id: theme.id,
-        name: theme.name,
-        description: theme.description,
-        previewUrl: previewUrlForTheme(theme),
-        selected: theme.id === selectedTabTheme,
-        header: getThemeHeaderDetails(theme.id),
-      })),
-    });
-    syncCreateButtonState();
-  } catch (err) {
-    updateThemesTab({
-      mode: "error",
-      error: String(err),
-      themes: [],
-    });
-  }
-}
-
-async function renderSettingsInTab(): Promise<void> {
-  let settings: GlobalSettings;
-  try {
-    settings = await window.zephus.readGlobalSettings();
-  } catch {
-    setStatus("Could not load settings.");
-    return;
-  }
-  initializeSettingsTab(settings);
-  updateSettingsTabUpdater(updaterStatusMessage(), currentUpdaterActions());
-  updateSettingsTabNode("Checking Node.js…", !settings.customNodePath);
-
-  const applyNodeStatus = (
-    res: NodeCheckResult,
-    currentSettings: GlobalSettings,
-  ): void => {
-    const label =
-      res.status === "ok"
-        ? `Node.js ${res.version} detected ✓`
-        : res.status === "outdated"
-          ? `Node.js ${res.version ?? "?"} — version 22.12+ required`
-          : res.status === "missing"
-            ? "Node.js not found — set a custom location below"
-            : "Node.js status could not be determined";
-    const source = currentSettings.customNodePath
-      ? `Custom: ${currentSettings.customNodePath}`
-      : "Auto-detect (system PATH)";
-    updateSettingsTabNode(
-      `${label} · ${source}`,
-      !currentSettings.customNodePath,
-    );
-  };
-
-  window.zephus
-    .getNodeStatus()
-    .then((res) => applyNodeStatus(res, settings))
-    .catch(() => {
-      updateSettingsTabNode(
-        "Could not check Node.js.",
-        !settings.customNodePath,
-      );
-    });
-}
-
-async function renderAboutAndLicensesInTab(): Promise<void> {
-  const versionText = $("about-app-version");
-  if (versionText) {
-    try {
-      const v = await window.zephus.getAppVersion();
-      versionText.textContent = `v${v}`;
-    } catch {
-      versionText.textContent = "Zephus";
-    }
-  }
-
-  const configBtn = $maybe("btn-about-config");
-  if (configBtn) {
-    configBtn.onclick = () => void window.zephus.openConfigFolder();
-  }
-
-  const loadLicensesBtn = $("btn-load-licenses") as HTMLButtonElement;
-  const openRawLicensesBtn = $("btn-open-raw-licenses");
-  const licensesListContainer = $("about-licenses-list");
-
-  if (openRawLicensesBtn) {
-    openRawLicensesBtn.onclick = async () => {
-      const opened = await window.zephus.openProductionLicensesFile();
-      if (!opened.ok) {
-        setStatus(opened.error ?? "Could not open licenses.json.");
-      }
-    };
-  }
-
-  if (loadLicensesBtn && licensesListContainer) {
-    loadLicensesBtn.onclick = async () => {
-      loadLicensesBtn.disabled = true;
-      loadLicensesBtn.textContent = "Loading Licenses…";
-      licensesListContainer.classList.remove("hidden");
-      updateAboutLicenses({
-        visible: true,
-        loading: true,
-        error: null,
-        entries: [],
-      });
-
-      const result = await window.zephus.readProductionLicenses();
-      loadLicensesBtn.disabled = false;
-      loadLicensesBtn.textContent = "Reload Dependency Licenses";
-
-      if (!result.ok) {
-        updateAboutLicenses({
-          visible: true,
-          loading: false,
-          error: result.error ?? "Could not load production license data.",
-          entries: [],
-        });
-        return;
-      }
-
-      updateAboutLicenses({
-        visible: true,
-        loading: false,
-        error: null,
-        entries: result.entries.map((entry) => ({
-          packageId: entry.packageId,
-          licenses: entry.licenses,
-          repository: entry.repository,
-          licenseUrl: entry.licenseUrl,
-          parentsLabel:
-            entry.parents.slice(0, 4).join(" > ") || "Direct dependency",
-        })),
-      });
-    };
-  }
-}
-
-// Guards the create flow: double-clicks (or Enter on a card) could otherwise
-// launch two folder pickers / two scaffold runs that interleave.
-let siteCreateInFlight = false;
-
-async function createSiteFromTabFlow(): Promise<void> {
-  if (siteCreateInFlight) return;
-  siteCreateInFlight = true;
-  try {
-    await createSiteFromTabFlowInner();
-  } finally {
-    siteCreateInFlight = false;
-  }
-}
-
-async function createSiteFromTabFlowInner(): Promise<void> {
-  if (!selectedTabTheme) return;
-  const theme = selectedTabTheme;
-  // Check Node BEFORE asking for a folder: previously the user picked a
-  // folder, then hit the "Node.js Required" modal and had to back out.
-  const node = await window.zephus.getNodeStatus();
-  if (node.status !== "ok") {
-    showModal("Node.js Required", nodeStatusMessage(node), [
-      { label: "Open Settings", kind: "primary", onClick: openSettingsModal },
-      { label: "Cancel", kind: "ghost", onClick: closeModal },
-    ]);
-    return;
-  }
-  const folder = await window.zephus.chooseNewSiteFolder();
-  if (!folder) return;
-  setStatus("Creating site from theme…");
-  const r = await window.zephus.createSite(folder, theme);
-  if (!r.ok) {
-    showModal("Could Not Create Site", friendlyError(r.error), [
-      { label: "OK", kind: "primary", onClick: closeModal },
-    ]);
-    return;
-  }
-  // First-run convenience: install deps now so preview/publish just work.
-  // A FAILED install must not strand the user: the site exists on disk and
-  // should open anyway (preview/publish will re-offer the install).
-  const installResult = await runInstallFlow(folder);
-  await openProjectByPath(folder);
-  if (!state.project) {
-    setStatus(
-      "Site created, but Zephus could not open it. Check the project folder and try again.",
-    );
-  } else if (installResult === "backgrounded") {
-    setStatus("Site opened; dependency installation continues in background.");
-  } else if (installResult === "failed") {
-    setStatus(
-      "Site opened. Dependencies failed to install — open the project and try Preview or Publish to retry.",
-    );
-  }
-}
+const {
+  initStartTabs,
+  switchStartTab,
+  activateHomeSection,
+  selectThemeCard,
+  createSiteFromTabFlow,
+  renderThemesInTab,
+  renderSettingsInTab,
+  renderAboutAndLicensesInTab,
+  openThemePreviewModal,
+} = startView;
 
 function init(): void {
   if (window.location.search.includes("smoke=1")) {
@@ -6330,7 +5975,7 @@ function init(): void {
       onLoadPreviews: () => void activateHomeSection("create"),
       onSelect: (themeId) => selectThemeCard(themeId),
       onPreview: (themeId) => {
-        const theme = startThemes?.find((entry) => entry.id === themeId);
+        const theme = startView.getStartTheme(themeId);
         if (theme) openThemePreviewModal(theme);
       },
       onCreateFromTheme: (themeId) => {
