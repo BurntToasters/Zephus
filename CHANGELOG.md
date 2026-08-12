@@ -21,6 +21,14 @@
 
 ## Changes in `0.1.0-beta.5:`
 
+### Round 34 (cont.) — project-open extraction (engine 3,554 → 3,335)
+
+**Structure:**
+- **Project open lifecycle extracted** into `editorProject.ts` (~270 lines): the open-queue guard, the failure gates (not-a-zephus, damaged, git-init), and the enter-editor sequence (schema ensure → site load → draft resume → page load) — the open transaction is now one module with a deps contract.
+- **4 new unit tests** (module at 65.8%): failed-open cleanup, non-Zephus refusal, damaged-project rejection, and the open-queue honoring a user click over the auto-restore.
+
+
+
 ### Round 34 — CI smoke job, lint zero, chrome extraction (engine 3,812 → 3,554)
 
 **CI:** the 2-3 min packaged-app smoke now runs in its own ubuntu job (`test:all --skip-smoke` on the matrix), cutting ~10 min from PR cycles.

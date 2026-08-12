@@ -25,6 +25,7 @@ const thresholds = {
   'src/renderer/editorUndoOps.ts': { lines: 75, statements: 75 },
   'src/renderer/editorPageLoad.ts': { lines: 70, statements: 70 },
   'src/renderer/editorSiteEditor.ts': { lines: 50, statements: 50 },
+  'src/renderer/editorProject.ts': { lines: 55, statements: 55 },
   'src/main/updater.ts': { lines: 75, statements: 75 },
   'src/main/services/assets.ts': { lines: 92, statements: 92 },
   'src/main/services/files.ts': { lines: 95, statements: 95 },
