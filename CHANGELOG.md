@@ -21,6 +21,14 @@
 
 ## Changes in `0.1.0-beta.5:`
 
+### Round 31 — page-load orchestration extracted (engine 4,412 → 4,088)
+
+**Structure:**
+- **Page loading + external-change orchestration** (`editorPageLoad.ts`, ~350 lines) — the race machinery (request counter, serialized chain, change-during-read detection), the watcher conflict flow (keep/reload with echo suppression), and the loading-state UI now live in one module with a deps contract. The engine's save flow routes its post-save watcher-echo suppression through the loader.
+- **4 new unit tests** (module at 80.9%): happy-path load, project-close mid-load invalidation (resetLoadPipeline), external-change Reload flow, and Keep-Mine with same-change suppression — the invariants that previously had only smoke coverage.
+
+
+
 ### Round 30 (cont.) — next-actions action coverage
 
 - **4 more next-actions tests (11 total)**: Fix-Heading selects the second H1, Create-404 calls through, Open-Site-Shell opens the modal, Discard-Site clears pending site changes. Module coverage 43.6% → 54.5%; floor raised to 50.
