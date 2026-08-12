@@ -21,6 +21,16 @@
 
 ## Changes in `0.1.0-beta.5:`
 
+### Audit round 22 — page modals extraction (engine 6,407 → 5,813)
+
+**Structure:**
+- **Page Settings + Asset Browser modals extracted** into `editorPageModals.ts` (~610 lines) — the two modals share the asset browser (page meta picks social images through it), the dirty-work gate, and the modal controller. The engine lost another ~600 lines; the modal logic is now unit-testable with a deps contract.
+- **8 new unit tests**: page-settings open/save/rename/404-slug flows and asset-browser delete/drop-import/dirty-gate flows (the dirty-gate refusal test locks in the "never repoint saved files while edits are unsettled" guarantee).
+
+**Coverage:** per-file floors added for the new module; the overall gate now sits at 88/90 with the module floors doing the real regression gating.
+
+
+
 ### Audit round 21 — major engine decomposition (part 2)
 
 **Structure (zephusEngine.ts: 7,247 → 6,407 lines):**
