@@ -21,6 +21,19 @@
 
 ## Changes in `0.1.0-beta.5:`
 
+### Round 34 (cont.) — BlockProperties split + fresh audit
+
+**Component structure:**
+- **BlockProperties.tsx (1,167 lines) split into four files**: `BlockProps/shared.tsx` (field components + state contract), `BlockProps/content.tsx` (the per-block-type content editors), `BlockProps/imageGallery.tsx` (image + gallery groups), and the main file down to 294 lines (layout/style/responsive/actions + the panel render).
+
+**Audit (verified clean):**
+- PageModals / InsertModals / FindReplaceModal bodies: controlled inputs throughout, no injection vectors, correct 404-nav hiding, slug-change remount handled by the engine.
+- styles.css: a defined-vs-used class scan flagged 33 candidates — all are dynamic class usages (classList.toggle, template literals) — no genuinely dead CSS.
+
+**Note (D workstream):** mounting Solid shells under jsdom hit a vitest-4 toolchain wall — aliasing, dedupe, inline, and browser conditions each still produced two solid-js core copies whose signals cannot interoperate (verified empirically). Reverted cleanly; the shells remain smoke-covered, which is appropriate for thin render layers over already-tested logic.
+
+
+
 ### Round 34 (cont.) — project-open extraction (engine 3,554 → 3,335)
 
 **Structure:**
