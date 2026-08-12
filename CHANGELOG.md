@@ -21,6 +21,15 @@
 
 ## Changes in `0.1.0-beta.5:`
 
+### Round 33 — audit: undo latch, site-save layer, onboarding
+
+**Audit (verified clean):**
+- **Inspector undo latch + debounced canvas repaint** (`editorInspector.ts`): snapshot-at-begin/push-on-change-at-end semantics, nested-begin protection, markActive for explicit-undo flows, repaint flush/cancel — no phantom-entry or redo-wipe paths found.
+- **Site-save layer** (`editorSiteSave.ts`, 94.2% covered): disk-drift check before write, newer-edits-in-flight guard, draft clearing with warning surfacing, revision guards — sound.
+- **Onboarding flow**: first-launch-only (recent-projects check + localStorage dismissal), non-fatal storage failures, correct modal actions.
+
+
+
 ### Round 32 — site editor extraction (engine 4,088 → 3,812)
 
 **Structure:**
