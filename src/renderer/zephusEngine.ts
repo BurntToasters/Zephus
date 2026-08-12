@@ -3792,6 +3792,10 @@ function init(): void {
       markPageDirty,
       addBlockAt,
       findBlockLocation,
+      openProjectByPath,
+      performSave,
+      publishSite,
+      closeProject,
     });
   }
   window.refreshIcons = refreshIcons;

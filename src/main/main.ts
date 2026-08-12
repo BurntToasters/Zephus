@@ -10,6 +10,8 @@ import { stopWatching } from "./services/watch";
 import { readGlobalSettings, writeGlobalSettings } from "./services/settings";
 import { setupAutoUpdater, checkForUpdates } from "./updater";
 import { checkNodeVersion, validateNodePath } from "./services/nodeCheck";
+import { createSite } from "./services/wizard";
+import { execFileSync } from "child_process";
 import { IPC } from "./ipcChannels";
 
 // Dev mode ONLY when not packaged: a shipped binary launched with --dev (or
@@ -291,7 +293,19 @@ async function completeSmokeRun(windowRef: BrowserWindow): Promise<void> {
   smokeCompletionStarted = true;
 
   let exitCode = 1;
+  // A real on-disk project lets the editor smoke drive save/publish/git/
+  // drafts end to end instead of synthesizing renderer-only state.
+  let smokeProjectPath: string | null = null;
   try {
+    if (isSmoke) {
+      smokeProjectPath = scaffoldSmokeProject();
+      if (smokeProjectPath) {
+        await windowRef.webContents.executeJavaScript(
+          `window.__zephusSmokeProjectPath = ${JSON.stringify(smokeProjectPath)};`,
+          true,
+        );
+      }
+    }
     const failures = await runRendererSmokeChecks(windowRef);
     if (failures.length > 0) {
       for (const failure of failures) {
@@ -304,8 +318,51 @@ async function completeSmokeRun(windowRef: BrowserWindow): Promise<void> {
   } catch (error) {
     log.error("Smoke run failed:", error);
   } finally {
+    if (smokeProjectPath) {
+      try {
+        fs.rmSync(smokeProjectPath, { recursive: true, force: true });
+      } catch {
+        /* best-effort cleanup */
+      }
+    }
     cleanupBackgroundServices();
     finishSmokeProcess(exitCode);
+  }
+}
+
+/**
+ * Scaffolds a real minimal site into a temp dir for the editor smoke suite.
+ * Links the repo's node_modules so preview/publish builds resolve Astro
+ * without a network install. Returns the project path, or null on failure.
+ */
+function scaffoldSmokeProject(): string | null {
+  try {
+    const dir = fs.mkdtempSync(path.join(app.getPath("temp"), "zephus-smoke-"));
+    const project = path.join(dir, "site");
+    fs.mkdirSync(project);
+    const created = createSite(project, "minimal");
+    if (!created.ok) return null;
+    // createSite does NOT init git (the IPC handler does); the smoke needs a
+    // real repo with an identity so commit flows run end to end.
+    execFileSync("git", ["init"], { cwd: project, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "Zephus Smoke"], {
+      cwd: project,
+      stdio: "ignore",
+    });
+    execFileSync("git", ["config", "user.email", "smoke@zephus.local"], {
+      cwd: project,
+      stdio: "ignore",
+    });
+    // Give the scaffolded site the repo's toolchain (mirrors the real build
+    // tests) so `npm run build` resolves astro from the symlink.
+    const rootModules = path.resolve(__dirname, "..", "..", "node_modules");
+    if (fs.existsSync(rootModules)) {
+      fs.symlinkSync(rootModules, path.join(project, "node_modules"), "dir");
+    }
+    return project;
+  } catch (error) {
+    log.error("Smoke scaffold failed", error);
+    return null;
   }
 }
 

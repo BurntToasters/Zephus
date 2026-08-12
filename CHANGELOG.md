@@ -21,6 +21,17 @@
 
 ## Changes in `0.1.0-beta.5:`
 
+### Round 26 — real-project smoke suite (save/drafts/publish/git end to end)
+
+**The smoke suite now drives a REAL project** instead of synthesizing renderer-only state:
+- Main scaffolds a minimal site into a temp dir (with git repo + identity + symlinked toolchain) before the renderer checks run, and cleans it up after.
+- The editor smoke hook opens it and exercises: recovery-draft write after an unsaved edit (debounce window), save clearing the draft + writing the file, a real Astro `npm run build` publish completing, and a git commit landing — plus project close.
+- Two bugs found and fixed while wiring it up:
+  - **The unsaved-changes modal hung the smoke** (needed manual intervention): the synthesized session state left residual dirty flags/undo entries, and `loadPage`'s dirty guard popped the save/discard/cancel prompt the smoke cannot answer. The hook now force-cleans the synthesized session before the real open.
+  - **The smoke scaffold had no git repo/identity** (`createSite` alone doesn't init git — the IPC handler does) — git commit flows failed and `git add -A` hung against un-ignored trees.
+
+
+
 ### Round 25 — major overhaul: decomposition completion + hardening
 
 **Structure (engine 5,156 → 4,454 lines):**

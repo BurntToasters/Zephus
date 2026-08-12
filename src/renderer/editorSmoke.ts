@@ -28,6 +28,10 @@ export interface EditorSmokeDeps {
     block: Block;
     blockIndex: number;
   } | null;
+  openProjectByPath: (folder: string) => Promise<void>;
+  performSave: () => Promise<boolean>;
+  publishSite: () => Promise<void>;
+  closeProject: () => Promise<void>;
 }
 
 export function installEditorSmokeHook(deps: EditorSmokeDeps): void {
@@ -42,6 +46,10 @@ export function installEditorSmokeHook(deps: EditorSmokeDeps): void {
     markPageDirty,
     addBlockAt,
     findBlockLocation,
+    openProjectByPath,
+    performSave,
+    publishSite,
+    closeProject,
   } = deps;
 
   window.__zephusRunEditorSmoke = async () => {
@@ -358,6 +366,141 @@ export function installEditorSmokeHook(deps: EditorSmokeDeps): void {
         undoButton.disabled === (state.undo.length === 0),
         "Editor smoke: undo button state does not match the undo stack.",
       );
+    }
+
+    // ---- Real-project flows (save / drafts / publish / git) ----
+    const zephus = (window as unknown as { zephus: typeof window.zephus })
+      .zephus;
+    const realProjectPath = (
+      window as unknown as { __zephusSmokeProjectPath?: string }
+    ).__zephusSmokeProjectPath;
+    if (realProjectPath) {
+      const wait = (ms: number) =>
+        new Promise((resolve) => setTimeout(resolve, ms));
+      const closeAnyModal = async (): Promise<void> => {
+        const overlay = document.getElementById("modal-overlay");
+        if (!overlay || overlay.classList.contains("hidden")) return;
+        const closeBtn = Array.from(
+          document.querySelectorAll("#modal-actions button"),
+        ).find((button) =>
+          /close|cancel|done|later|ok/i.test(button.textContent || ""),
+        );
+        if (closeBtn instanceof HTMLButtonElement) {
+          closeBtn.click();
+          await wait(150);
+        }
+      };
+
+      // Leave the synthesized session clean: any residual dirty flag or
+      // undo entry would trigger the unsaved-work prompt inside the real
+      // open (loadPage guards on isGlobalDirty) and hang the smoke on a
+      // modal nobody can answer.
+      state.pageDirty = false;
+      state.siteDirty = false;
+      state.undo = [];
+      state.redo = [];
+
+      await closeAnyModal();
+      await openProjectByPath(realProjectPath);
+      // The open resolves once the flow settles; the page document lands a
+      // beat later. Wait for it before editing/saving.
+
+      for (let i = 0; i < 40 && !state.pageDocument; i += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+
+      await wait(800);
+      assert(
+        state.project?.path === realProjectPath,
+        `Editor smoke: project did not open (path=${state.project?.path} expected=${realProjectPath})`,
+      );
+
+      const page = state.page;
+      assert(!!page, "Editor smoke: no page loaded after project open.");
+
+      // Recovery draft: an unsaved edit must surface a page draft after the
+      // debounce window.
+      const sectionId = state.sections[0]?.id ?? null;
+      const before = state.sections[0]?.children.length ?? 0;
+      if (sectionId) addBlockAt("text", 0, sectionId);
+      await wait(1300);
+      const draftsAfterEdit = await zephus.listDrafts();
+      const hasPageDraft =
+        draftsAfterEdit.ok &&
+        draftsAfterEdit.entries.some(
+          (entry) =>
+            entry.projectPath === realProjectPath && entry.scope === "page",
+        );
+      assert(
+        hasPageDraft,
+        "Editor smoke: no recovery draft after an unsaved edit.",
+      );
+
+      // Save: draft must clear and the file on disk must reflect the edit.
+
+      const saved = await performSave();
+      const saveStatus =
+        document.getElementById("status-bar")?.textContent ?? "";
+      assert(
+        saved,
+        `Editor smoke: performSave failed (status="${saveStatus}" page=${state.page} project=${state.project?.path})`,
+      );
+      assert(
+        !state.pageDirty,
+        "Editor smoke: page still dirty after a successful save.",
+      );
+      await wait(400);
+      const draftsAfterSave = await zephus.listDrafts();
+      const pageDraftGone =
+        !draftsAfterSave.ok ||
+        !draftsAfterSave.entries.some(
+          (entry) =>
+            entry.projectPath === realProjectPath && entry.scope === "page",
+        );
+      assert(pageDraftGone, "Editor smoke: recovery draft survived a save.");
+      if (page) {
+        const onDisk = await zephus.readFile(realProjectPath, page);
+        assert(
+          onDisk.ok && (onDisk.content ?? "").length > 0,
+          "Editor smoke: saved page file is empty or unreadable.",
+        );
+      }
+
+      // Publish: the real Astro build must succeed and open the result modal.
+
+      await publishSite();
+
+      let built = false;
+      for (let i = 0; i < 90; i += 1) {
+        await wait(500);
+        const title = document.getElementById("modal-title");
+        if (title && /Built/i.test(title.textContent || "")) {
+          built = true;
+          break;
+        }
+      }
+      assert(built, "Editor smoke: publish build did not complete.");
+      await closeAnyModal();
+      assert(
+        (state.sections[0]?.children.length ?? 0) === before + 1,
+        "Editor smoke: the added block was lost across save/publish.",
+      );
+
+      // Git: the scaffolded project is a repo (createSite inits it) — commit
+      // the saved changes and verify the commit lands.
+
+      const committed = await zephus.commitGitChanges(
+        realProjectPath,
+        "smoke commit",
+      );
+      assert(
+        committed.ok,
+        `Editor smoke: git commit failed (${committed.error ?? "unknown"})`,
+      );
+
+      await closeProject();
+
+      assert(state.project === null, "Editor smoke: project did not close.");
     }
 
     return failures;
