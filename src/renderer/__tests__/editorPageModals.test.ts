@@ -397,11 +397,12 @@ describe("asset browser modal", () => {
   it("deletes the page after confirmation and reloads the list", async () => {
     const { deps, getActions } = makeDeps();
     const deletedPages: string[] = [];
-    (window as unknown as { zephus: { deletePage: unknown } }).zephus.deletePage =
-      async (_p: string, page: string) => {
-        deletedPages.push(page);
-        return { ok: true };
-      };
+    (
+      window as unknown as { zephus: { deletePage: unknown } }
+    ).zephus.deletePage = async (_p: string, page: string) => {
+      deletedPages.push(page);
+      return { ok: true };
+    };
     const actions = createPageModalActions(deps);
     await actions.openPageMetaModal("src/pages/about.astro");
     const del = getActions().find((a) => a.label === "Delete")!;
@@ -422,11 +423,17 @@ describe("asset browser modal", () => {
   it("detaches a page from visual mode", async () => {
     const { deps, getActions } = makeDeps();
     const detached: string[] = [];
-    (window as unknown as { zephus: { detachPageDocument: unknown } }).zephus.detachPageDocument =
-      async (_p: string, _d: string, _s: string, source: string) => {
-        detached.push(source);
-        return { ok: true, pageDocument: { detached: true } };
-      };
+    (
+      window as unknown as { zephus: { detachPageDocument: unknown } }
+    ).zephus.detachPageDocument = async (
+      _p: string,
+      _d: string,
+      _s: string,
+      source: string,
+    ) => {
+      detached.push(source);
+      return { ok: true, pageDocument: { detached: true } };
+    };
     const actions = createPageModalActions(deps);
     await actions.openPageMetaModal("src/pages/about.astro");
     const detach = getActions().find((a) => a.label === "Detach Visual")!;
@@ -437,11 +444,12 @@ describe("asset browser modal", () => {
   it("duplicates the page and reloads", async () => {
     const { deps, getActions } = makeDeps();
     let duplicated = false;
-    (window as unknown as { zephus: { duplicatePage: unknown } }).zephus.duplicatePage =
-      async () => {
-        duplicated = true;
-        return { ok: true };
-      };
+    (
+      window as unknown as { zephus: { duplicatePage: unknown } }
+    ).zephus.duplicatePage = async () => {
+      duplicated = true;
+      return { ok: true };
+    };
     const actions = createPageModalActions(deps);
     await actions.openPageMetaModal("src/pages/about.astro");
     const dup = getActions().find((a) => a.label === "Duplicate")!;
