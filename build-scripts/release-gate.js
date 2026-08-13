@@ -5,8 +5,39 @@
  * green exits.
  */
 require("dotenv").config();
+const fs = require("fs");
+const path = require("path");
 
 const failures = [];
+
+// The draft release notes are the CHANGELOG.md — fail fast when the current
+// version's section is missing, so a release never ships without notes.
+const packageJson = require("../package.json");
+const VERSION = packageJson.version;
+const CHANGELOG_PATH = path.join(__dirname, "..", "CHANGELOG.md");
+try {
+  const changelog = fs.readFileSync(CHANGELOG_PATH, "utf8");
+  const escapedVersion = VERSION.replace(
+    /[.*+?^${}()|[\]\\]/g,
+    "\\$&",
+  );
+  const sectionHeader = new RegExp(
+    `^#{1,3}\\s+.*${escapedVersion}.*$`,
+    "m",
+  );
+  if (!changelog.trim()) {
+    failures.push("CHANGELOG.md is empty — the draft release notes would be blank.");
+  } else if (!sectionHeader.test(changelog)) {
+    failures.push(
+      `CHANGELOG.md has no section for the current version (${VERSION}) — the draft release notes would miss it.`,
+    );
+  }
+} catch (error) {
+  failures.push(
+    "CHANGELOG.md is required for the draft release notes: " +
+      (error && error.message ? error.message : String(error)),
+  );
+}
 
 if (!process.env.GH_TOKEN) {
   failures.push("GH_TOKEN is required to upload release assets and publish the draft.");

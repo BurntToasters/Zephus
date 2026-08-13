@@ -4,13 +4,20 @@
 //   --wait     poll until that draft exists; NEVER create. Run by mac/linux so
 //              they only ever reuse the draft Windows created (no duplicates).
 
+const fs = require('fs');
+const path = require('path');
 const https = require('https');
+const { execFileSync } = require('child_process');
 
 require('dotenv').config();
 
 const GH_TOKEN = process.env.GH_TOKEN;
 const REPO_OWNER = 'BurntToasters';
 const REPO_NAME = 'zephus';
+const CHANGELOG_PATH = path.join(__dirname, '..', 'CHANGELOG.md');
+// The draft targets the latest commit of this branch (the most recent merged
+// PR), not the release VM's checked-out HEAD — the VMs may be on any commit.
+const RELEASE_BRANCH = process.env.RELEASE_BRANCH || 'beta';
 const GH_REQUEST_TIMEOUT_MS = Number.parseInt(process.env.GH_REQUEST_TIMEOUT_MS || '30000', 10);
 const GH_REQUEST_RETRIES = Number.parseInt(process.env.GH_REQUEST_RETRIES || '3', 10);
 const GH_REQUEST_RETRY_DELAY_MS = Number.parseInt(
@@ -31,6 +38,97 @@ const packageJson = require('../package.json');
 const VERSION = packageJson.version;
 const TAG_NAME = 'v' + VERSION;
 const IS_PRERELEASE = VERSION.includes('beta') || VERSION.includes('alpha');
+
+/** Release notes = the full CHANGELOG.md (mirrors the Zinnia release flow). */
+function readChangelogReleaseBody() {
+  let body;
+  try {
+    body = fs.readFileSync(CHANGELOG_PATH, 'utf8');
+  } catch (error) {
+    throw new Error(
+      'CHANGELOG.md is required for GitHub release notes: ' +
+        (error && error.message ? error.message : String(error)),
+      { cause: error }
+    );
+  }
+  if (!body.trim()) {
+    throw new Error('CHANGELOG.md is empty; refusing to set blank release notes.');
+  }
+  return body;
+}
+
+/**
+ * The commit the draft must target: the latest commit on RELEASE_BRANCH
+ * (e.g. beta), resolved from the remote so the Windows VM does not need to
+ * be checked out at that commit. FORCE_TARGET_COMMIT overrides for manual
+ * wiring.
+ */
+async function latestBranchCommit() {
+  const forced = process.env.FORCE_TARGET_COMMIT;
+  if (forced && forced.trim()) {
+    const sha = forced.trim();
+    if (!/^[0-9a-f]{40}$/i.test(sha)) {
+      throw new Error('FORCE_TARGET_COMMIT must be a full 40-character commit sha.');
+    }
+    return sha;
+  }
+  try {
+    const branch = await githubRequestWithRetry(
+      'GET',
+      '/repos/' + REPO_OWNER + '/' + REPO_NAME + '/branches/' + encodeURIComponent(RELEASE_BRANCH)
+    );
+    const sha = branch && branch.commit && branch.commit.sha;
+    if (!sha || !/^[0-9a-f]{40}$/i.test(sha)) {
+      throw new Error('API returned no commit sha for branch ' + RELEASE_BRANCH);
+    }
+    return sha;
+  } catch (apiError) {
+    // The API may be rate-limited or unreachable from the release VM; fall
+    // back to the remote ref lookup (works with any clone state).
+    console.log(
+      '   GitHub API branch lookup failed (' +
+        (apiError && apiError.message ? apiError.message : String(apiError)) +
+        '); falling back to git ls-remote.'
+    );
+    const remote = execFileSync('git', ['ls-remote', 'origin', 'refs/heads/' + RELEASE_BRANCH], {
+      encoding: 'utf8',
+    }).trim();
+    const sha = remote.split(/\s+/)[0];
+    if (!sha || !/^[0-9a-f]{40}$/i.test(sha)) {
+      throw new Error(
+        'Could not resolve the latest ' +
+          RELEASE_BRANCH +
+          ' branch commit (API failed and git ls-remote returned nothing usable).',
+        { cause: apiError }
+      );
+    }
+    return sha;
+  }
+}
+
+/** Keeps the draft's release notes + target commit fresh on every run. */
+async function syncDraftRelease(release, body, targetCommit) {
+  if (!release || typeof release.id !== 'number') {
+    throw new Error('Cannot sync release notes without a GitHub release id.');
+  }
+  const updated = await githubRequestWithRetry(
+    'PATCH',
+    '/repos/' + REPO_OWNER + '/' + REPO_NAME + '/releases/' + release.id,
+    { body, target_commitish: targetCommit }
+  );
+  console.log(
+    '   Synced CHANGELOG.md into release notes (' +
+      body.length +
+      ' chars) and target commit ' +
+      targetCommit +
+      ' (' +
+      RELEASE_BRANCH +
+      ') for ' +
+      (release.name || TAG_NAME) +
+      '.'
+  );
+  return updated;
+}
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -187,6 +285,8 @@ async function findExistingRelease() {
 
 async function ensureDraftRelease() {
   console.log('Ensuring draft release exists for ' + TAG_NAME + '...');
+  const body = readChangelogReleaseBody();
+  const targetCommit = await latestBranchCommit();
 
   const existing = await findExistingRelease();
   if (existing) {
@@ -197,9 +297,9 @@ async function ensureDraftRelease() {
         existing.id +
         ', ' +
         (existing.assets ? existing.assets.length : 0) +
-        ' assets) - skipping create.'
+        ' assets) - refreshing release notes + target commit.'
     );
-    return existing;
+    return syncDraftRelease(existing, body, targetCommit);
   }
 
   console.log('   No release found. Creating draft...');
@@ -211,12 +311,24 @@ async function ensureDraftRelease() {
         // Match electron-builder's createRelease() so it reuses this draft:
         // tag = "v" + version, name defaults to the version, draft:true.
         tag_name: TAG_NAME,
+        target_commitish: targetCommit,
         name: VERSION,
+        body,
         draft: true,
         prerelease: IS_PRERELEASE,
       }
     );
-    console.log('   Created draft release: ' + (release.name || TAG_NAME) + ' (id ' + release.id + ')');
+    console.log(
+      '   Created draft release: ' +
+        (release.name || TAG_NAME) +
+        ' (id ' +
+        release.id +
+        ') with CHANGELOG.md release notes targeting ' +
+        targetCommit +
+        ' (' +
+        RELEASE_BRANCH +
+        ').'
+    );
     return release;
   } catch (error) {
     // Another concurrent run may have created it (422 already_exists) - re-fetch.
@@ -226,7 +338,7 @@ async function ensureDraftRelease() {
       const afterRetry = await findExistingRelease();
       if (afterRetry) {
         console.log('   Found existing draft after retry: id ' + afterRetry.id);
-        return afterRetry;
+        return syncDraftRelease(afterRetry, body, targetCommit);
       }
     }
     throw error;
