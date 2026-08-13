@@ -685,6 +685,29 @@ function writeJsonFile(file: string, value: unknown): void {
   writeFileAtomic(file, JSON.stringify(value, null, 2) + "\n");
 }
 
+/** Writes site.json only when the site (ignoring generatedAt) actually
+ *  changed — every page save previously bumped generatedAt, churning the
+ *  committed file on body-copy-only saves. Returns the site byte-equal to
+ *  what is on disk so the renderer's drift check cannot false-positive. */
+function writeSiteJsonIfChanged(
+  projectPath: string,
+  site: SiteDocument,
+): SiteDocument {
+  const file = siteDocumentFile(projectPath);
+  const onDisk = readJsonFile<SiteDocument>(file);
+  const key = (value: SiteDocument): string =>
+    JSON.stringify({ ...value, generatedAt: "" });
+  if (onDisk && key(onDisk) === key(site)) {
+    return onDisk;
+  }
+  const updated: SiteDocument = {
+    ...site,
+    generatedAt: new Date().toISOString(),
+  };
+  writeJsonFile(file, updated);
+  return updated;
+}
+
 /** Writes only when content differs. Opening a project / saving a page used
  *  to rewrite layout, styles, discovery files and site.json unconditionally —
  *  git churn on every open, and O(N) writes per save. */
@@ -2369,7 +2392,7 @@ export function writeSiteDocument(
     );
     const nextSite: SiteDocument = withSiteDefaults({
       ...site,
-      generatedAt: new Date().toISOString(),
+      generatedAt: currentSite?.generatedAt ?? new Date().toISOString(),
     });
     syncSiteShellOutputs(
       projectPath,
@@ -2378,7 +2401,7 @@ export function writeSiteDocument(
       undefined,
       currentSite,
     );
-    writeJsonFile(siteDocumentFile(projectPath), nextSite);
+    writeSiteJsonIfChanged(projectPath, nextSite);
     return { ok: true };
   } catch (error) {
     return {
@@ -2625,16 +2648,10 @@ export function writePageDocument(
     syncSiteShellOutputs(projectPath, site, pagesDir, undefined, onDiskSite);
     // This page's own metadata may have changed what other pages list.
     refreshPostListPages(projectPath, pagesDir, site, nextDoc.page);
-    // The returned site MUST reflect what lands on disk (fresh generatedAt).
-    // Returning the pre-write object made the renderer's drift check compare
-    // its baseline (old generatedAt) against disk (new generatedAt) and
-    // false-positive "site changed on disk" after EVERY page write — blocking
-    // site saves and deadlocking autosave page-switches.
-    const updatedSite: SiteDocument = {
-      ...site,
-      generatedAt: new Date().toISOString(),
-    };
-    writeJsonFile(siteDocumentFile(projectPath), updatedSite);
+    // The returned site MUST reflect what lands on disk (byte-equal), or the
+    // renderer's drift check false-positives "site changed on disk". A page
+    // write whose shell outputs did not change no longer bumps generatedAt.
+    const updatedSite = writeSiteJsonIfChanged(projectPath, site);
     return {
       ok: true,
       site: updatedSite,
@@ -2700,11 +2717,7 @@ export function writePageMetadataPreservingSource(
     };
     writePageDocumentFile(projectPath, nextDoc);
     syncSiteShellOutputs(projectPath, site, pagesDir);
-    const updatedSite: SiteDocument = {
-      ...site,
-      generatedAt: new Date().toISOString(),
-    };
-    writeJsonFile(siteDocumentFile(projectPath), updatedSite);
+    const updatedSite = writeSiteJsonIfChanged(projectPath, site);
     return {
       ok: true,
       site: updatedSite,

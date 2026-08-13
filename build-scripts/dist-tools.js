@@ -73,9 +73,44 @@ function cleanReleaseArtifacts() {
 }
 
 function copyRuntimeAssets() {
-  console.log(
-    "  copy step complete (renderer files referenced in-place from src/)",
+  // Everything renderer is referenced in place from src/renderer, so the
+  // copy is a no-op — BUT zephusEngine.js is a gitignored build artifact in
+  // src/. electron-builder globs it silently; a missing or stale bundle
+  // packages an app whose script 404s (blank window) with zero errors.
+  // Verify it exists and is newer than the newest renderer source.
+  const bundle = path.join(ROOT, "src", "renderer", "zephusEngine.js");
+  if (!fs.existsSync(bundle)) {
+    throw new Error(
+      "Renderer bundle missing: " +
+        bundle +
+        ". Run npm run compile:renderer first.",
+    );
+  }
+  const bundleMtime = fs.statSync(bundle).mtimeMs;
+  const rendererDir = path.join(ROOT, "src", "renderer");
+  const newestSource = Math.max(
+    ...walkFiles(rendererDir)
+      .filter((f) => /\.[jt]sx?$/.test(f))
+      .map((f) => fs.statSync(f).mtimeMs),
   );
+  if (bundleMtime + 1000 < newestSource) {
+    throw new Error(
+      "Renderer bundle is STALE (newer source exists). Run npm run compile:renderer first.",
+    );
+  }
+  console.log(
+    "  copy step verified (renderer bundle fresh, files referenced in-place)",
+  );
+}
+
+function walkFiles(dir) {
+  const out = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...walkFiles(full));
+    else out.push(full);
+  }
+  return out;
 }
 
 const mode = process.argv[2];

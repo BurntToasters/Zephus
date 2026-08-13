@@ -102,7 +102,7 @@ describe("round 14 output correctness", () => {
     ensureVisualSchema(project, "src/pages");
     // Reorder: home, then a custom item, then about — the merge must keep
     // this order instead of rebuilding alphabetically.
-    const current = readSiteDocument(project);
+    readSiteDocument(project);
     const nav = [
       {
         id: "nav-custom",

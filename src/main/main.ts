@@ -10,6 +10,8 @@ import { stopWatching } from "./services/watch";
 import { readGlobalSettings, writeGlobalSettings } from "./services/settings";
 import { setupAutoUpdater, checkForUpdates } from "./updater";
 import { checkNodeVersion, validateNodePath } from "./services/nodeCheck";
+import { createSite } from "./services/wizard";
+import { execFileSync } from "child_process";
 import { IPC } from "./ipcChannels";
 
 // Dev mode ONLY when not packaged: a shipped binary launched with --dev (or
@@ -19,11 +21,12 @@ const isDev =
   !app.isPackaged &&
   (process.argv.includes("--dev") ||
     process.env.NODE_ENV === "development" ||
-    // `electron .` (npm start) runs the app WITHOUT the --dev flag; it is
-    // still a dev run and needs devtools.
-    !process.defaultApp);
+    // `electron .` (npm start) runs the app WITHOUT the --dev flag and with
+    // process.defaultApp === true; it is still a dev run and needs devtools.
+    process.defaultApp === true);
 const isSmoke =
-  process.argv.includes("--smoke") || process.env.ZEPHUS_SMOKE === "1";
+  !app.isPackaged &&
+  (process.argv.includes("--smoke") || process.env.ZEPHUS_SMOKE === "1");
 const isPrimaryInstance =
   isSmoke || typeof app.requestSingleInstanceLock !== "function"
     ? true
@@ -217,7 +220,7 @@ async function runRendererSmokeChecks(
         }
 
         if (typeof window.__zephusRunEditorSmoke === "function") {
-          const editorFailures = window.__zephusRunEditorSmoke();
+          const editorFailures = await window.__zephusRunEditorSmoke();
           for (const failure of editorFailures) failures.push(failure);
         } else {
           failures.push("Editor smoke hook is missing.");
@@ -290,7 +293,19 @@ async function completeSmokeRun(windowRef: BrowserWindow): Promise<void> {
   smokeCompletionStarted = true;
 
   let exitCode = 1;
+  // A real on-disk project lets the editor smoke drive save/publish/git/
+  // drafts end to end instead of synthesizing renderer-only state.
+  let smokeProjectPath: string | null = null;
   try {
+    if (isSmoke) {
+      smokeProjectPath = scaffoldSmokeProject();
+      if (smokeProjectPath) {
+        await windowRef.webContents.executeJavaScript(
+          `window.__zephusSmokeProjectPath = ${JSON.stringify(smokeProjectPath)};`,
+          true,
+        );
+      }
+    }
     const failures = await runRendererSmokeChecks(windowRef);
     if (failures.length > 0) {
       for (const failure of failures) {
@@ -303,8 +318,88 @@ async function completeSmokeRun(windowRef: BrowserWindow): Promise<void> {
   } catch (error) {
     log.error("Smoke run failed:", error);
   } finally {
+    if (smokeProjectPath) {
+      try {
+        fs.rmSync(smokeProjectPath, { recursive: true, force: true });
+      } catch {
+        /* best-effort cleanup */
+      }
+    }
     cleanupBackgroundServices();
     finishSmokeProcess(exitCode);
+  }
+}
+
+/**
+ * Scaffolds a real minimal site into a temp dir for the editor smoke suite.
+ * Links the repo's node_modules so preview/publish builds resolve Astro
+ * without a network install. Returns the project path, or null on failure.
+ */
+function scaffoldSmokeProject(): string | null {
+  try {
+    // Every smoke run leaves its scaffold behind when killed hard (timeout,
+    // Ctrl+C) — the cleanup in completeSmokeRun's finally never runs. Purge
+    // stale scaffolds before creating a new one so the temp dir does not
+    // accumulate zephus-smoke-* folders.
+    const tempRoot = app.getPath("temp");
+    try {
+      const stale = fs.readdirSync(tempRoot, { withFileTypes: true }).filter(
+        (entry) =>
+          entry.isDirectory() &&
+          entry.name.startsWith("zephus-smoke-") &&
+          // Never touch a scaffold from an in-flight run on another
+          // machine profile: only purge when old enough that no smoke
+          // could still be using it (a fresh run starts seconds ago).
+          Date.now() - fs.statSync(path.join(tempRoot, entry.name)).mtimeMs >
+            10 * 60 * 1000,
+      );
+      for (const entry of stale) {
+        fs.rmSync(path.join(tempRoot, entry.name), {
+          recursive: true,
+          force: true,
+        });
+      }
+    } catch {
+      // Best-effort: a failed purge must not block the smoke scaffold.
+    }
+    const dir = fs.mkdtempSync(path.join(tempRoot, "zephus-smoke-"));
+    const project = path.join(dir, "site");
+    fs.mkdirSync(project);
+    const created = createSite(project, "minimal");
+    if (!created.ok) return null;
+    // createSite does NOT init git (the IPC handler does); the smoke needs a
+    // real repo with an identity so commit flows run end to end.
+    execFileSync("git", ["init"], { cwd: project, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "Zephus Smoke"], {
+      cwd: project,
+      stdio: "ignore",
+    });
+    execFileSync("git", ["config", "user.email", "smoke@zephus.local"], {
+      cwd: project,
+      stdio: "ignore",
+    });
+    // Give the scaffolded site the repo's toolchain (mirrors the real build
+    // tests) so `npm run build` resolves astro from the symlink.
+    const rootModules = path.resolve(__dirname, "..", "..", "node_modules");
+    if (fs.existsSync(rootModules)) {
+      const target = path.join(project, "node_modules");
+      try {
+        // Windows: directory symlinks need admin/Developer Mode; junctions
+        // work without either. macOS/Linux: plain dir symlink.
+        fs.symlinkSync(
+          rootModules,
+          target,
+          process.platform === "win32" ? "junction" : "dir",
+        );
+      } catch {
+        // Best-effort: the real-project flows degrade to renderer-only
+        // checks when the toolchain link cannot be created.
+      }
+    }
+    return project;
+  } catch (error) {
+    log.error("Smoke scaffold failed", error);
+    return null;
   }
 }
 
@@ -538,7 +633,18 @@ function writeWindowState(state: WindowState): void {
   }
 }
 
+function denyAllPermissions(ses: Electron.Session): void {
+  ses.setPermissionRequestHandler((_wc, _permission, callback) =>
+    callback(false),
+  );
+  ses.setPermissionCheckHandler(() => false);
+}
+
 function createMainWindow(): void {
+  // The editor needs no camera/mic/geolocation/notifications: embedded
+  // iframes (video/embed blocks, theme previews) must never be able to
+  // request them.
+  denyAllPermissions(session.defaultSession);
   // Restore the window size/position from the previous session (every launch
   // used to reset to 1280x820 at an OS-chosen spot).
   const state = readWindowState();
@@ -593,6 +699,22 @@ function createMainWindow(): void {
   // via installGlobalNavigationGuards() (registered before this window is
   // created), so no per-window installation is needed here.
 
+  // Cmd/Ctrl+R must not bypass the unsaved-work guard: the menu accelerator
+  // fires before the renderer's keydown, so intercept it here and let the
+  // renderer resolve save/discard before reloading.
+  win.webContents.on("before-input-event", (event, input) => {
+    if (
+      input.type === "keyDown" &&
+      input.key.toLowerCase() === "r" &&
+      (input.control || input.meta)
+    ) {
+      event.preventDefault();
+      if (!win.isDestroyed()) {
+        win.webContents.send(IPC.reloadRequested);
+      }
+    }
+  });
+
   mainWindow.once("ready-to-show", () => {
     if (splashCloseTimer) {
       clearTimeout(splashCloseTimer);
@@ -603,6 +725,14 @@ function createMainWindow(): void {
       splashWindow = null;
     }
     mainWindow?.show();
+
+    // ZEPHUS_BOOT_CHECK=1: verify the packaged binary boots — the renderer
+    // loaded + became visible. Exit 0 immediately (no UI automation).
+    if (process.env.ZEPHUS_BOOT_CHECK === "1") {
+      log.info("[boot-check] packaged renderer loaded successfully");
+      app.exit(0);
+      return;
+    }
 
     if (isDev && !isSmoke) {
       mainWindow?.webContents.openDevTools({ mode: "bottom" });
@@ -809,6 +939,7 @@ if (!isPrimaryInstance) {
     setupSecurityHeaders();
     installGlobalNavigationGuards();
     registerIpcHandlers(getMainWindow, {
+      isSmoke,
       assertUpdaterSender: (senderId) =>
         Boolean(
           mainWindow &&

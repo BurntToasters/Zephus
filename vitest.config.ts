@@ -6,10 +6,10 @@ const rootDir = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   resolve: {
-    alias: {
-      electron: path.resolve(rootDir, "src/test/mocks/electron.ts"),
-      "electron-log": path.resolve(rootDir, "src/test/mocks/electron-log.ts"),
-    },
+    alias: [
+      { find: "electron", replacement: path.resolve(rootDir, "src/test/mocks/electron.ts") },
+      { find: "electron-log", replacement: path.resolve(rootDir, "src/test/mocks/electron-log.ts") },
+    ],
   },
   test: {
     include: ["src/**/*.test.ts"],

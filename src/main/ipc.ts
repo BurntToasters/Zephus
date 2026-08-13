@@ -98,6 +98,8 @@ interface IpcRegistrationOptions {
   assertUpdaterSender?: (senderId?: number) => boolean;
   markUpdateInstalling?: () => void;
   clearUpdateInstalling?: () => void;
+  /** Smoke runs must not pop Finder windows (publish reveal). */
+  isSmoke?: boolean;
 }
 
 const approvedProjectRoots = new Set<string>();
@@ -773,10 +775,15 @@ export function registerIpcHandlers(
 
   ipcMain.handle(IPC.publish, (event, projectPath: string, outDir: string) =>
     approved(projectPath, () =>
-      buildAndReveal(projectPath, outDir, (chunk) => {
-        if (!event.sender.isDestroyed())
-          event.sender.send(IPC.publishLog, chunk);
-      }),
+      buildAndReveal(
+        projectPath,
+        outDir,
+        (chunk) => {
+          if (!event.sender.isDestroyed())
+            event.sender.send(IPC.publishLog, chunk);
+        },
+        { reveal: !options?.isSmoke },
+      ),
     ),
   );
 

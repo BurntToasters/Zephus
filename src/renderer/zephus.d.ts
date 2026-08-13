@@ -668,6 +668,7 @@ interface ZephusApi {
   closePreviewWindow(): Promise<OperationResult>;
   onPreviewClosed(callback: () => void): () => void;
   onPreviewExited(callback: () => void): () => void;
+  onReloadRequested(callback: () => void): () => void;
   ensureThemePreviewServer(): Promise<ThemePreviewServerResult>;
   publish(
     projectPath: string,
@@ -711,7 +712,7 @@ interface ZephusApi {
 
 interface Window {
   zephus: ZephusApi;
-  __zephusRunEditorSmoke?: () => string[];
+  __zephusRunEditorSmoke?: () => string[] | Promise<string[]>;
   refreshIcons?: () => void;
   /** Set by the engine so programmatic quits (update install) bypass the
    *  unsaved-work close guard. */

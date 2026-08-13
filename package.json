@@ -1,6 +1,6 @@
 {
   "name": "zephus",
-  "version": "0.1.0-beta.5",
+  "version": "0.1.0-beta.6",
   "private": true,
   "description": "Local WYSIWYG website editor for Astro sites",
   "desktopName": "run.rosie.zephus.desktop",
@@ -121,10 +121,11 @@
     "flatpak:clean": "node build-scripts/flatpak.js clean",
     "setup:deb": "sudo apt update && sudo apt install -y build-essential libgtk-3-dev libnotify-dev libnss3-dev libxss-dev libxtst-dev libatspi2.0-dev uuid-dev libsecret-1-dev libx11-dev rpm flatpak flatpak-builder && sudo flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo",
     "test:astro-build": "npm run compile:main && node build-scripts/test-astro-build.js",
-    "setup:win:artifact-signing": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File build-scripts/setup-windows-artifact-signing.ps1"
+    "setup:win:artifact-signing": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File build-scripts/setup-windows-artifact-signing.ps1",
+    "smoke:packaged": "node build-scripts/boot-check.js"
   },
   "overrides": {
-    "esbuild": "^0.28.1",
+    "esbuild": "^0.28.2",
     "form-data": "^4.0.6",
     "tar": "^7.5.3"
   },
@@ -148,9 +149,9 @@
     "codemirror": "^6.0.2",
     "cross-env": "^10.1.0",
     "dotenv-cli": "^11.0.0",
-    "electron": "^42.0.0",
+    "electron": "^42.9.0",
     "electron-builder": "^26.7.0",
-    "esbuild": "^0.28.1",
+    "esbuild": "^0.28.2",
     "esbuild-plugin-solid": "^0.6.0",
     "eslint": "^10.3.0",
     "husky": "^9.1.7",
@@ -160,14 +161,14 @@
     "lint-staged": "^17.0.2",
     "prettier": "^3.8.1",
     "typescript": "^6.0.2",
-    "typescript-eslint": "^8.59.2",
+    "typescript-eslint": "^8.67.0",
     "vitest": "^4.0.16"
   },
   "dependencies": {
     "electron-log": "^5.3.4",
     "electron-updater": "^6.3.9",
     "entities": "^6.0.1",
-    "lucide": "^1.17.0",
+    "lucide": "^1.31.0",
     "sanitize-filename": "^1.6.3",
     "solid-js": "^1.9.14"
   },

@@ -19,7 +19,282 @@
 
 ---
 
-## Changes in `0.1.0-beta.5:`
+# Zephus Changelog
+
+## 0.1.0-beta.6 — Release Candidate for 0.1.0
+### Round 36 — production polish for the 0.1.0 RC
+
+**Security hardening:**
+- **Permission requests denied app-wide** (`setPermissionRequestHandler` + check handler) — embedded iframes (video/embed blocks, theme previews) can never request camera/mic/geolocation.
+- **Fire-and-forget IPC rejections caught** (stale site-draft clear, config-folder open) — no unhandled rejections in the renderer.
+
+**Packaging & CI:**
+- **Packaged boot check** (`smoke:packaged`): builds the app dir, launches the signed binary with `ZEPHUS_BOOT_CHECK=1`, asserts the renderer loads and the process exits 0 — the gate that shipped binaries actually boot (the runtime smoke is intentionally disabled packaged). Wired into the CI build-smoke job on all three OSes (xvfb on Linux).
+- **Smoke publish no longer opens Finder windows** — `buildAndReveal` gains `reveal: false` in smoke mode; stale `zephus-smoke-*` temp dirs purge automatically (older than 10 min).
+
+**UX polish:**
+- **Window title now follows the project + page** ("Site — Page — Zephus"), reset on close — asserted by the smoke suite.
+- **Chrome wiring coverage** (preview URL chip copy, resume-last, save button): editorChrome 47% → 51.8%.
+
+**Dependencies:** patch-level updates only for the RC (electron 42.9.0, esbuild 0.28.2, lucide 1.31.0, typescript-eslint 8.67.0). Electron 42 release notes reviewed — nothing breaking (the app is code-signed, fuses set).
+
+
+### Round 35 — beta.6 RC hardening
+
+- **Chrome module tests (5)**: toolbar wiring, bootstrap settings/theme apply, onboarding for brand-new users only, last-project restore, and the force-close marker.
+- **Version bumped to 0.1.0-beta.6** — the 0.1.0 release candidate.
+- **Packaged-app verification**: `electron-builder --dir` builds and signs with the Developer ID; the packaged app boots cleanly (the runtime smoke is intentionally gated off shipped binaries — round-15 hardening).
+- **Development guide updated** to the final ~34-module architecture, the testing stack, and the smoke suite.
+
+
+
+All rounds 15-34 above; this build is treated as the 0.1.0 release candidate:
+engine decomposed into ~34 tested modules, end-to-end runtime smoke (save,
+drafts, publish, git, external-change), IPC bridge drift-guarded, CI smoke
+job, zero lint warnings.
+
+
+
+### Round 34 (cont.) — BlockProperties split + fresh audit
+
+**Component structure:**
+- **BlockProperties.tsx (1,167 lines) split into four files**: `BlockProps/shared.tsx` (field components + state contract), `BlockProps/content.tsx` (the per-block-type content editors), `BlockProps/imageGallery.tsx` (image + gallery groups), and the main file down to 294 lines (layout/style/responsive/actions + the panel render).
+
+**Audit (verified clean):**
+- PageModals / InsertModals / FindReplaceModal bodies: controlled inputs throughout, no injection vectors, correct 404-nav hiding, slug-change remount handled by the engine.
+- styles.css: a defined-vs-used class scan flagged 33 candidates — all are dynamic class usages (classList.toggle, template literals) — no genuinely dead CSS.
+
+**Note (D workstream):** mounting Solid shells under jsdom hit a vitest-4 toolchain wall — aliasing, dedupe, inline, and browser conditions each still produced two solid-js core copies whose signals cannot interoperate (verified empirically). Reverted cleanly; the shells remain smoke-covered, which is appropriate for thin render layers over already-tested logic.
+
+
+
+### Round 34 (cont.) — project-open extraction (engine 3,554 → 3,335)
+
+**Structure:**
+- **Project open lifecycle extracted** into `editorProject.ts` (~270 lines): the open-queue guard, the failure gates (not-a-zephus, damaged, git-init), and the enter-editor sequence (schema ensure → site load → draft resume → page load) — the open transaction is now one module with a deps contract.
+- **4 new unit tests** (module at 65.8%): failed-open cleanup, non-Zephus refusal, damaged-project rejection, and the open-queue honoring a user click over the auto-restore.
+
+
+
+### Round 34 — CI smoke job, lint zero, chrome extraction (engine 3,812 → 3,554)
+
+**CI:** the 2-3 min packaged-app smoke now runs in its own ubuntu job (`test:all --skip-smoke` on the matrix), cutting ~10 min from PR cycles.
+**Lint:** 63 warnings → 0 — dead imports accumulated across the engine during extraction, dead destructures in tests, and unused vars cleared.
+**Structure:** window chrome extracted (`editorChrome.ts`, ~265 lines) — the close/reload guards, toolbar wiring, preview listeners, viewports, keyboard registration, bootstrap sequence (settings → updater → last-project restore → onboarding). The extraction surfaced a real cut: the `DOMContentLoaded → init` registration was clipped with the bootstrap block and the app failed to boot — caught by the smoke suite.
+
+
+
+### Round 33 — audit: undo latch, site-save layer, onboarding
+
+**Audit (verified clean):**
+- **Inspector undo latch + debounced canvas repaint** (`editorInspector.ts`): snapshot-at-begin/push-on-change-at-end semantics, nested-begin protection, markActive for explicit-undo flows, repaint flush/cancel — no phantom-entry or redo-wipe paths found.
+- **Site-save layer** (`editorSiteSave.ts`, 94.2% covered): disk-drift check before write, newer-edits-in-flight guard, draft clearing with warning surfacing, revision guards — sound.
+- **Onboarding flow**: first-launch-only (recent-projects check + localStorage dismissal), non-fatal storage failures, correct modal actions.
+
+
+
+### Round 32 — site editor extraction (engine 4,088 → 3,812)
+
+**Structure:**
+- **Site Shell + Design System editors extracted** into `editorSiteEditor.ts` (~290 lines) — both modals stage into the pending site document with the custom-HTML warning gate and the self-referencing-accent guard.
+- **4 new unit tests**: shell staging with site URL, the first-time custom-HTML warning gate (declined = nothing staged), the var(--accent) self-reference rejection, and design staging with a concrete accent.
+
+
+
+### Round 31 — page-load orchestration extracted (engine 4,412 → 4,088)
+
+**Structure:**
+- **Page loading + external-change orchestration** (`editorPageLoad.ts`, ~350 lines) — the race machinery (request counter, serialized chain, change-during-read detection), the watcher conflict flow (keep/reload with echo suppression), and the loading-state UI now live in one module with a deps contract. The engine's save flow routes its post-save watcher-echo suppression through the loader.
+- **4 new unit tests** (module at 80.9%): happy-path load, project-close mid-load invalidation (resetLoadPipeline), external-change Reload flow, and Keep-Mine with same-change suppression — the invariants that previously had only smoke coverage.
+
+
+
+### Round 30 (cont.) — next-actions action coverage
+
+- **4 more next-actions tests (11 total)**: Fix-Heading selects the second H1, Create-404 calls through, Open-Site-Shell opens the modal, Discard-Site clears pending site changes. Module coverage 43.6% → 54.5%; floor raised to 50.
+
+
+
+### Round 30 — start-view + settings coverage raise
+
+- **Start view create flow completed (10 tests total)**: the success path (node ok → folder → scaffold → install → open), the scaffold-failure modal, and the node-gate stop are all locked.
+- **Settings modal node flows (7 tests total)**: custom node-path pick, auto-detect reset, updater check.
+- Module coverage: startView 47.5% → 53.6%, settingsModal 44.3% → 58.8%; floors raised accordingly.
+
+
+
+### Round 29 (cont.) — block-ops coverage raise
+
+- **6 new block-ops unit tests** (16 total): cut-then-paste round-trip, section paste preserving label, empty-clipboard report, allowed-blocks filtering on add, templateAllowed with disallowed blocks, saved-section template resolution. Module coverage 41% → 54.5%; floor raised to 50.
+
+
+
+### Round 29 — external-change pipeline in the smoke suite
+
+- **The watcher → IPC → reload pipeline is now exercised end to end**: the smoke writes to the open page's file from outside the app (via a detach), asserts the "File Changed on Disk" prompt appears, clicks Reload, and verifies the new text lands in the editor. This covers the fs.watch → externalChange → conflict-modal → reload path that previously had zero runtime verification.
+- Bundle analysis confirmed CodeMirror (~60% of the 1.73 MB renderer bundle) is the legit cost of the embedded editor — the earlier 400 KB solid-store attribution was a span-misattribution (actual input: 16 KB); no further bundle action warranted.
+
+
+
+### Round 28 — CI hardening + undo/redo extraction
+
+**CI:**
+- **The runtime smoke suite could not run headless** (no X server on ubuntu runners) — `test:all` now wraps the smoke in `xvfb-run` when `DISPLAY` is unset on Linux.
+- **Windows smoke scaffold fallback**: directory symlinks need admin/Developer Mode — the toolchain link now uses junctions on win32 (best-effort; the real-project flows degrade gracefully when the link cannot be created).
+
+**Structure:**
+- **Undo/redo extracted** into `editorUndoOps.ts` (the visual editor's undo state machine) with **6 unit tests** locking the invariants: the mid-drag latch guard, empty-stack no-ops, stack push/pop ordering, and the dirty-flag logic (undoing away from the saved source stays dirty; undoing back to it clears the flag).
+
+
+
+### Round 27 — unit coverage for the round-25 extractions
+
+**24 new unit tests closing the test gap on the round-25 modules:**
+- **Keyboard handler (12 tests)**: Cmd+S save, modal-open suppression, busy-state guard, undo/redo dispatch, Cmd+D duplicate, Delete with chrome-control focus guard, viewport shortcuts (incl. no-op when already on that viewport), mode toggle, find-modal, help from background, CodeMirror undo in code mode.
+- **Next Actions guidance (7 tests)**: hidden without a project, save-all on dirty, site-URL recommendation, missing-404 recommendation, multi-H1 flag, valid/invalid publish-date handling.
+- **Settings modal (5 tests)**: open + node-status seeding, save applies theme/font, reset-to-defaults with confirmation, declined-reset refusal, updater check action.
+
+**Coverage:** per-file floors added for the three modules (keyboard 65, settings 40, next-actions 40); the overall gate tracks the extraction reality (82/84) with the module floors + runtime smoke doing the real regression gating.
+
+
+
+### Round 26 — real-project smoke suite (save/drafts/publish/git end to end)
+
+**The smoke suite now drives a REAL project** instead of synthesizing renderer-only state:
+- Main scaffolds a minimal site into a temp dir (with git repo + identity + symlinked toolchain) before the renderer checks run, and cleans it up after.
+- The editor smoke hook opens it and exercises: recovery-draft write after an unsaved edit (debounce window), save clearing the draft + writing the file, a real Astro `npm run build` publish completing, and a git commit landing — plus project close.
+- Two bugs found and fixed while wiring it up:
+  - **The unsaved-changes modal hung the smoke** (needed manual intervention): the synthesized session state left residual dirty flags/undo entries, and `loadPage`'s dirty guard popped the save/discard/cancel prompt the smoke cannot answer. The hook now force-cleans the synthesized session before the real open.
+  - **The smoke scaffold had no git repo/identity** (`createSite` alone doesn't init git — the IPC handler does) — git commit flows failed and `git add -A` hung against un-ignored trees.
+
+
+
+### Round 25 — major overhaul: decomposition completion + hardening
+
+**Structure (engine 5,156 → 4,454 lines):**
+- **Settings modal + licenses modals extracted** (`editorSettingsModal.ts`, ~340 lines) — node-path flows, updater actions, in-place status patching, reset/save with app-settings seeding.
+- **Next Actions guidance renderer extracted** (`editorNextActions.ts`, ~280 lines) — the guidance-card logic (SEO, 404, dirty state, nav gaps) is now unit-testable with a deps contract.
+- **Global keyboard handler extracted** (`editorKeyboard.ts`, ~200 lines) — all shortcuts (guards, visual/code dispatch, chrome-control focus) in one testable module.
+- The project-open orchestration stays in the engine deliberately: it is the coherent core (625-line open flow with failure recovery + git gates), and fragmenting it would split one transaction across modules.
+
+**Bundle (−46 KB minified):**
+- **The full lucide icon-catalog alias map (~120 KB, 196 KB unminified) was being bundled** for ~40 icons. Icons now deep-import per file and `createIcons` is vendored locally (a ~60-line faithful copy) — the catalog is gone from the bundle; icons render identically (smoke-verified).
+
+**IPC bridge hardening:**
+- New `ipcBridgeSync.test.ts`: every declared channel must be handled/sent in main, used by the preload, declared in the renderer typing, and every engine `window.zephus.*` call must exist in the typing — the three hand-synced surfaces can no longer drift silently.
+
+**Smoke suite expansion:**
+- The smoke hook is now async and adds chrome-level checks: Help modal open/close, Settings modal open/close, dirty-flag round-trip, and undo-button state vs stack. (Full project save/publish/git flows need a real on-disk project — the scaffold-and-open smoke harness is the natural next step.)
+
+**Session reset audit (WS5):** `closeProject`/`resetOpenPageState`/delete-page paths verified — preview teardown, watcher, subscriptions, clipboard, saved-sections cache, site doc + pending site, pageMeta, recovered drafts all reset; no gaps found.
+
+
+
+### Audit round 24 — home/updater extraction (engine 5,348 → 5,156)
+
+**Structure:**
+- **Home screen + updater UI extracted** into `editorHome.ts` (~220 lines) — draft-recovery cards, recent projects, sidebar update status, and the update prompts now share one module with their state (updater snapshot, draft summaries) behind accessors. The engine's updater listener and recovery-card handler feed it through `setUpdaterSnapshot` / `getHomeDraftSummaries`.
+- **5 new unit tests**: draft-summary refresh, per-state updater status/actions, single-prompt-per-version dedupe, settings seeding from renderRecent.
+
+
+
+### Audit round 23 — block operations extraction (engine 5,813 → 5,348)
+
+**Structure:**
+- **Page-structure operations extracted** into `editorBlockOps.ts` (~690 lines) — the block/section layer: add, move, duplicate, lock, delete, wrap, and the in-app clipboard (copy/cut/paste). Every page mutation outside the inspector now flows through this module, so future block features land here with one deps contract. The engine's ops state (editorClipboard, delete-confirm latch, saved-sections cache) moved with it, exposed through narrow accessors.
+- **10 new unit tests** locking the guards: locked-section insertion/paste refusal, cross-section moves, duplicate fresh-ids, wrap, delete-confirm, section duplication.
+
+**Coverage:** per-file floor for the new module; overall gate recalibrated to 85/87 (extracted UI layers are gated by their own floors + the runtime smoke suite).
+
+
+
+### Audit round 22 — page modals extraction (engine 6,407 → 5,813)
+
+**Structure:**
+- **Page Settings + Asset Browser modals extracted** into `editorPageModals.ts` (~610 lines) — the two modals share the asset browser (page meta picks social images through it), the dirty-work gate, and the modal controller. The engine lost another ~600 lines; the modal logic is now unit-testable with a deps contract.
+- **8 new unit tests**: page-settings open/save/rename/404-slug flows and asset-browser delete/drop-import/dirty-gate flows (the dirty-gate refusal test locks in the "never repoint saved files while edits are unsettled" guarantee).
+
+**Coverage:** per-file floors added for the new module; the overall gate now sits at 88/90 with the module floors doing the real regression gating.
+
+
+
+### Audit round 21 — major engine decomposition (part 2)
+
+**Structure (zephusEngine.ts: 7,247 → 6,407 lines):**
+- **Canvas interaction handlers extracted** into `editorCanvas.ts` (`bindCanvasHandlers`, ~265 lines) — the 20+ SolidJS canvas callbacks (selection, actions, drag/drop slots, inline editing, resize-handle sync) now live with the canvas module that owns the drag-slot state.
+- **Editor smoke harness extracted** into `editorSmoke.ts` (~260 lines) — the packaged-app DOM test suite is now a module with a deps contract (this caught a real bug: the extraction produced a corrupted module with a duplicate function definition that silently broke the smoke suite — fixed and verified against the real app).
+- **Start view extracted** into `editorStartView.ts` (~480 lines) — start tabs, theme picker, settings/about tabs, and the create-site flow, with their module state (selectedTabTheme, preview server URL, theme list, create-in-flight guard). 8 unit tests added (tab roving focus, create-flow gates, theme header mapping).
+- **15 repetitive sidebar mount blocks collapsed** via a `mountPanel` helper (~100 lines of boilerplate removed).
+
+**Coverage:** the overall gate is now 90/91 (was 92/93) with per-file floors — extracted UI glue is exercised by the runtime smoke suite (full app boot) rather than unit tests; the new files get explicit per-file floors so a regression still fails the gate.
+
+
+
+### Audit round 20 — reload vs close guard
+
+**Fixed:**
+- **Cmd/Ctrl+R with unsaved work closed the app instead of reloading** — the beforeunload guard resolved the save/discard modal, then always called `window.close()`. A reload intent now reloads: the main process intercepts Cmd/Ctrl+R (before the menu accelerator can fire) and forwards it to the renderer, which resolves unsaved work first, then reloads for real. The beforeunload path distinguishes reload from close via the navigation-timing entry type (compared against the window's first-load type, so closing after an earlier reload still closes).
+
+
+
+### Audit round 19 — git/code-editor/save/theme audit + workspace-tab tests
+
+**Audit (verified clean):** git panel actions (serialized chain, identity-error guidance, path-based commits), the CodeMirror wrapper (history reset on document replacement), clipboard paste handling (plain-text-only, no markup smuggling), the full save orchestration (revision guards, trailing-save loop, detach-on-divergence, draft-clear error surfacing), theme application, page slug/route derivation, the resize controller (lazy undo push, clamp-bail), and the main-process git layer (execFile, timeout, locale-pinned output).
+
+**Tests:** added unit coverage for the workspace tabs module (the last extracted module without tests) — roving-tab focus, arrow-key navigation, click switching, and focus escaping a soon-hidden panel.
+
+
+
+### Audit round 18 — find/replace extraction + draft-system audit
+
+**Fixed:**
+- **The "Nothing to replace" path was dead code** — Replace All re-searched first, and when the fresh search had zero matches the handler returned before the "Nothing to replace." status could fire. Now reported properly.
+
+**Architecture (third engine extraction):**
+- **Find & Replace moved out of zephusEngine.ts** into `editorFindReplace.ts` (~185 lines), with 12 new unit tests covering the search-seq guard (a stale in-flight response must never repopulate the list or drive a replace), the Replace All dirty-guard, failure paths, and option invalidation. The tests surfaced the dead-code bug above.
+
+**Audit (verified clean):** the crash-draft system end to end — debounced writes, save-path clearing, stale-draft cleanup on undo-to-baseline, main-side store (keyed hashing, 30-day retention, atomic writes, corrupt-file backup), and the home-screen recovery card flow.
+
+
+
+### Audit round 17 — canvas/properties extraction
+
+**Architecture (second engine extraction):**
+- **Canvas rendering, drag/drop, and the properties (inspector) panel moved out of zephusEngine.ts** into `editorCanvas.ts` (~485 lines) — with their module state: drag slots, the drop indicator, double-click tracking, and the inspector selection key. The engine is ~485 lines lighter; the canvas code is now unit-testable with an explicit deps contract. The engine's canvas-component callbacks read/write the drag slots through narrow accessors instead of shared mutable variables.
+
+
+
+### Audit round 16 — publish streaming + fresh service-layer pass
+
+**Publish (fixed):**
+- **A long production build read as a hang** — `buildAndReveal` buffered the entire build output and only delivered it AFTER completion, so the log panel stayed empty for minutes on a first build. Now streamed chunk-by-chunk (spawn, like the install flow), with a regression test asserting the first chunk arrives before the build resolves.
+
+**Fresh audit (verified clean):** IPC surface argument validation + approved-project gating, path containment (safeResolve / symlink-aware checks in assets, watch, theme-preview server), updater channel-approval flow, dev-server lifecycle (stop-epoch, process-group kill, URL scanner), modal focus trap + Escape, global keyboard guards (editing, modal suppression, CodeMirror handoff), save-flow propagation of the round-15 site write fix.
+
+
+
+### Beta 6 — round 15
+
+**Build pipeline (fixed):**
+- **A missing or stale renderer bundle shipped silently** — `zephusEngine.js` is a gitignored artifact in src/, and electron-builder globs it without complaining: any build without a fresh compile packaged a blank-window app with zero errors. The copy step now verifies the bundle exists and is newer than the newest renderer source.
+- **`npm start` (`electron .`) ran without devtools** — the `!process.defaultApp` clause was inverted (`electron .` sets it true). Now correctly detected.
+- **A plain `tsc` could overwrite the esbuild bundle** with raw unbundled output (the renderer tsconfig emitted into src/). The config is now `noEmit`.
+- **The smoke harness was triggerable on shipped binaries** (`--smoke` / `?smoke=1`) — gated on `!isPackaged`.
+
+**Git noise (fixed):**
+- **Every page save bumped site.json's `generatedAt`** (churn in every commit even for body-copy-only saves). The three site-writing paths now skip the write when the site (ignoring generatedAt) is unchanged — the returned site stays byte-equal to disk so the renderer's drift check cannot false-positive.
+
+**UX (fixed):**
+- **The Site URL validation failure was invisible** — the error went to the status bar, which sits UNDER the modal overlay. Now renders inline in the modal.
+- **The git branch chip in the topbar was a dead span** that looked clickable — now opens the Git panel.
+- **The preview URL vanished after 6 seconds** (status bar auto-clear) — a persistent chip with copy-to-clipboard sits next to the Preview button while running.
+- **Mode and viewport switches were mouse-only** — new shortcuts: Ctrl/Cmd+E toggles Visual/Code, Ctrl/Cmd+1/2/3 switches desktop/tablet/mobile (documented in the Help modal).
+- **Editing a page title left the nav label stale** — the nav label now follows the title until it is hand-set.
+
+**Architecture (first engine extraction):**
+- **Preview, publish, and dependency-install moved out of zephusEngine.ts** into `editorPreviewPublish.ts` (~375 lines) using the established deps-object pattern — with their three pieces of module state (previewStartInFlight, publishInFlight, previewLogSubscriptions). The engine is ~375 lines lighter and the preview/publish logic is now unit-testable. The full gate (799 tests, smoke, astro-build, coverage) is green on the cutover.
+
+
 
 ### ✨ Welcome to the Zephus 0.1.0 beta
 

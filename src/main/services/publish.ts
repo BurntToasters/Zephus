@@ -1,5 +1,4 @@
-import { execFile } from "child_process";
-import { promisify } from "util";
+import { spawn } from "child_process";
 import { shell } from "electron";
 import log from "electron-log";
 import { OperationResult } from "../types";
@@ -9,8 +8,6 @@ import { npmCommand } from "./npmCommand";
 import { resolveProjectRelativeDir } from "./projectPaths";
 import { detectAstro } from "./project";
 import { ensureVisualSchema } from "./schema";
-
-const execFileAsync = promisify(execFile);
 
 export interface PublishResult extends OperationResult {
   /** True when the output folder was actually opened in the file manager. */
@@ -28,6 +25,7 @@ export function buildAndReveal(
   projectPath: string,
   outDir: string,
   onBuildLog?: (chunk: string) => void,
+  options: { reveal?: boolean } = {},
 ): Promise<PublishResult> {
   if (typeof projectPath !== "string" || !projectPath) {
     return Promise.resolve({ ok: false, error: "Invalid project path." });
@@ -40,7 +38,7 @@ export function buildAndReveal(
       error: "A build is already running. Wait for it to finish.",
     });
   }
-  activeBuild = runBuild(projectPath, outDir, onBuildLog);
+  activeBuild = runBuild(projectPath, outDir, onBuildLog, options);
   void activeBuild.finally(() => {
     if (activeBuild) activeBuild = null;
   });
@@ -51,6 +49,7 @@ async function runBuild(
   projectPath: string,
   outDir: string,
   onBuildLog?: (chunk: string) => void,
+  options: { reveal?: boolean } = {},
 ): Promise<PublishResult> {
   try {
     // Astro builds whatever .astro files are on disk. Refresh managed pages
@@ -73,20 +72,32 @@ async function runBuild(
       env,
       projectPath,
     );
+    // Stream output chunk-by-chunk so a long first build never reads as a
+    // hang (the renderer pipes these chunks into the log panel as they
+    // arrive — previously everything arrived only after the build finished).
     try {
-      // Stream output so a long first build does not read as a hang
-      // (previously the status bar sat on "Building…" with zero feedback).
-      const { stdout } = await execFileAsync(npm.command, npm.args, {
-        cwd: projectPath,
-        windowsHide: true,
-        maxBuffer: 100 * 1024 * 1024,
-        env: { ...env, FORCE_COLOR: "0" },
+      const exitCode = await new Promise<number | null>((resolve, reject) => {
+        const child = spawn(npm.command, npm.args, {
+          cwd: projectPath,
+          windowsHide: true,
+          env: { ...env, FORCE_COLOR: "0" },
+        });
+        const handle = (data: Buffer) => {
+          const text = data.toString();
+          onBuildLog?.(text);
+        };
+        child.stdout?.on("data", handle);
+        child.stderr?.on("data", handle);
+        child.on("error", reject);
+        child.on("exit", (code) => resolve(code));
       });
-      onBuildLog?.(stdout);
+      if (exitCode !== 0) {
+        throw new Error(
+          `npm run build exited with code ${exitCode ?? "null"}.`,
+        );
+      }
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
-      // A maxBuffer blowout means the build produced a huge amount of log
-      // output — report that, not the misleading buffer error.
       if (/maxBuffer/.test(msg)) {
         return {
           ok: false,
@@ -101,11 +112,15 @@ async function runBuild(
       outDir,
       "dist",
     ).absolute;
-    const openError = await shell.openPath(output);
+    let revealed = false;
+    if (options.reveal !== false) {
+      const openError = await shell.openPath(output);
+      revealed = !openError;
+    }
     return {
       ok: true,
       outputDir: output,
-      revealed: !openError,
+      revealed,
     };
   } catch (error) {
     log.error("Publish (astro build) failed", error);
