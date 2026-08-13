@@ -121,7 +121,8 @@
     "flatpak:clean": "node build-scripts/flatpak.js clean",
     "setup:deb": "sudo apt update && sudo apt install -y build-essential libgtk-3-dev libnotify-dev libnss3-dev libxss-dev libxtst-dev libatspi2.0-dev uuid-dev libsecret-1-dev libx11-dev rpm flatpak flatpak-builder && sudo flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo",
     "test:astro-build": "npm run compile:main && node build-scripts/test-astro-build.js",
-    "setup:win:artifact-signing": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File build-scripts/setup-windows-artifact-signing.ps1"
+    "setup:win:artifact-signing": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File build-scripts/setup-windows-artifact-signing.ps1",
+    "smoke:packaged": "node build-scripts/boot-check.js"
   },
   "overrides": {
     "esbuild": "^0.28.2",

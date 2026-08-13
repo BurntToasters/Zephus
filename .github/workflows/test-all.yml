@@ -161,6 +161,14 @@ jobs:
       - name: Build (dir only)
         run: npx electron-builder -c electron-builder.base.yml --dir --publish never
 
+      - name: Packaged boot check
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            xvfb-run -a npm run smoke:packaged
+          else
+            npm run smoke:packaged
+          fi
+
   dependency-review:
     name: Dependency Review
     runs-on: ubuntu-latest

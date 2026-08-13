@@ -726,6 +726,14 @@ function createMainWindow(): void {
     }
     mainWindow?.show();
 
+    // ZEPHUS_BOOT_CHECK=1: verify the packaged binary boots — the renderer
+    // loaded + became visible. Exit 0 immediately (no UI automation).
+    if (process.env.ZEPHUS_BOOT_CHECK === "1") {
+      log.info("[boot-check] packaged renderer loaded successfully");
+      app.exit(0);
+      return;
+    }
+
     if (isDev && !isSmoke) {
       mainWindow?.webContents.openDevTools({ mode: "bottom" });
     }
