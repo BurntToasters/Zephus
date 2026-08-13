@@ -633,7 +633,18 @@ function writeWindowState(state: WindowState): void {
   }
 }
 
+function denyAllPermissions(ses: Electron.Session): void {
+  ses.setPermissionRequestHandler((_wc, _permission, callback) =>
+    callback(false),
+  );
+  ses.setPermissionCheckHandler(() => false);
+}
+
 function createMainWindow(): void {
+  // The editor needs no camera/mic/geolocation/notifications: embedded
+  // iframes (video/embed blocks, theme previews) must never be able to
+  // request them.
+  denyAllPermissions(session.defaultSession);
   // Restore the window size/position from the previous session (every launch
   // used to reset to 1280x820 at an OS-chosen spot).
   const state = readWindowState();
