@@ -346,7 +346,9 @@ export function createStartViewActions(deps: StartViewDeps) {
 
     const configBtn = $maybe("btn-about-config");
     if (configBtn) {
-      configBtn.onclick = () => void window.zephus.openConfigFolder();
+      configBtn.onclick = () => {
+        void window.zephus.openConfigFolder().catch(() => undefined);
+      };
     }
 
     const loadLicensesBtn = $("btn-load-licenses") as HTMLButtonElement;

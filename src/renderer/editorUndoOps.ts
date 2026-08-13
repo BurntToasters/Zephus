@@ -104,11 +104,9 @@ export function createUndoOps(deps: UndoOpsDeps) {
    *  recovery card. No-op when no draft exists. */
   function clearStaleDraftAfterRevert(): void {
     if (!state.project || state.siteDirty || state.pendingSiteDocument) return;
-    void window.zephus.clearDraft(
-      state.project.path,
-      "site",
-      SITE_DRAFT_TARGET,
-    );
+    void window.zephus
+      .clearDraft(state.project.path, "site", SITE_DRAFT_TARGET)
+      .catch(() => undefined);
   }
 
   return { doUndo, doRedo };
