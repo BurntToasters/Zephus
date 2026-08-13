@@ -181,6 +181,49 @@ describe("start view tabs", () => {
     expect(statuses.join(" ")).toContain("Creating site");
   });
 
+  it("cancels the create flow when no folder is chosen", async () => {
+    mountStartTabs();
+    const { deps } = makeDeps();
+    (window as unknown as { zephus: Record<string, unknown> }).zephus = {
+      ...((window as unknown as { zephus: object }).zephus as object),
+      getNodeStatus: async () => ({ status: "ok", version: "22.12.0" }),
+      chooseNewSiteFolder: async () => null,
+    };
+    const actions = createStartViewActions(deps as never);
+    actions.selectThemeCard("minimal");
+    await actions.createSiteFromTabFlow();
+    expect(deps.runInstallFlow).not.toHaveBeenCalled();
+    expect(deps.openProjectByPath).not.toHaveBeenCalled();
+  });
+
+  it("opens the site even when the install fails", async () => {
+    mountStartTabs();
+    const { deps, statuses } = makeDeps();
+    (window as unknown as { zephus: Record<string, unknown> }).zephus = {
+      ...((window as unknown as { zephus: object }).zephus as object),
+      getNodeStatus: async () => ({ status: "ok", version: "22.12.0" }),
+      chooseNewSiteFolder: async () => "/tmp/new-site",
+      createSite: async () => ({ ok: true }),
+    };
+    (deps.runInstallFlow as ReturnType<typeof vi.fn>).mockResolvedValue(
+      "failed",
+    );
+    // Simulate a successful open: the module reads state.project after
+    // openProjectByPath resolves to decide the install-result messaging.
+    const session = { project: null as { path: string } | null };
+    const actions = createStartViewActions({
+      ...(deps as object),
+      getState: () => session as never,
+      openProjectByPath: async (folder: string) => {
+        session.project = { path: folder };
+      },
+    } as never);
+    actions.selectThemeCard("minimal");
+    await actions.createSiteFromTabFlow();
+    expect(session.project?.path).toBe("/tmp/new-site");
+    expect(statuses.join(" ")).toContain("Dependencies failed to install");
+  });
+
   it("shows a failure modal when the site scaffold fails", async () => {
     mountStartTabs();
     const { deps, modals } = makeDeps();
