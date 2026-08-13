@@ -22,6 +22,23 @@
 # Zephus Changelog
 
 ## 0.1.0-beta.6 — Release Candidate for 0.1.0
+### Round 36 — production polish for the 0.1.0 RC
+
+**Security hardening:**
+- **Permission requests denied app-wide** (`setPermissionRequestHandler` + check handler) — embedded iframes (video/embed blocks, theme previews) can never request camera/mic/geolocation.
+- **Fire-and-forget IPC rejections caught** (stale site-draft clear, config-folder open) — no unhandled rejections in the renderer.
+
+**Packaging & CI:**
+- **Packaged boot check** (`smoke:packaged`): builds the app dir, launches the signed binary with `ZEPHUS_BOOT_CHECK=1`, asserts the renderer loads and the process exits 0 — the gate that shipped binaries actually boot (the runtime smoke is intentionally disabled packaged). Wired into the CI build-smoke job on all three OSes (xvfb on Linux).
+- **Smoke publish no longer opens Finder windows** — `buildAndReveal` gains `reveal: false` in smoke mode; stale `zephus-smoke-*` temp dirs purge automatically (older than 10 min).
+
+**UX polish:**
+- **Window title now follows the project + page** ("Site — Page — Zephus"), reset on close — asserted by the smoke suite.
+- **Chrome wiring coverage** (preview URL chip copy, resume-last, save button): editorChrome 47% → 51.8%.
+
+**Dependencies:** patch-level updates only for the RC (electron 42.9.0, esbuild 0.28.2, lucide 1.31.0, typescript-eslint 8.67.0). Electron 42 release notes reviewed — nothing breaking (the app is code-signed, fuses set).
+
+
 ### Round 35 — beta.6 RC hardening
 
 - **Chrome module tests (5)**: toolbar wiring, bootstrap settings/theme apply, onboarding for brand-new users only, last-project restore, and the force-close marker.
