@@ -220,4 +220,53 @@ describe("chrome", () => {
         .zephusMarkForceCloseAllowed,
     ).toBe("function");
   });
+
+  it("copies the preview URL from the chip", async () => {
+    const { deps, getButton } = makeDeps({
+      getState: () => ({ previewUrl: "http://localhost:4321" }) as never,
+    });
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText: vi.fn(async () => undefined) },
+      configurable: true,
+    });
+    const chrome = createChromeActions(deps);
+    chrome.installChrome();
+    getButton("preview-url-chip").click();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+      "http://localhost:4321",
+    );
+  });
+
+  it("resumes the last project from the home button", async () => {
+    const { deps, getButton } = makeDeps();
+    let opened: string | null = null;
+    const chrome = createChromeActions({
+      ...deps,
+      getAppSettings: () => ({ lastOpenedProject: "/last" }) as never,
+      openProjectByPath: async (folder: string) => {
+        opened = folder;
+      },
+    });
+    chrome.installChrome();
+    getButton("btn-resume-last").click();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(opened).toBe("/last");
+  });
+
+  it("saves from the toolbar button", async () => {
+    const { deps, getButton } = makeDeps();
+    let saved = false;
+    const chrome = createChromeActions({
+      ...deps,
+      performSave: async () => {
+        saved = true;
+        return true;
+      },
+    });
+    chrome.installChrome();
+    getButton("btn-save").onclick?.({} as never);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(saved).toBe(true);
+  });
 });
