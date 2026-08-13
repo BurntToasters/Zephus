@@ -25,6 +25,7 @@ export function buildAndReveal(
   projectPath: string,
   outDir: string,
   onBuildLog?: (chunk: string) => void,
+  options: { reveal?: boolean } = {},
 ): Promise<PublishResult> {
   if (typeof projectPath !== "string" || !projectPath) {
     return Promise.resolve({ ok: false, error: "Invalid project path." });
@@ -37,7 +38,7 @@ export function buildAndReveal(
       error: "A build is already running. Wait for it to finish.",
     });
   }
-  activeBuild = runBuild(projectPath, outDir, onBuildLog);
+  activeBuild = runBuild(projectPath, outDir, onBuildLog, options);
   void activeBuild.finally(() => {
     if (activeBuild) activeBuild = null;
   });
@@ -48,6 +49,7 @@ async function runBuild(
   projectPath: string,
   outDir: string,
   onBuildLog?: (chunk: string) => void,
+  options: { reveal?: boolean } = {},
 ): Promise<PublishResult> {
   try {
     // Astro builds whatever .astro files are on disk. Refresh managed pages
@@ -110,11 +112,15 @@ async function runBuild(
       outDir,
       "dist",
     ).absolute;
-    const openError = await shell.openPath(output);
+    let revealed = false;
+    if (options.reveal !== false) {
+      const openError = await shell.openPath(output);
+      revealed = !openError;
+    }
     return {
       ok: true,
       outputDir: output,
-      revealed: !openError,
+      revealed,
     };
   } catch (error) {
     log.error("Publish (astro build) failed", error);

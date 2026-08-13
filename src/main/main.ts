@@ -337,7 +337,32 @@ async function completeSmokeRun(windowRef: BrowserWindow): Promise<void> {
  */
 function scaffoldSmokeProject(): string | null {
   try {
-    const dir = fs.mkdtempSync(path.join(app.getPath("temp"), "zephus-smoke-"));
+    // Every smoke run leaves its scaffold behind when killed hard (timeout,
+    // Ctrl+C) — the cleanup in completeSmokeRun's finally never runs. Purge
+    // stale scaffolds before creating a new one so the temp dir does not
+    // accumulate zephus-smoke-* folders.
+    const tempRoot = app.getPath("temp");
+    try {
+      const stale = fs.readdirSync(tempRoot, { withFileTypes: true }).filter(
+        (entry) =>
+          entry.isDirectory() &&
+          entry.name.startsWith("zephus-smoke-") &&
+          // Never touch a scaffold from an in-flight run on another
+          // machine profile: only purge when old enough that no smoke
+          // could still be using it (a fresh run starts seconds ago).
+          Date.now() - fs.statSync(path.join(tempRoot, entry.name)).mtimeMs >
+            10 * 60 * 1000,
+      );
+      for (const entry of stale) {
+        fs.rmSync(path.join(tempRoot, entry.name), {
+          recursive: true,
+          force: true,
+        });
+      }
+    } catch {
+      // Best-effort: a failed purge must not block the smoke scaffold.
+    }
+    const dir = fs.mkdtempSync(path.join(tempRoot, "zephus-smoke-"));
     const project = path.join(dir, "site");
     fs.mkdirSync(project);
     const created = createSite(project, "minimal");
@@ -895,6 +920,7 @@ if (!isPrimaryInstance) {
     setupSecurityHeaders();
     installGlobalNavigationGuards();
     registerIpcHandlers(getMainWindow, {
+      isSmoke,
       assertUpdaterSender: (senderId) =>
         Boolean(
           mainWindow &&
