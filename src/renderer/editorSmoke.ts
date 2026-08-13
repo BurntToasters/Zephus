@@ -417,6 +417,10 @@ export function installEditorSmokeHook(deps: EditorSmokeDeps): void {
 
       const page = state.page;
       assert(!!page, "Editor smoke: no page loaded after project open.");
+      assert(
+        /Zephus/.test(document.title) && document.title !== "Zephus",
+        `Editor smoke: window title did not pick up the project context (title="${document.title}")`,
+      );
 
       // Recovery draft: an unsaved edit must surface a page draft after the
       // debounce window.
