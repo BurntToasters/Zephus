@@ -85,6 +85,7 @@ export interface PageLoaderDeps {
     ) => Promise<T>;
   };
   clearIgnoredExternalChange: () => void;
+  updateWindowTitle: () => void;
   trackChange: (label: string) => void;
   clearPageDraftAfterReload: (
     projectPath: string,

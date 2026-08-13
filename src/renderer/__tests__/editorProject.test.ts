@@ -49,6 +49,7 @@ function makeDeps(state: ReturnType<typeof makeState>) {
     editorGitRefresh: async () => undefined,
     editorDraftRestoreRestoreSiteDraft: async () => null,
     bumpSessionGeneration: () => undefined,
+    updateWindowTitle: () => undefined,
   } as unknown as Parameters<typeof createProjectOpenActions>[0];
   return { deps, statuses, modals };
 }

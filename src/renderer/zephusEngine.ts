@@ -545,6 +545,19 @@ const inlineEdit = createInlineEditController({
 
 let statusTimer: ReturnType<typeof setTimeout> | null = null;
 
+/** The OS window title follows the open project + page. */
+function updateWindowTitle(): void {
+  const project = state.project;
+  if (!project) {
+    document.title = "Zephus";
+    return;
+  }
+  const page = state.page
+    ? ` — ${findPageMeta(state.page)?.navLabel ?? state.page}`
+    : "";
+  document.title = `${project.name}${page} — Zephus`;
+}
+
 function setStatus(message: string): void {
   if (statusTimer !== null) {
     clearTimeout(statusTimer);
@@ -1165,6 +1178,7 @@ const projectOpen = createProjectOpenActions({
   bumpSessionGeneration: () => {
     editorSessionGeneration += 1;
   },
+  updateWindowTitle,
 });
 
 const { openProjectByPath } = projectOpen;
@@ -2606,6 +2620,7 @@ const pageLoader = createPageLoader({
   clearPageDraftAfterReload,
   renderPageList,
   clearIgnoredExternalChange: () => pageLoader.clearIgnoredExternalChange(),
+  updateWindowTitle,
 });
 
 const { loadPage, onExternalChange } = pageLoader;
@@ -2755,6 +2770,7 @@ async function closeProject(): Promise<void> {
     state.unsubExternal?.();
     state.unsubExternal = null;
     state.project = null;
+    updateWindowTitle();
     // Cross-project paste: a block/section copied in project A must not be
     // insertable into project B.
     blockOps.clearClipboard();

@@ -49,6 +49,7 @@ export interface ProjectOpenDeps {
     skipPrompt?: boolean;
   }) => Promise<string | null>;
   bumpSessionGeneration: () => void;
+  updateWindowTitle: () => void;
 }
 
 interface PendingDraftResume {
@@ -83,6 +84,7 @@ export function createProjectOpenActions(deps: ProjectOpenDeps) {
     editorGitRefresh,
     editorDraftRestoreRestoreSiteDraft,
     bumpSessionGeneration,
+    updateWindowTitle,
   } = deps;
 
   const state = getState();
@@ -234,6 +236,7 @@ export function createProjectOpenActions(deps: ProjectOpenDeps) {
     editorView.setAttribute("tabindex", "-1");
     editorView.focus();
     $("project-name").textContent = result.name;
+    updateWindowTitle();
     // A fresh editor session has no page open yet. Clearing it matters when a
     // second project is opened without closing the first: both can contain the
     // same page path, and a stale value would make the load look redundant.
@@ -331,6 +334,7 @@ export function createProjectOpenActions(deps: ProjectOpenDeps) {
       // to the start screen so the UI cannot act on a phantom project.
       pendingHomeDraftResume = null;
       state.project = null;
+      updateWindowTitle();
       state.siteDocument = null;
       state.pendingSiteDocument = null;
       state.pendingSiteEditorKind = null;
