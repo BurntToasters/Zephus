@@ -10,7 +10,6 @@ import {
   windowsNodePaths,
 } from "../nodeCheck";
 import { npmCommand, resolveWindowsNpmCmd } from "../npmCommand";
-import { windowsNodePaths } from "../nodeCheck";
 
 describe("nodeCheck", () => {
   describe("validateNodePath", () => {

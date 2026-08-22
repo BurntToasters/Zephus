@@ -7,7 +7,10 @@ import { EventEmitter } from "events";
 const spawnMock = vi.hoisted(() => vi.fn());
 const buildSpawnEnvMock = vi.hoisted(() => vi.fn());
 
-vi.mock("child_process", () => ({ spawn: spawnMock }));
+vi.mock("child_process", () => ({
+  default: { spawn: spawnMock },
+  spawn: spawnMock,
+}));
 vi.mock("../nodeCheck", () => ({
   buildSpawnEnv: buildSpawnEnvMock,
 }));

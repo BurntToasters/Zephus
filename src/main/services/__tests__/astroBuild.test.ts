@@ -19,7 +19,7 @@ import {
  * users at publish time.
  */
 // @ts-expect-error ESM import of the wasm-backed compiler
-const compiler = await import("@astrojs/compiler");
+const compiler = await import("@astrojs/compiler/sync");
 
 function allBlocksPage(): Array<Record<string, unknown>> {
   const special =
