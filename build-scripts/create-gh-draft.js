@@ -16,9 +16,8 @@
 
 'use strict';
 
-const https = require('https');
-
 require('dotenv').config();
+const { assertGitHubCliAuthenticated, githubApi } = require('./github-cli');
 
 const packageJson = require('../package.json');
 
@@ -26,8 +25,6 @@ const VERSION = packageJson.version;
 const TAG_NAME = 'v' + VERSION;
 const REPO_OWNER = 'BurntToasters';
 const REPO_NAME = 'zephus';
-const GH_TOKEN = process.env.GH_TOKEN;
-const GH_REQUEST_TIMEOUT_MS = Number.parseInt(process.env.GH_REQUEST_TIMEOUT_MS || '30000', 10);
 const GH_REQUEST_RETRIES = Number.parseInt(process.env.GH_REQUEST_RETRIES || '3', 10);
 const GH_REQUEST_RETRY_DELAY_MS = Number.parseInt(
   process.env.GH_REQUEST_RETRY_DELAY_MS || '1500',
@@ -55,54 +52,7 @@ function isRetryableGithubError(error) {
 }
 
 function githubRequest(method, endpoint, body) {
-  return new Promise((resolve, reject) => {
-    const options = {
-      hostname: 'api.github.com',
-      path: endpoint,
-      method,
-      headers: {
-        Authorization: 'Bearer ' + GH_TOKEN,
-        'User-Agent': 'Zephus-Release-Script',
-        Accept: 'application/vnd.github.v3+json',
-        'X-GitHub-Api-Version': '2022-11-28',
-      },
-    };
-    if (body) options.headers['Content-Type'] = 'application/json';
-
-    const req = https.request(options, (res) => {
-      let data = '';
-      res.setEncoding('utf8');
-      res.on('data', (chunk) => (data += chunk));
-      res.on('end', () => {
-        const statusCode = res.statusCode || 0;
-        try {
-          if (statusCode >= 200 && statusCode < 300) {
-            resolve(data ? JSON.parse(data) : {});
-          } else {
-            const json = data ? JSON.parse(data) : {};
-            const err = new Error(
-              `GitHub API error ${statusCode} for ${method} ${endpoint}: ${json.message || data || 'unknown'}`
-            );
-            err.statusCode = statusCode;
-            reject(err);
-          }
-        } catch (e) {
-          const err = new Error(`GitHub API invalid JSON for ${method} ${endpoint}: ${e.message}`);
-          err.statusCode = statusCode;
-          reject(err);
-        }
-      });
-    });
-
-    req.setTimeout(GH_REQUEST_TIMEOUT_MS, () => {
-      const err = new Error(`GitHub API timeout after ${GH_REQUEST_TIMEOUT_MS}ms`);
-      err.code = 'ETIMEDOUT';
-      req.destroy(err);
-    });
-    req.on('error', reject);
-    if (body) req.write(JSON.stringify(body));
-    req.end();
-  });
+  return Promise.resolve(githubApi(method, endpoint, body));
 }
 
 async function githubRequestWithRetry(method, endpoint, body) {
@@ -154,10 +104,7 @@ async function main() {
   console.log(`Pre-creating GitHub draft release: ${TAG_NAME}`);
   console.log('═'.repeat(60));
 
-  if (!GH_TOKEN) {
-    console.error('✗ GH_TOKEN is not set. Cannot create GitHub release.');
-    process.exit(1);
-  }
+  assertGitHubCliAuthenticated();
 
   // Check whether a release already exists.
   let existing = null;
