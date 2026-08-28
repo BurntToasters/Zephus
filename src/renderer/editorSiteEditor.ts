@@ -217,7 +217,7 @@ export function createSiteEditorActions(deps: SiteEditorDeps) {
     registerCleanup(shellModalDispose);
   }
 
-    /** Validates the site URL and strips any trailing slash. */
+  /** Validates the site URL and strips any trailing slash. */
   function normalizeSiteUrl(value: string): string | null {
     const trimmed = value.trim();
     if (!trimmed) return "";

@@ -125,7 +125,7 @@ function readAttr(attrs: string, name: string): string {
 }
 
 export interface RichTextOptions {
-    /** Set false where the result is placed inside an `<a>` (button, CTA, pricing button); nested anchors are invalid HTML. */
+  /** Set false where the result is placed inside an `<a>` (button, CTA, pricing button); nested anchors are invalid HTML. */
   allowLinks?: boolean;
 }
 
