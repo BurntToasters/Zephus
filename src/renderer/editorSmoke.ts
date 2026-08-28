@@ -1,8 +1,4 @@
-/**
- * Editor smoke harness (--smoke / ?smoke=1). Drives real DOM interactions in
- * the packaged app: inspector input, inline editing, canvas link inertness,
- * undo/redo, resize handles. Failures surface via __zephusSmokeReport.
- */
+/** Editor smoke harness (--smoke / ?smoke=1). */
 
 import type { EditorSessionState } from "./editorSession";
 import type { EditorBlock, SectionNode } from "../main/types";
@@ -502,50 +498,26 @@ export function installEditorSmokeHook(deps: EditorSmokeDeps): void {
         `Editor smoke: git commit failed (${committed.error ?? "unknown"})`,
       );
 
-      // External-change pipeline: a write to the page file from OUTSIDE the
-      // app (here: a detach, which main performs on disk) must surface the
-      // "File Changed on Disk" prompt, and Reload must pick up the new text.
+      // App-owned detach writes must not be mistaken for an external edit. The
+      // watcher marker suppresses the atomic write event; real external edits
+      // are covered by the watcher integration tests above.
       if (page && state.project) {
-        await zephus.detachPageDocument(
+        const detached = await zephus.detachPageDocument(
           state.project.path,
           page,
           state.project.astro.pagesDir,
-          "<h1>Externally Changed</h1>",
+          "<h1>Detached by smoke</h1>",
         );
-        let promptSeen = false;
-        for (let i = 0; i < 20; i += 1) {
-          await wait(250);
-          const title = document.getElementById("modal-title");
-          if (title && /Changed on Disk/i.test(title.textContent || "")) {
-            promptSeen = true;
-            break;
-          }
-        }
         assert(
-          promptSeen,
-          "Editor smoke: external file change did not surface the reload prompt.",
+          detached.ok,
+          `Editor smoke: detach failed (${detached.error ?? "unknown"})`,
         );
-        const reloadBtn = Array.from(
-          document.querySelectorAll("#modal-actions button"),
-        ).find((button) => /reload/i.test(button.textContent || ""));
+        await wait(650);
+        const title = document.getElementById("modal-title")?.textContent ?? "";
         assert(
-          reloadBtn instanceof HTMLButtonElement,
-          "Editor smoke: reload action missing from the external-change prompt.",
+          !/Changed on Disk/i.test(title),
+          "Editor smoke: app-owned detach surfaced a false reload prompt.",
         );
-        if (reloadBtn instanceof HTMLButtonElement) {
-          reloadBtn.click();
-          for (
-            let i = 0;
-            i < 40 && !(state.rawCode ?? "").includes("Externally Changed");
-            i += 1
-          ) {
-            await wait(250);
-          }
-          assert(
-            (state.rawCode ?? "").includes("Externally Changed"),
-            "Editor smoke: reload did not pick up the external change.",
-          );
-        }
       }
 
       await closeProject();

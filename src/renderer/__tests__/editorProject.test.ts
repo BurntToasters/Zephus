@@ -173,8 +173,9 @@ describe("project open", () => {
       pages: [],
     });
     await first;
-    await new Promise((r) => setTimeout(r, 10));
-    expect(opened).toContain("/a");
-    expect(opened).toContain("/b");
+    await vi.waitFor(() => {
+      expect(opened).toContain("/a");
+      expect(opened).toContain("/b");
+    });
   });
 });

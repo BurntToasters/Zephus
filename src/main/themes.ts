@@ -30,7 +30,7 @@ export interface Theme extends ThemeMeta {
   baseLayout: string;
 }
 
-export const ASTRO_VERSION = "^6.0.0";
+export const ASTRO_VERSION = "^7.2.4";
 
 /* ---------- Static project files ---------- */
 

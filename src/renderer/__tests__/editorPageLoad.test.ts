@@ -159,7 +159,7 @@ describe("page loader", () => {
     };
     const pending = loader.loadPage("src/pages/index.astro");
     // Let the chain reach the read call.
-    await new Promise((r) => setTimeout(r, 0));
+    await vi.waitFor(() => expect(resolveRead).toBeDefined());
     // Project closes while the read is in flight: the load pipeline is reset,
     // invalidating the in-flight request.
     loader.resetLoadPipeline();

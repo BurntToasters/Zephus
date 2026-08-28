@@ -1,8 +1,4 @@
-/**
- * Finds where an asset is referenced, so the editor can warn before a delete or
- * rename silently breaks a page. Lives apart from `assets.ts` to keep that
- * module free of schema imports.
- */
+/** Finds where an asset is referenced, so the editor can warn before a delete or rename silently breaks a page. */
 
 import { AssetUsageResult, PageDocument, SiteDocument } from "../types";
 import {
@@ -12,10 +8,7 @@ import {
   writeSiteDocument,
 } from "./schema";
 
-/** A match boundary: neither side may continue a filename/path token. `/` is
- *  a path-continuation character, NOT a boundary: otherwise a `from` lacking a
- *  leading slash would match inside a longer directory-prefixed path (e.g.
- *  `assets/hero.png` inside `/foo/assets/hero.png`) and corrupt it. */
+/** A match boundary: neither side may continue a filename/path token. */
 function isTokenBoundary(char: string): boolean {
   return !/[A-Za-z0-9._/-]/.test(char);
 }
@@ -52,13 +45,7 @@ function replaceReferences(
   return { value: out, count };
 }
 
-/**
- * Recursively replaces references inside every string of a section tree.
- * Operates on the parsed structure, never on JSON.stringify output: filenames
- * containing `"` or `\` (legal on macOS) would otherwise never match the
- * escaped serialization, and a `to` needing escaping would produce invalid
- * JSON and abort the repoint half-way.
- */
+/** Recursively replaces references inside every string of a section tree. */
 function replaceInStrings(
   value: unknown,
   from: string,
@@ -89,11 +76,7 @@ function replaceInStrings(
   return { value, count: 0 };
 }
 
-/**
- * Points every saved reference to `from` at `to`, after an asset was renamed.
- * Without this, a rename would leave pages requesting a file that no longer
- * exists. Returns the number of references updated.
- */
+/** Points every saved reference to `from` at `to`, after an asset was renamed. */
 export function repointAssetReferences(
   projectPath: string,
   pagesDir: string,

@@ -232,7 +232,7 @@ describe("chrome", () => {
     const chrome = createChromeActions(deps);
     chrome.installChrome();
     getButton("preview-url-chip").click();
-    await new Promise((r) => setTimeout(r, 0));
+    await Promise.resolve();
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
       "http://localhost:4321",
     );
@@ -250,7 +250,7 @@ describe("chrome", () => {
     });
     chrome.installChrome();
     getButton("btn-resume-last").click();
-    await new Promise((r) => setTimeout(r, 0));
+    await Promise.resolve();
     expect(opened).toBe("/last");
   });
 
@@ -266,7 +266,7 @@ describe("chrome", () => {
     });
     chrome.installChrome();
     getButton("btn-save").onclick?.({} as never);
-    await new Promise((r) => setTimeout(r, 0));
+    await Promise.resolve();
     expect(saved).toBe(true);
   });
 });

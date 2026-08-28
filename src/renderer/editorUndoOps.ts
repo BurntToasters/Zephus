@@ -1,8 +1,4 @@
-/**
- * Undo/redo state machine for the visual editor. Extracted from the engine:
- * the stack push/pop order, the mid-drag latch guard, and the
- * undo-back-to-saved-clears-dirty invariant are unit-testable here.
- */
+/** Undo/redo state machine for the visual editor. */
 
 import {
   editorSnapshotSectionsChanged,
@@ -98,10 +94,7 @@ export function createUndoOps(deps: UndoOpsDeps) {
     updateUndoRedoButtons();
   }
 
-  /** Undoing a site change back to the saved baseline leaves the site clean —
-   *  any site draft on disk is then stale, and clearing it stops the spurious
-   *  "Restore Site Draft" prompt on the next launch and the permanent home
-   *  recovery card. No-op when no draft exists. */
+    /** Undoing a site change back to the saved baseline leaves the site clean — any site draft on disk is then stale, and… */
   function clearStaleDraftAfterRevert(): void {
     if (!state.project || state.siteDirty || state.pendingSiteDocument) return;
     void window.zephus

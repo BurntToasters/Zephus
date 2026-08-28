@@ -17,10 +17,7 @@ export interface PublishResult extends OperationResult {
 
 let activeBuild: Promise<PublishResult> | null = null;
 
-/**
- * Runs `npm run build` (Astro production build) in the project directory.
- * On success, opens the output folder in the system file manager.
- */
+/** Runs `npm run build` (Astro production build) in the project directory. */
 export function buildAndReveal(
   projectPath: string,
   outDir: string,

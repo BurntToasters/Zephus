@@ -11,15 +11,9 @@ import {
   pagePathFromSlug,
 } from "../schema";
 
-/**
- * Integration test: every page Zephus generates must be valid Astro source.
- * Runs the REAL Astro compiler (a devDependency) over the generated output of
- * a page containing every block type with hostile prop values, plus the
- * scaffolded layout. A page that fails here would break `astro build` for
- * users at publish time.
- */
+/** Integration test: every page Zephus generates must be valid Astro source. */
 // @ts-expect-error ESM import of the wasm-backed compiler
-const compiler = await import("@astrojs/compiler");
+const compiler = await import("@astrojs/compiler/sync");
 
 function allBlocksPage(): Array<Record<string, unknown>> {
   const special =
@@ -163,7 +157,8 @@ it("compiles every block type with the real Astro compiler", async () => {
             responsive: { mobile: { padding: "8px" } },
             hideOn: [],
           },
-          children: allBlocksPage(),
+          children:
+            allBlocksPage() as unknown as import("../../types").BlockNode[],
         },
       ],
     });

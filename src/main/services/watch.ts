@@ -23,15 +23,18 @@ const SELF_WRITE_SUPPRESSION_MS = 30_000;
 
 /** Records that the app wrote `relativePath` itself (schema write paths). */
 export function markSelfWritten(relativePath: string): void {
+  // A marker is useful only for the currently watched file. Writes made before
+  // the watcher is installed cannot produce an event for that watcher, and
+  // retaining one would suppress a genuine edit that happens just after the
+  // watcher starts (for example, schema refresh during project open).
+  if (!active) return;
+  const watched = active.relativePath.replace(/\\/g, "/");
+  const written = relativePath.replace(/\\/g, "/");
+  if (watched !== written) return;
   selfWritten.set(relativePath, Date.now());
 }
 
-/**
- * True when a watcher event's filename refers to the watched file itself.
- * Platforms differ: some deliver the bare name ("index.astro"), some the full
- * path; a null filename (event for the directory itself) is treated as
- * relevant because it cannot be distinguished.
- */
+/** True when a watcher event's filename refers to the watched file itself. */
 export function watchedFileMatches(
   filename: string | null,
   base: string,
@@ -63,8 +66,7 @@ function wasSelfWritten(relativePath: string): boolean {
   return true;
 }
 
-/** Prunes expired self-write markers so the map stays bounded across many
- *  saves (every post-list refresh marks every regenerated page). */
+/** Prunes expired self-write markers so the map stays bounded across many saves (every post-list refresh marks every… */
 export function pruneSelfWrittenMarkers(): void {
   const cutoff = Date.now() - SELF_WRITE_SUPPRESSION_MS;
   for (const [key, at] of selfWritten) {
@@ -72,13 +74,7 @@ export function pruneSelfWrittenMarkers(): void {
   }
 }
 
-/**
- * Watches a single project file for external modifications. Replaces any
- * previously watched file. Debounces rapid events. Calls onChange when the
- * file changes on disk (e.g. edited by another tool or git). Returns false
- * when no watch could be established (bad path, symlink escape, or an
- * fs.watch failure) so callers can surface the missing change detection.
- */
+/** Watches a single project file for external modifications. */
 export function watchFile(
   projectPath: string,
   relativePath: string,

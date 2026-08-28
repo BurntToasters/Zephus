@@ -1,9 +1,4 @@
-/**
- * Page settings + asset browser modals. Extracted from the engine: the two
- * modals share the asset browser (page meta picks social images through it),
- * the dirty-work gate, and the modal controller — one module, one deps
- * contract.
- */
+/** Page settings + asset browser modals. */
 
 import {
   AssetBrowserModalEntry,

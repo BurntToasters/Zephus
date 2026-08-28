@@ -31,9 +31,9 @@ describe("managed styles", () => {
     const saved = writeSiteDocument(
       project,
       {
-        ...site.site,
+        ...site.site!,
         design: {
-          ...site.site.design,
+          ...site.site!.design,
           accent: "var(--brand-color)",
           radius: "calc(4px + 2px)",
         },
@@ -54,9 +54,9 @@ describe("managed styles", () => {
     const saved = writeSiteDocument(
       project,
       {
-        ...site.site,
+        ...site.site!,
         design: {
-          ...site.site.design,
+          ...site.site!.design,
           accent: "red;} body { display: none",
         },
       },

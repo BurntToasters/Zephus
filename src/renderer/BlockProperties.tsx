@@ -1,8 +1,4 @@
-/**
- * The block properties panel: header, per-type content editor, layout/style/
- * responsive sections, and the action row. Per-type editors live in
- * BlockProps/content.tsx; shared fields in BlockProps/shared.tsx.
- */
+/** The block properties panel: header, per-type content editor, layout/style/ responsive sections, and the action row. */
 
 import { render } from "solid-js/web";
 import type { BlockPropertiesState } from "./BlockProps/shared";

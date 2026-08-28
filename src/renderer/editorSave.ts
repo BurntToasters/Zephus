@@ -1,9 +1,12 @@
-/**
- * Page + site save flow for the editor. Keeps IPC and dirty-state wiring out of zephusEngine.
- */
+/** Page + site save flow for the editor. */
 
 import { EditorSessionState, isGlobalDirty } from "./editorSession";
 import { cancelScheduledEditorDraftWrite } from "./editorDraft";
+
+// A user can press Save repeatedly while a save is in flight. Continue to
+// flush newer snapshots, but never allow a pathological stream of edits or
+// re-entrant save requests to monopolize the renderer forever.
+const MAX_TRAILING_SAVE_ATTEMPTS = 5;
 
 export function formatSaveStatusMessage(
   savedPage: boolean,
@@ -257,7 +260,13 @@ export function createEditorSaveActions(deps: EditorSaveDeps) {
 
       if (deps.getState().siteDirty) {
         const saved = await deps.persistPendingSiteDocument();
-        if (!saved) return false;
+        if (!saved) {
+          // The page portion may already be safely on disk even when the
+          // site drift gate rejects its portion. Reflect that partial result
+          // immediately instead of leaving a stale page dirty indicator.
+          deps.renderDirtyIndicators();
+          return false;
+        }
         savedSite = true;
         siteHasNewerEdits = deps.getState().siteDirty;
       }
@@ -304,8 +313,15 @@ export function createEditorSaveActions(deps: EditorSaveDeps) {
     const pending = (async (): Promise<boolean> => {
       let saved = await runSave();
       let anySucceeded = saved;
-      while (saved && trailingSaveRequested && isGlobalDirty(deps.getState())) {
+      let trailingSaveAttempts = 0;
+      while (
+        saved &&
+        trailingSaveRequested &&
+        isGlobalDirty(deps.getState()) &&
+        trailingSaveAttempts < MAX_TRAILING_SAVE_ATTEMPTS
+      ) {
         trailingSaveRequested = false;
+        trailingSaveAttempts += 1;
         saved = await runSave();
         if (saved) anySucceeded = true;
       }

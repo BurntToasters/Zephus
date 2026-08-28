@@ -11,6 +11,7 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
+    <a class="skip-link" href="#canvas">Skip to canvas</a>
     <!-- Project selection view -->
     <section id="view-start" class="view">
       <div class="start-atmosphere"></div>
@@ -116,6 +117,7 @@
             id="pane-create"
             class="start-pane hidden"
             role="tabpanel"
+            hidden
             aria-labelledby="tab-create"
           >
             <header class="pane-header">
@@ -142,6 +144,7 @@
             id="pane-settings"
             class="start-pane hidden"
             role="tabpanel"
+            hidden
             aria-labelledby="tab-settings"
           >
             <header class="pane-header">
@@ -163,6 +166,7 @@
             id="pane-about"
             class="start-pane hidden"
             role="tabpanel"
+            hidden
             aria-labelledby="tab-about"
           >
             <header class="pane-header">
@@ -236,13 +240,14 @@
           <span id="git-branch" class="git-branch"></span>
         </div>
         <div class="topbar-center">
-          <div class="mode-toggle" role="group" aria-label="Editor mode">
+          <div class="mode-toggle" role="radiogroup" aria-label="Editor mode">
             <button
               id="mode-visual"
               type="button"
               class="mode-btn active"
+              role="radio"
               title="Visual editor"
-              aria-pressed="true"
+              aria-checked="true"
             >
               <i data-lucide="eye"></i> Visual
             </button>
@@ -250,20 +255,22 @@
               id="mode-code"
               type="button"
               class="mode-btn"
+              role="radio"
               title="Code editor"
-              aria-pressed="false"
+              aria-checked="false"
             >
               <i data-lucide="code-xml"></i> Code
             </button>
           </div>
-          <div class="vp-toggle" role="group" aria-label="Canvas viewport">
+          <div class="vp-toggle" role="radiogroup" aria-label="Canvas viewport">
             <button
               id="vp-desktop"
               type="button"
               class="vp-btn active"
+              role="radio"
               title="Desktop"
               aria-label="Desktop view"
-              aria-pressed="true"
+              aria-checked="true"
             >
               <i data-lucide="monitor"></i>
             </button>
@@ -271,9 +278,10 @@
               id="vp-tablet"
               type="button"
               class="vp-btn"
+              role="radio"
               title="Tablet"
               aria-label="Tablet view"
-              aria-pressed="false"
+              aria-checked="false"
             >
               <i data-lucide="tablet"></i>
             </button>
@@ -281,9 +289,10 @@
               id="vp-mobile"
               type="button"
               class="vp-btn"
+              role="radio"
               title="Mobile"
               aria-label="Mobile view"
-              aria-pressed="false"
+              aria-checked="false"
             >
               <i data-lucide="smartphone"></i>
             </button>
@@ -507,6 +516,7 @@
             class="canvas"
             role="region"
             aria-label="Visual page canvas"
+            tabindex="-1"
           ></div>
           <div id="code-editor" class="code-editor hidden"></div>
         </main>

@@ -1,9 +1,4 @@
-/**
- * Start view (home screen): start tabs, theme picker, settings tab, about/
- * licenses tab, and the create-site flow. Extracted from the engine so the
- * start-view state (selectedTabTheme, themePreviewBaseUrl, startThemes,
- * siteCreateInFlight) and its ~380 lines live in one place.
- */
+/** Start view (home screen): start tabs, theme picker, settings tab, about/ licenses tab, and the create-site flow. */
 
 import { renderThemePreviewModalBody } from "./MiscModals";
 import { updateAboutLicenses } from "./AboutLicenses";
@@ -133,6 +128,7 @@ export function createStartViewActions(deps: StartViewDeps) {
       if (pane) {
         pane.classList.toggle("active", t === target);
         pane.classList.toggle("hidden", t !== target);
+        pane.hidden = t !== target;
       }
     }
     if (target === "create") {

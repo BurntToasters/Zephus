@@ -151,3 +151,21 @@ With a Zephus project open: right rail **Git** tab — **Refresh** (fetches remo
 ## User-facing docs
 
 End-user documentation lives under `docs/` (README, Getting Started, Workflows, Settings, Troubleshooting). Update those when behavior visible in the app changes.
+
+## Release flow
+
+The Windows VM is the single draft creator (`npm run release:draft` runs
+`build-scripts/ensure-draft-release.js`); mac/linux reuse that draft via
+`release:wait-draft` (`--wait` mode never creates).
+
+The draft is created with:
+
+- **Release notes** = the full `CHANGELOG.md` (the `release-gate.js` fails fast
+  when the current version's section is missing from it).
+- **Target commit** = the latest commit on the `beta` branch (resolved from the
+  GitHub API, falling back to `git ls-remote`), so the draft always points at
+  the most recent merged PR regardless of the release VM's checked-out commit.
+
+Both are re-synced on every `release:draft` run (PATCH), so a draft created
+before the final beta merge is retargeted automatically. Overrides:
+`RELEASE_BRANCH` (default `beta`) and `FORCE_TARGET_COMMIT` (manual pinning).

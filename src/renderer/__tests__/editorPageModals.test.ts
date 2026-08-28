@@ -290,7 +290,10 @@ describe("asset browser modal", () => {
       title: "Asset Browser",
       onSelect: () => undefined,
     });
-    await new Promise((r) => setTimeout(r, 0));
+    await vi.waitFor(() => {
+      expect(assetBodyProps).not.toBeNull();
+      expect((assetBodyProps?.assets as unknown[] | undefined)?.length).toBe(1);
+    });
     return { actions };
   }
 
@@ -335,9 +338,10 @@ describe("asset browser modal", () => {
         webPath: string;
       }) => Promise<void>
     )({ fileName: "hero.png", webPath: "/hero.png" });
-    await new Promise((r) => setTimeout(r, 0));
+    await vi.waitFor(() =>
+      expect(statuses.join(" ")).toContain("save or discard"),
+    );
     expect(renames).toHaveLength(0);
-    expect(statuses.join(" ")).toContain("save or discard");
   });
 
   it("imports dropped files and reports the result", async () => {
@@ -366,7 +370,7 @@ describe("asset browser modal", () => {
         files: Array<{ name: string }>,
       ) => Promise<void>
     )([{ name: "photo.png" }, { name: "logo.svg" }]);
-    await new Promise((r) => setTimeout(r, 0));
+    await Promise.resolve();
     expect(imported).toHaveLength(1);
     expect(imported[0]!.length).toBe(2);
     expect(statuses.join(" ")).toContain("Imported 2 file(s)");
@@ -386,11 +390,9 @@ describe("asset browser modal", () => {
       assetBodyProps!.onDelete as (asset: {
         fileName: string;
         webPath: string;
-      }) => Promise<void>
+      }) => void
     )({ fileName: "hero.png", webPath: "/hero.png" });
-    await new Promise((r) => setTimeout(r, 0));
-    await new Promise((r) => setTimeout(r, 0));
-    expect(deleted).toHaveLength(1);
+    await vi.waitFor(() => expect(deleted).toHaveLength(1));
     expect(statuses.join(" ")).toContain("Deleted hero.png");
   });
 

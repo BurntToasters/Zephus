@@ -1,8 +1,4 @@
-/**
- * Minimal lucide icon injector, vendored from lucide's createIcons so the
- * full icon-catalog alias map (119 KB) is not bundled for the ~40 icons the
- * app uses. The icons themselves are deep-imported per file.
- */
+/** Minimal lucide icon injector, vendored from lucide's createIcons so the full icon-catalog alias map (119 KB) is not… */
 
 type IconNode = [string, Record<string, unknown>][];
 

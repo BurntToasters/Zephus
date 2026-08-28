@@ -3,11 +3,15 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import { EventEmitter } from "events";
+import type { Mock } from "vitest";
 
 const spawnMock = vi.hoisted(() => vi.fn());
 const buildSpawnEnvMock = vi.hoisted(() => vi.fn());
 
-vi.mock("child_process", () => ({ spawn: spawnMock }));
+vi.mock("child_process", () => ({
+  default: { spawn: spawnMock },
+  spawn: spawnMock,
+}));
 vi.mock("../nodeCheck", () => ({
   buildSpawnEnv: buildSpawnEnvMock,
 }));
@@ -35,13 +39,13 @@ function fakeChild(): EventEmitter & {
   pid: number;
   stdout: EventEmitter;
   stderr: EventEmitter;
-  kill: ReturnType<typeof vi.fn>;
+  kill: Mock<() => boolean>;
 } {
   const child = new EventEmitter() as EventEmitter & {
     pid: number;
     stdout: EventEmitter;
     stderr: EventEmitter;
-    kill: ReturnType<typeof vi.fn>;
+    kill: Mock<() => boolean>;
   };
   child.pid = 4242;
   child.stdout = new EventEmitter();

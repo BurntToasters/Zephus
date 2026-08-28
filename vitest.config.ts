@@ -1,10 +1,12 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
+import solid from "vite-plugin-solid";
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
+  plugins: [solid()],
   resolve: {
     alias: [
       { find: "electron", replacement: path.resolve(rootDir, "src/test/mocks/electron.ts") },
@@ -21,6 +23,7 @@ export default defineConfig({
     fileParallelism: false,
     coverage: {
       reporter: ["text", "html", "clover", "json", "json-summary"],
+      exclude: ["src/renderer/**/*.tsx"],
     },
   },
 });

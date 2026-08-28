@@ -2149,10 +2149,852 @@ body {
 }
 
 /* Responsive Viewports with sleek mock hardware bezels */
-.canvas-wrap.vp-tablet #canvas,
-.canvas-wrap.vp-tablet 
-.canvas-wrap.vp-mobile #canvas,
-.canvas-wrap.vp-mobile 
+#view-editor {
+  --chrome-0: #101116;
+  --chrome-1: #171920;
+  --chrome-2: #1e222c;
+  --chrome-3: #252b38;
+  --chrome-border: rgba(148, 163, 184, 0.18);
+  --chrome-border-strong: rgba(148, 163, 184, 0.3);
+  --chrome-muted: #aeb7c9;
+  --chrome-focus: #8d91ff;
+  --chrome-shadow: 0 18px 44px rgba(0, 0, 0, 0.22);
+}
+
+[data-theme="light"] #view-editor {
+  --chrome-0: #e9ebf1;
+  --chrome-1: #f6f7fa;
+  --chrome-2: #ffffff;
+  --chrome-3: #eef0f5;
+  --chrome-border: rgba(63, 63, 70, 0.16);
+  --chrome-border-strong: rgba(63, 63, 70, 0.28);
+  --chrome-muted: #52525b;
+  --chrome-focus: #4338ca;
+  --chrome-shadow: 0 16px 34px rgba(24, 24, 27, 0.12);
+}
+
+@media (prefers-color-scheme: light) {
+  [data-theme="system"] #view-editor {
+    --chrome-0: #e9ebf1;
+    --chrome-1: #f6f7fa;
+    --chrome-2: #ffffff;
+    --chrome-3: #eef0f5;
+    --chrome-border: rgba(63, 63, 70, 0.16);
+    --chrome-border-strong: rgba(63, 63, 70, 0.28);
+    --chrome-muted: #52525b;
+    --chrome-focus: #4338ca;
+    --chrome-shadow: 0 16px 34px rgba(24, 24, 27, 0.12);
+  }
+}
+
+/* The canvas is a real keyboard destination for the skip link. */
+.skip-link {
+  position: fixed;
+  top: 12px;
+  left: 16px;
+  z-index: 10000;
+  padding: 9px 13px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: var(--shadow-lg);
+  font-size: 12px;
+  font-weight: 750;
+  text-decoration: none;
+  transform: translateY(-180%);
+  transition: transform 0.18s ease;
+}
+
+.skip-link:focus,
+.skip-link:focus-visible {
+  transform: translateY(0);
+  outline: 3px solid var(--accent-bg);
+  outline-offset: 2px;
+}
+
+/* Topbar: a compact command surface with a distinct mode/viewport cluster. */
+#view-editor .topbar {
+  position: relative;
+  z-index: 10;
+  min-height: 60px;
+  padding: 10px 16px;
+  gap: 10px;
+  flex-wrap: wrap;
+  background: linear-gradient(180deg, var(--chrome-2), var(--chrome-1));
+  border-bottom: 1px solid var(--chrome-border-strong);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+}
+
+#view-editor .topbar-left {
+  flex: 1 1 220px;
+  min-width: 0;
+  gap: 9px;
+}
+
+#view-editor .topbar-left .project-name {
+  min-width: 0;
+  max-width: min(30vw, 300px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#view-editor .topbar-center {
+  flex: 0 0 auto;
+  gap: 6px;
+  padding: 3px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 11px;
+  background: var(--chrome-0);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+#view-editor .mode-toggle,
+#view-editor .vp-toggle {
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  padding: 2px;
+}
+
+#view-editor .mode-btn,
+#view-editor .vp-btn {
+  min-height: 30px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  transition:
+    color 0.15s ease,
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+#view-editor .mode-btn:hover,
+#view-editor .vp-btn:hover {
+  color: var(--text);
+  background: var(--chrome-3);
+}
+
+#view-editor .mode-btn.active,
+#view-editor .vp-btn.active {
+  border-color: var(--chrome-border-strong);
+  background: var(--chrome-2);
+  color: var(--text);
+  box-shadow: 0 2px 7px rgba(0, 0, 0, 0.16);
+}
+
+#view-editor .topbar-right {
+  flex: 1 1 360px;
+  min-width: 0;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+#view-editor .topbar-right .btn {
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--chrome-2) 78%, transparent);
+  color: var(--chrome-muted);
+  font-size: 12px;
+  font-weight: 650;
+  transition:
+    color 0.15s ease,
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
+}
+
+#view-editor .topbar-right .btn:hover {
+  border-color: var(--chrome-border-strong);
+  background: var(--chrome-3);
+  color: var(--text);
+}
+
+#view-editor .topbar-right .btn:active {
+  transform: translateY(1px);
+}
+
+#view-editor .topbar-right #btn-save {
+  border-color: color-mix(in srgb, var(--accent) 62%, var(--chrome-border));
+  background: linear-gradient(180deg, var(--accent), var(--accent-hover));
+  color: #ffffff;
+  box-shadow: 0 5px 14px color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+#view-editor .topbar-right #btn-save:hover {
+  background: var(--accent-hover);
+  color: #ffffff;
+}
+
+#view-editor .preview-url-chip {
+  min-height: 34px;
+  border-color: var(--chrome-border);
+  background: var(--chrome-0);
+  color: var(--chrome-muted);
+}
+
+#view-editor .preview-url-chip:hover {
+  border-color: var(--chrome-focus);
+  color: var(--text);
+}
+
+/* Panels: quiet outer rails, brighter cards, and clear tab hierarchy. */
+#view-editor .editor-body {
+  gap: 1px;
+  background: var(--chrome-border);
+}
+
+#view-editor .panel {
+  flex: 0 0 280px;
+  width: 280px;
+  min-width: 0;
+  gap: 0;
+  padding: 0;
+  background: linear-gradient(180deg, var(--chrome-1), var(--chrome-0));
+  border-color: var(--chrome-border);
+  box-shadow: var(--chrome-shadow);
+}
+
+#view-editor .panel.right {
+  flex-basis: 340px;
+  width: 340px;
+}
+
+#view-editor .workspace-rail-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 15px 10px;
+  border-bottom: 1px solid var(--chrome-border);
+  background: color-mix(in srgb, var(--chrome-2) 68%, transparent);
+}
+
+#view-editor .workspace-rail-title span {
+  color: var(--chrome-focus);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+#view-editor .workspace-rail-title strong {
+  color: var(--text);
+  font-size: 13px;
+  letter-spacing: -0.01em;
+}
+
+#view-editor .workspace-tabs {
+  display: flex;
+  gap: 5px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--chrome-border);
+  background: var(--chrome-0);
+}
+
+#view-editor .workspace-tab {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 35px;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--chrome-muted);
+  font-size: 11px;
+  font-weight: 700;
+  transition:
+    color 0.15s ease,
+    background-color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+#view-editor .workspace-tab:hover {
+  border-color: var(--chrome-border);
+  background: var(--chrome-2);
+  color: var(--text);
+}
+
+#view-editor .workspace-tab.active {
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--chrome-border));
+  background: var(--accent-bg);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+#view-editor .workspace-tab-panel {
+  gap: 16px;
+  padding: 15px 13px 20px;
+  scrollbar-color: var(--chrome-border-strong) transparent;
+}
+
+#view-editor .panel-section {
+  gap: 0;
+  padding: 13px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--chrome-2) 72%, transparent);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.08);
+}
+
+#view-editor .panel-section h3 {
+  margin-bottom: 11px;
+  color: var(--chrome-muted);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+}
+
+#view-editor .list,
+#view-editor .palette {
+  gap: 5px;
+}
+
+#view-editor .list li {
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 9px 10px;
+}
+
+#view-editor .list li:hover {
+  border-color: var(--chrome-border);
+  background: var(--chrome-3);
+}
+
+#view-editor .list li.active {
+  border-color: color-mix(in srgb, var(--accent) 36%, var(--chrome-border));
+  background: var(--accent-bg);
+}
+
+#view-editor .palette li {
+  min-height: 40px;
+  border-color: var(--chrome-border);
+  border-radius: 9px;
+  background: var(--chrome-2);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.08);
+}
+
+#view-editor .palette li:hover {
+  border-color: var(--chrome-focus);
+  background: var(--chrome-3);
+  transform: translateY(-1px);
+}
+
+/* Properties: generated Solid groups read as compact cards instead of a flat form. */
+#view-editor .properties {
+  gap: 12px;
+}
+
+#view-editor .prop-header {
+  gap: 6px;
+  padding: 12px 13px;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--chrome-border));
+  border-radius: 10px;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--accent) 14%, var(--chrome-2)),
+    var(--chrome-2)
+  );
+}
+
+#view-editor .prop-header strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+#view-editor .prop-header .muted {
+  color: var(--chrome-muted);
+  font-size: 11px;
+}
+
+#view-editor .prop-fieldset {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+#view-editor .prop-group {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 10px;
+  background: var(--chrome-2);
+}
+
+#view-editor .prop-group h4 {
+  margin: 0 0 2px;
+  color: var(--chrome-focus);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+#view-editor .meta-field {
+  gap: 6px;
+  color: var(--chrome-muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+#view-editor .meta-field > span {
+  line-height: 1.25;
+}
+
+#view-editor .meta-field input.text,
+#view-editor .meta-field textarea,
+#view-editor .meta-field select,
+#view-editor .length-unit {
+  min-height: 34px;
+  border-color: var(--chrome-border);
+  border-radius: 7px;
+  background: var(--chrome-0);
+  color: var(--text);
+  font-size: 12px;
+}
+
+#view-editor .meta-field input.text,
+#view-editor .meta-field textarea,
+#view-editor .meta-field select {
+  padding: 8px 9px;
+}
+
+#view-editor .meta-field input.text:hover,
+#view-editor .meta-field textarea:hover,
+#view-editor .meta-field select:hover {
+  border-color: var(--chrome-border-strong);
+}
+
+#view-editor .meta-field input.text:focus,
+#view-editor .meta-field textarea:focus,
+#view-editor .meta-field select:focus,
+#view-editor .length-unit:focus {
+  border-color: var(--chrome-focus);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--chrome-focus) 18%, transparent);
+}
+
+#view-editor .length-control,
+#view-editor .color-control,
+#view-editor .link-field {
+  gap: 6px;
+}
+
+#view-editor .color-swatch {
+  width: 34px;
+  height: 34px;
+  padding: 3px;
+  border-color: var(--chrome-border);
+  border-radius: 7px;
+  background: var(--chrome-0);
+}
+
+#view-editor .prop-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  padding-top: 4px;
+}
+
+#view-editor .prop-actions .btn {
+  min-height: 32px;
+  padding: 7px 8px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 7px;
+  background: var(--chrome-2);
+  color: var(--chrome-muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+#view-editor .prop-actions .btn:hover {
+  border-color: var(--chrome-border-strong);
+  background: var(--chrome-3);
+  color: var(--text);
+}
+
+#view-editor .prop-actions .btn.danger {
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #f87171;
+}
+
+#view-editor .prop-actions .btn.danger:hover {
+  background: rgba(239, 68, 68, 0.12);
+}
+
+/* Canvas: the work surface sits above the graph-paper app background. */
+#view-editor .canvas-wrap {
+  gap: 10px;
+  padding: clamp(18px, 2.8vw, 32px);
+  background-color: var(--bg-app);
+  background-image:
+    linear-gradient(rgba(148, 163, 184, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.045) 1px, transparent 1px),
+    radial-gradient(
+      circle at 1px 1px,
+      rgba(148, 163, 184, 0.12) 1px,
+      transparent 0
+    );
+  background-size:
+    32px 32px,
+    32px 32px,
+    18px 18px;
+}
+
+#view-editor .canvas {
+  padding: clamp(18px, 2.4vw, 30px);
+  border-color: var(--chrome-border-strong);
+  border-radius: 18px;
+  box-shadow:
+    0 2px 5px rgba(0, 0, 0, 0.12),
+    0 24px 70px rgba(0, 0, 0, 0.2);
+}
+
+#view-editor .canvas:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  outline-offset: 5px;
+}
+
+#view-editor .canvas-section {
+  margin-block: 12px;
+  padding: 16px;
+  border-color: color-mix(in srgb, var(--border) 66%, transparent);
+}
+
+#view-editor .canvas .block {
+  margin-block: 8px;
+  padding: 14px;
+}
+
+#view-editor .status-bar {
+  min-height: 30px;
+  padding: 6px 14px;
+  border-top: 1px solid var(--chrome-border);
+  background: var(--chrome-1);
+  color: var(--chrome-muted);
+  font-size: 11px;
+}
+
+/* Start view: make the command center feel like the same product, not a
+   separate screen, while keeping the existing pane and tab contracts. */
+#view-start .start-sidebar {
+  background: color-mix(in srgb, var(--panel) 82%, transparent);
+  border-right-color: var(--chrome-border);
+  box-shadow: 14px 0 40px rgba(0, 0, 0, 0.12);
+}
+
+#view-start .start-main {
+  padding: clamp(28px, 5vw, 64px);
+}
+
+#view-start .pane-header {
+  border-bottom-color: var(--chrome-border);
+  padding-bottom: 20px;
+}
+
+#view-start .pane-title {
+  font-size: clamp(25px, 3vw, 34px);
+}
+
+#view-start .pane-header-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+#view-start .recent-grid li,
+#view-start .theme-card,
+#view-start .welcome-card,
+#view-start .about-hero,
+#view-start .home-status-card {
+  border-color: var(--chrome-border);
+  box-shadow: var(--chrome-shadow);
+}
+
+#view-start .about-lead {
+  color: var(--muted);
+}
+
+[data-theme="light"] #view-start .start-sidebar,
+[data-theme="light"] #view-start .recent-grid li,
+[data-theme="light"] #view-start .theme-card,
+[data-theme="light"] #view-start .welcome-card,
+[data-theme="light"] #view-start .about-hero,
+[data-theme="light"] #view-start .home-status-card {
+  background: rgba(255, 255, 255, 0.82);
+  border-color: rgba(63, 63, 70, 0.16);
+  color: var(--text);
+}
+
+@media (prefers-color-scheme: light) {
+  [data-theme="system"] #view-start .start-sidebar,
+  [data-theme="system"] #view-start .recent-grid li,
+  [data-theme="system"] #view-start .theme-card,
+  [data-theme="system"] #view-start .welcome-card,
+  [data-theme="system"] #view-start .about-hero,
+  [data-theme="system"] #view-start .home-status-card {
+    background: rgba(255, 255, 255, 0.82);
+    border-color: rgba(63, 63, 70, 0.16);
+    color: var(--text);
+  }
+
+  [data-theme="system"] #view-start .about-lead {
+    color: #3f3f46;
+  }
+}
+
+/* Landing page navigation stacks before the editor panels become cramped. */
+@media (max-width: 860px) {
+  #view-start .start-container {
+    height: 100%;
+    min-height: 100vh;
+    overflow-y: auto;
+    flex-direction: column;
+  }
+
+  #view-start .start-sidebar {
+    width: 100%;
+    min-width: 0;
+    height: auto;
+    flex: 0 0 auto;
+    padding: 18px 22px 14px;
+    border-right: 0;
+    border-bottom: 1px solid var(--chrome-border);
+  }
+
+  #view-start .start-brand {
+    margin-bottom: 16px;
+  }
+
+  #view-start .start-nav {
+    flex: 0 0 auto;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  #view-start .start-nav-item {
+    flex: 1 1 145px;
+    min-width: 0;
+    padding: 9px 11px;
+  }
+
+  #view-start .start-sidebar-footer {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 14px;
+    padding-top: 12px;
+  }
+
+  #view-start .sidebar-version-text {
+    padding: 0;
+  }
+
+  #view-start .update-status-pill {
+    width: auto;
+    flex: 1 1 auto;
+  }
+
+  #view-start .start-main {
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+    padding: 30px 24px 44px;
+  }
+
+  #view-editor .panel {
+    flex-basis: 238px;
+    width: 238px;
+  }
+
+  #view-editor .panel.right {
+    flex-basis: 292px;
+    width: 292px;
+  }
+
+  #view-editor .topbar-right {
+    flex-basis: 300px;
+  }
+}
+
+@media (max-width: 760px) {
+  #view-start .pane-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  #view-start .pane-header-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  #view-editor .topbar {
+    align-items: center;
+    padding: 8px 10px;
+  }
+
+  #view-editor .topbar-left {
+    flex-basis: 180px;
+  }
+
+  #view-editor .topbar-right {
+    flex: 0 1 auto;
+    flex-basis: auto;
+    margin-left: auto;
+  }
+
+  #view-editor .topbar-center {
+    order: 3;
+    flex: 1 1 100%;
+    justify-content: center;
+  }
+
+  #view-editor .editor-body {
+    display: grid;
+    grid-template-columns: minmax(210px, 0.38fr) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(220px, 36vh);
+  }
+
+  #view-editor .panel.left {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  #view-editor .canvas-wrap {
+    grid-column: 2;
+    grid-row: 1;
+    min-width: 0;
+  }
+
+  #view-editor .panel.right {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    width: auto;
+    max-height: none;
+    border-top: 1px solid var(--chrome-border);
+    border-left: 0;
+  }
+
+  #view-editor .topbar-right .btn {
+    min-width: 34px;
+  }
+}
+
+@media (max-width: 620px) {
+  #view-start .start-sidebar {
+    padding-inline: 14px;
+  }
+
+  #view-start .start-nav-item {
+    flex-basis: calc(50% - 3px);
+    font-size: 12px;
+  }
+
+  #view-start .start-sidebar-footer {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 7px;
+  }
+
+  #view-start .update-status-pill {
+    width: 100%;
+  }
+
+  #view-start .start-main {
+    padding-inline: 16px;
+  }
+
+  #view-editor .topbar-left .project-name {
+    max-width: 32vw;
+  }
+
+  #view-editor .topbar-right .btn {
+    width: 34px;
+    height: 34px;
+    padding: 7px;
+    font-size: 0;
+  }
+
+  #view-editor .topbar-right .btn svg {
+    width: 15px;
+    height: 15px;
+    margin: 0;
+  }
+
+  #view-editor #save-label,
+  #view-editor #preview-url-chip span {
+    display: none;
+  }
+
+  #view-editor .editor-body {
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  #view-editor .canvas-wrap {
+    order: 1;
+    flex: 0 0 480px;
+    min-height: 480px;
+  }
+
+  #view-editor .panel.left,
+  #view-editor .panel.right {
+    order: 2;
+    width: 100%;
+    flex: 0 0 auto;
+    max-height: 300px;
+    border: 0;
+    border-top: 1px solid var(--chrome-border);
+  }
+
+  #view-editor .panel.right {
+    order: 3;
+  }
+
+  #view-editor .canvas-wrap.vp-tablet #canvas {
+    width: min(100%, 700px);
+  }
+
+  #view-editor .canvas-wrap.vp-mobile #canvas {
+    width: min(100%, 360px);
+  }
+}
+
+#view-editor .canvas-wrap.vp-tablet #canvas {
+  width: min(100%, 768px);
+  max-width: 768px;
+  min-height: 100%;
+  border-radius: 16px;
+  box-shadow:
+    0 2px 5px rgba(0, 0, 0, 0.14),
+    0 22px 52px rgba(0, 0, 0, 0.2);
+}
+
+#view-editor .canvas-wrap.vp-mobile #canvas {
+  width: min(100%, 390px);
+  max-width: 390px;
+  min-height: 100%;
+  border-radius: 14px;
+  box-shadow:
+    0 2px 5px rgba(0, 0, 0, 0.16),
+    0 20px 48px rgba(0, 0, 0, 0.24);
+}
+
+#view-editor .canvas-wrap.vp-tablet,
+#view-editor .canvas-wrap.vp-mobile {
+  align-items: center;
+  background-color: color-mix(in srgb, var(--bg-app) 88%, var(--accent-bg));
+}
+
 /* Properties Side Panel widgets */
 .properties {
   display: flex;
@@ -3034,7 +3876,8 @@ body {
   display: grid;
   gap: 0.4rem;
   padding-bottom: 1.25rem;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--zephus-foreground, currentColor) 12%, transparent);
 }
 .canvas .zephus-postlist-item:last-child {
   border-bottom: 0;
@@ -3062,7 +3905,7 @@ body {
   width: 100%;
   max-height: 220px;
   object-fit: cover;
-  border-radius: var(--zephus-radius, var(--radius-md));
+  border-radius: var(--zephus-radius, 12px);
 }
 .canvas .zephus-postlist-empty {
   opacity: 0.72;
@@ -3097,7 +3940,7 @@ body {
   width: 100%;
   aspect-ratio: 1;
   object-fit: cover;
-  border-radius: var(--zephus-radius, var(--radius-md));
+  border-radius: var(--zephus-radius, 12px);
 }
 
 /* Visible keyboard focus for all interactive elements. */
@@ -4240,4 +5083,12 @@ kbd {
 .preview-url-chip:hover {
   border-color: var(--border-focus);
   color: var(--text);
+}
+
+/* Keep chrome labels readable at the smallest supported text size. */
+#view-editor .workspace-rail-title span,
+#view-editor .panel-section h3,
+#view-editor .canvas .block-chip,
+#view-start .pane-kicker {
+  font-size: 11px;
 }

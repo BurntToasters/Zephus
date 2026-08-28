@@ -59,7 +59,7 @@ describe("mergePageNavItems", () => {
       navLabel: "Home",
       navVisible,
       sections: [],
-    }) as PageDocument;
+    }) as unknown as PageDocument;
 
   it("page docs stay authoritative for page-bound items", () => {
     const nav: NavItem[] = [

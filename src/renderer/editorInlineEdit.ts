@@ -1,11 +1,4 @@
-/**
- * Inline (contenteditable) text editing on the canvas: double-click to edit,
- * floating format toolbar (bold/italic/link), and the read-back that stores
- * only the allowed markup subset back into the block prop.
- *
- * Created as a controller so the editor engine stays thin; all cross-cutting
- * effects (undo, dirty tracking, repaint) are injected.
- */
+/** Inline (contenteditable) text editing on the canvas: double-click to edit, floating format toolbar… */
 
 import { safeUrl, splitLines, splitPair } from "../shared/renderHelpers";
 import { richTextFromElement } from "./inlineRichText";
@@ -18,11 +11,7 @@ export interface InlineEditTarget {
   multiline?: boolean;
   lineIndex?: number;
   pairSide?: "left" | "right";
-  /**
-   * Enables the inline formatting toolbar (bold/italic/link) for prose targets.
-   * Off for values that are not prose (icons, numeric stats) and for anything
-   * whose markup would be invalid where it is rendered.
-   */
+    /** Enables the inline formatting toolbar (bold/italic/link) for prose targets. */
   rich?: boolean;
   /** False where the text is rendered inside an `<a>`, so links are invalid. */
   allowLinks?: boolean;

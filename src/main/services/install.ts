@@ -17,9 +17,7 @@ let activeChild: ChildProcess | null = null;
 // released with a clear error.
 const INSTALL_TIMEOUT_MS = 30 * 60 * 1000;
 
-/** True when node_modules contains every declared dependency. A partial
- *  directory left by a failed npm install must not make later flows skip the
- *  install and fail cryptically during preview/build. */
+/** True when node_modules contains every declared dependency. */
 /** Cancels a running install, killing the whole process tree. */
 export function cancelInstall(): OperationResult {
   if (!activeChild || !activeChild.pid) {
@@ -51,9 +49,7 @@ export function dependenciesInstalled(projectPath: string): boolean {
   }
 }
 
-/** Kills npm and its whole process tree (postinstall scripts, node-gyp…),
- *  so a terminated install cannot keep writing into node_modules while the
- *  next install runs. */
+/** Kills npm and its whole process tree (postinstall scripts, node-gyp…), so a terminated install cannot keep writing… */
 function killInstallTree(child: ChildProcess, hard: boolean): void {
   if (!child.pid) return;
   if (process.platform === "win32") {
@@ -91,10 +87,7 @@ function killInstallTree(child: ChildProcess, hard: boolean): void {
   }
 }
 
-/**
- * Runs `npm install` in the project, streaming output. Resolves with the
- * result when the process exits. Guards against concurrent installs.
- */
+/** Runs `npm install` in the project, streaming output. */
 export async function installDependencies(
   projectPath: string,
   onLog: InstallLogListener,

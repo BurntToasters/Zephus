@@ -6,11 +6,7 @@ export interface ModalAction {
 
 export interface ModalOptions {
   size?: "default" | "wide";
-  /**
-   * Called when Esc is pressed and no Cancel/Close/ghost button exists to
-   * activate. Lets `choose()` settle its promise instead of hanging forever
-   * on the modal's bare close.
-   */
+    /** Called when Esc is pressed and no Cancel/Close/ghost button exists to activate. */
   onEscapedWithoutAction?: () => void;
 }
 

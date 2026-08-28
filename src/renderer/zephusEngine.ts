@@ -2457,8 +2457,8 @@ function syncModeToggle(mode: Mode): void {
   const code = $("mode-code");
   visual.classList.toggle("active", mode === "visual");
   code.classList.toggle("active", mode === "code");
-  visual.setAttribute("aria-pressed", String(mode === "visual"));
-  code.setAttribute("aria-pressed", String(mode === "code"));
+  visual.setAttribute("aria-checked", String(mode === "visual"));
+  code.setAttribute("aria-checked", String(mode === "code"));
 }
 
 function setMode(mode: Mode): void {

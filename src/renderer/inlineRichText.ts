@@ -1,13 +1,4 @@
-/**
- * Converts an inline-edited contenteditable back into the small markup subset
- * Zephus stores in text props. Counterpart to `richTextToHtml` in
- * `src/shared/renderHelpers.ts`: that renders a prop to HTML, this reads the
- * edited DOM back into a prop value.
- *
- * Anything outside the subset (spans, styles, block wrappers that browsers and
- * `execCommand` produce) is dropped while keeping its text, so a paste or a
- * formatting command can never smuggle markup into the page.
- */
+/** Converts an inline-edited contenteditable back into the small markup subset Zephus stores in text props. */
 
 import { escapeAttr, safeUrl } from "../shared/renderHelpers";
 
@@ -55,13 +46,7 @@ export interface RichTextReadOptions {
   allowLineBreaks?: boolean;
 }
 
-/**
- * Reads an edited element into a stored prop value.
- *
- * When no inline formatting was used, the plain text is returned unchanged, so
- * text authored before inline formatting existed round-trips byte-identically
- * and keeps rendering through `plainTextToHtml`.
- */
+/** Reads an edited element into a stored prop value. */
 export function richTextFromElement(
   root: HTMLElement,
   options: RichTextReadOptions = {},

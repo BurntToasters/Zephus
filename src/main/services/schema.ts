@@ -27,12 +27,7 @@ import { markSelfWritten, pruneSelfWrittenMarkers } from "./watch";
 import { escapeAttr, escapeHtml, safeUrl } from "../../shared/renderHelpers";
 import { decodeHTML } from "entities";
 
-/**
- * Escapes text for a quoted Astro attribute: HTML-escaping plus `{`/`}` as
- * entities, because Astro evaluates `{...}` fragments inside quoted attribute
- * values. Without this, a title containing a brace becomes a JS expression
- * (ReferenceError at build, or "undefined" in the output).
- */
+/** Escapes text for a quoted Astro attribute: HTML-escaping plus `{`/`}` as entities, because Astro evaluates `{...}`… */
 export function escapeAstroAttr(value: string): string {
   return escapeAttr(value).replace(/\{/g, "&#123;").replace(/\}/g, "&#125;");
 }
@@ -860,10 +855,7 @@ function parseInlineStyle(styleText: string): BlockStyle | undefined {
 }
 
 /** Returns the opening tag of a segment (e.g. "<h1 ...>"), or the whole string. */
-/**
- * Returns the opening tag of a segment (e.g. "<h1 ...>"), or the whole string.
- * Quote-aware: a `>` inside a quoted attribute value must not end the tag.
- */
+/** Returns the opening tag of a segment (e.g. */
 function openingTag(segment: string): string {
   if (!segment.startsWith("<")) return segment;
   let quote: string | null = null;
@@ -1166,6 +1158,15 @@ export function parseSectionsFromSource(raw: string): SectionNode[] {
     const tagName = tag.match(/^<([A-Za-z][\w:-]*)/)?.[1]?.toLowerCase();
     const stored = parseStoredBlock(segment);
     if (tagName === "section") {
+      // Structural block types such as columns and gallery intentionally use
+      // <section> as their outer element. They are blocks, not editable
+      // SectionNode wrappers; only a stored type of "section" is a section.
+      // Keeping this gate aligned with editorParse.ts preserves those blocks
+      // when a page is migrated from source after its sidecar is unavailable.
+      if (stored && stored.type !== "section") {
+        looseBlocks.push(stored);
+        continue;
+      }
       if (looseBlocks.length > 0) {
         sections.push(defaultSectionNode(looseBlocks.splice(0)));
       }
@@ -2346,6 +2347,10 @@ export function ensureVisualSchema(
         fs.mkdirSync(path.dirname(pageFile), { recursive: true });
         if (actualSource === null || !onDiskMatchesGenerated) {
           writeFileAtomic(pageFile, generatedSource);
+          // Directory watches also observe atomic rename events. Mark every
+          // page regenerated here so publish/schema refreshes cannot look like
+          // edits made by another tool in the open editor.
+          markSelfWritten(doc.page);
         }
       }
     }
@@ -2782,6 +2787,9 @@ export function detachPageDocument(
     // so a crash mid-detach must never leave the page "detached" on disk with
     // old managed content — or a truncated file.
     writeFileAtomic(safeResolve(projectPath, canonical), source);
+    // Detaching is an app-owned atomic page write; suppress its watcher event
+    // so switching to hand-authored code does not immediately prompt reload.
+    markSelfWritten(canonical);
     writePageDocumentFile(projectPath, nextDoc);
     return {
       ok: true,

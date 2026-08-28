@@ -2,28 +2,23 @@ import { describe, it, expect } from "vitest";
 import * as fs from "fs";
 import * as path from "path";
 
-/**
- * The IPC bridge is hand-synced across three files: channel names
- * (src/main/ipcChannels.ts), the preload surface (src/main/preload.ts), and
- * the renderer's ambient typing (src/renderer/zephus.d.ts). A one-sided edit
- * compiles cleanly and breaks at runtime with "Missing method" or an
- * uninvokable channel. This guard parses the three surfaces and fails on any
- * drift.
- */
+/** The IPC bridge is hand-synced across three files: channel names (src/main/ipcChannels.ts), the preload surface… */
 
 function channelsFromIpcFile(): string[] {
   const source = fs.readFileSync(
     path.join(__dirname, "..", "ipcChannels.ts"),
     "utf8",
   );
-  const names = [...source.matchAll(/^\s{2}([a-zA-Z][\w]*):\s*"/gm)].map(
-    (m) => m[1],
-  );
-  return names.sort();
+  return [...source.matchAll(/^\s{2}([a-zA-Z][\w]*):\s*"/gm)]
+    .map((m) => m[1])
+    .filter((name): name is string => name !== undefined)
+    .sort();
 }
 
 function channelNamesFromSource(source: string): string[] {
-  return [...source.matchAll(/IPC\.([a-zA-Z][\w]*)/g)].map((m) => m[1]);
+  return [...source.matchAll(/IPC\.([a-zA-Z][\w]*)/g)]
+    .map((m) => m[1])
+    .filter((name): name is string => name !== undefined);
 }
 
 describe("IPC bridge sync", () => {

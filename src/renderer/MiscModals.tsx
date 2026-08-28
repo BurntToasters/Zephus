@@ -28,8 +28,7 @@ export interface SiteShellModalState {
   onFooterHtmlChange: (value: string) => void;
   onCustomHeadHtmlChange: (value: string) => void;
   siteUrl: string;
-  /** Inline validation error for the site URL (the status bar is covered by
-   *  the modal overlay, so failures were invisible). */
+    /** Inline validation error for the site URL (the status bar is covered by the modal overlay, so failures were invisible). */
   siteUrlError?: string;
   language: string;
   faviconPath: string;

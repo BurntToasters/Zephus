@@ -1,9 +1,4 @@
-/**
- * Page loading + external-change orchestration. Extracted from the engine:
- * the page-switch race machinery (request counter, serialized chain,
- * change-during-read detection, generation guards) and the file-watcher
- * conflict flow live in one place with a deps contract.
- */
+/** Page loading + external-change orchestration. */
 
 import type { EditorSessionState } from "./editorSession";
 

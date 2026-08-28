@@ -12,12 +12,7 @@ import {
 import { readRepoSettings } from "../settings";
 import type { SiteDocument } from "../../types";
 
-/**
- * Contract test for the `.zephus/` project save state: what a freshly created
- * Zephus site must contain, what a healthy project looks like after an open
- * pass, and what round-trips through the sidecars must preserve. This is the
- * file format that gets committed to Git and must open on other machines.
- */
+/** Contract test for the `.zephus/` project save state: what a freshly created Zephus site must contain, what a healthy… */
 let tmpDir: string;
 
 beforeEach(() => {

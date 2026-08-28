@@ -8,13 +8,7 @@ import {
 } from "../types";
 import { readJsonSafe, writeFileAtomic } from "./fsSafe";
 
-/**
- * Reusable sections are stored inside the project (`.zephus/templates/
- * reusable-sections.json`) so they travel with the site when it is committed
- * to Git — matching the rest of the Zephus save state. Pre-0.1.0 installs
- * stored them globally in the app user-data directory; that store is migrated
- * into the project on first read.
- */
+/** Reusable sections are stored inside the project (`.zephus/templates/ reusable-sections.json`) so they travel with the… */
 function sectionsPath(projectPath: string): string {
   return path.join(
     projectPath,

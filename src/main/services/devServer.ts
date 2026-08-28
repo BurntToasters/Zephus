@@ -23,11 +23,7 @@ function stripAnsi(text: string): string {
   return text.replace(ANSI_PATTERN, "");
 }
 
-/**
- * Incremental URL finder: URLs (and ANSI sequences) can be split across
- * stdout chunk boundaries, so the tail of each chunk is buffered before
- * matching. Kept pure so the chunking logic is unit-testable.
- */
+/** Incremental URL finder: URLs (and ANSI sequences) can be split across stdout chunk boundaries, so the tail of each… */
 export class DevServerUrlScanner {
   private buffer = "";
   private readonly maxBuffer: number;
@@ -91,11 +87,7 @@ function hasDevScript(projectPath: string): boolean {
   }
 }
 
-/**
- * Starts the project's dev server via `npm run dev`. Resolves once the server
- * reports a served URL, or rejects/returns an error on failure or timeout.
- * Reuses an already-running server for the same project.
- */
+/** Starts the project's dev server via `npm run dev`. */
 export function startDevServer(
   projectPath: string,
   onLog: DevServerLogListener,

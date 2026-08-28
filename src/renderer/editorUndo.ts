@@ -52,9 +52,7 @@ export interface RestoreEditorSnapshotEffects {
   renderDirtyIndicators: () => void;
 }
 
-/**
- * Restores sections and pending site document from a snapshot (design/shell undo).
- */
+/** Restores sections and pending site document from a snapshot (design/shell undo). */
 export function restoreEditorSnapshot(
   state: EditorSessionState,
   snap: EditorSnapshot,

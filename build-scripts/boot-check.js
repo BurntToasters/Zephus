@@ -1,10 +1,5 @@
 #!/usr/bin/env node
-/**
- * Packaged-boot check: builds the app directory and launches the packaged
- * binary with ZEPHUS_BOOT_CHECK=1, asserting it exits 0 (renderer loaded).
- * The runtime smoke suite is intentionally disabled in packaged builds, so
- * this is the gate that shipped binaries actually boot.
- */
+/** Packaged-boot check: builds the app directory and launches the packaged binary with ZEPHUS_BOOT_CHECK=1, asserting it… */
 
 const { spawn, spawnSync } = require("child_process");
 const fs = require("fs");
@@ -23,27 +18,33 @@ function run(cmd, args, opts = {}) {
   }
 }
 
-function packagedBinary(platform) {
+function packagedBinaryCandidates(platform) {
   if (platform === "darwin") {
-    return path.join(
-      ROOT,
-      "release",
-      process.arch === "arm64" ? "mac-arm64" : "mac",
-      "Zephus.app",
-      "Contents",
-      "MacOS",
-      "Zephus",
-    );
+    const nativeDir = process.arch === "arm64" ? "mac-arm64" : "mac";
+    const binaryPath = (directory) =>
+      path.join(
+        ROOT,
+        "release",
+        directory,
+        "Zephus.app",
+        "Contents",
+        "MacOS",
+        "Zephus",
+      );
+    // Universal --dir builds use mac-universal; retain native fallbacks for
+    // the architecture-specific CI and local developer builds.
+    return [binaryPath("mac-universal"), binaryPath(nativeDir), binaryPath("mac")];
   }
   if (platform === "win32") {
-    return path.join(ROOT, "release", "win-unpacked", "Zephus.exe");
+    return [path.join(ROOT, "release", "win-unpacked", "Zephus.exe")];
   }
-  return path.join(ROOT, "release", "linux-unpacked", "zephus");
+  return [path.join(ROOT, "release", "linux-unpacked", "zephus")];
 }
 
-const binary = packagedBinary(process.platform);
-if (!fs.existsSync(binary)) {
-  console.error(`✗ Packaged binary missing at ${binary}`);
+const binaryCandidates = packagedBinaryCandidates(process.platform);
+const binary = binaryCandidates.find((candidate) => fs.existsSync(candidate)) ?? binaryCandidates[0];
+if (!binary || !fs.existsSync(binary)) {
+  console.error(`✗ Packaged binary missing. Checked:\n  ${binaryCandidates.join("\n  ")}`);
   console.error("  Run: npx electron-builder -c electron-builder.base.yml --dir --publish never");
   process.exit(1);
 }

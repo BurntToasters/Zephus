@@ -1,18 +1,4 @@
-/**
- * create-gh-draft.js
- *
- * Pre-creates a single GitHub draft release for the current package version
- * before any build VMs start uploading. Running this once (from the release
- * coordinator machine or CI orchestrator) prevents the race condition where
- * two parallel builds both find no draft and each create their own.
- *
- * Usage:
- *   node build-scripts/create-gh-draft.js
- *   dotenv -e .env -- node build-scripts/create-gh-draft.js
- *
- * Exits 0 whether it created a new draft or found an existing one.
- * Exits 1 only on a hard failure (network error after retries, etc).
- */
+/** create-gh-draft.js Pre-creates a single GitHub draft release for the current package version before any build VMs… */
 
 'use strict';
 

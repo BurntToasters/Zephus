@@ -15,8 +15,7 @@ export interface EditorDraftWriteDeps {
   writeDraft: Pick<Window["zephus"], "writeDraft">["writeDraft"];
   pageDraftContent: () => string;
   siteDraftContent: () => string;
-  /** Surfaced once per session: the crash-recovery net is silently dead
-   *  (disk full, unwritable drafts.json) and every write fails. */
+    /** Surfaced once per session: the crash-recovery net is silently dead (disk full, unwritable drafts.json) and every… */
   onDraftWriteFailure?: () => void;
 }
 

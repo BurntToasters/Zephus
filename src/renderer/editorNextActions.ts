@@ -1,8 +1,4 @@
-/**
- * Next Actions panel: the guidance cards that tell the user what to do next
- * (missing pages, SEO issues, dirty state, navigation gaps). Extracted from
- * the engine so the guidance logic is unit-testable in isolation.
- */
+/** Next Actions panel: the guidance cards that tell the user what to do next (missing pages, SEO issues, dirty state… */
 
 import { effectiveSiteDocument } from "./editorSession";
 

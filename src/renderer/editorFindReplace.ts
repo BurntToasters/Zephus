@@ -1,7 +1,4 @@
-/**
- * Find & Replace across the site (Cmd/Ctrl+F modal). Extracted from the
- * engine so the search-seq guard logic is unit-testable in isolation.
- */
+/** Find & Replace across the site (Cmd/Ctrl+F modal). */
 
 import { renderFindReplaceModalBody } from "./FindReplaceModal";
 import { isGlobalDirty } from "./editorSession";

@@ -1,8 +1,4 @@
-/**
- * App settings modal + production licenses modal. Extracted from the engine:
- * the settings modal shares the updater status/actions and the node-path
- * status with the start-tab settings — one module, one deps contract.
- */
+/** App settings modal + production licenses modal. */
 
 import { renderSettingsModalBody } from "./SettingsModal";
 import { renderProductionLicensesModalBody } from "./MiscModals";

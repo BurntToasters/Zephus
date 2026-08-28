@@ -1,9 +1,4 @@
-/**
- * Page-structure operations: block/section add, move, duplicate, lock,
- * delete, wrap, and the in-app clipboard (copy/cut/paste). Extracted from
- * the engine — every page mutation outside the inspector flows through this
- * layer, so block-feature work lands here with one deps contract.
- */
+/** Page-structure operations: block/section add, move, duplicate, lock, delete, wrap, and the in-app clipboard… */
 
 import { renderInsertModal } from "./InsertModals";
 import { renderSectionsMarkup } from "../shared/blockRender";

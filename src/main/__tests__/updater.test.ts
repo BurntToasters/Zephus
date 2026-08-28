@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
+import type { GlobalSettings } from "../types";
+
 const electronMock = vi.hoisted(() => ({
   app: {
     getVersion: vi.fn(() => "0.1.0"),
@@ -11,11 +13,11 @@ const updaterMock = vi.hoisted(() => {
   type Listener = (...args: unknown[]) => void;
   const listeners = new Map<string, Listener[]>();
   const autoUpdater = {
-    autoDownload: true,
-    autoInstallOnAppQuit: true,
-    channel: "latest",
-    allowPrerelease: false,
-    allowDowngrade: false,
+    autoDownload: true as boolean,
+    autoInstallOnAppQuit: true as boolean,
+    channel: "latest" as string,
+    allowPrerelease: false as boolean,
+    allowDowngrade: false as boolean,
     logger: null as unknown,
     on: vi.fn((event: string, listener: Listener) => {
       listeners.set(event, [...(listeners.get(event) ?? []), listener]);
@@ -25,6 +27,8 @@ const updaterMock = vi.hoisted(() => {
       for (const listener of listeners.get(event) ?? []) listener(...args);
     },
     quitAndInstall: vi.fn(),
+    checkForUpdates: vi.fn(),
+    downloadUpdate: vi.fn(),
     reset: () => {
       listeners.clear();
       autoUpdater.autoDownload = true;
@@ -35,6 +39,8 @@ const updaterMock = vi.hoisted(() => {
       autoUpdater.logger = null;
       autoUpdater.on.mockClear();
       autoUpdater.quitAndInstall.mockClear();
+      autoUpdater.checkForUpdates.mockReset();
+      autoUpdater.downloadUpdate.mockReset();
     },
   };
   return {
@@ -55,19 +61,17 @@ vi.mock("electron-log", () => ({
   },
 }));
 
-function settings(
-  override: Partial<ReturnType<typeof settingsBase>> = {},
-): ReturnType<typeof settingsBase> {
+function settings(override: Partial<GlobalSettings> = {}): GlobalSettings {
   return { ...settingsBase(), ...override };
 }
 
-function settingsBase() {
+function settingsBase(): GlobalSettings {
   return {
     recentProjects: [],
-    theme: "system" as const,
+    theme: "system",
     lastOpenedProject: null,
     autoCheckUpdates: true,
-    updateChannel: "auto" as const,
+    updateChannel: "auto",
     restoreLastProject: false,
     confirmBlockDelete: true,
     autosave: false,
@@ -274,9 +278,9 @@ describe("updater install lifecycle", () => {
     electronMock.app.isPackaged = false;
     try {
       const updater = await import("../updater");
-      const result = await updater.checkForUpdates(() => ({
-        updateChannel: "stable",
-      }));
+      const result = await updater.checkForUpdates(() =>
+        settings({ updateChannel: "stable" }),
+      );
       expect(result.status).toBe("error");
     } finally {
       electronMock.app.isPackaged = true;
@@ -289,13 +293,13 @@ describe("updater install lifecycle", () => {
     }));
     try {
       const updater = await import("../updater");
-      const result = await updater.checkForUpdates(() => ({
-        updateChannel: "stable",
-      }));
+      const result = await updater.checkForUpdates(() =>
+        settings({ updateChannel: "stable" }),
+      );
       expect(result.status).toBe("available");
       expect(result.version).toBe("0.2.0");
     } finally {
-      delete updaterMock.autoUpdater.checkForUpdates;
+      updaterMock.autoUpdater.checkForUpdates.mockReset();
     }
   });
 
@@ -305,20 +309,20 @@ describe("updater install lifecycle", () => {
     }));
     try {
       const updater = await import("../updater");
-      const result = await updater.checkForUpdates(() => ({
-        updateChannel: "stable",
-      }));
+      const result = await updater.checkForUpdates(() =>
+        settings({ updateChannel: "stable" }),
+      );
       expect(result.status).toBe("not-available");
     } finally {
-      delete updaterMock.autoUpdater.checkForUpdates;
+      updaterMock.autoUpdater.checkForUpdates.mockReset();
     }
   });
 
   it("rejects a download when no update was approved", async () => {
     const updater = await import("../updater");
-    const result = await updater.downloadUpdate(() => ({
-      updateChannel: "stable",
-    }));
+    const result = await updater.downloadUpdate(() =>
+      settings({ updateChannel: "stable" }),
+    );
     expect(result.status).toBe("error");
     expect(result.error).toContain("No applicable update");
   });
@@ -329,14 +333,16 @@ describe("updater install lifecycle", () => {
     }));
     try {
       const updater = await import("../updater");
-      await updater.checkForUpdates(() => ({ updateChannel: "stable" }));
-      const result = await updater.downloadUpdate(() => ({
-        updateChannel: "beta",
-      }));
+      await updater.checkForUpdates(() =>
+        settings({ updateChannel: "stable" }),
+      );
+      const result = await updater.downloadUpdate(() =>
+        settings({ updateChannel: "beta" }),
+      );
       expect(result.status).toBe("error");
       expect(result.error).toContain("channel changed");
     } finally {
-      delete updaterMock.autoUpdater.checkForUpdates;
+      updaterMock.autoUpdater.checkForUpdates.mockReset();
     }
   });
 
@@ -352,10 +358,12 @@ describe("updater install lifecycle", () => {
     );
     try {
       const updater = await import("../updater");
-      await updater.checkForUpdates(() => ({ updateChannel: "stable" }));
-      const promise = updater.downloadUpdate(() => ({
-        updateChannel: "stable",
-      }));
+      await updater.checkForUpdates(() =>
+        settings({ updateChannel: "stable" }),
+      );
+      const promise = updater.downloadUpdate(() =>
+        settings({ updateChannel: "stable" }),
+      );
       await vi.waitFor(() =>
         expect(updaterMock.autoUpdater.downloadUpdate).toHaveBeenCalled(),
       );
@@ -369,8 +377,8 @@ describe("updater install lifecycle", () => {
         status: "cancelled",
       });
     } finally {
-      delete updaterMock.autoUpdater.downloadUpdate;
-      delete updaterMock.autoUpdater.checkForUpdates;
+      updaterMock.autoUpdater.downloadUpdate.mockReset();
+      updaterMock.autoUpdater.checkForUpdates.mockReset();
     }
   });
 });

@@ -1,10 +1,4 @@
-/**
- * Project open lifecycle: the open-queue guard, the open flow with its
- * failure gates (not-a-zephus, damaged, git init), and the enter-editor
- * sequence (schema ensure, site load, draft resume, page load). Extracted
- * from the engine so the open transaction is one module with a deps
- * contract.
- */
+/** Project open lifecycle: the open-queue guard, the open flow with its failure gates (not-a-zephus, damaged, git init)… */
 
 import { markSiteDirty } from "./editorSession";
 import type { EditorSessionState } from "./editorSession";

@@ -20,12 +20,7 @@ export function escapeAttr(value: string): string {
   return escapeHtml(value).replace(/"/g, "&quot;");
 }
 
-/**
- * Blocks dangerous URL schemes for href/src values. Returns "" for
- * javascript:/data:/vbscript:/file:. ASCII tabs/newlines are stripped first,
- * mirroring WHATWG URL parsing (browsers execute "java<tab>script:..." since
- * they strip those characters before scheme detection).
- */
+/** Blocks dangerous URL schemes for href/src values. */
 export function safeUrl(value: string): string {
   const trimmed = (value ?? "").trim();
   const normalized = trimmed.replace(/[\t\n\r]/g, "");
@@ -130,22 +125,11 @@ function readAttr(attrs: string, name: string): string {
 }
 
 export interface RichTextOptions {
-  /**
-   * Set false where the result is placed inside an `<a>` (button, CTA, pricing
-   * button); nested anchors are invalid HTML.
-   */
+    /** Set false where the result is placed inside an `<a>` (button, CTA, pricing button); nested anchors are invalid HTML. */
   allowLinks?: boolean;
 }
 
-/**
- * Renders a text prop that may contain a small inline formatting subset
- * (`strong`, `em`, `u`, `s`, `code`, `br`, `a`). Everything else is escaped, so
- * this is safe for untrusted values: no other tags, no attributes besides a
- * `safeUrl`-checked `href`, and never any event handlers.
- *
- * Mirrored usage between the editor canvas and the build output — both call
- * this same function, so rendered markup stays byte-identical.
- */
+/** Renders a text prop that may contain a small inline formatting subset (`strong`, `em`, `u`, `s`, `code`, `br`, `a`). */
 export function richTextToHtml(
   text: string,
   options: RichTextOptions = {},

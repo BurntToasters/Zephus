@@ -66,12 +66,8 @@ function clearApprovedUpdate(): void {
   downloadedFeedChannel = null;
 }
 
-/**
- * Sets up the auto-updater event wiring. Called once on app startup.
- * Sends status events to the renderer via `updater-status`.
- */
-/** The most recent status sent to the renderer (queried at renderer boot to
- *  close the startup-check race). */
+/** Sets up the auto-updater event wiring. */
+/** The most recent status sent to the renderer (queried at renderer boot to close the startup-check race). */
 export function getLastUpdaterStatus(): UpdaterStatus | null {
   return lastStatus;
 }

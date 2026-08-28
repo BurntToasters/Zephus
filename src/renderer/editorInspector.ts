@@ -1,6 +1,4 @@
-/**
- * Inspector property panel: debounced canvas repaints and undo-on-first-edit latch.
- */
+/** Inspector property panel: debounced canvas repaints and undo-on-first-edit latch. */
 
 import type { EditorSnapshot } from "./editorSession";
 
@@ -52,18 +50,7 @@ export function createDebouncedCanvasRepaint(
   };
 }
 
-/**
- * Undo-on-first-edit latch for the inspector.
- *
- * begin() snapshots the CURRENT state without pushing; end() pushes the
- * snapshot ONLY if the state changed during the session. This fixes two bugs
- * of the push-at-begin design:
- *  - control-triggered changes (Clear Image, checkboxes, selects) mutate
- *    BEFORE commitInspectorChange, so a push at begin captured the
- *    POST-mutation state — the first undo was a visible no-op and wiped redo;
- *  - focusing an input and blurring without typing pushed a phantom entry
- *    and destroyed the redo stack for nothing.
- */
+/** Undo-on-first-edit latch for the inspector. */
 export function createInspectorUndoLatch(deps: {
   captureSnapshot: () => EditorSnapshot;
   pushSnapshot: (snapshot: EditorSnapshot) => void;

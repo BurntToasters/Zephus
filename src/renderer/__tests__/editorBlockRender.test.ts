@@ -3,7 +3,7 @@ import { describe, it, expect } from "vitest";
 import { sanitizeHtmlForCanvas } from "../editorBlockRender";
 
 describe("sanitizeHtmlForCanvas", () => {
-  it("removes script, object, embed, and iframe elements", () => {
+  it("removes script, object, embed, iframe, and form elements", () => {
     const out = sanitizeHtmlForCanvas(
       '<div>ok<script>alert(1)</script><object>o</object><embed src="x"><iframe src="y"></iframe></div>',
     );
@@ -31,6 +31,7 @@ describe("sanitizeHtmlForCanvas", () => {
     );
     expect(out).not.toContain("srcdoc");
     expect(out).not.toContain("formaction");
+    expect(out).not.toContain("<form");
   });
 
   it("blocks javascript: and data: URLs in href/src", () => {
