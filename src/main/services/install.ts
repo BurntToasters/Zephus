@@ -133,6 +133,7 @@ export async function installDependencies(
       child = spawn(npm.command, npm.args, {
         cwd: projectPath,
         windowsHide: true,
+        windowsVerbatimArguments: npm.windowsVerbatimArguments,
         detached: process.platform !== "win32",
         env: { ...env, FORCE_COLOR: "0", NO_COLOR: "1" },
       });

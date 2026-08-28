@@ -190,6 +190,7 @@ async function startDevServerProcess(
         child = spawn(npm.command, npm.args, {
           cwd: projectPath,
           windowsHide: true,
+          windowsVerbatimArguments: npm.windowsVerbatimArguments,
           // POSIX: detached makes the child its own process-group leader so we
           // can signal the whole tree (npm → astro/vite) on stop. Without this,
           // killing npm orphans the real dev server and leaves the port bound.

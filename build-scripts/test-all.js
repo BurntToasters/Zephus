@@ -318,7 +318,7 @@ function run() {
   if (!process.argv.includes('--skip-smoke')) {
     const smokeCommand =
       process.platform === 'linux' && !process.env.DISPLAY
-        ? 'xvfb-run -a npm run smoke:runtime'
+        ? `xvfb-run -a npm run smoke:runtime${process.env.CI === 'true' ? ' -- --no-sandbox' : ''}`
         : 'npm run smoke:runtime';
     const smokeResult = runCommand('smoke', smokeCommand, (out) => ({
       ok: /Smoke run: renderer checks passed/.test(out),

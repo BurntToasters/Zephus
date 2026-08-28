@@ -6,11 +6,20 @@ import solid from "vite-plugin-solid";
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
-  plugins: [solid()],
+  // Unit tests do not use Vite's dev server. Disabling HMR keeps the Solid
+  // plugin from injecting the virtual /@solid-refresh module, whose file URL
+  // is invalid under Node's Windows ESM loader.
+  plugins: [solid({ hot: false })],
   resolve: {
     alias: [
-      { find: "electron", replacement: path.resolve(rootDir, "src/test/mocks/electron.ts") },
-      { find: "electron-log", replacement: path.resolve(rootDir, "src/test/mocks/electron-log.ts") },
+      {
+        find: "electron",
+        replacement: path.resolve(rootDir, "src/test/mocks/electron.ts"),
+      },
+      {
+        find: "electron-log",
+        replacement: path.resolve(rootDir, "src/test/mocks/electron-log.ts"),
+      },
     ],
   },
   test: {

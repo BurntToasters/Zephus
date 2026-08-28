@@ -162,9 +162,7 @@ describe("schema service", () => {
     });
     expect(written.ok).toBe(true);
     // The write target is always derived from the slug, inside pagesDir.
-    expect(written.pageDocument?.page).toBe(
-      path.join(pagesDir, "package.json.json"),
-    );
+    expect(written.pageDocument?.page).toBe("src/pages/package.json.json");
     // package.json is untouched.
     expect(fs.readFileSync(path.join(tmpDir, "package.json"), "utf8")).toBe(
       packageJsonBefore,

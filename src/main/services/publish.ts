@@ -77,6 +77,7 @@ async function runBuild(
         const child = spawn(npm.command, npm.args, {
           cwd: projectPath,
           windowsHide: true,
+          windowsVerbatimArguments: npm.windowsVerbatimArguments,
           env: { ...env, FORCE_COLOR: "0" },
         });
         const handle = (data: Buffer) => {

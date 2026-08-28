@@ -4,6 +4,7 @@ import * as path from "path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   ensureThemePreviewServer,
+  getThemePreviewDistDir,
   resolveThemePreviewFile,
   stopThemePreviewServer,
 } from "../themePreviewServer";
@@ -140,22 +141,25 @@ describe("themePreviewServer", () => {
     expect(response.headers.get("content-type")).toContain("text/css");
   });
 
-  it("answers 500 when the resolved file cannot be read", async () => {
-    const root = makePreviewRoot();
-    const result = await ensureThemePreviewServer(root);
-    const file = path.join(root, "theme", "project", "index.html");
-    const mode = fs.statSync(file).mode;
-    try {
-      fs.chmodSync(file, 0o000);
-      const response = await fetch(`${result.baseUrl}theme/project/`);
-      expect(response.status).toBe(500);
-      await expect(response.text()).resolves.toBe(
-        "Could not read preview asset",
-      );
-    } finally {
-      fs.chmodSync(file, mode);
-    }
-  });
+  it.skipIf(process.platform === "win32")(
+    "answers 500 when the resolved file cannot be read",
+    async () => {
+      const root = makePreviewRoot();
+      const result = await ensureThemePreviewServer(root);
+      const file = path.join(root, "theme", "project", "index.html");
+      const mode = fs.statSync(file).mode;
+      try {
+        fs.chmodSync(file, 0o000);
+        const response = await fetch(`${result.baseUrl}theme/project/`);
+        expect(response.status).toBe(500);
+        await expect(response.text()).resolves.toBe(
+          "Could not read preview asset",
+        );
+      } finally {
+        fs.chmodSync(file, mode);
+      }
+    },
+  );
 
   it("reuses the running server for the same root", async () => {
     const root = makePreviewRoot();
@@ -173,12 +177,23 @@ describe("themePreviewServer", () => {
   });
 
   it("uses the default preview bundle location when no root is given", async () => {
-    // The repo has a real template-previews/dist; the default-root call must
-    // start a server against it.
-    const result = await ensureThemePreviewServer();
-    expect(result.ok).toBe(true);
-    expect(result.baseUrl).toBeTruthy();
-    stopThemePreviewServer();
+    // Fresh clones do not contain generated template-previews/dist. Create a
+    // minimal default bundle so this unit test does not depend on compile
+    // having run first.
+    const root = getThemePreviewDistDir();
+    const existed = fs.existsSync(root);
+    if (!existed) {
+      fs.mkdirSync(path.join(root, "theme", "project"), { recursive: true });
+      fs.writeFileSync(path.join(root, "theme", "project", "index.html"), "ok");
+    }
+    try {
+      const result = await ensureThemePreviewServer();
+      expect(result.ok).toBe(true);
+      expect(result.baseUrl).toBeTruthy();
+    } finally {
+      stopThemePreviewServer();
+      if (!existed) fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("resolves with an error when stopped during startup", async () => {

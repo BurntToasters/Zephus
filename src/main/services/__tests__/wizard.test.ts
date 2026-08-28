@@ -105,22 +105,25 @@ describe("createSite", () => {
     ).toBe(true);
   });
 
-  it("rolls back cleanly when the target cannot be created", () => {
-    // A read-only parent makes mkdirSync throw inside the scaffold's try
-    // block — the rollback must run without crashing.
-    if (process.getuid?.() === 0) return; // root ignores permissions
-    const parent = path.join(tmpDir, "ro");
-    fs.mkdirSync(parent);
-    fs.chmodSync(parent, 0o555);
-    try {
-      const result = createSite(path.join(parent, "site"), "minimal");
-      expect(result.ok).toBe(false);
-      expect(result.error).toContain("EACCES");
-      expect(fs.existsSync(path.join(parent, "site"))).toBe(false);
-    } finally {
-      fs.chmodSync(parent, 0o755);
-    }
-  });
+  it.skipIf(process.platform === "win32")(
+    "rolls back cleanly when the target cannot be created",
+    () => {
+      // A read-only parent makes mkdirSync throw inside the scaffold's try
+      // block — the rollback must run without crashing.
+      if (process.getuid?.() === 0) return; // root ignores permissions
+      const parent = path.join(tmpDir, "ro");
+      fs.mkdirSync(parent);
+      fs.chmodSync(parent, 0o555);
+      try {
+        const result = createSite(path.join(parent, "site"), "minimal");
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain("EACCES");
+        expect(fs.existsSync(path.join(parent, "site"))).toBe(false);
+      } finally {
+        fs.chmodSync(parent, 0o755);
+      }
+    },
+  );
 
   it("rolls back everything when schema initialization fails", () => {
     const target = path.join(tmpDir, "schema-fail");

@@ -4,6 +4,7 @@
 
 require('dotenv').config();
 const { assertGitHubCliAuthenticated, githubApi } = require('./github-cli');
+const { selectMatchingDraft } = require('./release-upload-policy');
 
 const packageJson = require('../package.json');
 
@@ -57,13 +58,16 @@ async function githubRequestWithRetry(method, endpoint, body) {
 }
 
 async function findExistingRelease() {
-  // First try the published-tag endpoint (works after a draft is published).
+  // A published tag is immutable. Reusing its version would replace assets
+  // without giving existing clients a newer version to discover.
   try {
-    const release = await githubRequestWithRetry(
+    await githubRequestWithRetry(
       'GET',
       `/repos/${REPO_OWNER}/${REPO_NAME}/releases/tags/${TAG_NAME}`
     );
-    return release;
+    throw new Error(
+      `Release ${TAG_NAME} is already published. Bump package.json to a new version.`
+    );
   } catch (err) {
     if (err.statusCode !== 404) throw err;
   }
@@ -76,13 +80,13 @@ async function findExistingRelease() {
 
   if (!Array.isArray(releases)) return null;
 
-  const matching = releases.filter((r) => r.tag_name === TAG_NAME);
-  if (matching.length === 0) return null;
-
-  // If there are duplicates (leftover from a previous race), return the one
-  // with the most assets so callers converge onto the same release.
-  matching.sort((a, b) => b.assets.length - a.assets.length);
-  return matching[0];
+  const { draft, published } = selectMatchingDraft(releases, TAG_NAME);
+  if (published) {
+    throw new Error(
+      `Release ${TAG_NAME} is already published. Bump package.json to a new version.`
+    );
+  }
+  return draft;
 }
 
 async function main() {

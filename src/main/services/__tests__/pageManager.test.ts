@@ -187,7 +187,7 @@ describe("pageManager", () => {
     expect(meta.navLabel).toBe("Handmade");
     expect(meta.navVisible).toBe(true);
     expect(meta.noindex).toBe(false);
-    expect(meta.page).toBe(path.join("src", "pages", "handmade.astro"));
+    expect(meta.page).toBe("src/pages/handmade.astro");
 
     // Index pages fall back to Home.
     const home = readPageMetadata(
@@ -259,33 +259,36 @@ describe("pageManager", () => {
     expect(duplicated.ok).toBe(false);
   });
 
-  it("rolls the rename back when the sidecar cannot be moved", () => {
-    // A read-only sidecar directory makes renamePageSchema fail after the
-    // .astro was moved — the rename must restore the original file.
-    if (process.getuid?.() === 0) return;
-    createManagedPage(project, "movable", "src/pages");
-    const sidecarDir = path.join(project, ".zephus", "pages");
-    const mode = fs.statSync(sidecarDir).mode;
-    try {
-      fs.chmodSync(sidecarDir, 0o555);
-      const renamed = renamePage(
-        project,
-        path.join("src", "pages", "movable.astro"),
-        "src/pages",
-        "elsewhere",
-      );
-      expect(renamed.ok).toBe(false);
-      // The original file survives.
-      expect(
-        fs.existsSync(path.join(project, "src", "pages", "movable.astro")),
-      ).toBe(true);
-      expect(
-        fs.existsSync(path.join(project, "src", "pages", "elsewhere.astro")),
-      ).toBe(false);
-    } finally {
-      fs.chmodSync(sidecarDir, mode);
-    }
-  });
+  it.skipIf(process.platform === "win32")(
+    "rolls the rename back when the sidecar cannot be moved",
+    () => {
+      // A read-only sidecar directory makes renamePageSchema fail after the
+      // .astro was moved — the rename must restore the original file.
+      if (process.getuid?.() === 0) return;
+      createManagedPage(project, "movable", "src/pages");
+      const sidecarDir = path.join(project, ".zephus", "pages");
+      const mode = fs.statSync(sidecarDir).mode;
+      try {
+        fs.chmodSync(sidecarDir, 0o555);
+        const renamed = renamePage(
+          project,
+          path.join("src", "pages", "movable.astro"),
+          "src/pages",
+          "elsewhere",
+        );
+        expect(renamed.ok).toBe(false);
+        // The original file survives.
+        expect(
+          fs.existsSync(path.join(project, "src", "pages", "movable.astro")),
+        ).toBe(true);
+        expect(
+          fs.existsSync(path.join(project, "src", "pages", "elsewhere.astro")),
+        ).toBe(false);
+      } finally {
+        fs.chmodSync(sidecarDir, mode);
+      }
+    },
+  );
 
   it("renames a detached page without touching its hand-authored file", () => {
     createManagedPage(project, "detached-page", "src/pages");
@@ -404,51 +407,57 @@ describe("pageManager", () => {
     expect(meta.navVisible).toBe(true);
   });
 
-  it("restores the page file when the sidecar delete fails", () => {
-    if (process.getuid?.() === 0) return;
-    createManagedPage(project, "keeper", "src/pages");
-    const sidecarDir = path.join(project, ".zephus", "pages");
-    const mode = fs.statSync(sidecarDir).mode;
-    try {
-      fs.chmodSync(sidecarDir, 0o555);
-      const deleted = deletePage(
-        project,
-        path.join("src", "pages", "keeper.astro"),
-        "src/pages",
-      );
-      expect(deleted.ok).toBe(false);
-      // The page file is restored.
-      expect(
-        fs.existsSync(path.join(project, "src", "pages", "keeper.astro")),
-      ).toBe(true);
-    } finally {
-      fs.chmodSync(sidecarDir, mode);
-    }
-  });
+  it.skipIf(process.platform === "win32")(
+    "restores the page file when the sidecar delete fails",
+    () => {
+      if (process.getuid?.() === 0) return;
+      createManagedPage(project, "keeper", "src/pages");
+      const sidecarDir = path.join(project, ".zephus", "pages");
+      const mode = fs.statSync(sidecarDir).mode;
+      try {
+        fs.chmodSync(sidecarDir, 0o555);
+        const deleted = deletePage(
+          project,
+          path.join("src", "pages", "keeper.astro"),
+          "src/pages",
+        );
+        expect(deleted.ok).toBe(false);
+        // The page file is restored.
+        expect(
+          fs.existsSync(path.join(project, "src", "pages", "keeper.astro")),
+        ).toBe(true);
+      } finally {
+        fs.chmodSync(sidecarDir, mode);
+      }
+    },
+  );
 
-  it("removes the copied file when the duplicate schema write fails", () => {
-    if (process.getuid?.() === 0) return;
-    createManagedPage(project, "dupe-source", "src/pages");
-    const sidecarDir = path.join(project, ".zephus", "pages");
-    const mode = fs.statSync(sidecarDir).mode;
-    try {
-      fs.chmodSync(sidecarDir, 0o555);
-      const duplicated = duplicatePage(
-        project,
-        path.join("src", "pages", "dupe-source.astro"),
-        "src/pages",
-      );
-      expect(duplicated.ok).toBe(false);
-      // No orphaned .astro copy may remain.
-      expect(
-        fs.existsSync(
-          path.join(project, "src", "pages", "dupe-source-copy.astro"),
-        ),
-      ).toBe(false);
-    } finally {
-      fs.chmodSync(sidecarDir, mode);
-    }
-  });
+  it.skipIf(process.platform === "win32")(
+    "removes the copied file when the duplicate schema write fails",
+    () => {
+      if (process.getuid?.() === 0) return;
+      createManagedPage(project, "dupe-source", "src/pages");
+      const sidecarDir = path.join(project, ".zephus", "pages");
+      const mode = fs.statSync(sidecarDir).mode;
+      try {
+        fs.chmodSync(sidecarDir, 0o555);
+        const duplicated = duplicatePage(
+          project,
+          path.join("src", "pages", "dupe-source.astro"),
+          "src/pages",
+        );
+        expect(duplicated.ok).toBe(false);
+        // No orphaned .astro copy may remain.
+        expect(
+          fs.existsSync(
+            path.join(project, "src", "pages", "dupe-source-copy.astro"),
+          ),
+        ).toBe(false);
+      } finally {
+        fs.chmodSync(sidecarDir, mode);
+      }
+    },
+  );
 
   it("reports deletion of a missing page", () => {
     const deleted = deletePage(
