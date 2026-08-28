@@ -360,6 +360,8 @@ function runConfigChecks() {
 printBanner("Zephus Full Test Suite");
 
 function run() {
+  const startTime = Date.now();
+
   const unitResult = runCommand("unit", "npm test", parseUnitTests);
   results.unit.status = unitResult.ok ? "passed" : "failed";
 
@@ -449,16 +451,17 @@ function run() {
   const allPassed = Object.values(results).every(
     (r) => r.status === "passed" || r.status === "skipped",
   );
+  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
   console.log("");
   if (allPassed) {
     console.log(
-      `${colors.green}${colors.bold}✓ All checks passed!${colors.reset}`,
+      `${colors.green}${colors.bold}✓ All checks passed!${colors.reset} (${elapsed}s)`,
     );
     process.exit(0);
   }
 
   console.log(
-    `${colors.red}${colors.bold}✗ Some checks failed.${colors.reset}`,
+    `${colors.red}${colors.bold}✗ Some checks failed.${colors.reset} (${elapsed}s)`,
   );
   process.exit(1);
 }
