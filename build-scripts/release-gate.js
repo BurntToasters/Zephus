@@ -3,7 +3,9 @@
 require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
-const { assertGitHubCliAuthenticated } = require("./github-cli");
+const { execFileSync } = require("child_process");
+const { assertGitHubCliAuthenticated, githubApi } = require("./github-cli");
+const { releaseSourceFailures } = require("./release-upload-policy");
 
 const failures = [];
 
@@ -14,6 +16,7 @@ const VERSION = packageJson.version;
 const RELEASE_CHANNEL = (process.env.RELEASE_CHANNEL || "")
   .trim()
   .toLowerCase();
+const RELEASE_BRANCH = process.env.RELEASE_BRANCH || "beta";
 if (RELEASE_CHANNEL === "db" && !/-db(?:[.-]|$|[0-9])/i.test(VERSION)) {
   failures.push(
     `RELEASE_CHANNEL=db requires a -db version, but package.json is ${VERSION}.`,
@@ -45,6 +48,42 @@ try {
 } catch (error) {
   failures.push(
     "GitHub CLI authentication is required to upload release assets: " +
+      (error && error.message ? error.message : String(error)),
+  );
+}
+
+try {
+  const head = execFileSync("git", ["rev-parse", "HEAD"], {
+    encoding: "utf8",
+  }).trim();
+  const worktreeStatus = execFileSync(
+    "git",
+    ["status", "--porcelain", "--untracked-files=all"],
+    { encoding: "utf8" },
+  );
+  const forcedTarget = (process.env.FORCE_TARGET_COMMIT || "").trim();
+  const targetCommit = forcedTarget
+    ? forcedTarget
+    : githubApi(
+        "GET",
+        `/repos/BurntToasters/zephus/branches/${encodeURIComponent(RELEASE_BRANCH)}`,
+      )?.commit?.sha || "";
+  const existingTagCommit = execFileSync(
+    "git",
+    ["ls-remote", "--tags", "origin", `refs/tags/v${VERSION}`],
+    { encoding: "utf8" },
+  ).trim();
+  failures.push(
+    ...releaseSourceFailures({
+      head,
+      targetCommit,
+      worktreeStatus,
+      existingTagCommit,
+    }),
+  );
+} catch (error) {
+  failures.push(
+    "Release source verification failed: " +
       (error && error.message ? error.message : String(error)),
   );
 }

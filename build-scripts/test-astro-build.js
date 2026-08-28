@@ -3,10 +3,17 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const { pathToFileURL } = require("url");
 const { execFileSync } = require("child_process");
 
 const ROOT = path.resolve(__dirname, "..");
-const ASTRON = path.join(ROOT, "node_modules", ".bin", "astro");
+const ASTRO_ENTRY = path.join(
+  ROOT,
+  "node_modules",
+  "astro",
+  "bin",
+  "astro.mjs",
+);
 
 function walkHtml(dir) {
   let out = [];
@@ -20,12 +27,14 @@ function walkHtml(dir) {
 
 async function main() {
   const wizard = await import(
-    path.join(ROOT, "dist", "main", "services", "wizard.js")
+    pathToFileURL(path.join(ROOT, "dist", "main", "services", "wizard.js")).href
   );
   const schema = await import(
-    path.join(ROOT, "dist", "main", "services", "schema.js")
+    pathToFileURL(path.join(ROOT, "dist", "main", "services", "schema.js")).href
   );
-  const themes = await import(path.join(ROOT, "dist", "main", "themes.js"));
+  const themes = await import(
+    pathToFileURL(path.join(ROOT, "dist", "main", "themes.js")).href
+  );
 
   let failures = 0;
   for (const theme of themes.listThemes()) {
@@ -53,7 +62,9 @@ async function main() {
           "ensureVisualSchema failed: " + (ensured.error ?? "unknown"),
         );
       }
-      execFileSync(ASTRON, ["build", "--silent"], {
+      // Invoke Astro through Node instead of node_modules/.bin: Windows cannot
+      // execute the POSIX shim, and execFile does not launch .cmd wrappers.
+      execFileSync(process.execPath, [ASTRO_ENTRY, "build", "--silent"], {
         cwd: project,
         encoding: "utf8",
         timeout: 300000,

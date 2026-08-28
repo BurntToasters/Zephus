@@ -10,6 +10,7 @@ const { execFileSync } = require("child_process");
 
 require("dotenv").config();
 const { assertGitHubCliAuthenticated, githubApi } = require("./github-cli");
+const { selectMatchingDraft } = require("./release-upload-policy");
 
 const REPO_OWNER = "BurntToasters";
 const REPO_NAME = "zephus";
@@ -226,14 +227,15 @@ async function findExistingRelease() {
     throw new Error("Unexpected releases payload type");
   }
 
-  const matching = releases.filter((r) => r.tag_name === TAG_NAME);
-  if (matching.length === 0) {
-    return null;
+  const { draft, published } = selectMatchingDraft(releases, TAG_NAME);
+  if (published) {
+    throw new Error(
+      "Release " +
+        TAG_NAME +
+        " is already published. Bump package.json to a new version; published releases are immutable.",
+    );
   }
-
-  // Prefer a draft (electron-builder publishes into drafts); fall back to any.
-  const draft = matching.find((r) => r.draft);
-  return draft || matching[0];
+  return draft;
 }
 
 async function ensureDraftRelease() {

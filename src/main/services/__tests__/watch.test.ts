@@ -78,7 +78,9 @@ describe("watchFile", () => {
     await new Promise((r) => setTimeout(r, 50));
     markSelfWritten(pageRel);
     fs.writeFileSync(path.join(project, pageRel), "<h1>self</h1>");
-    await new Promise((r) => setTimeout(r, 500));
+    // Implementation clears the duplicate-event marker only after >500ms;
+    // waiting exactly 500ms races the millisecond clock under CI load.
+    await new Promise((r) => setTimeout(r, 650));
     expect(fires).toBe(0);
 
     // A genuinely external edit afterwards still fires.

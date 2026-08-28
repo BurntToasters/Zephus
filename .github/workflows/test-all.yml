@@ -75,8 +75,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
-        with:
-          eol: lf
 
       - name: Setup Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
@@ -108,7 +106,7 @@ jobs:
         run: npm ci
 
       - name: Run runtime smoke (headless via xvfb)
-        run: xvfb-run -a npm run smoke:runtime
+        run: xvfb-run -a npm run smoke:runtime -- --no-sandbox
 
   coverage:
     name: Coverage gates
@@ -161,13 +159,13 @@ jobs:
       - name: Build (dir only)
         run: npx electron-builder -c electron-builder.base.yml --dir --publish never
 
-      - name: Packaged boot check
-        run: |
-          if [ "$RUNNER_OS" = "Linux" ]; then
-            xvfb-run -a npm run smoke:packaged
-          else
-            npm run smoke:packaged
-          fi
+      - name: Packaged boot check (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm run smoke:packaged -- --no-sandbox
+
+      - name: Packaged boot check (Windows/macOS)
+        if: runner.os != 'Linux'
+        run: npm run smoke:packaged
 
   dependency-review:
     name: Dependency Review

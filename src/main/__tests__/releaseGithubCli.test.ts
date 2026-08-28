@@ -6,7 +6,8 @@ import githubCli from "../../../build-scripts/github-cli.js";
 import releaseUploadPolicy from "../../../build-scripts/release-upload-policy.js";
 
 const { githubCliEnvironment, githubStatusCode } = githubCli;
-const { getReleaseUploadFiles } = releaseUploadPolicy;
+const { getReleaseUploadFiles, releaseSourceFailures, selectMatchingDraft } =
+  releaseUploadPolicy;
 
 describe("GitHub CLI release transport", () => {
   it("uses stored authentication instead of token environment variables", () => {
@@ -64,5 +65,42 @@ describe("GitHub CLI release transport", () => {
         expect(command).toContain("--publish never");
       }
     }
+  });
+
+  it("never reuses a published release as a draft", () => {
+    const draft = { id: 1, tag_name: "v1.2.3", draft: true };
+    const published = { id: 2, tag_name: "v1.2.3", draft: false };
+    expect(selectMatchingDraft([published, draft], "v1.2.3")).toEqual({
+      draft,
+      published,
+    });
+    expect(selectMatchingDraft([published], "v1.2.3")).toEqual({
+      draft: null,
+      published,
+    });
+  });
+
+  it("requires a clean checkout at the exact untagged target commit", () => {
+    const sha = "a".repeat(40);
+    expect(
+      releaseSourceFailures({
+        head: sha,
+        targetCommit: sha,
+        worktreeStatus: "",
+        existingTagCommit: "",
+      }),
+    ).toEqual([]);
+    expect(
+      releaseSourceFailures({
+        head: "b".repeat(40),
+        targetCommit: sha,
+        worktreeStatus: " M package.json",
+        existingTagCommit: `${sha}\trefs/tags/v1.2.3`,
+      }),
+    ).toEqual([
+      `Release checkout HEAD ${"b".repeat(40)} does not match target ${sha}.`,
+      "Release checkout has uncommitted or untracked files.",
+      "Release version already has a remote Git tag.",
+    ]);
   });
 });

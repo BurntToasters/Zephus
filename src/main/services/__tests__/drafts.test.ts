@@ -140,7 +140,7 @@ describe("drafts", () => {
     fs.mkdirSync(userDataDir, { recursive: true });
     const key = crypto
       .createHash("sha1")
-      .update("/tmp/proj::src/pages/legacy.astro")
+      .update(path.resolve("/tmp/proj") + "::src/pages/legacy.astro")
       .digest("hex");
     fs.writeFileSync(
       path.join(userDataDir, "drafts.json"),

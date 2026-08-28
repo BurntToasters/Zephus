@@ -154,7 +154,8 @@ describe("npmCommand", () => {
         }),
       ).toEqual({
         command: "cmd.exe",
-        args: ["/d", "/s", "/c", `"${npm}" run dev`],
+        args: ["/d", "/s", "/c", `""${npm}" run dev"`],
+        windowsVerbatimArguments: true,
       });
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -188,7 +189,13 @@ describe("npmCommand", () => {
       }),
     ).toEqual({
       command: "cmd.exe",
-      args: ["/d", "/s", "/c", '"C:\\Program Files\\nodejs\\npm.cmd" run dev'],
+      args: [
+        "/d",
+        "/s",
+        "/c",
+        '""C:\\Program Files\\nodejs\\npm.cmd" run dev"',
+      ],
+      windowsVerbatimArguments: true,
     });
   });
 
@@ -206,7 +213,8 @@ describe("npmCommand", () => {
         }),
       ).toEqual({
         command: "cmd.exe",
-        args: ["/d", "/s", "/c", `"${npm}" install`],
+        args: ["/d", "/s", "/c", `""${npm}" install"`],
+        windowsVerbatimArguments: true,
       });
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });

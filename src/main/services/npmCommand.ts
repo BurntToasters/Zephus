@@ -5,6 +5,7 @@ import { pathEnvKey } from "./envPath";
 export interface NpmCommand {
   command: string;
   args: string[];
+  windowsVerbatimArguments?: boolean;
 }
 
 export function npmCommand(
@@ -15,7 +16,7 @@ export function npmCommand(
 ): NpmCommand {
   if (platform === "win32") {
     const npm = resolveWindowsNpmCmd(env);
-    const command = [
+    const invocation = [
       quoteCmdArg(npm, true),
       ...args.map((arg) => quoteCmdArg(arg)),
     ].join(" ");
@@ -23,7 +24,12 @@ export function npmCommand(
       cwd && /^\\\\/.test(cwd) ? `pushd ${quoteCmdArg(cwd, true)} && ` : "";
     return {
       command: "cmd.exe",
-      args: ["/d", "/s", "/c", uncPrefix + command],
+      // cmd /s strips the first and last quote. Wrap the entire command so
+      // the quotes around an npm.cmd path containing spaces survive. Node
+      // must pass this command line verbatim or it escapes those quotes and
+      // cmd tries to execute a literal `\"C:\\Program` command instead.
+      args: ["/d", "/s", "/c", `"${uncPrefix}${invocation}"`],
+      windowsVerbatimArguments: true,
     };
   }
   return { command: "npm", args };

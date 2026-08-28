@@ -9,6 +9,12 @@ const os = require("os");
 const ROOT = path.resolve(__dirname, "..");
 const isWindows = process.platform === "win32";
 const isLinux = process.platform === "linux";
+const noSandboxRequested = process.argv.includes("--no-sandbox");
+
+if (noSandboxRequested && (!isLinux || process.env.CI !== "true")) {
+  console.error("--no-sandbox is allowed only for Linux CI boot checks.");
+  process.exit(1);
+}
 
 function run(cmd, args, opts = {}) {
   const result = spawnSync(cmd, args, { stdio: "inherit", ...opts });
@@ -67,7 +73,10 @@ const env = {
 };
 if ("ELECTRON_RUN_AS_NODE" in env) delete env.ELECTRON_RUN_AS_NODE;
 
-const child = spawn(binary, [], { env, stdio: "inherit" });
+const child = spawn(binary, noSandboxRequested ? ["--no-sandbox"] : [], {
+  env,
+  stdio: "inherit",
+});
 const timeoutMs = 90_000;
 const timer = setTimeout(() => {
   console.error(`✗ Boot check timed out after ${timeoutMs / 1000}s`);

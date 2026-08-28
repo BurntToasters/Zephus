@@ -68,37 +68,37 @@ focused modules:
 
 | Module                            | Responsibility                                                                                      |
 | --------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `editorChrome.ts`                 | Window chrome: close/reload guards, toolbar wiring, bootstrap, onboarding                            |
-| `editorProject.ts`                | Project open lifecycle: open-queue guard, failure gates, enter-editor sequence                       |
-| `editorPageLoad.ts`               | Page loading race machinery + external-change (keep/reload) conflict flow                            |
-| `editorCanvas.ts`                 | Canvas render, drag/drop slots, properties panel + canvas interaction bindings                        |
-| `editorBlockOps.ts`               | Block/section add/move/duplicate/lock/delete/wrap + in-app clipboard                                 |
-| `editorPageModals.ts`             | Page Settings + Asset Browser modals                                                                 |
-| `editorSiteEditor.ts`             | Site Shell + Design System editors (stage into the pending site document)                            |
-| `editorNextActions.ts`            | Guidance cards (SEO, 404, dirty state, nav gaps)                                                     |
-| `editorStartView.ts`              | Start tabs, theme picker, create-site flow                                                           |
-| `editorHome.ts`                   | Home screen status + updater UI                                                                      |
-| `editorSettingsModal.ts`          | App settings modal + licenses                                                                        |
-| `editorKeyboard.ts`               | Global shortcuts (guards + visual/code dispatch)                                                     |
-| `editorUndoOps.ts`                | Undo/redo state machine (stack order, dirty-on-restore invariants)                                   |
-| `editorFindReplace.ts`            | Find & Replace modal (search-seq guard, dirty-gate)                                                  |
-| `editorPreviewPublish.ts`         | Preview/publish/dependency-install flows                                                             |
-| `editorSave.ts`                   | Page/site save flow, status messages, draft clear on save                                            |
-| `editorSiteSave.ts`               | Persist or discard pending site shell/design changes                                                 |
-| `editorDraft.ts`                  | Debounced crash-recovery draft writes (`site-shell` target)                                          |
-| `editorDraftRestore.ts`           | Page/site crash-recovery draft restore prompts                                                       |
-| `editorSmoke.ts`                  | Packaged-app smoke harness (real-project save/publish/git/draft flows)                               |
-| `editorCommands.ts`               | Mode guard, clipboard rules, paste, toolbar undo state                                               |
-| `editorGit.ts`                    | Git panel IPC (status, commit, push, pull, init)                                                     |
-| `editorParse.ts`                  | DOM parse of managed inner HTML → sections/blocks (code/visual load)                                 |
-| `editorPageModel.ts`              | Clone sections, flatten blocks, build page document snapshots                                        |
-| `editorUndo.ts`                   | Unified page + site undo snapshots, stack limit, restore                                             |
-| `editorInspector.ts`              | Inspector undo latch + debounced canvas repaint while typing                                         |
-| `editorSerialize.ts`              | Split/assemble managed page source (frontmatter + frame)                                             |
-| `editorBlockRender.ts`            | Canvas HTML sanitization, heading caps, section/block HTML for editor                                |
-| `editorBlocks.ts`                 | Block catalog: palette order/icons, default props, section templates, `KNOWN_BLOCK_TYPES` allowlist  |
-| `BlockProps/*.tsx`                | Per-block-type property editors (shared fields, content, image/gallery)                              |
-| `*Panel.tsx`, `CanvasView.tsx`, … | Solid UI mounted from `init()` via `mountPanel`                                                      |
+| `editorChrome.ts`                 | Window chrome: close/reload guards, toolbar wiring, bootstrap, onboarding                           |
+| `editorProject.ts`                | Project open lifecycle: open-queue guard, failure gates, enter-editor sequence                      |
+| `editorPageLoad.ts`               | Page loading race machinery + external-change (keep/reload) conflict flow                           |
+| `editorCanvas.ts`                 | Canvas render, drag/drop slots, properties panel + canvas interaction bindings                      |
+| `editorBlockOps.ts`               | Block/section add/move/duplicate/lock/delete/wrap + in-app clipboard                                |
+| `editorPageModals.ts`             | Page Settings + Asset Browser modals                                                                |
+| `editorSiteEditor.ts`             | Site Shell + Design System editors (stage into the pending site document)                           |
+| `editorNextActions.ts`            | Guidance cards (SEO, 404, dirty state, nav gaps)                                                    |
+| `editorStartView.ts`              | Start tabs, theme picker, create-site flow                                                          |
+| `editorHome.ts`                   | Home screen status + updater UI                                                                     |
+| `editorSettingsModal.ts`          | App settings modal + licenses                                                                       |
+| `editorKeyboard.ts`               | Global shortcuts (guards + visual/code dispatch)                                                    |
+| `editorUndoOps.ts`                | Undo/redo state machine (stack order, dirty-on-restore invariants)                                  |
+| `editorFindReplace.ts`            | Find & Replace modal (search-seq guard, dirty-gate)                                                 |
+| `editorPreviewPublish.ts`         | Preview/publish/dependency-install flows                                                            |
+| `editorSave.ts`                   | Page/site save flow, status messages, draft clear on save                                           |
+| `editorSiteSave.ts`               | Persist or discard pending site shell/design changes                                                |
+| `editorDraft.ts`                  | Debounced crash-recovery draft writes (`site-shell` target)                                         |
+| `editorDraftRestore.ts`           | Page/site crash-recovery draft restore prompts                                                      |
+| `editorSmoke.ts`                  | Packaged-app smoke harness (real-project save/publish/git/draft flows)                              |
+| `editorCommands.ts`               | Mode guard, clipboard rules, paste, toolbar undo state                                              |
+| `editorGit.ts`                    | Git panel IPC (status, commit, push, pull, init)                                                    |
+| `editorParse.ts`                  | DOM parse of managed inner HTML → sections/blocks (code/visual load)                                |
+| `editorPageModel.ts`              | Clone sections, flatten blocks, build page document snapshots                                       |
+| `editorUndo.ts`                   | Unified page + site undo snapshots, stack limit, restore                                            |
+| `editorInspector.ts`              | Inspector undo latch + debounced canvas repaint while typing                                        |
+| `editorSerialize.ts`              | Split/assemble managed page source (frontmatter + frame)                                            |
+| `editorBlockRender.ts`            | Canvas HTML sanitization, heading caps, section/block HTML for editor                               |
+| `editorBlocks.ts`                 | Block catalog: palette order/icons, default props, section templates, `KNOWN_BLOCK_TYPES` allowlist |
+| `BlockProps/*.tsx`                | Per-block-type property editors (shared fields, content, image/gallery)                             |
+| `*Panel.tsx`, `CanvasView.tsx`, … | Solid UI mounted from `init()` via `mountPanel`                                                     |
 
 **Testing:** every module ships Vitest coverage in `src/renderer/__tests__/`
 (900+ tests). The runtime smoke (`npm run smoke:runtime`, CI job) drives a real
@@ -158,6 +158,11 @@ The Windows VM is the single draft creator (`npm run release:draft` runs
 `build-scripts/ensure-draft-release.js`); mac/linux reuse that draft via
 `release:wait-draft` (`--wait` mode never creates).
 
+Every release command requires a clean checkout whose `HEAD` exactly matches
+the selected release branch (normally `beta`), refuses a version that already
+has a remote tag, and runs the full test suite before packaging. Each release
+VM must therefore check out the same commit before building.
+
 The draft is created with:
 
 - **Release notes** = the full `CHANGELOG.md` (the `release-gate.js` fails fast
@@ -169,3 +174,7 @@ The draft is created with:
 Both are re-synced on every `release:draft` run (PATCH), so a draft created
 before the final beta merge is retargeted automatically. Overrides:
 `RELEASE_BRANCH` (default `beta`) and `FORCE_TARGET_COMMIT` (manual pinning).
+
+After every platform has uploaded its artifacts and signatures, verify the
+asset set and publish the draft manually in GitHub. Never replace a published
+release or reuse its version; bump `package.json` and create a new release.

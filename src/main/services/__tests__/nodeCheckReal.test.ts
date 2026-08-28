@@ -45,48 +45,54 @@ describe("nodeCheck with the real Node binary", () => {
     expect(env["PATH"]).toBe("/usr/bin");
   });
 
-  it("caches the node resolution within its time window", async () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "zephus-nodecache-"));
-    const logFile = path.join(dir, "runs.log");
-    const fake = path.join(dir, "node");
-    // A fake node binary that records every invocation.
-    fs.writeFileSync(
-      fake,
-      `#!/bin/sh
+  it.skipIf(process.platform === "win32")(
+    "caches the node resolution within its time window",
+    async () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "zephus-nodecache-"));
+      const logFile = path.join(dir, "runs.log");
+      const fake = path.join(dir, "node");
+      // A fake node binary that records every invocation.
+      fs.writeFileSync(
+        fake,
+        `#!/bin/sh
 echo "v24.0.0" >> "${logFile}"
 echo "v24.0.0"
 `,
-      { mode: 0o755 },
-    );
-    try {
-      const first = await checkNodeVersion(fake);
-      expect(first.status).toBe("ok");
-      const second = await checkNodeVersion(fake);
-      expect(second.status).toBe("ok");
-      // The cached resolution must not re-probe the binary.
-      expect(fs.readFileSync(logFile, "utf8").trim().split("\n")).toHaveLength(
-        1,
+        { mode: 0o755 },
       );
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
-  });
+      try {
+        const first = await checkNodeVersion(fake);
+        expect(first.status).toBe("ok");
+        const second = await checkNodeVersion(fake);
+        expect(second.status).toBe("ok");
+        // The cached resolution must not re-probe the binary.
+        expect(
+          fs.readFileSync(logFile, "utf8").trim().split("\n"),
+        ).toHaveLength(1);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
 
-  it("falls back to the newest available node when every candidate is outdated", async () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "zephus-nodeold-"));
-    const fake = path.join(dir, "node");
-    fs.writeFileSync(fake, '#!/bin/sh\necho "v18.0.0"\n', {
-      mode: 0o755,
-    });
-    try {
-      // A custom path with an outdated node honestly reports "outdated"
-      // (the user's configured binary is below the minimum).
-      const result = await checkNodeVersion(fake);
-      expect(result.status).toBe("outdated");
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
-  });
+  it.skipIf(process.platform === "win32")(
+    "falls back to the newest available node when every candidate is outdated",
+    async () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "zephus-nodeold-"));
+      const fake = path.join(dir, "node");
+      fs.writeFileSync(fake, '#!/bin/sh\necho "v18.0.0"\n', {
+        mode: 0o755,
+      });
+      try {
+        // A custom path with an outdated node honestly reports "outdated"
+        // (the user's configured binary is below the minimum).
+        const result = await checkNodeVersion(fake);
+        expect(result.status).toBe("outdated");
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
 });
 
 describe("nodeCheck version parsing", () => {

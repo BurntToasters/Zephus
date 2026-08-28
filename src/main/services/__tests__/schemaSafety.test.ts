@@ -318,24 +318,27 @@ import BaseLayout from '../layouts/BaseLayout.astro';
     expect(search.error).toContain("Enter text to find");
   });
 
-  it("replace fails cleanly on an unwritable page", async () => {
-    if (process.getuid?.() === 0) return; // root ignores permissions
-    ensureVisualSchema(tmpDir, pagesDir);
-    createSchemaPage(tmpDir, pagesDir, "story");
-    const rel = pagePathFromSlug(pagesDir, "story");
-    const current = readPageDocument(tmpDir, rel, pagesDir);
-    writePageDocument(tmpDir, pagesDir, {
-      ...current.pageDocument!,
-      sections: sectionsWithText("target word here"),
-    });
-    const pagesDirAbs = path.join(tmpDir, pagesDir);
-    const mode = fs.statSync(pagesDirAbs).mode;
-    try {
-      fs.chmodSync(pagesDirAbs, 0o555);
-      const replaced = replaceAllInPages(tmpDir, pagesDir, "target", "done");
-      expect(replaced.ok).toBe(false);
-    } finally {
-      fs.chmodSync(pagesDirAbs, mode);
-    }
-  });
+  it.skipIf(process.platform === "win32")(
+    "replace fails cleanly on an unwritable page",
+    async () => {
+      if (process.getuid?.() === 0) return; // root ignores permissions
+      ensureVisualSchema(tmpDir, pagesDir);
+      createSchemaPage(tmpDir, pagesDir, "story");
+      const rel = pagePathFromSlug(pagesDir, "story");
+      const current = readPageDocument(tmpDir, rel, pagesDir);
+      writePageDocument(tmpDir, pagesDir, {
+        ...current.pageDocument!,
+        sections: sectionsWithText("target word here"),
+      });
+      const pagesDirAbs = path.join(tmpDir, pagesDir);
+      const mode = fs.statSync(pagesDirAbs).mode;
+      try {
+        fs.chmodSync(pagesDirAbs, 0o555);
+        const replaced = replaceAllInPages(tmpDir, pagesDir, "target", "done");
+        expect(replaced.ok).toBe(false);
+      } finally {
+        fs.chmodSync(pagesDirAbs, mode);
+      }
+    },
+  );
 });

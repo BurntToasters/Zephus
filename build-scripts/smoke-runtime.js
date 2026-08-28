@@ -2,7 +2,6 @@ const { spawn, spawnSync } = require("child_process");
 const path = require("path");
 
 const ROOT = path.resolve(__dirname, "..");
-const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
 const electronBinary = require("electron");
 const DEFAULT_TIMEOUT_MS = 120_000;
 const TERMINATION_GRACE_MS = 4_000;
@@ -17,6 +16,21 @@ function runCommand(cmd, args, options = {}) {
   if (result.status !== 0) {
     process.exit(result.status ?? 1);
   }
+}
+
+function runNpm(args) {
+  // npm sets npm_execpath for lifecycle scripts. Invoking its JS entry through
+  // Node avoids Windows' inability to exec npm.cmd directly via spawnSync.
+  const npmExecPath = process.env.npm_execpath;
+  if (npmExecPath && path.isAbsolute(npmExecPath)) {
+    runCommand(process.execPath, [npmExecPath, ...args]);
+    return;
+  }
+  if (process.platform === "win32") {
+    runCommand("cmd.exe", ["/d", "/s", "/c", `npm ${args.join(" ")}`]);
+    return;
+  }
+  runCommand("npm", args);
 }
 
 function delay(ms) {
@@ -106,10 +120,23 @@ function isSmokeCompletionMessage(message) {
 
 function runRuntimeSmoke(skipCompile = false) {
   if (!skipCompile) {
-    runCommand(npmCmd, ["run", "compile"]);
+    runNpm(["run", "compile"]);
   }
 
-  const smokeArgs = [".", "--dev", "--smoke"];
+  const noSandboxRequested = process.argv.includes("--no-sandbox");
+  if (
+    noSandboxRequested &&
+    (process.platform !== "linux" || process.env.CI !== "true")
+  ) {
+    console.error("--no-sandbox is allowed only for Linux CI smoke runs.");
+    process.exit(1);
+  }
+  const smokeArgs = [
+    ...(noSandboxRequested ? ["--no-sandbox"] : []),
+    ".",
+    "--dev",
+    "--smoke",
+  ];
   const env = {
     ...process.env,
     ZEPHUS_SMOKE: "1",

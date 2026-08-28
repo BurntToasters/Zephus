@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import * as path from "path";
 import {
   normalizeProjectRelativeDir,
   toProjectRelativePath,
@@ -39,14 +40,16 @@ describe("toProjectRelativePath", () => {
 
 describe("resolveProjectRelativeDir", () => {
   it("resolves relative to the project root", () => {
-    const result = resolveProjectRelativeDir("/proj", "public", "dist");
+    const projectRoot = path.resolve(path.parse(process.cwd()).root, "proj");
+    const result = resolveProjectRelativeDir(projectRoot, "public", "dist");
     expect(result.relative).toBe("public");
-    expect(result.absolute).toBe("/proj/public");
+    expect(result.absolute).toBe(path.join(projectRoot, "public"));
   });
 
   it("falls back safely when the fallback would escape", () => {
-    const result = resolveProjectRelativeDir("/proj", "/etc", "dist");
+    const projectRoot = path.resolve(path.parse(process.cwd()).root, "proj");
+    const result = resolveProjectRelativeDir(projectRoot, "/etc", "dist");
     expect(result.relative).toBe("dist");
-    expect(result.absolute).toBe("/proj/dist");
+    expect(result.absolute).toBe(path.join(projectRoot, "dist"));
   });
 });

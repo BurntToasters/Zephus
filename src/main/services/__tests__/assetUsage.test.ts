@@ -280,24 +280,27 @@ describe("assetUsage", () => {
     expect(repoint.ok).toBe(false);
   });
 
-  it("aborts mid-repoint when a page write fails", () => {
-    if (process.getuid?.() === 0) return;
-    pageWithImage("/assets/images/hero.png");
-    const sidecarDir = path.join(project, ".zephus", "pages");
-    const mode = fs.statSync(sidecarDir).mode;
-    try {
-      fs.chmodSync(sidecarDir, 0o555);
-      const result = repointAssetReferences(
-        project,
-        "src/pages",
-        "/assets/images/hero.png",
-        "/assets/images/renamed.png",
-      );
-      expect(result.ok).toBe(false);
-    } finally {
-      fs.chmodSync(sidecarDir, mode);
-    }
-  });
+  it.skipIf(process.platform === "win32")(
+    "aborts mid-repoint when a page write fails",
+    () => {
+      if (process.getuid?.() === 0) return;
+      pageWithImage("/assets/images/hero.png");
+      const sidecarDir = path.join(project, ".zephus", "pages");
+      const mode = fs.statSync(sidecarDir).mode;
+      try {
+        fs.chmodSync(sidecarDir, 0o555);
+        const result = repointAssetReferences(
+          project,
+          "src/pages",
+          "/assets/images/hero.png",
+          "/assets/images/renamed.png",
+        );
+        expect(result.ok).toBe(false);
+      } finally {
+        fs.chmodSync(sidecarDir, mode);
+      }
+    },
+  );
 
   it("reports errors for missing and empty asset paths", () => {
     const missing = findAssetUsage(project, "src/pages", "");

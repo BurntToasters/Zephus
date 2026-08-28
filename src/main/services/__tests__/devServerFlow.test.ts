@@ -17,6 +17,7 @@ vi.mock("../nodeCheck", () => ({
 }));
 
 import { startDevServer, stopDevServer, onDevServerExit } from "../devServer";
+import { npmCommand } from "../npmCommand";
 
 let tmpDir: string;
 let projectDir: string;
@@ -108,11 +109,18 @@ describe("startDevServer", () => {
     // The spawn env must carry the resolved Node dir on PATH plus the
     // no-color flags — deleting that wiring would break Node resolution and
     // ANSI-free logs, and this assertion is the only thing that notices.
-    expect(spawnMock).toHaveBeenCalledWith(
-      "npm",
+    const expectedNpm = npmCommand(
       ["run", "dev"],
+      process.platform,
+      { PATH: "/usr/bin" },
+      projectDir,
+    );
+    expect(spawnMock).toHaveBeenCalledWith(
+      expectedNpm.command,
+      expectedNpm.args,
       expect.objectContaining({
         cwd: projectDir,
+        windowsVerbatimArguments: expectedNpm.windowsVerbatimArguments,
         env: expect.objectContaining({
           PATH: "/usr/bin",
           FORCE_COLOR: "0",
@@ -157,7 +165,10 @@ describe("startDevServer", () => {
       spawnMock.mockReturnValue(fakeChild());
       void startDevServer(projectDir, () => undefined);
       await vi.advanceTimersByTimeAsync(0);
-      expect(spawnMock).toHaveBeenCalledTimes(2);
+      const serverSpawns = spawnMock.mock.calls.filter(
+        ([command]) => command !== "taskkill",
+      );
+      expect(serverSpawns).toHaveLength(2);
       stopDevServer();
     } finally {
       vi.useRealTimers();
@@ -182,64 +193,78 @@ describe("startDevServer", () => {
     unsub();
   });
 
-  it("stop falls back to child.kill when the process group cannot be signalled", async () => {
-    makeProject();
-    const child = fakeChild();
-    spawnMock.mockReturnValue(child);
-    const exited = vi.fn();
-    const unsub = onDevServerExit(exited);
-
-    const promise = startDevServer(projectDir, () => undefined);
-    await vi.waitFor(() => expect(spawnMock).toHaveBeenCalled());
-    child.stdout.emit("data", Buffer.from("Local: http://localhost:4321/\n"));
-    await promise;
-
-    // A fake pid has no process group: process.kill(-pid) throws ESRCH and
-    // the implementation must fall back to signalling the child directly.
-    stopDevServer();
-    await new Promise((r) => setTimeout(r, 0));
-    expect(child.kill).toHaveBeenCalled();
-    expect(exited).toHaveBeenCalled();
-    unsub();
-  });
-
-  it("escalates to SIGKILL when the group survives SIGTERM", async () => {
-    vi.useFakeTimers();
-    try {
+  it.skipIf(process.platform === "win32")(
+    "stop falls back to child.kill when the process group cannot be signalled",
+    async () => {
       makeProject();
       const child = fakeChild();
-      // Keep the group "alive" through SIGTERM so the escalation fires.
-      const killSpy = vi.spyOn(process, "kill").mockReturnValue(true as never);
-      child.kill = vi.fn(() => true);
       spawnMock.mockReturnValue(child);
       const exited = vi.fn();
       const unsub = onDevServerExit(exited);
 
       const promise = startDevServer(projectDir, () => undefined);
-      await vi.advanceTimersByTimeAsync(0);
+      await vi.waitFor(() => expect(spawnMock).toHaveBeenCalled());
       child.stdout.emit("data", Buffer.from("Local: http://localhost:4321/\n"));
       await promise;
 
+      // A fake pid has no process group: process.kill(-pid) throws ESRCH and
+      // the implementation must fall back to signalling the child directly.
       stopDevServer();
-      await vi.advanceTimersByTimeAsync(5000);
-      // SIGTERM for the group, then a SIGKILL escalation after the grace.
-      expect(killSpy).toHaveBeenCalledWith(-4242, "SIGTERM");
-      expect(killSpy).toHaveBeenCalledWith(-4242, "SIGKILL");
-      killSpy.mockRestore();
+      await new Promise((r) => setTimeout(r, 0));
+      expect(child.kill).toHaveBeenCalled();
+      expect(exited).toHaveBeenCalled();
       unsub();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "escalates to SIGKILL when the group survives SIGTERM",
+    async () => {
+      vi.useFakeTimers();
+      try {
+        makeProject();
+        const child = fakeChild();
+        // Keep the group "alive" through SIGTERM so the escalation fires.
+        const killSpy = vi
+          .spyOn(process, "kill")
+          .mockReturnValue(true as never);
+        child.kill = vi.fn(() => true);
+        spawnMock.mockReturnValue(child);
+        const exited = vi.fn();
+        const unsub = onDevServerExit(exited);
+
+        const promise = startDevServer(projectDir, () => undefined);
+        await vi.advanceTimersByTimeAsync(0);
+        child.stdout.emit(
+          "data",
+          Buffer.from("Local: http://localhost:4321/\n"),
+        );
+        await promise;
+
+        stopDevServer();
+        await vi.advanceTimersByTimeAsync(5000);
+        // SIGTERM for the group, then a SIGKILL escalation after the grace.
+        expect(killSpy).toHaveBeenCalledWith(-4242, "SIGTERM");
+        expect(killSpy).toHaveBeenCalledWith(-4242, "SIGKILL");
+        killSpy.mockRestore();
+        unsub();
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
 
   it("refuses a second start while the first is still starting", async () => {
     makeProject();
-    spawnMock.mockReturnValue(fakeChild());
+    const child = fakeChild();
+    spawnMock.mockReturnValue(child);
     const first = startDevServer(projectDir, () => undefined);
     const second = await startDevServer(projectDir, () => undefined);
     expect(second.ok).toBe(false);
     expect(second.error).toContain("already starting");
+    await vi.waitFor(() => expect(spawnMock).toHaveBeenCalled());
     stopDevServer();
+    if (process.platform === "win32") child.kill();
     await first.catch(() => undefined);
   });
 
@@ -257,7 +282,10 @@ describe("startDevServer", () => {
     );
     const childA = fakeChild();
     const childB = fakeChild();
-    spawnMock.mockReturnValueOnce(childA).mockReturnValueOnce(childB);
+    const children = [childA, childB];
+    spawnMock.mockImplementation((command: string) =>
+      command === "taskkill" ? fakeChild() : children.shift(),
+    );
     const exited = vi.fn();
     const unsub = onDevServerExit(exited);
 
@@ -267,7 +295,12 @@ describe("startDevServer", () => {
     await first;
 
     const secondPromise = startDevServer(other, () => undefined);
-    await vi.waitFor(() => expect(spawnMock).toHaveBeenCalledTimes(2));
+    if (process.platform === "win32") childA.kill();
+    await vi.waitFor(() =>
+      expect(
+        spawnMock.mock.calls.filter(([command]) => command !== "taskkill"),
+      ).toHaveLength(2),
+    );
     childB.stdout.emit("data", Buffer.from("Local: http://localhost:5000/\n"));
     const second = await secondPromise;
     expect(second.ok).toBe(true);

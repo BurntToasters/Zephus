@@ -101,9 +101,7 @@ describe("page operation security", () => {
       "<p>hand</p>",
     );
     expect(result.ok).toBe(true);
-    expect(result.pageDocument?.page).toBe(
-      path.join("src", "pages", "index.astro"),
-    );
+    expect(result.pageDocument?.page).toBe("src/pages/index.astro");
     expect(result.pageDocument?.detached).toBe(true);
   });
 });
@@ -183,24 +181,27 @@ describe("page operation success paths", () => {
 });
 
 describe("wizard rollback", () => {
-  it("cleans the target folder when a write fails mid-scaffold", () => {
-    if (process.getuid?.() === 0) return;
-    const fresh = path.join(tmpDir, "fresh");
-    fs.mkdirSync(fresh, { recursive: true });
-    // Read-only parent: the scaffold cannot write, and the rollback must not
-    // leave a partial .zephus claiming to be a Zephus project.
-    const parent = path.join(tmpDir, "blocked");
-    fs.mkdirSync(parent, { recursive: true });
-    fs.chmodSync(parent, 0o555);
-    try {
-      const result = createSite(path.join(parent, "site"), "minimal");
-      expect(result.ok).toBe(false);
-    } finally {
-      fs.chmodSync(parent, 0o755);
-    }
-    // The successfully-written case still cleans residue.
-    expect(fs.existsSync(fresh)).toBe(true);
-  });
+  it.skipIf(process.platform === "win32")(
+    "cleans the target folder when a write fails mid-scaffold",
+    () => {
+      if (process.getuid?.() === 0) return;
+      const fresh = path.join(tmpDir, "fresh");
+      fs.mkdirSync(fresh, { recursive: true });
+      // Read-only parent: the scaffold cannot write, and the rollback must not
+      // leave a partial .zephus claiming to be a Zephus project.
+      const parent = path.join(tmpDir, "blocked");
+      fs.mkdirSync(parent, { recursive: true });
+      fs.chmodSync(parent, 0o555);
+      try {
+        const result = createSite(path.join(parent, "site"), "minimal");
+        expect(result.ok).toBe(false);
+      } finally {
+        fs.chmodSync(parent, 0o755);
+      }
+      // The successfully-written case still cleans residue.
+      expect(fs.existsSync(fresh)).toBe(true);
+    },
+  );
 });
 
 describe("metadata fallbacks", () => {
@@ -251,25 +252,28 @@ describe("metadata fallbacks", () => {
 });
 
 describe("deletePage restore", () => {
-  it("restores the file when the site write fails", () => {
-    if (process.getuid?.() === 0) return;
-    ensureVisualSchema(project, "src/pages");
-    const rel = path.join("src", "pages", "restore-me.astro");
-    const created = createSchemaPage(project, "src/pages", "restore-me");
-    expect(created.ok).toBe(true);
-    const before = fs.readFileSync(path.join(project, rel), "utf8");
-    // Block site.json writes so the post-delete sync fails.
-    const zephusDir = path.join(project, ".zephus");
-    const mode = fs.statSync(zephusDir).mode;
-    try {
-      fs.chmodSync(zephusDir, 0o555);
-      const result = deletePage(project, rel, "src/pages");
-      expect(result.ok).toBe(false);
-      // The file must come back byte-for-byte.
-      expect(fs.existsSync(path.join(project, rel))).toBe(true);
-      expect(fs.readFileSync(path.join(project, rel), "utf8")).toBe(before);
-    } finally {
-      fs.chmodSync(zephusDir, mode);
-    }
-  });
+  it.skipIf(process.platform === "win32")(
+    "restores the file when the site write fails",
+    () => {
+      if (process.getuid?.() === 0) return;
+      ensureVisualSchema(project, "src/pages");
+      const rel = path.join("src", "pages", "restore-me.astro");
+      const created = createSchemaPage(project, "src/pages", "restore-me");
+      expect(created.ok).toBe(true);
+      const before = fs.readFileSync(path.join(project, rel), "utf8");
+      // Block site.json writes so the post-delete sync fails.
+      const zephusDir = path.join(project, ".zephus");
+      const mode = fs.statSync(zephusDir).mode;
+      try {
+        fs.chmodSync(zephusDir, 0o555);
+        const result = deletePage(project, rel, "src/pages");
+        expect(result.ok).toBe(false);
+        // The file must come back byte-for-byte.
+        expect(fs.existsSync(path.join(project, rel))).toBe(true);
+        expect(fs.readFileSync(path.join(project, rel), "utf8")).toBe(before);
+      } finally {
+        fs.chmodSync(zephusDir, mode);
+      }
+    },
+  );
 });

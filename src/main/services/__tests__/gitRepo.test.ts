@@ -63,6 +63,8 @@ describe("git service (real repository)", () => {
 
   it("classifies working-tree changes after a commit", async () => {
     git(["init", "-q", "-b", "main"]);
+    git(["config", "user.email", "test@example.com"]);
+    git(["config", "user.name", "Tester"]);
     fs.writeFileSync(path.join(repoDir, "a.txt"), "one\n");
     const before = await getGitStatus(repoDir);
     expect(before.added).toContain("a.txt");
@@ -96,6 +98,8 @@ describe("git service (real repository)", () => {
 
   it("commits selected paths only", async () => {
     git(["init", "-q", "-b", "main"]);
+    git(["config", "user.email", "test@example.com"]);
+    git(["config", "user.name", "Tester"]);
     fs.writeFileSync(path.join(repoDir, "keep.txt"), "keep");
     fs.writeFileSync(path.join(repoDir, "skip.txt"), "skip");
 

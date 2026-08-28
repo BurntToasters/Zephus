@@ -31,7 +31,7 @@ describe("installDependencies (real npm)", () => {
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   it("cancels a running install via cancelInstall", async () => {
     if (process.platform === "win32") return;
