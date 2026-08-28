@@ -3,11 +3,12 @@
 
 # ⬇️ Downloads
 
-| <img height="20" src="https://raw.githubusercontent.com/BurntToasters/bcls/main/media/windows.png" /> Windows                                                                                                              | <img height="20" src="https://raw.githubusercontent.com/BurntToasters/bcls/main/media/mac.png" /> macOS                 | <img height="20" src="https://raw.githubusercontent.com/BurntToasters/bcls/main/media/linux.png" /> Linux                                                                                                                                         |
-| :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :---------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| <img height="20" src="https://raw.githubusercontent.com/BurntToasters/bcls/main/media/windows.png" /> Windows                                                                                                              | <img height="20" src="https://raw.githubusercontent.com/BurntToasters/bcls/main/media/mac.png" /> macOS                 | <img height="20" src="https://raw.githubusercontent.com/BurntToasters/bcls/main/media/linux.png" /> Linux                                                                                                                                |
+| :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :---------------------------------------------------------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **EXE:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.5/Zephus-Windows-x64.exe) / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.5/Zephus-Windows-arm64.exe) | **[Universal DMG](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.5/Zephus-MacOS-universal.dmg)** | **AppImage:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.5/Zephus-Linux-x86_64.AppImage) / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.5/Zephus-Linux-arm64.AppImage) |
 |                                                                                                                                                                                                                            | **[Universal ZIP](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.5/Zephus-MacOS-universal.zip)** | **DEB:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.5/Zephus-Linux-amd64.deb) / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.5/Zephus-Linux-arm64.deb)                 |
 |                                                                                                                                                                                                                            |                                                                                                                         | **RPM:** [x64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.5/Zephus-Linux-x86_64.rpm) / [arm64](https://github.com/BurntToasters/zephus/releases/download/v0.1.0-beta.5/Zephus-Linux-aarch64.rpm)              |
+
 > [!IMPORTANT]
 > Update integrity: updates are downloaded over HTTPS and their SHA-512 checksum (from the release feed) is verified by the updater before install. The `.asc` files are GPG signatures you can verify manually with my GPG Public Key: https://tuxedo.rosie.run/GPG/BurntToasters_0xF2FBC20F_public.asc
 >
@@ -22,23 +23,26 @@
 # Zephus Changelog
 
 ## 0.1.0-beta.6 — Release Candidate for 0.1.0
+
 ### Round 36 — production polish for the 0.1.0 RC
 
 **Security hardening:**
+
 - **Permission requests denied app-wide** (`setPermissionRequestHandler` + check handler) — embedded iframes (video/embed blocks, theme previews) can never request camera/mic/geolocation.
 - **Fire-and-forget IPC rejections caught** (stale site-draft clear, config-folder open) — no unhandled rejections in the renderer.
 
 **Packaging & CI:**
+
 - **Packaged boot check** (`smoke:packaged`): builds the app dir, launches the signed binary with `ZEPHUS_BOOT_CHECK=1`, asserts the renderer loads and the process exits 0 — the gate that shipped binaries actually boot (the runtime smoke is intentionally disabled packaged). Wired into the CI build-smoke job on all three OSes (xvfb on Linux).
 - **Smoke publish no longer opens Finder windows** — `buildAndReveal` gains `reveal: false` in smoke mode; stale `zephus-smoke-*` temp dirs purge automatically (older than 10 min).
 - **GitHub release authentication now uses the `gh` CLI credential store** — stale `.env` tokens can no longer break draft creation or artifact uploads, matching ROSI's release flow.
 
 **UX polish:**
+
 - **Window title now follows the project + page** ("Site — Page — Zephus"), reset on close — asserted by the smoke suite.
 - **Chrome wiring coverage** (preview URL chip copy, resume-last, save button): editorChrome 47% → 51.8%.
 
 **Dependencies:** patch-level updates only for the RC (electron 42.9.0, esbuild 0.28.2, lucide 1.31.0, typescript-eslint 8.67.0). Electron 42 release notes reviewed — nothing breaking (the app is code-signed, fuses set).
-
 
 ### Round 35 — beta.6 RC hardening
 
@@ -47,35 +51,30 @@
 - **Packaged-app verification**: `electron-builder --dir` builds and signs with the Developer ID; the packaged app boots cleanly (the runtime smoke is intentionally gated off shipped binaries — round-15 hardening).
 - **Development guide updated** to the final ~34-module architecture, the testing stack, and the smoke suite.
 
-
-
 All rounds 15-34 above; this build is treated as the 0.1.0 release candidate:
 engine decomposed into ~34 tested modules, end-to-end runtime smoke (save,
 drafts, publish, git, external-change), IPC bridge drift-guarded, CI smoke
 job, zero lint warnings.
 
-
-
 ### Round 34 (cont.) — BlockProperties split + fresh audit
 
 **Component structure:**
+
 - **BlockProperties.tsx (1,167 lines) split into four files**: `BlockProps/shared.tsx` (field components + state contract), `BlockProps/content.tsx` (the per-block-type content editors), `BlockProps/imageGallery.tsx` (image + gallery groups), and the main file down to 294 lines (layout/style/responsive/actions + the panel render).
 
 **Audit (verified clean):**
+
 - PageModals / InsertModals / FindReplaceModal bodies: controlled inputs throughout, no injection vectors, correct 404-nav hiding, slug-change remount handled by the engine.
 - styles.css: a defined-vs-used class scan flagged 33 candidates — all are dynamic class usages (classList.toggle, template literals) — no genuinely dead CSS.
 
 **Note (D workstream):** mounting Solid shells under jsdom hit a vitest-4 toolchain wall — aliasing, dedupe, inline, and browser conditions each still produced two solid-js core copies whose signals cannot interoperate (verified empirically). Reverted cleanly; the shells remain smoke-covered, which is appropriate for thin render layers over already-tested logic.
 
-
-
 ### Round 34 (cont.) — project-open extraction (engine 3,554 → 3,335)
 
 **Structure:**
+
 - **Project open lifecycle extracted** into `editorProject.ts` (~270 lines): the open-queue guard, the failure gates (not-a-zephus, damaged, git-init), and the enter-editor sequence (schema ensure → site load → draft resume → page load) — the open transaction is now one module with a deps contract.
 - **4 new unit tests** (module at 65.8%): failed-open cleanup, non-Zephus refusal, damaged-project rejection, and the open-queue honoring a user click over the auto-restore.
-
-
 
 ### Round 34 — CI smoke job, lint zero, chrome extraction (engine 3,812 → 3,554)
 
@@ -83,38 +82,31 @@ job, zero lint warnings.
 **Lint:** 63 warnings → 0 — dead imports accumulated across the engine during extraction, dead destructures in tests, and unused vars cleared.
 **Structure:** window chrome extracted (`editorChrome.ts`, ~265 lines) — the close/reload guards, toolbar wiring, preview listeners, viewports, keyboard registration, bootstrap sequence (settings → updater → last-project restore → onboarding). The extraction surfaced a real cut: the `DOMContentLoaded → init` registration was clipped with the bootstrap block and the app failed to boot — caught by the smoke suite.
 
-
-
 ### Round 33 — audit: undo latch, site-save layer, onboarding
 
 **Audit (verified clean):**
+
 - **Inspector undo latch + debounced canvas repaint** (`editorInspector.ts`): snapshot-at-begin/push-on-change-at-end semantics, nested-begin protection, markActive for explicit-undo flows, repaint flush/cancel — no phantom-entry or redo-wipe paths found.
 - **Site-save layer** (`editorSiteSave.ts`, 94.2% covered): disk-drift check before write, newer-edits-in-flight guard, draft clearing with warning surfacing, revision guards — sound.
 - **Onboarding flow**: first-launch-only (recent-projects check + localStorage dismissal), non-fatal storage failures, correct modal actions.
 
-
-
 ### Round 32 — site editor extraction (engine 4,088 → 3,812)
 
 **Structure:**
+
 - **Site Shell + Design System editors extracted** into `editorSiteEditor.ts` (~290 lines) — both modals stage into the pending site document with the custom-HTML warning gate and the self-referencing-accent guard.
 - **4 new unit tests**: shell staging with site URL, the first-time custom-HTML warning gate (declined = nothing staged), the var(--accent) self-reference rejection, and design staging with a concrete accent.
-
-
 
 ### Round 31 — page-load orchestration extracted (engine 4,412 → 4,088)
 
 **Structure:**
+
 - **Page loading + external-change orchestration** (`editorPageLoad.ts`, ~350 lines) — the race machinery (request counter, serialized chain, change-during-read detection), the watcher conflict flow (keep/reload with echo suppression), and the loading-state UI now live in one module with a deps contract. The engine's save flow routes its post-save watcher-echo suppression through the loader.
 - **4 new unit tests** (module at 80.9%): happy-path load, project-close mid-load invalidation (resetLoadPipeline), external-change Reload flow, and Keep-Mine with same-change suppression — the invariants that previously had only smoke coverage.
-
-
 
 ### Round 30 (cont.) — next-actions action coverage
 
 - **4 more next-actions tests (11 total)**: Fix-Heading selects the second H1, Create-404 calls through, Open-Site-Shell opens the modal, Discard-Site clears pending site changes. Module coverage 43.6% → 54.5%; floor raised to 50.
-
-
 
 ### Round 30 — start-view + settings coverage raise
 
@@ -122,106 +114,98 @@ job, zero lint warnings.
 - **Settings modal node flows (7 tests total)**: custom node-path pick, auto-detect reset, updater check.
 - Module coverage: startView 47.5% → 53.6%, settingsModal 44.3% → 58.8%; floors raised accordingly.
 
-
-
 ### Round 29 (cont.) — block-ops coverage raise
 
 - **6 new block-ops unit tests** (16 total): cut-then-paste round-trip, section paste preserving label, empty-clipboard report, allowed-blocks filtering on add, templateAllowed with disallowed blocks, saved-section template resolution. Module coverage 41% → 54.5%; floor raised to 50.
-
-
 
 ### Round 29 — external-change pipeline in the smoke suite
 
 - **The watcher → IPC → reload pipeline is now exercised end to end**: the smoke writes to the open page's file from outside the app (via a detach), asserts the "File Changed on Disk" prompt appears, clicks Reload, and verifies the new text lands in the editor. This covers the fs.watch → externalChange → conflict-modal → reload path that previously had zero runtime verification.
 - Bundle analysis confirmed CodeMirror (~60% of the 1.73 MB renderer bundle) is the legit cost of the embedded editor — the earlier 400 KB solid-store attribution was a span-misattribution (actual input: 16 KB); no further bundle action warranted.
 
-
-
 ### Round 28 — CI hardening + undo/redo extraction
 
 **CI:**
+
 - **The runtime smoke suite could not run headless** (no X server on ubuntu runners) — `test:all` now wraps the smoke in `xvfb-run` when `DISPLAY` is unset on Linux.
 - **Windows smoke scaffold fallback**: directory symlinks need admin/Developer Mode — the toolchain link now uses junctions on win32 (best-effort; the real-project flows degrade gracefully when the link cannot be created).
 
 **Structure:**
+
 - **Undo/redo extracted** into `editorUndoOps.ts` (the visual editor's undo state machine) with **6 unit tests** locking the invariants: the mid-drag latch guard, empty-stack no-ops, stack push/pop ordering, and the dirty-flag logic (undoing away from the saved source stays dirty; undoing back to it clears the flag).
-
-
 
 ### Round 27 — unit coverage for the round-25 extractions
 
 **24 new unit tests closing the test gap on the round-25 modules:**
+
 - **Keyboard handler (12 tests)**: Cmd+S save, modal-open suppression, busy-state guard, undo/redo dispatch, Cmd+D duplicate, Delete with chrome-control focus guard, viewport shortcuts (incl. no-op when already on that viewport), mode toggle, find-modal, help from background, CodeMirror undo in code mode.
 - **Next Actions guidance (7 tests)**: hidden without a project, save-all on dirty, site-URL recommendation, missing-404 recommendation, multi-H1 flag, valid/invalid publish-date handling.
 - **Settings modal (5 tests)**: open + node-status seeding, save applies theme/font, reset-to-defaults with confirmation, declined-reset refusal, updater check action.
 
 **Coverage:** per-file floors added for the three modules (keyboard 65, settings 40, next-actions 40); the overall gate tracks the extraction reality (82/84) with the module floors + runtime smoke doing the real regression gating.
 
-
-
 ### Round 26 — real-project smoke suite (save/drafts/publish/git end to end)
 
 **The smoke suite now drives a REAL project** instead of synthesizing renderer-only state:
+
 - Main scaffolds a minimal site into a temp dir (with git repo + identity + symlinked toolchain) before the renderer checks run, and cleans it up after.
 - The editor smoke hook opens it and exercises: recovery-draft write after an unsaved edit (debounce window), save clearing the draft + writing the file, a real Astro `npm run build` publish completing, and a git commit landing — plus project close.
 - Two bugs found and fixed while wiring it up:
   - **The unsaved-changes modal hung the smoke** (needed manual intervention): the synthesized session state left residual dirty flags/undo entries, and `loadPage`'s dirty guard popped the save/discard/cancel prompt the smoke cannot answer. The hook now force-cleans the synthesized session before the real open.
   - **The smoke scaffold had no git repo/identity** (`createSite` alone doesn't init git — the IPC handler does) — git commit flows failed and `git add -A` hung against un-ignored trees.
 
-
-
 ### Round 25 — major overhaul: decomposition completion + hardening
 
 **Structure (engine 5,156 → 4,454 lines):**
+
 - **Settings modal + licenses modals extracted** (`editorSettingsModal.ts`, ~340 lines) — node-path flows, updater actions, in-place status patching, reset/save with app-settings seeding.
 - **Next Actions guidance renderer extracted** (`editorNextActions.ts`, ~280 lines) — the guidance-card logic (SEO, 404, dirty state, nav gaps) is now unit-testable with a deps contract.
 - **Global keyboard handler extracted** (`editorKeyboard.ts`, ~200 lines) — all shortcuts (guards, visual/code dispatch, chrome-control focus) in one testable module.
 - The project-open orchestration stays in the engine deliberately: it is the coherent core (625-line open flow with failure recovery + git gates), and fragmenting it would split one transaction across modules.
 
 **Bundle (−46 KB minified):**
+
 - **The full lucide icon-catalog alias map (~120 KB, 196 KB unminified) was being bundled** for ~40 icons. Icons now deep-import per file and `createIcons` is vendored locally (a ~60-line faithful copy) — the catalog is gone from the bundle; icons render identically (smoke-verified).
 
 **IPC bridge hardening:**
+
 - New `ipcBridgeSync.test.ts`: every declared channel must be handled/sent in main, used by the preload, declared in the renderer typing, and every engine `window.zephus.*` call must exist in the typing — the three hand-synced surfaces can no longer drift silently.
 
 **Smoke suite expansion:**
+
 - The smoke hook is now async and adds chrome-level checks: Help modal open/close, Settings modal open/close, dirty-flag round-trip, and undo-button state vs stack. (Full project save/publish/git flows need a real on-disk project — the scaffold-and-open smoke harness is the natural next step.)
 
 **Session reset audit (WS5):** `closeProject`/`resetOpenPageState`/delete-page paths verified — preview teardown, watcher, subscriptions, clipboard, saved-sections cache, site doc + pending site, pageMeta, recovered drafts all reset; no gaps found.
 
-
-
 ### Audit round 24 — home/updater extraction (engine 5,348 → 5,156)
 
 **Structure:**
+
 - **Home screen + updater UI extracted** into `editorHome.ts` (~220 lines) — draft-recovery cards, recent projects, sidebar update status, and the update prompts now share one module with their state (updater snapshot, draft summaries) behind accessors. The engine's updater listener and recovery-card handler feed it through `setUpdaterSnapshot` / `getHomeDraftSummaries`.
 - **5 new unit tests**: draft-summary refresh, per-state updater status/actions, single-prompt-per-version dedupe, settings seeding from renderRecent.
-
-
 
 ### Audit round 23 — block operations extraction (engine 5,813 → 5,348)
 
 **Structure:**
+
 - **Page-structure operations extracted** into `editorBlockOps.ts` (~690 lines) — the block/section layer: add, move, duplicate, lock, delete, wrap, and the in-app clipboard (copy/cut/paste). Every page mutation outside the inspector now flows through this module, so future block features land here with one deps contract. The engine's ops state (editorClipboard, delete-confirm latch, saved-sections cache) moved with it, exposed through narrow accessors.
 - **10 new unit tests** locking the guards: locked-section insertion/paste refusal, cross-section moves, duplicate fresh-ids, wrap, delete-confirm, section duplication.
 
 **Coverage:** per-file floor for the new module; overall gate recalibrated to 85/87 (extracted UI layers are gated by their own floors + the runtime smoke suite).
 
-
-
 ### Audit round 22 — page modals extraction (engine 6,407 → 5,813)
 
 **Structure:**
+
 - **Page Settings + Asset Browser modals extracted** into `editorPageModals.ts` (~610 lines) — the two modals share the asset browser (page meta picks social images through it), the dirty-work gate, and the modal controller. The engine lost another ~600 lines; the modal logic is now unit-testable with a deps contract.
 - **8 new unit tests**: page-settings open/save/rename/404-slug flows and asset-browser delete/drop-import/dirty-gate flows (the dirty-gate refusal test locks in the "never repoint saved files while edits are unsettled" guarantee).
 
 **Coverage:** per-file floors added for the new module; the overall gate now sits at 88/90 with the module floors doing the real regression gating.
 
-
-
 ### Audit round 21 — major engine decomposition (part 2)
 
 **Structure (zephusEngine.ts: 7,247 → 6,407 lines):**
+
 - **Canvas interaction handlers extracted** into `editorCanvas.ts` (`bindCanvasHandlers`, ~265 lines) — the 20+ SolidJS canvas callbacks (selection, actions, drag/drop slots, inline editing, resize-handle sync) now live with the canvas module that owns the drag-slot state.
 - **Editor smoke harness extracted** into `editorSmoke.ts` (~260 lines) — the packaged-app DOM test suite is now a module with a deps contract (this caught a real bug: the extraction produced a corrupted module with a duplicate function definition that silently broke the smoke suite — fixed and verified against the real app).
 - **Start view extracted** into `editorStartView.ts` (~480 lines) — start tabs, theme picker, settings/about tabs, and the create-site flow, with their module state (selectedTabTheme, preview server URL, theme list, create-in-flight guard). 8 unit tests added (tab roving focus, create-flow gates, theme header mapping).
@@ -229,14 +213,11 @@ job, zero lint warnings.
 
 **Coverage:** the overall gate is now 90/91 (was 92/93) with per-file floors — extracted UI glue is exercised by the runtime smoke suite (full app boot) rather than unit tests; the new files get explicit per-file floors so a regression still fails the gate.
 
-
-
 ### Audit round 20 — reload vs close guard
 
 **Fixed:**
+
 - **Cmd/Ctrl+R with unsaved work closed the app instead of reloading** — the beforeunload guard resolved the save/discard modal, then always called `window.close()`. A reload intent now reloads: the main process intercepts Cmd/Ctrl+R (before the menu accelerator can fire) and forwards it to the renderer, which resolves unsaved work first, then reloads for real. The beforeunload path distinguishes reload from close via the navigation-timing entry type (compared against the window's first-load type, so closing after an earlier reload still closes).
-
-
 
 ### Audit round 19 — git/code-editor/save/theme audit + workspace-tab tests
 
@@ -244,48 +225,47 @@ job, zero lint warnings.
 
 **Tests:** added unit coverage for the workspace tabs module (the last extracted module without tests) — roving-tab focus, arrow-key navigation, click switching, and focus escaping a soon-hidden panel.
 
-
-
 ### Audit round 18 — find/replace extraction + draft-system audit
 
 **Fixed:**
+
 - **The "Nothing to replace" path was dead code** — Replace All re-searched first, and when the fresh search had zero matches the handler returned before the "Nothing to replace." status could fire. Now reported properly.
 
 **Architecture (third engine extraction):**
+
 - **Find & Replace moved out of zephusEngine.ts** into `editorFindReplace.ts` (~185 lines), with 12 new unit tests covering the search-seq guard (a stale in-flight response must never repopulate the list or drive a replace), the Replace All dirty-guard, failure paths, and option invalidation. The tests surfaced the dead-code bug above.
 
 **Audit (verified clean):** the crash-draft system end to end — debounced writes, save-path clearing, stale-draft cleanup on undo-to-baseline, main-side store (keyed hashing, 30-day retention, atomic writes, corrupt-file backup), and the home-screen recovery card flow.
 
-
-
 ### Audit round 17 — canvas/properties extraction
 
 **Architecture (second engine extraction):**
+
 - **Canvas rendering, drag/drop, and the properties (inspector) panel moved out of zephusEngine.ts** into `editorCanvas.ts` (~485 lines) — with their module state: drag slots, the drop indicator, double-click tracking, and the inspector selection key. The engine is ~485 lines lighter; the canvas code is now unit-testable with an explicit deps contract. The engine's canvas-component callbacks read/write the drag slots through narrow accessors instead of shared mutable variables.
-
-
 
 ### Audit round 16 — publish streaming + fresh service-layer pass
 
 **Publish (fixed):**
+
 - **A long production build read as a hang** — `buildAndReveal` buffered the entire build output and only delivered it AFTER completion, so the log panel stayed empty for minutes on a first build. Now streamed chunk-by-chunk (spawn, like the install flow), with a regression test asserting the first chunk arrives before the build resolves.
 
 **Fresh audit (verified clean):** IPC surface argument validation + approved-project gating, path containment (safeResolve / symlink-aware checks in assets, watch, theme-preview server), updater channel-approval flow, dev-server lifecycle (stop-epoch, process-group kill, URL scanner), modal focus trap + Escape, global keyboard guards (editing, modal suppression, CodeMirror handoff), save-flow propagation of the round-15 site write fix.
 
-
-
 ### Beta 6 — round 15
 
 **Build pipeline (fixed):**
+
 - **A missing or stale renderer bundle shipped silently** — `zephusEngine.js` is a gitignored artifact in src/, and electron-builder globs it without complaining: any build without a fresh compile packaged a blank-window app with zero errors. The copy step now verifies the bundle exists and is newer than the newest renderer source.
 - **`npm start` (`electron .`) ran without devtools** — the `!process.defaultApp` clause was inverted (`electron .` sets it true). Now correctly detected.
 - **A plain `tsc` could overwrite the esbuild bundle** with raw unbundled output (the renderer tsconfig emitted into src/). The config is now `noEmit`.
 - **The smoke harness was triggerable on shipped binaries** (`--smoke` / `?smoke=1`) — gated on `!isPackaged`.
 
 **Git noise (fixed):**
+
 - **Every page save bumped site.json's `generatedAt`** (churn in every commit even for body-copy-only saves). The three site-writing paths now skip the write when the site (ignoring generatedAt) is unchanged — the returned site stays byte-equal to disk so the renderer's drift check cannot false-positive.
 
 **UX (fixed):**
+
 - **The Site URL validation failure was invisible** — the error went to the status bar, which sits UNDER the modal overlay. Now renders inline in the modal.
 - **The git branch chip in the topbar was a dead span** that looked clickable — now opens the Git panel.
 - **The preview URL vanished after 6 seconds** (status bar auto-clear) — a persistent chip with copy-to-clipboard sits next to the Preview button while running.
@@ -293,9 +273,8 @@ job, zero lint warnings.
 - **Editing a page title left the nav label stale** — the nav label now follows the title until it is hand-set.
 
 **Architecture (first engine extraction):**
+
 - **Preview, publish, and dependency-install moved out of zephusEngine.ts** into `editorPreviewPublish.ts` (~375 lines) using the established deps-object pattern — with their three pieces of module state (previewStartInFlight, publishInFlight, previewLogSubscriptions). The engine is ~375 lines lighter and the preview/publish logic is now unit-testable. The full gate (799 tests, smoke, astro-build, coverage) is green on the cutover.
-
-
 
 ### ✨ Welcome to the Zephus 0.1.0 beta
 
@@ -332,18 +311,21 @@ Zephus is a **local-first visual editor for Astro sites** — no coding required
 ### Audit round 14 — layout/feed correctness, inline editor, Windows paths, theme copy
 
 **Legacy layouts (fixed):**
+
 - **The legacy-layout nav sync was a complete NO-OP** — a depth-counting off-by-one (the opener was counted twice) made every balanced `<nav>` exit with depth 1, so the replacement never ran: labels, visibility and CTAs were permanently stale for legacy-mode projects. The depth math is fixed and verified for nested navs.
 - **User nav ordering is now preserved** across syncs (previously rebuilt alphabetically, discarding editor reorders); a custom override keeps the original page item's children instead of dropping them.
 - **A hand-edited site.json with non-string nav/shell fields crashed the whole project open** — `withSiteDefaults` now coerces every field.
 - The Google Fonts link was dropped for `HTTPS://` or space-padded URLs (trim + case-insensitive); **custom.css now loads AFTER managed.css** so user overrides actually win; nav-link color no longer overrides `.button`-styled nav items (`:where()`).
 
 **Feeds & SEO (fixed):**
+
 - **XML-forbidden control characters** (from pasted Word/terminal text) passed raw into rss.xml, invalidating the whole feed for every reader — now stripped.
 - **noindex and 404 pages were advertised in post lists** (and the derived feed/sitemap) — filtered from the index; detached pages' stale sidecar metadata no longer feeds listings either.
 - **A hand-authored rss.xml was preserved but never advertised** when no dated posts existed — the layout now links it.
 - **A scheme-less canonicalUrl/socialImage (`example.com/x`) resolved as a relative path** — sitemap loc, RSS link and canonical all became `https://site/example.com/x` (guaranteed 404). Bare host-shaped values now resolve as absolute https; root-relative routes (`/posts/x`) resolve against the origin, never a base-path prefix.
 
 **Inline editor (fixed):**
+
 - **Nested links silently vanished on render**: select text inside an existing link and apply a new one — `createLink` nests anchors, the stored prop carried invalid nested markup, and the renderer dropped the inner link. The read-back now mirrors the render-side guard (drop the tag, keep the text).
 - **Dragging a block while inline-editing stuck the editor** (canvas re-render replaced the focused node; blur never fired; every click no-op'd). `renderCanvas` now finishes an active session first.
 - **IME composition on blur committed partial candidate text** — finish is deferred until composition ends.
@@ -351,10 +333,12 @@ Zephus is a **local-first visual editor for Astro sites** — no coding required
 - **Open-and-close of the inline editor on a whitespace-padded value pushed a phantom undo** — the baseline is trimmed.
 
 **Windows (fixed by inspection):**
+
 - **taskkill was invoked with an empty-string argument** (`hard ? "/f" : ""`) — the graceful kill always failed (and spawnSync does not throw, so the fallback never ran); the args array is now conditional and the status is checked.
 - **The Node picker dialog dropped its options** when the main window was gone (the exact undefined-parent anti-pattern main.ts works around) — branches properly; the npm.cmd path quoting now escapes `%` (cmd.exe expands `%VAR%` inside quotes).
 
 **Themes (fixed):**
+
 - SaaS pricing CTAs pointed at `/contact` — a page that does not exist (3 dead links on the conversion page); retargeted to `/pricing`. The hero's `#features` anchor had no target — now "See pricing".
 - The Project theme claimed "24/7 Support" while its contact page said "one business day" — aligned.
 - The Docs theme's getting-started page contained literal instruction stubs ("Describe the first step here.") — real copy now.
@@ -365,6 +349,7 @@ Zephus is a **local-first visual editor for Astro sites** — no coding required
 ### Audit round 13 — release readiness
 
 **Release pipeline (fixed):**
+
 - **The pipeline ended with assets in a GitHub DRAFT — updaters threw "No published versions on GitHub" and the CHANGELOG download links 404'd, all with green exits.** `gpg-sign.js` now publishes the draft (and creates the tag) on the final non-arch run.
 - **`GH_TOKEN` missing silently skipped the signature upload with "✓ COMPLETE"** — a release-gate script now fails the pipeline hard when GH_TOKEN or the GPG key are missing.
 - **`test:all` never ran coverage, the runtime smoke, or the Astro builds** — all wired in with real exit codes; `test-astro-build` now asserts actual `.html` output, not source counts.
@@ -373,6 +358,7 @@ Zephus is a **local-first visual editor for Astro sites** — no coding required
 - Window size/position now persists between launches; the Windows signing config moved to `build-scripts/electron-builder.windows.cjs` (`signtoolOptions` publisher verification when Azure signing is active); hardened runtime + entitlements moved into the base mac config; dev artifacts (`*.map`, test mocks, fixtures) excluded from the asar; **`--dev` on a shipped binary no longer enables devTools or disables updates**.
 
 **Beta-blocking UX (fixed):**
+
 - **A failed dependency install stranded the user on the home screen** with the site never opened or recorded — the site now opens anyway with a retry hint.
 - **Git's raw "Please tell me who you are" on the first commit** — the panel now explains the two `git config` commands to run.
 - **The Node check ran AFTER the folder picker** (wasted step) — reordered; the create flow also surfaces a clear "previous scaffold in this folder" message on retry.
@@ -385,6 +371,7 @@ Zephus is a **local-first visual editor for Astro sites** — no coding required
 **Windows code-signing (wired, optional):** the Azure Artifact Signing machinery from the ROSI pipeline now lives in Zephus — `build-scripts/electron-builder.windows.cjs` signs via Azure when the `AZURE_*` variables are complete (`npm run setup:win:artifact-signing` installs the client tools once per Windows VM), and produces unsigned artifacts with a clear warning otherwise. Zephus is not code-signing yet: nothing is required, `SKIP_WIN_CODESIGN=1` forces unsigned explicitly, and the release gate no longer demands `CSC_LINK`.
 
 **Content/details (fixed):**
+
 - Event theme CTA said "June" under an "October 9" hero — aligned; blog scaffold post now dates at creation (was 1.5 years stale); SaaS pricing CTAs pointed at "#" — now `/contact`.
 - `.env.local` (loaded by Vite with highest priority) is git-ignored — previously "Commit All" staged local secrets; the legacy-layout backup file stopped appearing in every first commit; `--dev`/version hardcodes removed from the About pane and splash (the splash's "20 schemas" was stale at 22).
 - Docs corrected: false Ctrl+H/Ctrl+Enter code-mode shortcuts, port 3000→4321, wrong settings path, mobile-testing devtools claim, arm64 Linux availability.
@@ -392,7 +379,8 @@ Zephus is a **local-first visual editor for Astro sites** — no coding required
 ### Audit round 12 — parser parity, undo baselines, panels, dual settings, packaging, build gates
 
 **Parser parity (fixed — all previously caused silent detaches or file rewrites on identical content):**
-- **Nested-element text lost spaces**: the renderer trimmed text inside the recursive walk, so `<p>before <span> after</span></p>` stored "before after" while the main parser stored "before  after". Trim now happens once at the top level only.
+
+- **Nested-element text lost spaces**: the renderer trimmed text inside the recursive walk, so `<p>before <span> after</span></p>` stored "before after" while the main parser stored "before after". Trim now happens once at the top level only.
 - **Raw html blocks drifted byte-by-byte per save**: the serializer re-indents every interior line by 2 spaces; without dedenting on parse, each save cycle added 2 more. Raws are now dedented on parse; top-level `<style>` handling matches the main parser (nested styles inside sections are preserved as html blocks instead of being dropped — previously hand-authored CSS vanished on the first visual save).
 - **Legacy section labels diverged** (`Section N` vs `Main Content`); trailing loose blocks now label like the main parser, and legacy wrappers count like it too.
 - **A stored `data-zephus-id` on a section with a broken props payload was discarded** (fresh id → byte change + lost responsive-CSS anchor). The main parser now honors it.
@@ -400,6 +388,7 @@ Zephus is a **local-first visual editor for Astro sites** — no coding required
 - **`maxHeadingLevel < 6` clamped the renderer's serialized output but not the build's** (main emits up to level 6) — zero-edit detaches again. Serialization now matches the build; the canvas still clamps.
 
 **Undo / dirty state (fixed):**
+
 - **Page saves refresh the site baseline with a fresh `generatedAt`; every snapshot captured before the save differed ONLY in that timestamp**, so any later undo staged the old site as a spurious "Reverted a design change", marked the site dirty, and a save wrote back the pre-toggle site. Site comparisons now ignore `generatedAt`.
 - **Undoing back to the last-saved tree left a phantom dirty flag** (stale dot, redundant draft write, spurious unsaved-work prompt). `doUndo`/`doRedo` compare the restored serialization against the saved source.
 - **The nav eye-toggle swapped the site baseline under a staged site edit** (silently rebasing `pendingSiteDocument` — the next site save reverted the toggle). Guarded like reloadPages.
@@ -407,30 +396,36 @@ Zephus is a **local-first visual editor for Astro sites** — no coding required
 - CodeMirror edits now carry a change label; the summary's first-label dedupe no longer masks later different labels.
 
 **Panels (fixed):**
+
 - **NavList entries were plain `<li>` — clicking a nav item or pressing Enter did NOTHING** while they looked navigable (cursor, hover, href). Entries are now real buttons that open the page; custom page-less items are disabled with an explanation. The label/route layout splits so a long label can't clip the route.
 - The nav list is cleared on project close; the 404 page's eye toggle is disabled (was enabled-but-inert); PageList/Layers missing `type="button"`; Layers active state exposed via `aria-current`.
 - The dirty dot lied after switching away from a dirty page — now derives from real state per page.
 
 **Dual settings UIs (fixed):**
+
 - **The start-tab "Save"/"Reset" ignored the write result** — a read-only config dir printed "Settings saved." and applied values that never persisted. Both now check and surface errors like the modal.
 - **Modal reset left the tab's Node row frozen on "Checking Node.js…"** and modal save left the tab's node status stale — both now refresh it.
 - **The modal seeded from disk while the tab holds an unsaved draft** — saving then wiped the tab's edits. It now seeds from the last applied settings.
 
 **Design system (fixed):**
+
 - **Staging design with zero font changes silently stripped the Google Fonts link from the build** (themed sites lost their font). The existing `fontImportUrl` is preserved when no Google spec is chosen.
 - **`var(--accent)` in the accent field is rejected** (it resolved to nothing — every link/CTA lost its brand color).
 - Empty custom font stacks no longer emit an invalid CSS variable (fall back to the current stack).
 
 **Find/Replace + Asset browser (fixed):**
+
 - **Typing in Find while a search was in flight could drive Replace All with wrong counts and a wrong page set** (the stale response passed the seq guard). Query edits and case/whole-word toggles now invalidate in-flight searches.
 - The "Search text changed" hint compared a trimmed query against the raw input (false hint forever for trailing-space queries); Solid roots for both modals are now disposed on close (previously leaked per open); asset select invalidates the cached data URL; deletes no longer leave the canvas showing a dead image; the asset previews reuse the canvas cache (duplicated full-file base64 fetches eliminated); overlapping refreshes are seq-guarded; Esc mid-drag no longer leaves a permanent "dragover" highlight.
 
 **Module state (fixed):** a queued project open survived a thrown open (next open silently opened a project never clicked); a stale home-draft resume survived a failed enter; inspector-latch/selection echoes reset on close; the recovery card refreshes after a silent draft resume; page-only dirty now has a Discard Page action (was Save All only); the dev-server log clears between projects; the divergence note no longer suggests force-push.
 
 **Packaging (fixed):**
+
 - `nsis.publisherName` set (installers showed "Unknown Publisher"; the updater skipped signature checks entirely); hardened runtime + entitlements moved into the base config so `build:mac:*` produces Gatekeeper-valid builds (notarization stays release-only); dev artifacts excluded from the asar (`*.map`, test mocks, fixtures); **`--dev`/`NODE_ENV=development` on a shipped binary no longer enables devTools or disables the auto-updater**.
 
 **Build gates (fixed):**
+
 - **`test:all` never ran coverage, the runtime smoke, or the Astro builds** — the renderer could fail to boot while CI stayed green. All three are now wired in (with a real exit-code gate).
 - **`test:astro-build` counted SOURCE files, not build output** — a zero-HTML build passed. It now walks `dist` for `.html` files.
 - **gpg-sign silently skipped the GitHub upload when `GH_TOKEN` was unset** and printed "✓ COMPLETE" with a green exit — release pipelines now fail hard without a token. Alpha/rc versions now get channel metadata (previously their `latest.yml` was served to the stable feed). Arch-less artifacts are no longer signed twice / checksum-overwritten.
@@ -441,12 +436,14 @@ Zephus is a **local-first visual editor for Astro sites** — no coding required
 ### Audit round 11 — save round-trips, IPC security, lifecycle, performance, updater, browser fidelity
 
 **Security (fixed):**
+
 - **deletePage / renamePage / duplicatePage operated on ANY in-project file** — a compromised renderer could delete `.env`/`.git/config`, rename secrets into `src/pages/` (readable as pages), or copy them into pages dir. All three now require the target to be a real page under `pagesDir` with a page extension.
 - **detachPageDocument wrote renderer-supplied bytes to a renderer-supplied path** via bare `fs.writeFileSync` — arbitrary in-root overwrite (layout, package.json) executed by later npm/dev/build spawns. The target is now canonicalized to `pagesDir` and the file is written atomically BEFORE the sidecar (a crash mid-detach previously left "detached" + truncated code).
 - **`writePageDocument` accepted `..` traversal** (`../../layouts/BaseLayout.astro`) that normalized outside pagesDir. Rejected now.
 - **`draftList` leaked every project's absolute paths** to any sender; the project-root approval map was never revoked on close/switch. Draft summaries no longer expose project paths to unauthorized callers; approved roots are revoked on project close.
 
 **Save round-trips (fixed):**
+
 - **The second code-mode save silently detached a managed page**: the renderer indented the body 4 spaces, the main serializer 2 — outputs never matched, so after a save-refill the next zero-edit save saw "content differs" and converted the page to hand-authored. Both now use one 2-space indent; the code view is also no longer rewritten (and CM history wiped) on every managed save.
 - **Page-settings metadata edits were reverted by the next page save** (stale session doc). Metadata writes now merge into the session document; the eye toggle and nav-editor rows do the same.
 - **Recovered site drafts always reopened as the SHELL editor** (a design-kind draft prompted a spurious save/discard conflict, and Discard threw away the restored edits). The draft now persists the editor kind; legacy raw-site drafts still restore.
@@ -455,6 +452,7 @@ Zephus is a **local-first visual editor for Astro sites** — no coding required
 - Nested `index.astro` pages emitted `/blog/index` nav/canonical/sitemap/RSS hrefs (all 404 on the published site); `routeFromPage` now strips the trailing `/index`.
 
 **Robustness (fixed):**
+
 - **A corrupt-but-valid-JSON page sidecar (missing `sections`) crashed the whole project open** — every read/save failed the same way with no gate. Sidecars now default `sections` to `[]` with a warning.
 - **deletePage restore could destroy hand-authored source** (writeSiteDocument failure regenerated detached pages from the stale tree; a failed read skipped the restore entirely). The file now always comes back, sidecar-only for detached pages.
 - **before-quit cleanup killed the dev server/watcher/theme server even when the quit was CANCELED** by the unsaved-work guard — cleanup moved to `will-quit` (fires only after closes confirmed).
@@ -467,15 +465,18 @@ Zephus is a **local-first visual editor for Astro sites** — no coding required
 - **Self-write markers grew unbounded** across saves; expired markers are pruned on each schema pass.
 
 **Performance (fixed):**
+
 - **Opening/saving a project rewrote every sidecar, layout, style and site.json unconditionally** (git churn on every open, O(N) writes per save). All outputs now content-compare before writing; site.json's `generatedAt` only bumps when something actually changed. `listPageMetadata` no longer runs the full ensure pass twice per save.
 - **The asset browser hydrated every image as a full base64 data URL in parallel** (hundreds of multi-MB IPC payloads, main-thread stalls). The hydrated set is capped at 60.
 - Hide-on-viewport toggles no longer double-repaint the whole page.
 
 **Updater (fixed):**
+
 - **Stable-channel users could be offered prerelease builds** (GitHub's `/releases/latest` can point at a beta). The stable feed now rejects prerelease candidates.
 - **The README's updater-integrity claims were false** (no `.sig` verification exists anywhere). The claim is corrected and the remaining trust model documented honestly.
 
 **Browser fidelity (fixed):**
+
 - Tablet/mobile bezels locked the canvas height with `overflow: hidden` — content below the fold was clipped AND unreachable. Now `min-height`.
 - maxWidth-capped sections sat flush-left on canvas while publishing centered — auto margins added.
 - Button/CTA labels rendered underlined on canvas only (specificity leak) — excluded.
@@ -486,59 +487,71 @@ Zephus is a **local-first visual editor for Astro sites** — no coding required
 ### Audit round 10 — modals, page settings, code editor, onboarding, editor rules
 
 **Modals (fixed):**
+
 - **A `choose()`-backed modal closed externally could hang its caller forever** (publish deadlocked: `publishInFlight` stayed true until restart). Every promise-backed modal now registers a close handler; bare `closeModal()` settles it.
 - **Stale `closeModal()` after an await could close a NEWER modal** the user opened in the meantime. Async action flows now guard against popping frames they don't own.
 - **Modal bodies' Solid roots were never disposed** (settings/shell/page-settings leaked one root + detached tree per open/re-render). The modal controller now runs per-frame cleanup; shell + page-settings dispose on re-render and close.
 - The navigation-preview "Stage Navigation" ignored `writePageMeta` failures (silently lost rows) — now checks the result.
 
 **Page settings (fixed):**
+
 - **Slug edits were not normalized before the rename** — "My Page" produced a phantom `src/pages/My Page.astro` path, deselecting the page and breaking external-edit detection. The slug is normalized client-side (mirroring main) before rename; nested 404 routes (`404/custom`) get the same forced nav/noindex treatment as the exact `404` slug.
 - Detach of a NON-open page wrote the stale modal-open source over a possibly newer disk file — reads fresh bytes at click time; the empty-code-doc falsy bug (`getCode() || rawCode`) now uses `??`.
 
 **Code editor (fixed):**
+
 - Empty code docs no longer fall back to stale `rawCode` on detach.
 
 **Onboarding (fixed):**
+
 - **Site creation opened the project BEFORE installing dependencies** — a failed/missing open still ran npm into a replacement folder. Install now runs first; open happens after, with a status message when the project can't open and background installs are reported honestly.
 - **"I'll look around first" re-showed the welcome modal every launch** — dismissal is persisted.
 - **A failed create left residue** (schema/404 generated after the theme rollback list) and refused retries — failed creates now clean the whole target when the folder was absent/empty; the npm package name is validated (214-char cap, no leading hyphen) so `npm install` can't reject it.
 - **`dependenciesInstalled` treated ANY node_modules as success** — a partial directory from a failed install made preview fail cryptically. It now verifies every declared dependency is present.
 
 **Editor rules (fixed):**
+
 - **Rules only loaded at open** — a mid-session git pull that tightened `allowedBlocks` was ignored until reopen. Rules now re-apply after pull and are guarded against stale project applies; templates are filtered by the allowlist everywhere (palette, quick-insert, drag-drop, template-palette click), and section paste/duplicate/import-image paths now enforce it too.
 - **`maxHeadingLevel` was cosmetic on the canvas** — the saved .astro/build emitted the un-clamped level (canvas ≠ build). The serializer now clamps like the canvas.
 
 **Settings (fixed):**
+
 - The settings modal never rendered the app version; "Open Config" silently no-oped on failure; node-path picking persisted settings even when Cancel was clicked (write moved to Save); the dead-custom-path lie (modal claimed the dead binary was in use) is gone — the real check message shows now; the theme setting is now REAL (light/system token sets + light start view + System follows the OS), not a dead `data-theme` attribute.
 - Modal updater controls now refresh during a download (percent + Cancel), not only after it resolves.
 
 ### Audit round 9 — startup, shortcuts, git panel, updater, themes, templates
 
 **Quit/close (fixed):**
+
 - **The app silently refused to quit with unsaved work**: Electron cancels the close when beforeunload is prevented, with NO dialog — users clicked the close button and nothing happened (looked like a hang). Closing now surfaces the app's own save/discard/cancel modal and, once resolved, closes. Update installs resolve unsaved work first so a pending quit can never strand the update.
 
 **Keyboard (fixed):**
+
 - **Cmd+Z/Y in code mode hijacked plain-input undo** (find field, page-settings prompt, rename box): the code branch ran before the input-focus guard, reverting the CODE DOCUMENT instead of the field. Guard mirrored.
 - **Canvas shortcuts fired while a modal was open** — Cmd+X cut a block from the page behind the settings modal; Cmd+Z reverted the page; Delete removed blocks; Cmd+S saved the page; Cmd+F stacked find over the modal. All editor shortcuts are now inert while any modal is open (native input copy/undo inside modals still works).
 - **"h"/"?" opened the help modal from any focused element** (palette items, block shells, toolbar buttons). Now only fires from the page background or canvas.
 
 **Git panel (fixed):**
+
 - **Non-ASCII filenames (ü, 中文, 日本語) broke the panel and per-file commits**: porcelain's C-escaped paths (`\303\274ber.md`) were never unquoted and `git add -- "\303\274ber.md"` failed. Git now runs with `core.quotePath=false` + `LC_ALL=C` (also fixes English-only error matching on localized git — the Init button never rendered for German/French git).
 - **Commit staged the last-saved state while the editor held newer edits** (commit of a half-written file mid-save too). Commit is now blocked while the editor is dirty, with an explanation.
 - **Push without a remote was a guaranteed-error dead end** (button shown, every click failed). The panel now detects "no remote" and explains it instead of showing the button.
 - **`git init` created no .gitignore** — "Commit All" could stage node_modules/ and .env. A safe default is now written.
 
 **Updater (fixed):**
+
 - **The startup check raced the renderer's listener** — the "update available" event was dropped and the sidebar falsely said "Up to date". Main now caches the last status; the renderer claims it after boot.
 - **A hung download deadlocked the updater forever** ("Downloading (x%)" permanently, only recovery = Cancel or restart). The transfer now cancels after 30 minutes with a real error.
 - **Cancel showed "Up to date"** (the "cancelled" status fell into the default branch). Now says "Update cancelled".
 - **Quit-and-install could lose up to 800ms of unsaved edits** (pending draft timer destroyed by the process exit). Unsaved work resolves before install.
 
 **Startup (fixed):**
+
 - **The auto-restore of the last project swallowed user clicks** — clicking a different project during the ~1s restore silently opened the wrong one. Explicit user clicks are now queued and win over the automatic restore.
 - The splash screen can no longer leave zero windows if the renderer fails to paint.
 
 **Themes/templates (fixed):**
+
 - **Every fresh site now ships a real 404 page** (previously no theme scaffolded one — visitors hit an unbranded generic 404).
 - **The block allowlist (editorRules.allowedBlocks) was bypassed by Add Hero / quick-insert / Add Section templates** — forbidden blocks landed anyway. Template paths now filter by the allowlist.
 - The dev-server URL parser no longer false-timeouts a healthy server at a chunk boundary.
@@ -546,35 +559,42 @@ Zephus is a **local-first visual editor for Astro sites** — no coding required
 ### Audit round 8 — canvas internals, selection, inline editor, properties, resize, find-replace
 
 **Canvas ≠ build (fixed):**
+
 - **Section visual styles never reached the canvas** — every themed hero/band showed a flat 14px section with left-aligned text while the published site rendered the full surface band, centered, with 4.5rem padding. The canvas content area now carries the section's background/padding/align/radius/shadow.
 - **`--zephus-container-width` and `--zephus-shadow` were never set on the canvas** — styled sections rendered full-bleed there (build caps them at the container column). Both tokens now apply.
 - **The feature/pricing auto-grid existed only in the build** — the user designed full-width stacked cards that the published site laid out side-by-side. The canvas now mirrors the `:has()` auto-grid (sibling headings span all columns, like the build).
 - **Percentage block widths compounded 2× through the preview wrapper** (60% rendered as ~36% on canvas). Fixed via the section-visual refactor + transparent placeholder: local asset images no longer fire a document-URL request with a broken-icon flash (`src=""`), and a failed asset read is no longer cached forever — the canvas retries instead of serving a permanently broken image.
 
 **Undo/redo (fixed):**
+
 - **Clicking a resize handle without dragging pushed a phantom undo entry, dirtied the page, and wiped the redo stack** — and dead arrow-key presses at MIN/MAX did the same. The undo snapshot is now pushed lazily on the first actual size change (both pointer and keyboard paths).
 - Stale `selectedId` survived the code→visual switch (nothing selected on canvas while the inspector showed section 0's props; layers showed a pre-code-mode selection). The rebuild now clears both ids.
 
 **Drop placement (fixed):**
+
 - **Dropping into the gap between two sections landed at the END of the page** — the "Add section" rails sat outside any section shell, so their drops fell through to the append-to-last branch; the indicator showed the correct slot while the commit went elsewhere. Rails now target their own position (blocks go into the section before the rail).
 - **Template drags showed a block-line indicator but inserted after the whole section** — section shells now respond to template payloads with the correct section-slot indicator, and the drop honors it.
 
 **Inline editor (fixed):**
+
 - **IME composition (CJK input)**: Enter confirmed a candidate and Esc cancelled — both fired mid-composition, committing half-typed text or wiping the edit. `isComposing` now guards both.
 - **"::" typed into a stat/accordion pair value corrupted the pair** — the label side silently absorbed the remainder and compounded on every edit. The separator is now normalized to an em-dash at commit.
 
 **Property panels (fixed):**
+
 - **Post-list "Folder"/"Maximum posts" lied after clearing** — a cleared folder (all posts) displayed as `/posts`; cleared limit displayed as `5`. The panel now shows the actual stored value.
 - **Spacer "Height" was a plain text field** that shipped unitless values as invalid CSS (spacer collapsed to 0px) and was silently shadowed by the Layout panel's Height. It's now a px-aware field that says when it's overridden.
 - **Gallery "Columns" accepted garbage** (`0`, `-3`, `1e9`, `abc`) producing invalid CSS. Now clamped to 1–6 or cleared.
 
 **Find & replace (fixed):**
+
 - **The search counted matches in detached/out-of-sync pages that Replace All skips** — the confirmation dialog promised replacements that never happened. Search now skips them and reports how many hand-authored pages were skipped.
 - The dev-server URL parser no longer false-timeouts a healthy server when the Astro banner split exactly at a chunk boundary.
 
 ### Audit round 7 — main services, undo, drafts, migrations, silent failures
 
 **Data loss / corruption (fixed):**
+
 - **Legacy `.md`/`.mdx`/`.html` pages were silently rewritten with Astro-component source** — plain markdown parsed as "canonical managed output" and was regenerated in place, breaking the page's shell/nav on build. Non-`.astro` files are now always treated as hand-authored (out-of-sync), never regenerated.
 - **Draft-vs-saved comparison could never match in visual mode**: the draft was serialized by the renderer (4-space indent) but compared against the main-side generated source (2-space indent) — byte-inequality for identical content. That forced a bogus "Restore unsaved draft" prompt (and a permanent home card) for already-saved content after a crash. The comparison now uses the renderer's own serialization of the saved document.
 - **Newer-beta projects are refused instead of downgraded**: a project with `schemaVersion` higher than this build's used to be read, re-merged, and rewritten (newer layout/nav/design overwritten, older schemaVersion stamped on every page). Opens now fail with a clear "update Zephus" message before any write.
@@ -582,6 +602,7 @@ Zephus is a **local-first visual editor for Astro sites** — no coding required
 - **Duplicating a managed page produced an out-of-sync copy stuck in hand-authored mode** (null hash + copied original bytes ≠ regenerated copy). The copy now carries the original's hash — its bytes ARE the original's.
 
 **Silent failures (fixed):**
+
 - **Install modal hung forever on failure** — the failure branches left the modal open with a dead "Run in Background" button, freezing the app behind an undismissable dialog. Failures now close the modal and surface a proper error dialog.
 - **"Settings saved." was claimed when the write failed** (read-only config dir, invalid custom node path). Save/reset now check the result and report the real error.
 - **Crash-recovery draft writes failed silently forever** (disk full, unwritable drafts.json) — the safety net died with zero warning. A one-time status warning now surfaces.
@@ -589,11 +610,13 @@ Zephus is a **local-first visual editor for Astro sites** — no coding required
 - **"Open Output Folder" was a silent no-op** when the folder didn't exist (common after a rebuild). Now reports why.
 
 **Undo/redo (fixed):**
+
 - The nav eye-toggle pushed no undo entry — Ctrl+Z did nothing (or, worse, a later unrelated undo popped a pre-toggle snapshot and "reverted the toggle" as a side effect). The toggle now pushes a snapshot.
 - Discarding a staged site change left the pre-staging undo entry on the stack — the next Ctrl+Z was a visible no-op and polluted redo. No-op entries are now dropped on discard.
 - `doRedo` lacked the mid-drag latch guard `doUndo` has — Ctrl+Shift+Z during a drag silently lost the resize. Guard mirrored.
 
 **Robustness (fixed):**
+
 - A partial/hand-edited site.json missing `design`/`shell` crashed the open with a TypeError after partial writes. Defaults now fill every missing field (including the detected layout path).
 - The reusable-sections legacy migration re-triggered whenever a project had zero saved sections — deleted sections resurrected on the next read. Migration now runs only when the project store was never created.
 - Legacy-layout nav sync rewrote the layout on every open (mtime churn, git noise). Now short-circuits when the nav is unchanged.
@@ -602,6 +625,7 @@ Zephus is a **local-first visual editor for Astro sites** — no coding required
 ### Audit round 6 — security, page CRUD, site settings, publish, code sync, assets
 
 **Data loss (fixed):**
+
 - **Eye-toggle / settings save / stage-navigation silently destroyed hand-authored code on a detached or out-of-sync page.** Every metadata write routed through `writePageDocument`, which regenerated the .astro from the (stale) sidecar tree and forced the page back to "managed" — with the watcher suppression hiding it. Metadata writes now detect detached/out-of-sync pages and update ONLY the JSON sidecar (`writePageMetadataPreservingSource`), leaving the file bytes untouched.
 - **Duplicating a detached page dropped all hand-authored content** (bytes copied, then regenerated from the stale tree). Copies now preserve the detached state and the copied bytes.
 - **Deleting the open page silently discarded unsaved edits** (delete path skipped the save/discard prompt the page-switch path uses). Now resolved via `maybeResolveUnsavedWork`. Deleted non-open pages also have their recovery drafts cleared now.
@@ -611,12 +635,14 @@ Zephus is a **local-first visual editor for Astro sites** — no coding required
 - **Undo-to-baseline left a stale recovery draft** → spurious "Restore Site Draft" prompt on next launch + a permanent home recovery card. Reverting to the saved state now clears the stale draft; a matches-saved draft is also cleared on read.
 
 **Security (fixed):**
+
 - **Stored XSS via a crafted block id**: `data-zephus-id="x</style><script>…"` terminated the `<style>` raw-text element and executed in the published site. Angle brackets in CSS selectors are now hex-escaped (`\3c `/`\3e `) — no literal `<`/`>` ever reaches the style text, and the selector still matches.
 - **Arbitrary file write via `doc.page`**: a stale/compromised renderer could submit `page:"package.json"` and clobber it (bypassing the protected-target denylist). Write targets are now always derived from the normalized slug, confined to `pagesDir`.
 - **Nav merge deleted a hand-authored custom link whose href matched a page route** (silently, on every site write). Custom items now deliberately override the matching page item, keeping their own label/visibility.
 - **Asset repoint false positive**: `assets/hero.png` (no leading slash) was rewritten inside `/foo/assets/hero.png`. `/` is now a path-continuation character, so only whole-path references repoint.
 
 **Correctness (fixed):**
+
 - **Publish "newer edits NOT included" warning false-negative**: captured dirty-state before the save/discard resolution, so edits made mid-build after starting dirty were silently excluded with a clean "Build complete". Dirtiness is now checked after resolution.
 - **Eye-toggle stale nav panel**: the layout was updated on disk but the in-memory site baseline was not, so the nav panel showed the old visibility until a page switch/save. The baseline now refreshes.
 - **Code-mode save wiped the CodeMirror undo/redo history on every managed save** (EditorState recreated even when content was unchanged). Unchanged saves now skip the refill.
@@ -721,6 +747,7 @@ Zephus is a **local-first visual editor for Astro sites** — no coding required
 Every source file was read and audited (engine, schema, all services, all UI components, all build scripts). The confirmed bugs below were fixed with regression tests; a full `npm run test:all` + `test:cov` + smoke run passes.
 
 **Data loss / corruption**
+
 - **Adopting a legacy project could destroy hand-authored pages.** `ensureVisualSchema` regenerated every hash-less page from its (lossy) parse tree — frontmatter imports/consts, Astro `{...}` expressions (which then broke the build), and `<style>` blocks were silently deleted. Migration now detects non-canonical pages (anything beyond the BaseLayout import + key/value metadata) and leaves them untouched, flagged out-of-sync instead.
 - **An unterminated `<!--` comment dropped the rest of the page** (`splitTopLevelNodes`) — the unclosed-container sibling case that was missed last time. Content after the comment is now preserved.
 - **`writeProjectFile` wrote non-atomically** (truncate-in-place) — a crash mid-write left a half-written page. Now uses the same temp+rename atomic writer as everything else.
@@ -732,6 +759,7 @@ Every source file was read and audited (engine, schema, all services, all UI com
 - **Keyboard resize pushed a no-op undo entry** (snapshot after the mutation) — Ctrl+Z lit up and did nothing. Snapshots now happen before mutating, like the pointer path.
 
 **Correctness**
+
 - **Page rename silently killed the file watcher** (stopped before the rename, never re-armed on failure or for non-open pages). The watcher now survives renames it doesn't touch and is re-armed on failure.
 - **Undo of site edits did nothing when the snapshot had no site document** (`site: null` fell through every branch). Staged edits are now cleared back to the captured state.
 - **`// srcDir: './old'` comments and template-literal config values were read as the real Astro config**, sending the editor and build to a garbage folder. Config scanning now skips comments and unmatched shapes.
@@ -745,12 +773,14 @@ Every source file was read and audited (engine, schema, all services, all UI com
 - **Theme preview server races**: a second `ensure` with a different root got the first root's pending bundle; a stop during listen orphaned a live server. Now per-root pending + generation counter.
 
 **Security / hardening**
+
 - **`importAssetsFromPaths` could copy the project's own files into itself** (including renamed secrets). In-project sources are now rejected.
 - **Hand-edited settings.json crashed the project list** (non-string entries in `recentProjects`/`lastOpenedProject` threw in `path.resolve`). Entries are now type-filtered on read.
 - **Canvas sanitizer missed `<form action="javascript:...">`** — `action` is now stripped like `formaction`.
 - **Node resolution cache never expired** — a user installing Node mid-session was stuck with "missing" until restart. The cache now expires after 30s.
 
 **Build tooling**
+
 - **`dist-tools.js` cleaned cwd-relative paths** — running it from any other directory deleted that directory's `dist`/`release`. Paths now resolve against the repo root.
 - **`ensure-draft-release.js` exited 0 without a GH_TOKEN**, letting per-platform jobs race on draft creation. It now fails loudly.
 - **Coverage gate only whitelisted known files** — brand-new files could ship at 0%. An overall statements/lines floor (80%/82%) is now enforced.
@@ -783,9 +813,11 @@ Every source file was read and audited (engine, schema, all services, all UI com
 Four parallel audits (unverified-spot verification, test-suite quality, IPC contract, undo/redo mechanics) plus empirical verification of every external claim using the actual Astro 6 compiler.
 
 **Build-breaking bug, empirically confirmed**
+
 - **Unescaped `{`/`}` in body text broke Astro builds**: the compiler turns `{ brace }` in a text node into `${ brace }` (ReferenceError at runtime; `{5}` silently renders as `5`). Attributes were already brace-escaped (`escapeAstroAttr`), text was not. `escapeHtml`/`escapeRichText` now emit `&#123;`/`&#125;` (browsers render them as braces, and the DOM parsers round-trip them), verified end-to-end: Zephus-generated page → real Astro compiler → clean output, and parse-back restores the literal text.
 
 **Undo system (4 bugs)**
+
 - **Inspector control changes pushed post-mutation undo entries** (Clear Image, hide-on checkboxes, selects): the first Ctrl+Z was a visible no-op and wiped redo. The latch now snapshots at focus and pushes only when the session actually changed something; control-triggered changes push explicitly before mutating.
 - **Focusing an inspector field and blurring without typing destroyed the redo stack** for a phantom no-op entry — fixed by the same push-only-when-changed latch.
 - **Ctrl+Z mid-drag silently lost a resize** (undo popped the pre-drag snapshot while the drag kept mutating detached clones). Undo is now suppressed while a resize is active.
@@ -793,6 +825,7 @@ Four parallel audits (unverified-spot verification, test-suite quality, IPC cont
 - Stale dirty indicators after undoing a staged site edit now refresh.
 
 **Other confirmed fixes**
+
 - **`withPageMetaDefaults` left `navVisible: undefined`** for sidecars predating the field — such pages silently vanished from the navigation after an upgrade. Undefined now defaults to visible, matching the frontmatter path.
 - **Editor/main body-region divergence**: the renderer matched the LAST `<body` in the file (a `<body`-looking string in a later script shifted the split); both parsers now use the first.
 - **Link picker silently replaced a valid-but-unlisted route** with the first listed page. It now warns and offers a placeholder instead.
@@ -803,6 +836,7 @@ Four parallel audits (unverified-spot verification, test-suite quality, IPC cont
 - **Two dead IPC channels removed** (`importImage`, `fileWrite` — defined, typed, exposed, never called).
 
 **Test-suite quality (false-positive fixes)**
+
 - `caseSensitive` search/replace had zero coverage — both flags now tested end-to-end.
 - The canvas-vs-build "parity" tests compared `renderBlockNode` with itself (a wrapper calling the same function with the same defaults); a real canvas-vs-build comparison (including the `data-asset-src` and hideOn divergences) was added.
 - `nodeCheckReal` asserted the whole status union (any result passed); it now asserts the resolution-honesty contract.
@@ -814,16 +848,19 @@ Four parallel audits (unverified-spot verification, test-suite quality, IPC cont
 ### Real-Astro validation + extended smoke + audit round 4
 
 **The generated output is now proven against the real Astro compiler.**
+
 - New `astroBuild.test.ts`: a page containing **every block type** (with hostile prop values — braces, quotes, ampersands, entities, emoji, newlines) is generated through the schema pipeline and compiled with the real `@astrojs/compiler` (Astro 6), along with the scaffolded layout.
 - New `npm run test:astro-build`: scaffolds **all 10 bundled themes**, generates the managed schema, and runs a real `astro build` on each site. All 10 build clean today — this is the release-gate check that a generated page can never break the user's `astro build`.
 - Empirically verified with the real compiler: the `&#123;` brace-escape scheme works (Astro keeps the entity in attributes), the fixed text-node escaping works, and rendered HTML round-trips (literal `&amp;` text renders as `&amp;` via `&amp;amp;`).
 
 **Extended runtime smoke** (runs in the real Electron app):
+
 - Undo/redo through the actual inspector latch: type → blur commits one entry, Ctrl+Z reverts, redo restores.
 - Add block + undo, keyboard resize + undo, Escape-cancels-inline-edit.
 - This immediately caught two real runtime behaviors worth knowing: the canvas-link click legitimately re-selects the clicked block, and the inspector panel re-creates its inputs on re-render (stale references must be re-queried).
 
 **More fixes**
+
 - **Section duplicate/paste re-id'd only top-level children** — nested blocks (none today, but the code anticipates them) kept colliding ids and shared style references. Both paths now use the deep-cloning `cloneBlock`.
 - **Trailing-save loop reported total failure when the click-time snapshot saved but a newer flush failed** — the user was told nothing was saved when their first snapshot was on disk (the dirty flag still protects the newer edits; callers never lose them).
 - **Canvas sanitizer gaps**: `<base>` removed outright (it hijacks every relative URL), `poster` checked for dangerous schemes, and `srcset` now filters dangerous entries while keeping safe ones.
@@ -838,6 +875,7 @@ Four parallel audits (unverified-spot verification, test-suite quality, IPC cont
 App statement coverage is now **94.3%** (was 89.1%), with **687 tests** (was 568). The coverage gate's overall floor was raised to 88% statements / 90% lines so it keeps catching regressions.
 
 **New suites:**
+
 - **Feed/discovery files** (`feedDiscovery.test.ts`): sitemap/robots/rss generation for a public URL, dated-post gating of the feed, hand-authored discovery files preserved verbatim, managed files removed when the URL is cleared — all previously untested.
 - **Post-list refresh** (`postlistRefresh.test.ts`): postlist pages render posts at save time and refresh when posts are renamed.
 - **Schema edge cases**: regex-parser legacy tags (button/image/divider/quote/list/embed), full inline-style vocabulary, bare-text html blocks, wrapper-section recursion, unknown block types through the build renderer, literal `<` preservation.
@@ -847,6 +885,7 @@ App statement coverage is now **94.3%** (was 89.1%), with **687 tests** (was 568
 - **Real-binary node checks**: fake node scripts prove resolution caching (one probe per window), and outdated custom paths honestly report "outdated".
 
 **Expanded suites:**
+
 - updater: progress/error/rejected-update events, check-during-download guard, thrown checks, cancelled/failed transfers.
 - git: nothing-to-commit failure, fetch-failure status, detached-HEAD and unavailable push/pull, no-remote first push.
 - devServer: second-start guard, different-project handoff (first server stopped), unreadable package.json, listener unsubscribe, SIGKILL escalation.
@@ -865,11 +904,13 @@ App statement coverage is now **94.3%** (was 89.1%), with **687 tests** (was 568
 App statement coverage is now **95.4%** with **709 tests** (was 94.3/687). The gate floor now sits at 92% statements / 93% lines.
 
 **Bugs found while testing:**
+
 - **wizard.ts was measured at 71% because the rollback catch was genuinely untested** — every failure mode hit the empty-folder guard first. A read-only parent (`mkdirSync` EACCES) reaches the rollback; wizard is now 90.3%.
 - **devServer.ts had the same TDZ bug fixed earlier in install.ts**: a synchronous spawn failure crashed with "Cannot access 'timeout' before initialization" instead of returning an error result. Fixed (declared up front, guarded `clearTimeout`); the spawn-throw path is now tested.
 - **pageManager's rename/duplicate/delete rollbacks now tested** via read-only sidecar directories (78% → 84.3%): the rename restores the original file, delete restores it, and duplicate removes the orphaned copy.
 
 **Refactors for testability:**
+
 - `windowsNodePaths(homedir, env)` extracted from nodeCheck — the win32 candidate list is now tested on any platform.
 - `taskkillProcessTree(pid)` extracted from devServer's win32 stop path — tested against the spawn mock.
 - npmCommand's APPDATA resolution now tries the host-style path first (matching the PATH candidates), so POSIX test hosts can resolve temp dirs — real Windows behavior unchanged; the APPDATA branch is now covered.
@@ -883,18 +924,21 @@ App statement coverage is now **95.4%** with **709 tests** (was 94.3/687). The g
 ### Audit round 4 — six fresh-angle audits
 
 **Data loss (HIGH, fixed):**
+
 - **Saving page A could prompt a false "modified outside Zephus" on open page B and Reload would silently discard B's unsaved edits.** The post-list refresh regenerates OTHER pages on disk → the watcher fires → the renderer's own-write guard can't recognize the (legitimately changed) disk state. The main process now marks every schema write (`writePageDocument`, `refreshPostListPages`) as self-written and the watcher suppresses those events (30s window).
 - **Renaming a detached/out-of-sync page destroyed the hand-authored file**: the rename regenerated the .astro from the stale sidecar tree. Renames now move bytes and update only the sidecar metadata for detached/out-of-sync pages.
 - **Asset repoint and Replace All clobbered detached/out-of-sync pages** with regenerated output — both sweeps now skip them.
 - **Reattach destroyed hand-authored code** (`<style>`/imports/expressions silently dropped) — now guarded by the same canonical-source check as migration.
 
 **Feature-breaking (fixed):**
+
 - **Theme previews were always EMPTY shells** — `generate-theme-previews.js` missed `regenerateHashlessPages: true`, so the scaffold stubs were never materialized (theme picker showed blank pages). One option; previews now build real content (verified: 5KB of real markup per page).
 - **Dev Server Log panel froze right after preview startup** — `togglePreview`'s `finally` unsubscribed ALL log listeners on success. Each invocation now owns its subscription.
 - **Every hero CTA rendered as a plain accent link** — the `button` block never emitted the `.button` class the theme CSS styles. Now merged with the user's `cls`.
 - **Restaurant menu rendered literal `&lt;h3&gt;` text** — the menu columns contained block tags the inline renderer escapes. Now rich text (`<strong>` + line breaks).
 
 **Races / UX (fixed):**
+
 - Publish: added an in-flight latch (double-click no longer fires two builds or a scary "Build Failed" for the rejected second) and a dirty-recheck — "newer edits not included" is now stated instead of a misleading success.
 - Preview: `previewStartInFlight` latch for double-clicks; failure paths tear down only the failed invocation's subscription.
 - Git panel operations serialized on a chain (no more `index.lock` collisions or mid-transition status snapshots).
@@ -903,6 +947,7 @@ App statement coverage is now **95.4%** with **709 tests** (was 94.3/687). The g
 - Project-open re-entrancy guard; failed opens clear the pending draft-resume request; new-page flow matches normalized slugs ("My Page" now opens the created page).
 
 **Canvas fidelity (fixed):**
+
 - Block styles double-applied on the canvas (wrapper + inner element) — padding/margins showed ~2x the build output. The wrapper now carries only the outer layout box.
 - Length fields sanitize typed numbers — ".px"/"-px"/"1e5px" no longer write invalid CSS into saved files.
 

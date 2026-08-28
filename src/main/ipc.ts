@@ -120,30 +120,28 @@ export function registerIpcHandlers(
 
   ipcMain.handle(IPC.openFolder, async () => {
     const win = getWindow();
-    const result = await dialog.showOpenDialog(
+    const options: Electron.OpenDialogOptions = {
+      title: "Open Zephus Site",
+      properties: ["openDirectory"],
+    };
+    const result =
       win && !win.isDestroyed()
-        ? win
-        : (undefined as unknown as Electron.BaseWindow),
-      {
-        title: "Open Zephus Site",
-        properties: ["openDirectory"],
-      },
-    );
+        ? await dialog.showOpenDialog(win, options)
+        : await dialog.showOpenDialog(options);
     if (result.canceled || result.filePaths.length === 0) return null;
     return result.filePaths[0];
   });
 
   ipcMain.handle(IPC.chooseNewSiteFolder, async () => {
     const win = getWindow();
-    const result = await dialog.showOpenDialog(
+    const options: Electron.OpenDialogOptions = {
+      title: "Choose a Folder for the New Site",
+      properties: ["openDirectory", "createDirectory", "promptToCreate"],
+    };
+    const result =
       win && !win.isDestroyed()
-        ? win
-        : (undefined as unknown as Electron.BaseWindow),
-      {
-        title: "Choose a Folder for the New Site",
-        properties: ["openDirectory", "createDirectory", "promptToCreate"],
-      },
-    );
+        ? await dialog.showOpenDialog(win, options)
+        : await dialog.showOpenDialog(options);
     if (result.canceled || result.filePaths.length === 0) return null;
     return result.filePaths[0];
   });

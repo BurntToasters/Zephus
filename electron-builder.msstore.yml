@@ -8,11 +8,11 @@ win:
 appx:
   # Supply the real Partner Center values via environment variables so MS Store
   # builds cannot accidentally ship with a placeholder identity.
-  identityName: '${env.ZEPHUS_MSSTORE_IDENTITY_NAME}'
-  publisher: '${env.ZEPHUS_MSSTORE_PUBLISHER}'
+  identityName: "${env.ZEPHUS_MSSTORE_IDENTITY_NAME}"
+  publisher: "${env.ZEPHUS_MSSTORE_PUBLISHER}"
   publisherDisplayName: BurntToasters
   displayName: Zephus
-  backgroundColor: '#ffffff'
+  backgroundColor: "#ffffff"
   minVersion: 10.0.10240.0
   maxVersionTested: 10.0.22621.0
   customManifestPath: build/appx/appxmanifest.xml

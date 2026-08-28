@@ -11,7 +11,9 @@ const failures = [];
 // version's section is missing, so a release never ships without notes.
 const packageJson = require("../package.json");
 const VERSION = packageJson.version;
-const RELEASE_CHANNEL = (process.env.RELEASE_CHANNEL || "").trim().toLowerCase();
+const RELEASE_CHANNEL = (process.env.RELEASE_CHANNEL || "")
+  .trim()
+  .toLowerCase();
 if (RELEASE_CHANNEL === "db" && !/-db(?:[.-]|$|[0-9])/i.test(VERSION)) {
   failures.push(
     `RELEASE_CHANNEL=db requires a -db version, but package.json is ${VERSION}.`,
@@ -20,16 +22,12 @@ if (RELEASE_CHANNEL === "db" && !/-db(?:[.-]|$|[0-9])/i.test(VERSION)) {
 const CHANGELOG_PATH = path.join(__dirname, "..", "CHANGELOG.md");
 try {
   const changelog = fs.readFileSync(CHANGELOG_PATH, "utf8");
-  const escapedVersion = VERSION.replace(
-    /[.*+?^${}()|[\]\\]/g,
-    "\\$&",
-  );
-  const sectionHeader = new RegExp(
-    `^#{1,3}\\s+.*${escapedVersion}.*$`,
-    "m",
-  );
+  const escapedVersion = VERSION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const sectionHeader = new RegExp(`^#{1,3}\\s+.*${escapedVersion}.*$`, "m");
   if (!changelog.trim()) {
-    failures.push("CHANGELOG.md is empty — the draft release notes would be blank.");
+    failures.push(
+      "CHANGELOG.md is empty — the draft release notes would be blank.",
+    );
   } else if (!sectionHeader.test(changelog)) {
     failures.push(
       `CHANGELOG.md has no section for the current version (${VERSION}) — the draft release notes would miss it.`,
@@ -52,7 +50,9 @@ try {
 }
 
 if (!process.env.GPG_KEY_ID) {
-  failures.push("GPG_KEY_ID is required — .asc signatures must come from the documented key, not a random default key.");
+  failures.push(
+    "GPG_KEY_ID is required — .asc signatures must come from the documented key, not a random default key.",
+  );
 } else {
   // gpg accepts emails, short ids, full fingerprints and 0x-prefixed hex as
   // key selectors — any of those is fine as long as it is set. A hex
@@ -67,8 +67,7 @@ if (!process.env.GPG_KEY_ID) {
   const stripped = value.replace(/[^0-9A-Fa-f]/g, "");
   const remainder = value.replace(/[0-9A-Fa-f]/g, "");
   const isFingerprintLike =
-    stripped.length >= 8 &&
-    /^[@./\s:_-]*$/.test(remainder);
+    stripped.length >= 8 && /^[@./\s:_-]*$/.test(remainder);
   if (isFingerprintLike && !/F2FBC20F/i.test(stripped)) {
     console.warn(
       `⚠ GPG_KEY_ID ${value} does not contain the documented signing key fingerprint (0xF2FBC20F) — ` +
@@ -87,4 +86,6 @@ if (failures.length > 0) {
   for (const f of failures) console.error(`   - ${f}`);
   process.exit(1);
 }
-console.log("✓ Release gate passed (GitHub CLI, GPG key, signing config present).");
+console.log(
+  "✓ Release gate passed (GitHub CLI, GPG key, signing config present).",
+);

@@ -1,8 +1,8 @@
-const { spawn } = require('child_process');
-const path = require('path');
+const { spawn } = require("child_process");
+const path = require("path");
 
-const ROOT = path.resolve(__dirname, '..');
-const tscBin = require.resolve('typescript/bin/tsc');
+const ROOT = path.resolve(__dirname, "..");
+const tscBin = require.resolve("typescript/bin/tsc");
 const children = [];
 let shuttingDown = false;
 
@@ -17,23 +17,33 @@ function shutdown(code) {
   process.exit(code);
 }
 
-const clean = spawn(process.execPath, [path.join(__dirname, 'dist-tools.js'), 'clean'], {
-  cwd: ROOT,
-  stdio: 'inherit',
-});
+const clean = spawn(
+  process.execPath,
+  [path.join(__dirname, "dist-tools.js"), "clean"],
+  {
+    cwd: ROOT,
+    stdio: "inherit",
+  },
+);
 
-clean.on('close', (code) => {
+clean.on("close", (code) => {
   if (code !== 0) {
     process.exit(code);
   }
 
   const mainWatcher = spawn(
     process.execPath,
-    [tscBin, '--project', 'tsconfig.main.json', '--watch', '--preserveWatchOutput'],
-    { cwd: ROOT, stdio: 'inherit' }
+    [
+      tscBin,
+      "--project",
+      "tsconfig.main.json",
+      "--watch",
+      "--preserveWatchOutput",
+    ],
+    { cwd: ROOT, stdio: "inherit" },
   );
 
-  mainWatcher.on('exit', (exitCode, signal) => {
+  mainWatcher.on("exit", (exitCode, signal) => {
     if (shuttingDown) return;
     if (signal) {
       shutdown(0);
@@ -44,11 +54,11 @@ clean.on('close', (code) => {
 
   const rendererWatcher = spawn(
     process.execPath,
-    [path.join(__dirname, 'bundle-renderer.js'), '--watch'],
-    { cwd: ROOT, stdio: 'inherit' }
+    [path.join(__dirname, "bundle-renderer.js"), "--watch"],
+    { cwd: ROOT, stdio: "inherit" },
   );
 
-  rendererWatcher.on('exit', (exitCode, signal) => {
+  rendererWatcher.on("exit", (exitCode, signal) => {
     if (shuttingDown) return;
     if (signal) {
       shutdown(0);
@@ -59,11 +69,11 @@ clean.on('close', (code) => {
 
   const preloadWatcher = spawn(
     process.execPath,
-    [path.join(__dirname, 'bundle-preload.js'), '--watch'],
-    { cwd: ROOT, stdio: 'inherit' }
+    [path.join(__dirname, "bundle-preload.js"), "--watch"],
+    { cwd: ROOT, stdio: "inherit" },
   );
 
-  preloadWatcher.on('exit', (exitCode, signal) => {
+  preloadWatcher.on("exit", (exitCode, signal) => {
     if (shuttingDown) return;
     if (signal) {
       shutdown(0);
@@ -75,5 +85,5 @@ clean.on('close', (code) => {
   children.push(mainWatcher, rendererWatcher, preloadWatcher);
 });
 
-process.on('SIGINT', () => shutdown(0));
-process.on('SIGTERM', () => shutdown(0));
+process.on("SIGINT", () => shutdown(0));
+process.on("SIGTERM", () => shutdown(0));

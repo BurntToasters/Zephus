@@ -70,7 +70,7 @@ export function readProjectFile(
     // Re-check the denylist against the symlink-resolved path so an in-project
     // symlink (e.g. notes.txt -> .env) cannot bypass the name-based check.
     assertEditablePath(path.relative(realRoot, realTarget));
-    return { ok: true, content: fs.readFileSync(full, "utf8") };
+    return { ok: true, content: fs.readFileSync(realTarget, "utf8") };
   } catch (error) {
     return {
       ok: false,
@@ -92,7 +92,9 @@ export function writeProjectFile(
     const resolvedRel = path.relative(realRoot, realTarget);
     assertEditablePath(resolvedRel);
     assertWritablePath(resolvedRel);
-    // Atomic write: a crash mid-write must never leave a half-written file.
+    // Atomic write: uses `full` (not realTarget) because the directory may not
+    // yet exist; assertRealpathInside already verified the existing ancestor
+    // chain stays inside the project boundary.
     writeFileAtomic(full, content);
     return { ok: true };
   } catch (error) {

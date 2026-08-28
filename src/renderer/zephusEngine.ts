@@ -582,7 +582,9 @@ function friendlyError(raw: string | undefined): string {
   if (!e.trim()) return "Something went wrong. Please try again.";
   if (/not installed|run npm install/i.test(e))
     return "Your site's dependencies aren't installed yet. Zephus will install them — try again.";
-  if (/node(\.js)?\s*\/?\s*npm not found|ENOENT|not recognized/i.test(e))
+  if (/node(\.js)?\s*\/?\s*npm not found|not recognized/i.test(e))
+    return "Node.js was not found. Install it from nodejs.org, or set a custom Node.js location in Settings.";
+  if (/ENOENT/.test(e) && /node|npm/i.test(e))
     return "Node.js was not found. Install it from nodejs.org, or set a custom Node.js location in Settings.";
   if (/did not report a URL|timeout/i.test(e))
     return "The preview took too long to start. Check the Dev Server Log panel for details.";
@@ -625,48 +627,37 @@ function isValidDateString(value: string): boolean {
 }
 
 function uid(): string {
-  return "b" + Math.random().toString(36).slice(2, 9);
+  return "b" + crypto.randomUUID().replace(/-/g, "").slice(0, 12);
 }
 
 // Template blocks (editorBlocks.ts) must use the same id scheme as the
 // session, so register the engine's generator once.
 setUidGenerator(uid);
 
-function cloneBlock(block: Block): Block {
-  const copy: Block = {
-    ...block,
-    props: { ...block.props },
-    style: block.style ? JSON.parse(JSON.stringify(block.style)) : undefined,
+function cloneBlock(block: Block | BlockNode): BlockNode {
+  const source = block as BlockNode;
+  const copy: BlockNode = {
+    ...source,
+    props: { ...source.props },
+    style: source.style ? JSON.parse(JSON.stringify(source.style)) : undefined,
   };
   // Deep-clone nested structures so a duplicate never shares mutable state with
   // its source, and give nested children fresh ids to avoid id collisions.
-  const nested = block as unknown as {
-    children?: Block[];
-    asset?: unknown;
-    link?: unknown;
-    form?: unknown;
-  };
-  const target = copy as unknown as {
-    children?: Block[];
-    asset?: unknown;
-    link?: unknown;
-    form?: unknown;
-  };
-  if (Array.isArray(nested.children)) {
-    target.children = nested.children.map((child) => {
+  if (Array.isArray(source.children)) {
+    copy.children = source.children.map((child) => {
       const childCopy = cloneBlock(child);
       childCopy.id = uid();
       return childCopy;
     });
   }
-  if (nested.asset !== undefined) {
-    target.asset = JSON.parse(JSON.stringify(nested.asset));
+  if (source.asset !== undefined) {
+    copy.asset = JSON.parse(JSON.stringify(source.asset));
   }
-  if (nested.link !== undefined) {
-    target.link = JSON.parse(JSON.stringify(nested.link));
+  if (source.link !== undefined) {
+    copy.link = JSON.parse(JSON.stringify(source.link));
   }
-  if (nested.form !== undefined) {
-    target.form = JSON.parse(JSON.stringify(nested.form));
+  if (source.form !== undefined) {
+    copy.form = JSON.parse(JSON.stringify(source.form));
   }
   return copy;
 }

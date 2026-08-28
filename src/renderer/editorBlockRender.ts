@@ -41,7 +41,13 @@ export function sanitizeHtmlForCanvas(html: string): string {
       tag === "form" ||
       // <base> rewrites every relative URL on the canvas (images, links, css)
       // to an attacker-chosen origin — remove it outright.
-      tag === "base"
+      tag === "base" ||
+      // <style>/<link> can exfiltrate data via CSS or visually hijack the
+      // editor chrome. <meta http-equiv="refresh"> can redirect the canvas.
+      // The built site preserves these; only the live canvas strips them.
+      tag === "style" ||
+      tag === "link" ||
+      tag === "meta"
     ) {
       toRemove.push(node);
     } else {

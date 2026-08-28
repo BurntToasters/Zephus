@@ -1,67 +1,70 @@
-const { execSync } = require('child_process');
-const os = require('os');
-const path = require('path');
-const fs = require('fs');
+const { execSync } = require("child_process");
+const os = require("os");
+const path = require("path");
+const fs = require("fs");
 
-const ROOT = path.resolve(__dirname, '..');
-const MANIFEST = 'run.rosie.zephus.yml';
-const APP_ID = 'run.rosie.zephus';
-const BUILD_DIR_PREFIX = 'build-dir';
-const REPO_DIR = 'repo';
-const RELEASE_DIR = 'release';
+const ROOT = path.resolve(__dirname, "..");
+const MANIFEST = "run.rosie.zephus.yml";
+const APP_ID = "run.rosie.zephus";
+const BUILD_DIR_PREFIX = "build-dir";
+const REPO_DIR = "repo";
+const RELEASE_DIR = "release";
 
-if (process.platform !== 'linux') {
-  console.error('Flatpak scripts can only run on Linux.');
+if (process.platform !== "linux") {
+  console.error("Flatpak scripts can only run on Linux.");
   process.exit(1);
 }
 
 const ARCH_MAP = {
-  x64: 'x86_64',
-  arm64: 'aarch64',
-  x86_64: 'x86_64',
-  aarch64: 'aarch64',
+  x64: "x86_64",
+  arm64: "aarch64",
+  x86_64: "x86_64",
+  aarch64: "aarch64",
 };
 
 const BUNDLE_NAMES = {
-  x86_64: 'Zephus-Linux-x86_64.flatpak',
-  aarch64: 'Zephus-Linux-aarch64.flatpak',
+  x86_64: "Zephus-Linux-x86_64.flatpak",
+  aarch64: "Zephus-Linux-aarch64.flatpak",
 };
 
 const UNPACKED_DIRS = {
-  x86_64: 'release/linux-unpacked',
-  aarch64: 'release/linux-arm64-unpacked',
+  x86_64: "release/linux-unpacked",
+  aarch64: "release/linux-arm64-unpacked",
 };
 
 function getSanitizedEnv() {
   const env = { ...process.env };
 
   for (const key of Object.keys(env)) {
-    if (key.startsWith('SNAP')) {
+    if (key.startsWith("SNAP")) {
       delete env[key];
     }
   }
 
   const snapInjectedKeys = [
-    'GDK_PIXBUF_MODULE_FILE',
-    'GDK_PIXBUF_MODULEDIR',
-    'GSETTINGS_SCHEMA_DIR',
-    'GTK_EXE_PREFIX',
-    'GTK_PATH',
-    'GTK_IM_MODULE_FILE',
-    'GIO_MODULE_DIR',
-    'LOCPATH',
-    'XDG_DATA_HOME',
-    'XDG_DATA_DIRS',
-    'XDG_DATA_DIRS_VSCODE_SNAP_ORIG',
-    'VSCODE_NLS_CONFIG',
+    "GDK_PIXBUF_MODULE_FILE",
+    "GDK_PIXBUF_MODULEDIR",
+    "GSETTINGS_SCHEMA_DIR",
+    "GTK_EXE_PREFIX",
+    "GTK_PATH",
+    "GTK_IM_MODULE_FILE",
+    "GIO_MODULE_DIR",
+    "LOCPATH",
+    "XDG_DATA_HOME",
+    "XDG_DATA_DIRS",
+    "XDG_DATA_DIRS_VSCODE_SNAP_ORIG",
+    "VSCODE_NLS_CONFIG",
   ];
   for (const key of snapInjectedKeys) {
     delete env[key];
   }
 
-  if (typeof env.PATH === 'string') {
+  if (typeof env.PATH === "string") {
     env.PATH = env.PATH.split(path.delimiter)
-      .filter((part) => part && !part.includes('/snap/') && !part.includes('/var/lib/snapd'))
+      .filter(
+        (part) =>
+          part && !part.includes("/snap/") && !part.includes("/var/lib/snapd"),
+      )
       .join(path.delimiter);
   }
 
@@ -71,7 +74,12 @@ function getSanitizedEnv() {
 
 function run(cmd, opts = {}) {
   console.log(`\n> ${cmd}`);
-  execSync(cmd, { stdio: 'inherit', cwd: ROOT, env: getSanitizedEnv(), ...opts });
+  execSync(cmd, {
+    stdio: "inherit",
+    cwd: ROOT,
+    env: getSanitizedEnv(),
+    ...opts,
+  });
 }
 
 function flatpakEnv(arch) {
@@ -81,7 +89,7 @@ function flatpakEnv(arch) {
   }
   if (!fs.existsSync(path.join(ROOT, unpackedDir))) {
     throw new Error(
-      `Missing ${unpackedDir}. Run the matching electron-builder Linux build before Flatpak ${arch}.`
+      `Missing ${unpackedDir}. Run the matching electron-builder Linux build before Flatpak ${arch}.`,
     );
   }
   return { ...getSanitizedEnv(), ZEPHUS_LINUX_UNPACKED_DIR: unpackedDir };
@@ -98,19 +106,19 @@ function parseArgs() {
 
   let archs = [];
   for (const flag of flags) {
-    if (flag === '--x64' || flag === '--x86_64') archs.push('x86_64');
-    if (flag === '--arm64' || flag === '--aarch64') archs.push('aarch64');
+    if (flag === "--x64" || flag === "--x86_64") archs.push("x86_64");
+    if (flag === "--arm64" || flag === "--aarch64") archs.push("aarch64");
   }
 
   if (archs.length === 0) {
-    archs = ['x86_64', 'aarch64'];
+    archs = ["x86_64", "aarch64"];
   }
 
   return { command, archs };
 }
 
 function clean(archs) {
-  console.log('Cleaning Flatpak build artifacts...\n');
+  console.log("Cleaning Flatpak build artifacts...\n");
 
   for (const arch of archs) {
     const buildDir = `${BUILD_DIR_PREFIX}-${arch}`;
@@ -120,15 +128,21 @@ function clean(archs) {
   }
 
   if (fs.existsSync(path.join(ROOT, BUILD_DIR_PREFIX))) {
-    fs.rmSync(path.join(ROOT, BUILD_DIR_PREFIX), { recursive: true, force: true });
+    fs.rmSync(path.join(ROOT, BUILD_DIR_PREFIX), {
+      recursive: true,
+      force: true,
+    });
   }
 
   if (fs.existsSync(path.join(ROOT, REPO_DIR))) {
     fs.rmSync(path.join(ROOT, REPO_DIR), { recursive: true, force: true });
   }
 
-  if (fs.existsSync(path.join(ROOT, '.flatpak-builder'))) {
-    fs.rmSync(path.join(ROOT, '.flatpak-builder'), { recursive: true, force: true });
+  if (fs.existsSync(path.join(ROOT, ".flatpak-builder"))) {
+    fs.rmSync(path.join(ROOT, ".flatpak-builder"), {
+      recursive: true,
+      force: true,
+    });
   }
 }
 
@@ -138,28 +152,35 @@ function buildArch(arch) {
   const isCross = arch !== hostArch;
 
   console.log(
-    `\n=== Building Flatpak for ${arch} ${isCross ? '(cross-compile)' : '(native)'} ===\n`
+    `\n=== Building Flatpak for ${arch} ${isCross ? "(cross-compile)" : "(native)"} ===\n`,
   );
 
   try {
-    run(`flatpak-builder --arch=${arch} --repo=${REPO_DIR} --force-clean ${buildDir} ${MANIFEST}`, {
-      env: flatpakEnv(arch),
-    });
+    run(
+      `flatpak-builder --arch=${arch} --repo=${REPO_DIR} --force-clean ${buildDir} ${MANIFEST}`,
+      {
+        env: flatpakEnv(arch),
+      },
+    );
   } catch (error) {
-    const buildFilesPath = path.join(ROOT, buildDir, 'files');
-    const buildMetadataPath = path.join(ROOT, buildDir, 'metadata');
-    const canRetryExport = fs.existsSync(buildFilesPath) && fs.existsSync(buildMetadataPath);
+    const buildFilesPath = path.join(ROOT, buildDir, "files");
+    const buildMetadataPath = path.join(ROOT, buildDir, "metadata");
+    const canRetryExport =
+      fs.existsSync(buildFilesPath) && fs.existsSync(buildMetadataPath);
 
     if (!canRetryExport) {
       throw error;
     }
 
     console.log(
-      '\nflatpak-builder export failed. Retrying export with --disable-sandbox (icon validator workaround)...\n'
+      "\nflatpak-builder export failed. Retrying export with --disable-sandbox (icon validator workaround)...\n",
     );
-    run(`flatpak build-export --disable-sandbox --arch=${arch} ${REPO_DIR} ${buildDir}`, {
-      env: flatpakEnv(arch),
-    });
+    run(
+      `flatpak build-export --disable-sandbox --arch=${arch} ${REPO_DIR} ${buildDir}`,
+      {
+        env: flatpakEnv(arch),
+      },
+    );
   }
 }
 
@@ -171,7 +192,9 @@ function bundleArch(arch) {
 
   fs.mkdirSync(path.join(ROOT, RELEASE_DIR), { recursive: true });
 
-  run(`flatpak build-bundle --arch=${arch} ${REPO_DIR} ${outputPath} ${APP_ID}`);
+  run(
+    `flatpak build-bundle --arch=${arch} ${REPO_DIR} ${outputPath} ${APP_ID}`,
+  );
 
   console.log(`Bundle created: ${outputPath}`);
 }
@@ -181,22 +204,25 @@ function installArch(arch) {
 
   console.log(`\n=== Installing Flatpak for ${arch} ===\n`);
 
-  run(`flatpak-builder --user --install --arch=${arch} --force-clean ${buildDir} ${MANIFEST}`, {
-    env: flatpakEnv(arch),
-  });
+  run(
+    `flatpak-builder --user --install --arch=${arch} --force-clean ${buildDir} ${MANIFEST}`,
+    {
+      env: flatpakEnv(arch),
+    },
+  );
 }
 
 function main() {
   const { command, archs } = parseArgs();
 
   switch (command) {
-    case 'build':
+    case "build":
       for (const arch of archs) {
         installArch(arch);
       }
       break;
 
-    case 'bundle':
+    case "bundle":
       clean(archs);
       for (const arch of archs) {
         buildArch(arch);
@@ -206,21 +232,21 @@ function main() {
       }
       break;
 
-    case 'clean':
+    case "clean":
       clean(archs);
       break;
 
     default:
-      console.log('Zephus Flatpak Build Script\n');
-      console.log('Usage: node build-scripts/flatpak.js <command> [options]\n');
-      console.log('Commands:');
-      console.log('  build     Build and install locally');
-      console.log('  bundle    Build and create .flatpak bundles');
-      console.log('  clean     Remove build artifacts\n');
-      console.log('Options:');
-      console.log('  --x64       Build for x86_64 only');
-      console.log('  --arm64     Build for aarch64 only');
-      console.log('  (default)   Build for both architectures');
+      console.log("Zephus Flatpak Build Script\n");
+      console.log("Usage: node build-scripts/flatpak.js <command> [options]\n");
+      console.log("Commands:");
+      console.log("  build     Build and install locally");
+      console.log("  bundle    Build and create .flatpak bundles");
+      console.log("  clean     Remove build artifacts\n");
+      console.log("Options:");
+      console.log("  --x64       Build for x86_64 only");
+      console.log("  --arm64     Build for aarch64 only");
+      console.log("  (default)   Build for both architectures");
       process.exit(1);
   }
 }

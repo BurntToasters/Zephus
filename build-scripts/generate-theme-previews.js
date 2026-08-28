@@ -52,7 +52,8 @@ function buildPreview(themeMeta, deps, astroCli) {
     themeMeta.id,
     `zephus-preview-${themeMeta.id}`,
   );
-  if (!theme) throw new Error(`Could not build preview theme for ${themeMeta.id}`);
+  if (!theme)
+    throw new Error(`Could not build preview theme for ${themeMeta.id}`);
 
   const tempDir = path.join(TEMP_ROOT, themeMeta.id);
   const outDir = path.join(DIST_ROOT, "theme", themeMeta.id);
@@ -64,9 +65,14 @@ function buildPreview(themeMeta, deps, astroCli) {
   // regenerateHashlessPages is required: the scaffold stubs have hash-less
   // sidecars, so without it they are treated as out-of-sync and never
   // materialized — every preview would build as an empty shell.
-  const ensured = ensureVisualSchema(tempDir, path.join("src", "pages"), undefined, {
-    regenerateHashlessPages: true,
-  });
+  const ensured = ensureVisualSchema(
+    tempDir,
+    path.join("src", "pages"),
+    undefined,
+    {
+      regenerateHashlessPages: true,
+    },
+  );
   if (!ensured.ok) {
     throw new Error(
       `ensureVisualSchema failed for ${themeMeta.id}: ${ensured.error ?? "unknown"}`,

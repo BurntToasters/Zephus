@@ -4,6 +4,7 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import log from "electron-log";
+import { pathEnvKey } from "./envPath";
 
 const execFileAsync = promisify(execFile);
 
@@ -319,12 +320,6 @@ export async function checkNodeVersion(
         `${MIN_NODE_VERSION_STRING} or newer to build and preview Astro sites.`,
     };
   }
-}
-
-/** Returns the PATH-like key present in an env object (defaults to "PATH"). */
-function pathEnvKey(env: NodeJS.ProcessEnv): string {
-  const existing = Object.keys(env).find((k) => k.toUpperCase() === "PATH");
-  return existing ?? "PATH";
 }
 
 /**

@@ -1,4 +1,5 @@
 # Zephus
+
 A WYSIWYG Local GUI web editor; edit your git-hosted sites!
 
 > [!IMPORTANT]
@@ -9,6 +10,7 @@ A WYSIWYG Local GUI web editor; edit your git-hosted sites!
 > Zephus can ONLY edit/work with sites that have been created by Zephus in the app! It is not compatible with general astro-created sites unfortunately as I have a whole schema developed for the engine. If you try to force it to work with a non-zephus-made app, your site will break.
 
 ## Documentation
+
 To understand more how Zephus works and how to use it, please read the current documentation **[HERE](./docs/README.md)**.
 
 Developers: see **[Development guide](./docs/DEVELOPMENT.md)** for tests, bundling, and editor architecture.

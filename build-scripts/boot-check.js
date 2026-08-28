@@ -33,7 +33,11 @@ function packagedBinaryCandidates(platform) {
       );
     // Universal --dir builds use mac-universal; retain native fallbacks for
     // the architecture-specific CI and local developer builds.
-    return [binaryPath("mac-universal"), binaryPath(nativeDir), binaryPath("mac")];
+    return [
+      binaryPath("mac-universal"),
+      binaryPath(nativeDir),
+      binaryPath("mac"),
+    ];
   }
   if (platform === "win32") {
     return [path.join(ROOT, "release", "win-unpacked", "Zephus.exe")];
@@ -42,10 +46,16 @@ function packagedBinaryCandidates(platform) {
 }
 
 const binaryCandidates = packagedBinaryCandidates(process.platform);
-const binary = binaryCandidates.find((candidate) => fs.existsSync(candidate)) ?? binaryCandidates[0];
+const binary =
+  binaryCandidates.find((candidate) => fs.existsSync(candidate)) ??
+  binaryCandidates[0];
 if (!binary || !fs.existsSync(binary)) {
-  console.error(`✗ Packaged binary missing. Checked:\n  ${binaryCandidates.join("\n  ")}`);
-  console.error("  Run: npx electron-builder -c electron-builder.base.yml --dir --publish never");
+  console.error(
+    `✗ Packaged binary missing. Checked:\n  ${binaryCandidates.join("\n  ")}`,
+  );
+  console.error(
+    "  Run: npx electron-builder -c electron-builder.base.yml --dir --publish never",
+  );
   process.exit(1);
 }
 

@@ -19,13 +19,19 @@ function walkHtml(dir) {
 }
 
 async function main() {
-  const wizard = await import(path.join(ROOT, "dist", "main", "services", "wizard.js"));
-  const schema = await import(path.join(ROOT, "dist", "main", "services", "schema.js"));
+  const wizard = await import(
+    path.join(ROOT, "dist", "main", "services", "wizard.js")
+  );
+  const schema = await import(
+    path.join(ROOT, "dist", "main", "services", "schema.js")
+  );
   const themes = await import(path.join(ROOT, "dist", "main", "themes.js"));
 
   let failures = 0;
   for (const theme of themes.listThemes()) {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), `zephus-theme-${theme.id}-`));
+    const tmp = fs.mkdtempSync(
+      path.join(os.tmpdir(), `zephus-theme-${theme.id}-`),
+    );
     const project = path.join(tmp, "site");
     fs.mkdirSync(project, { recursive: true });
     try {
@@ -36,10 +42,16 @@ async function main() {
         continue;
       }
       // Give the scaffolded site access to the repo's astro/vite toolchain.
-      fs.symlinkSync(path.join(ROOT, "node_modules"), path.join(project, "node_modules"), "dir");
+      fs.symlinkSync(
+        path.join(ROOT, "node_modules"),
+        path.join(project, "node_modules"),
+        "dir",
+      );
       const ensured = schema.ensureVisualSchema(project, "src/pages");
       if (!ensured.ok) {
-        throw new Error("ensureVisualSchema failed: " + (ensured.error ?? "unknown"));
+        throw new Error(
+          "ensureVisualSchema failed: " + (ensured.error ?? "unknown"),
+        );
       }
       execFileSync(ASTRON, ["build", "--silent"], {
         cwd: project,

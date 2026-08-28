@@ -1,20 +1,23 @@
 /** create-gh-draft.js Pre-creates a single GitHub draft release for the current package version before any build VMs… */
 
-'use strict';
+"use strict";
 
-require('dotenv').config();
-const { assertGitHubCliAuthenticated, githubApi } = require('./github-cli');
+require("dotenv").config();
+const { assertGitHubCliAuthenticated, githubApi } = require("./github-cli");
 
-const packageJson = require('../package.json');
+const packageJson = require("../package.json");
 
 const VERSION = packageJson.version;
-const TAG_NAME = 'v' + VERSION;
-const REPO_OWNER = 'BurntToasters';
-const REPO_NAME = 'zephus';
-const GH_REQUEST_RETRIES = Number.parseInt(process.env.GH_REQUEST_RETRIES || '3', 10);
+const TAG_NAME = "v" + VERSION;
+const REPO_OWNER = "BurntToasters";
+const REPO_NAME = "zephus";
+const GH_REQUEST_RETRIES = Number.parseInt(
+  process.env.GH_REQUEST_RETRIES || "3",
+  10,
+);
 const GH_REQUEST_RETRY_DELAY_MS = Number.parseInt(
-  process.env.GH_REQUEST_RETRY_DELAY_MS || '1500',
-  10
+  process.env.GH_REQUEST_RETRY_DELAY_MS || "1500",
+  10,
 );
 
 function isGithubPrereleaseVersion(version) {
@@ -27,14 +30,30 @@ function sleep(ms) {
 
 function isRetryableGithubError(error) {
   if (!error) return false;
-  const retryableStatusCodes = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
-  const retryableCodes = new Set([
-    'ETIMEDOUT', 'ECONNRESET', 'ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED', 'EPIPE',
+  const retryableStatusCodes = new Set([
+    408, 409, 425, 429, 500, 502, 503, 504,
   ]);
-  if (typeof error.statusCode === 'number' && retryableStatusCodes.has(error.statusCode)) return true;
-  if (typeof error.code === 'string' && retryableCodes.has(error.code)) return true;
-  const msg = String(error.message || '').toLowerCase();
-  return msg.includes('timeout') || msg.includes('socket hang up') || msg.includes('aborted');
+  const retryableCodes = new Set([
+    "ETIMEDOUT",
+    "ECONNRESET",
+    "ENOTFOUND",
+    "EAI_AGAIN",
+    "ECONNREFUSED",
+    "EPIPE",
+  ]);
+  if (
+    typeof error.statusCode === "number" &&
+    retryableStatusCodes.has(error.statusCode)
+  )
+    return true;
+  if (typeof error.code === "string" && retryableCodes.has(error.code))
+    return true;
+  const msg = String(error.message || "").toLowerCase();
+  return (
+    msg.includes("timeout") ||
+    msg.includes("socket hang up") ||
+    msg.includes("aborted")
+  );
 }
 
 function githubRequest(method, endpoint, body) {
@@ -50,7 +69,9 @@ async function githubRequestWithRetry(method, endpoint, body) {
       const canRetry = attempt < attempts && isRetryableGithubError(error);
       if (!canRetry) throw error;
       const backoffMs = GH_REQUEST_RETRY_DELAY_MS * attempt;
-      console.log(`   Retry ${attempt}/${attempts - 1} in ${backoffMs}ms (${error.message})`);
+      console.log(
+        `   Retry ${attempt}/${attempts - 1} in ${backoffMs}ms (${error.message})`,
+      );
       await sleep(backoffMs);
     }
   }
@@ -60,8 +81,8 @@ async function findExistingRelease() {
   // First try the published-tag endpoint (works after a draft is published).
   try {
     const release = await githubRequestWithRetry(
-      'GET',
-      `/repos/${REPO_OWNER}/${REPO_NAME}/releases/tags/${TAG_NAME}`
+      "GET",
+      `/repos/${REPO_OWNER}/${REPO_NAME}/releases/tags/${TAG_NAME}`,
     );
     return release;
   } catch (err) {
@@ -70,8 +91,8 @@ async function findExistingRelease() {
 
   // Fall back to listing all releases (needed for drafts, which have no tag yet).
   const releases = await githubRequestWithRetry(
-    'GET',
-    `/repos/${REPO_OWNER}/${REPO_NAME}/releases?per_page=100`
+    "GET",
+    `/repos/${REPO_OWNER}/${REPO_NAME}/releases?per_page=100`,
   );
 
   if (!Array.isArray(releases)) return null;
@@ -86,9 +107,9 @@ async function findExistingRelease() {
 }
 
 async function main() {
-  console.log('═'.repeat(60));
+  console.log("═".repeat(60));
   console.log(`Pre-creating GitHub draft release: ${TAG_NAME}`);
-  console.log('═'.repeat(60));
+  console.log("═".repeat(60));
 
   assertGitHubCliAuthenticated();
 
@@ -97,37 +118,37 @@ async function main() {
   try {
     existing = await findExistingRelease();
   } catch (err) {
-    console.error('✗ Failed to query existing releases:', err.message);
+    console.error("✗ Failed to query existing releases:", err.message);
     process.exit(1);
   }
 
   if (existing) {
     console.log(
-      `✓ Release already exists (id=${existing.id}, draft=${existing.draft}, assets=${existing.assets.length})`
+      `✓ Release already exists (id=${existing.id}, draft=${existing.draft}, assets=${existing.assets.length})`,
     );
     console.log(`  Upload URL: ${existing.upload_url}`);
     return;
   }
 
   // Create the draft.
-  console.log('  No existing release found. Creating draft...');
+  console.log("  No existing release found. Creating draft...");
   try {
     const release = await githubRequestWithRetry(
-      'POST',
+      "POST",
       `/repos/${REPO_OWNER}/${REPO_NAME}/releases`,
       {
         tag_name: TAG_NAME,
         name: `Zephus ${VERSION}`,
         draft: true,
         prerelease: isGithubPrereleaseVersion(VERSION),
-      }
+      },
     );
     console.log(`✓ Created draft release: ${release.name} (id=${release.id})`);
     console.log(`  Upload URL: ${release.upload_url}`);
   } catch (err) {
     if (err.statusCode === 422) {
       // Lost a race with another process — fetch and report what exists.
-      console.log('  422: release appeared concurrently. Fetching winner...');
+      console.log("  422: release appeared concurrently. Fetching winner...");
       await sleep(2000);
       try {
         const winner = await findExistingRelease();
@@ -136,10 +157,10 @@ async function main() {
           return;
         }
       } catch (retryErr) {
-        console.error('  Re-fetch failed:', retryErr.message);
+        console.error("  Re-fetch failed:", retryErr.message);
       }
     }
-    console.error('✗ Failed to create release:', err.message);
+    console.error("✗ Failed to create release:", err.message);
     process.exit(1);
   }
 }

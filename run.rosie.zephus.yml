@@ -4,10 +4,10 @@
 # `npm run flatpak:build` / `npm run flatpak:bundle`.
 app-id: run.rosie.zephus
 runtime: org.freedesktop.Platform
-runtime-version: '24.08'
+runtime-version: "24.08"
 sdk: org.freedesktop.Sdk
 base: org.electronjs.Electron2.BaseApp
-base-version: '24.08'
+base-version: "24.08"
 command: zephus
 separate-locales: false
 finish-args:

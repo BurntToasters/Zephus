@@ -1,5 +1,6 @@
 import * as fs from "fs";
 import * as path from "path";
+import { pathEnvKey } from "./envPath";
 
 export interface NpmCommand {
   command: string;
@@ -33,10 +34,6 @@ function quoteCmdArg(value: string, forceQuote = false): string {
   // cmd.exe expands %VAR% even inside double quotes — a path containing % is
   // corrupted before the command runs. Doubling escapes it.
   return `"${value.replace(/"/g, '""').replace(/%/g, "%%")}"`;
-}
-
-function pathEnvKey(env: NodeJS.ProcessEnv): string {
-  return Object.keys(env).find((key) => key.toUpperCase() === "PATH") ?? "PATH";
 }
 
 function splitPathValue(pathValue: string): string[] {
