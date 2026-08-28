@@ -51,10 +51,11 @@ async function main() {
         continue;
       }
       // Give the scaffolded site access to the repo's astro/vite toolchain.
+      // Use "junction" on Windows (no admin/Developer Mode needed) vs "dir" on POSIX.
       fs.symlinkSync(
         path.join(ROOT, "node_modules"),
         path.join(project, "node_modules"),
-        "dir",
+        process.platform === "win32" ? "junction" : "dir",
       );
       const ensured = schema.ensureVisualSchema(project, "src/pages");
       if (!ensured.ok) {

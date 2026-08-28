@@ -113,12 +113,14 @@ export async function installDependencies(
     activeChild = null;
     let timeout: NodeJS.Timeout | null = null;
     let settled = false;
+    let escalationTimer: NodeJS.Timeout | null = null;
     const finish = (result: OperationResult): void => {
       if (settled) return;
       settled = true;
       installing = false;
       activeChild = null;
       if (timeout) clearTimeout(timeout);
+      if (escalationTimer) clearTimeout(escalationTimer);
       resolve(result);
     };
     try {
@@ -153,7 +155,7 @@ export async function installDependencies(
       if (child) {
         killInstallTree(child, false);
         // Escalate: SIGTERM may be ignored by stuck postinstall scripts.
-        setTimeout(() => {
+        escalationTimer = setTimeout(() => {
           if (child && !child.killed) killInstallTree(child, true);
         }, 3000);
       }

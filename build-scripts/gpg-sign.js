@@ -522,7 +522,11 @@ async function main() {
   }
 
   console.log("\n" + "═".repeat(60));
-  console.log("✓ COMPLETE");
+  if (uploadFailed) {
+    console.log("✗ SIGNING COMPLETE — UPLOAD FAILED");
+  } else {
+    console.log("✓ COMPLETE");
+  }
   console.log("═".repeat(60));
   console.log("\nGenerated files in release/:");
 

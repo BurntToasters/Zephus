@@ -45,12 +45,30 @@ export function decodeSiteDraftContent(
       "site" in (parsed as Record<string, unknown>) &&
       "kind" in (parsed as Record<string, unknown>)
     ) {
+      const wrapped = parsed as { site: unknown; kind: unknown };
+      // Validate minimal SiteDocument shape and kind value.
+      if (
+        typeof wrapped.site !== "object" ||
+        wrapped.site === null ||
+        (wrapped.kind !== "shell" &&
+          wrapped.kind !== "design" &&
+          wrapped.kind !== null)
+      ) {
+        return null;
+      }
       return {
-        site: (parsed as { site: SiteDocument }).site,
-        kind: (parsed as { kind: SiteEditorKind }).kind,
+        site: wrapped.site as SiteDocument,
+        kind: wrapped.kind as SiteEditorKind,
       };
     }
-    // Legacy draft: raw site JSON.
+    // Legacy draft: raw site JSON — validate it is at least an object.
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      Array.isArray(parsed)
+    ) {
+      return null;
+    }
     return { site: parsed as SiteDocument, kind: "shell" };
   } catch {
     return null;

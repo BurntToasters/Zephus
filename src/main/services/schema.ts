@@ -2560,6 +2560,13 @@ export function readPageDocument(
   }
 }
 
+/**
+ * INVARIANT: This function (and its callees ensureVisualSchema,
+ * refreshPostListPages, syncSiteShellOutputs) must remain SYNCHRONOUS.
+ * The Electron IPC main thread serializes handler calls — two concurrent async
+ * writes could interleave reads and produce inconsistent schema state. If any
+ * path within this function becomes async, introduce a per-project write mutex.
+ */
 export function writePageDocument(
   projectPath: string,
   pagesDir: string,
