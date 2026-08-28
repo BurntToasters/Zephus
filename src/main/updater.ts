@@ -1,17 +1,22 @@
 import { app, BrowserWindow } from "electron";
 import { autoUpdater, CancellationToken } from "electron-updater";
 import log from "electron-log";
+import { IPC } from "./ipcChannels";
 import type { GlobalSettings } from "./types";
 import {
   resolveUpdateFeedChannel,
   isChannelUpgrade,
   shouldAllowFeedDowngrade,
+  isStableChannelCandidate,
 } from "./services/updateChannel";
 import type { ReleaseFeedChannel } from "./services/updateChannel";
 
 let downloadToken: CancellationToken | null = null;
 let isDownloading = false;
 let downloadedVersion: string | null = null;
+// The most recent status sent to the renderer, cached so a renderer that
+// boots after an event can query it (startup check vs listener race).
+let lastStatus: UpdaterStatus | null = null;
 // The version most recently confirmed as a valid upgrade by isChannelUpgrade.
 // Acts as a guard so a download can never install a build the channel rules
 // rejected (electron-updater may surface semver-older builds when
@@ -61,10 +66,12 @@ function clearApprovedUpdate(): void {
   downloadedFeedChannel = null;
 }
 
-/**
- * Sets up the auto-updater event wiring. Called once on app startup.
- * Sends status events to the renderer via `updater-status`.
- */
+/** Sets up the auto-updater event wiring. */
+/** The most recent status sent to the renderer (queried at renderer boot to close the startup-check race). */
+export function getLastUpdaterStatus(): UpdaterStatus | null {
+  return lastStatus;
+}
+
 export function setupAutoUpdater(
   getWindow: () => BrowserWindow | null,
   getSettings: () => GlobalSettings,
@@ -76,9 +83,14 @@ export function setupAutoUpdater(
   applyChannel(getSettings());
 
   const send = (data: UpdaterStatus) => {
+    // Keep the latest status so a renderer that boots AFTER an event (the
+    // startup check often resolves before the renderer's listener attaches —
+    // those events were dropped and the sidebar falsely showed "Up to date")
+    // can query it.
+    lastStatus = data;
     const win = getWindow();
     if (win && !win.isDestroyed()) {
-      win.webContents.send("updater-status", data);
+      win.webContents.send(IPC.updaterStatus, data);
     }
   };
 
@@ -88,7 +100,10 @@ export function setupAutoUpdater(
     // electron-updater compares with raw semver and may report a build that
     // our channel rules reject (e.g. a less-stable build at the same base, or
     // a base downgrade surfaced because allowDowngrade was enabled). Re-gate.
-    if (isChannelUpgrade(app.getVersion(), info.version)) {
+    if (
+      isChannelUpgrade(app.getVersion(), info.version) &&
+      isStableChannelCandidate(activeFeedChannel ?? "latest", info.version)
+    ) {
       approvedVersion = info.version;
       approvedFeedChannel = activeFeedChannel;
       downloadedVersion = null;
@@ -141,6 +156,11 @@ export async function checkForUpdates(
   if (!app.isPackaged) {
     return { status: "error", error: "Updates not available in dev mode." };
   }
+  // Checking while a download is in flight would re-configure the feed under
+  // the active transfer and could overwrite the approval it must verify.
+  if (isDownloading) {
+    return { status: "downloading" };
+  }
   try {
     const feedChannel = applyChannel(getSettings());
     const result = await autoUpdater.checkForUpdates();
@@ -148,7 +168,11 @@ export async function checkForUpdates(
     // result.updateInfo is always populated with the feed's newest entry, even
     // when no update applies, so compare explicitly with channel rules rather
     // than treating its presence as "available".
-    if (latest && isChannelUpgrade(app.getVersion(), latest)) {
+    if (
+      latest &&
+      isChannelUpgrade(app.getVersion(), latest) &&
+      isStableChannelCandidate(feedChannel, latest)
+    ) {
       approvedVersion = latest;
       approvedFeedChannel = feedChannel;
       downloadedVersion = null;
@@ -195,7 +219,21 @@ export async function downloadUpdate(
   try {
     isDownloading = true;
     downloadToken = new CancellationToken();
-    await autoUpdater.downloadUpdate(downloadToken);
+    // A hung connection used to deadlock the updater forever: isDownloading
+    // stayed true, every later check/download returned "downloading", and the
+    // only recovery was the settings-modal Cancel or an app restart. Cancel
+    // the transfer after a generous timeout and surface a real error.
+    const downloadTimeout = setTimeout(
+      () => {
+        downloadToken?.cancel();
+      },
+      30 * 60 * 1000,
+    );
+    try {
+      await autoUpdater.downloadUpdate(downloadToken);
+    } finally {
+      clearTimeout(downloadTimeout);
+    }
     downloadToken = null;
     isDownloading = false;
     if (!downloadedVersion || downloadedVersion !== approvedVersion) {
@@ -223,12 +261,17 @@ export function cancelDownload(getWindow: () => BrowserWindow | null): void {
   if (downloadToken) {
     downloadToken.cancel();
     downloadToken = null;
-    isDownloading = false;
+    // The in-flight downloadUpdate promise settles (rejects with "cancelled")
+    // and clears isDownloading itself. Keeping it true here prevents a new
+    // download from starting a second concurrent transfer on the same
+    // autoUpdater before the first promise has resolved.
+    approvedVersion = null;
+    approvedFeedChannel = null;
     downloadedVersion = null;
     downloadedFeedChannel = null;
     const win = getWindow();
     if (win && !win.isDestroyed()) {
-      win.webContents.send("updater-status", {
+      win.webContents.send(IPC.updaterStatus, {
         status: "cancelled",
       } as UpdaterStatus);
     }

@@ -3,7 +3,6 @@ import * as fs from "fs";
 import * as path from "path";
 import log from "electron-log";
 import {
-  AssetEntry,
   BlockNode,
   BlockStyle,
   DesignTokenSet,
@@ -21,17 +20,39 @@ import {
   SiteDocumentResult,
   VisualSchemaStatus,
 } from "../types";
-import { listProjectImages } from "./assets";
 import { detectAstro, listPages } from "./project";
 import { readRepoSettings } from "./settings";
 import { readJsonSafe, writeFileAtomic } from "./fsSafe";
+import { markSelfWritten, pruneSelfWrittenMarkers } from "./watch";
+import { escapeAttr, escapeHtml, safeUrl } from "../../shared/renderHelpers";
+import { decodeHTML } from "entities";
+
+/** Escapes text for a quoted Astro attribute: HTML-escaping plus `{`/`}` as entities, because Astro evaluates `{...}`… */
+export function escapeAstroAttr(value: string): string {
+  return escapeAttr(value).replace(/\{/g, "&#123;").replace(/\}/g, "&#125;");
+}
+import {
+  renderBlockHtml,
+  renderSectionsMarkup,
+  type RenderPostEntry,
+} from "../../shared/blockRender";
 import {
   assertRealpathInside,
   safeResolve as safeResolveString,
 } from "./fsSafe";
-import { toProjectRelativePath } from "./projectPaths";
+import {
+  resolveProjectRelativeDir,
+  toProjectRelativePath,
+} from "./projectPaths";
 
 const FRONTMATTER_PATTERN = /^(---\r?\n[\s\S]*?\r?\n---\r?\n?)/;
+// Quote-aware tag matcher: a `>` inside a quoted attribute value must not end
+// the tag (mirrors DOM parsing used by the renderer).
+const TAG_PATTERN_SOURCE = "(?:[^>\"']|\"[^\"]*\"|'[^']*')*>";
+const TAG_TOKEN = new RegExp(
+  `<!--[\\s\\S]*?-->|<\\/?([A-Za-z][\\w:-]*)\\b${TAG_PATTERN_SOURCE}`,
+  "g",
+);
 const ZEPHUS_SCHEMA_VERSION = 1;
 const VOID_TAGS = new Set([
   "area",
@@ -44,6 +65,7 @@ const VOID_TAGS = new Set([
   "input",
   "link",
   "meta",
+  "param",
   "source",
   "track",
   "wbr",
@@ -65,10 +87,6 @@ function siteDocumentFile(projectPath: string): string {
 
 function templatesDir(projectPath: string): string {
   return path.join(zephusDir(projectPath), "templates");
-}
-
-function assetsIndexFile(projectPath: string): string {
-  return path.join(zephusDir(projectPath), "assets-index.json");
 }
 
 function pagesSchemaDir(projectPath: string): string {
@@ -111,7 +129,11 @@ export function routeFromPage(page: string, pagesDir: string): string {
     .replace(/\.(astro|md|mdx|html)$/i, "")
     .replace(/\\/g, "/");
   if (!rel || rel === "index") return "/";
-  return `/${rel}`;
+  // Nested index routes: Astro serves src/pages/blog/index.astro at /blog,
+  // but the raw slug "blog/index" produced nav/canonical/sitemap/RSS hrefs
+  // of /blog/index — every one a 404 on the published site.
+  const trimmed = rel.replace(/\/index$/, "");
+  return trimmed ? `/${trimmed}` : "/";
 }
 
 function slugFromPage(page: string, pagesDir: string): string {
@@ -134,24 +156,27 @@ export function pagePathFromSlug(
 }
 
 function pageSchemaRelativePath(slug: string): string {
+  // Resolve the sidecar key from the normalized slug: page files whose names
+  // do not round-trip through normalizePageSlug (uppercase letters, spaces)
+  // must still map to a stable sidecar instead of throwing "Invalid slug".
   const normalized = normalizePageSlug(slug);
-  if (normalized !== slug) {
+  if (!normalized) {
     throw new Error("Invalid page schema slug.");
   }
   return path.join(
     ".zephus",
     "pages",
-    slug === "index" ? "index.json" : `${slug}.json`,
+    normalized === "index" ? "index.json" : `${normalized}.json`,
   );
 }
 
 function pageSchemaFile(projectPath: string, slug: string): string {
   const normalized = normalizePageSlug(slug);
-  if (normalized !== slug) {
+  if (!normalized) {
     throw new Error("Invalid page schema slug.");
   }
   const root = path.resolve(projectPath, ".zephus", "pages");
-  const relative = slug === "index" ? "index.json" : `${slug}.json`;
+  const relative = normalized === "index" ? "index.json" : `${normalized}.json`;
   const resolved = path.resolve(root, relative);
   if (resolved !== root && !resolved.startsWith(root + path.sep)) {
     throw new Error("Page schema path escapes .zephus/pages.");
@@ -362,7 +387,9 @@ a {
   flex-wrap: wrap;
 }
 
-.zephus-shell-nav a {
+/* :where() keeps specificity at zero so a .button-classed nav link keeps
+   its pill styling (the plain nav-link color must not override it). */
+.zephus-shell-nav a:where(:not(.button)) {
   color: var(--zephus-foreground);
   text-decoration: none;
 }
@@ -414,25 +441,47 @@ a {
 `;
 }
 
-function mergePageNavItems(
+export function mergePageNavItems(
   navItems: NavItem[],
   pageDocs: PageDocument[],
 ): NavItem[] {
   const existingByPage = new Map<string, NavItem>();
-  const existingByHref = new Map<string, NavItem>();
   const customItems: NavItem[] = [];
-  for (const item of navItems) {
+  // Original ORDER of the surviving items: rebuilding page items in docs
+  // (alphabetical) order discarded any reorder the user made in the editor —
+  // the nav snapped back on the next sync.
+  const order = new Map<string, number>();
+  navItems.forEach((item, index) => {
+    order.set(item.page || item.href || item.id, index);
     if (item.page) {
       existingByPage.set(item.page, item);
     } else {
       customItems.push(item);
     }
-    existingByHref.set(item.href, item);
-  }
+  });
 
+  // A hand-authored custom item that targets a page's route is a deliberate
+  // override: it must keep its own label/visibility instead of being deleted
+  // (the previous filter dropped it on every site write) or overridden by the
+  // page's navVisible flag.
+  const customByHref = new Map(
+    customItems
+      .filter((item) => typeof item.href === "string" && item.href)
+      .map((item) => [item.href, item]),
+  );
   const pageItems = pageDocs.map((doc) => {
-    const existing =
-      existingByPage.get(doc.page) ?? existingByHref.get(doc.route);
+    const override = customByHref.get(doc.route);
+    if (override) {
+      // Keep the old page item's children (hand-authored subnav) when an
+      // override replaces it — previously they vanished silently.
+      const existing = existingByPage.get(doc.page);
+      return {
+        ...override,
+        page: doc.page,
+        children: override.children ?? existing?.children ?? [],
+      };
+    }
+    const existing = existingByPage.get(doc.page);
     return {
       id: existing?.id ?? `nav-${doc.slug}`,
       label: doc.navLabel,
@@ -443,15 +492,24 @@ function mergePageNavItems(
     };
   });
 
-  return [
+  const pageHrefs = new Set(pageItems.map((item) => item.href));
+  const merged = [
     ...pageItems,
-    ...customItems.filter(
-      (item) => !pageItems.some((pageItem) => pageItem.href === item.href),
-    ),
+    ...customItems.filter((item) => !pageHrefs.has(item.href)),
   ];
+  // Restore the user's original order for items that survived, appending
+  // anything new (a page just added) at the end.
+  merged.sort((a, b) => {
+    const ka = a.page || a.href || a.id;
+    const kb = b.page || b.href || b.id;
+    const oa = order.get(ka) ?? Number.MAX_SAFE_INTEGER;
+    const ob = order.get(kb) ?? Number.MAX_SAFE_INTEGER;
+    return oa - ob;
+  });
+  return merged;
 }
 
-function listExistingPageDocuments(
+export function listExistingPageDocuments(
   projectPath: string,
   pagesDir: string,
 ): PageDocument[] {
@@ -467,6 +525,7 @@ function renderManagedLayout(
   navItems: NavItem[],
   customCssHref: string | null,
   customScriptHref: string | null,
+  hasFeed: boolean,
 ): string {
   const navLinks = navItems
     .filter((item) => item.visible)
@@ -493,32 +552,98 @@ function renderManagedLayout(
   const customScriptTag = customScriptHref
     ? `\n    <script type="module" src="${escapeAttr(customScriptHref)}"></script>`
     : "";
-  const fontLinks = /^https:\/\/fonts\.googleapis\.com\//.test(
-    site.design.fontImportUrl ?? "",
+  const fontLinks = /^https?:\/\/fonts\.googleapis\.com\//i.test(
+    (site.design.fontImportUrl ?? "").trim(),
   )
     ? `    <link rel="preconnect" href="https://fonts.googleapis.com" />\n    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />\n    <link rel="stylesheet" href="${escapeAttr(
         site.design.fontImportUrl as string,
       )}" />\n`
     : "";
 
+  const faviconHref = safeUrl(site.faviconPath.trim());
+  const faviconLink = faviconHref
+    ? `\n    <link rel="icon" href="${escapeAttr(faviconHref)}" />`
+    : "";
+  // Only advertise a feed that the discovery writer confirmed is present.
+  const feedHref = resolveAbsoluteHttpUrl(site.siteUrl.trim(), "/rss.xml");
+  const feedLink =
+    hasFeed && feedHref
+      ? `\n    <link rel="alternate" type="application/rss+xml" title="${escapeAttr(
+          site.shell.siteTitle || site.siteName,
+        )}" href="${escapeAttr(feedHref)}" />`
+      : "";
+
   return `---
 interface Props {
   title?: string;
+  description?: string;
+  canonicalUrl?: string;
+  socialImage?: string;
+  noindex?: boolean;
 }
-const { title = ${JSON.stringify(site.shell.siteTitle || site.siteName)} } = Astro.props;
+const siteUrl = ${JSON.stringify(site.siteUrl.trim())};
+const siteName = ${JSON.stringify(site.shell.siteTitle || site.siteName)};
+const {
+  title = siteName,
+  description = "",
+  canonicalUrl = "",
+  socialImage = "",
+  noindex = false,
+} = Astro.props;
 const customHeadHtml = ${JSON.stringify(site.shell.customHeadHtml)};
 const footerHtml = ${JSON.stringify(site.shell.footerHtml)};
+
+// Absolute URLs are required by canonical and Open Graph consumers.
+const absolute = (value: string): string => {
+  if (!value) return "";
+  try {
+    const absoluteOrProtocolRelative =
+      /^[A-Za-z][A-Za-z\\d+.-]*:/.test(value) || value.startsWith("//");
+    let resolved: URL;
+    if (absoluteOrProtocolRelative) {
+      resolved = new URL(value, siteUrl || undefined);
+    } else {
+      if (!siteUrl) return "";
+      const base = new URL(siteUrl);
+      base.search = "";
+      base.hash = "";
+      if (!base.pathname.endsWith("/")) base.pathname += "/";
+      resolved = new URL(value.replace(/^\\/+/, ""), base);
+    }
+    return resolved.protocol === "http:" || resolved.protocol === "https:"
+      ? resolved.href
+      : "";
+  } catch {
+    return "";
+  }
+};
+const canonical =
+  absolute(canonicalUrl) || absolute(Astro.url.pathname);
+const socialImageUrl = absolute(socialImage);
 ---
 
 <!doctype html>
-<html lang="en">
+<html lang=${JSON.stringify(site.language.trim() || "en")}>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title}</title>
+    {description ? <meta name="description" content={description} /> : null}
+    {noindex ? <meta name="robots" content="noindex, nofollow" /> : null}
+    {canonical ? <link rel="canonical" href={canonical} /> : null}
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content={siteName} />
+    <meta property="og:title" content={title} />
+    {description ? <meta property="og:description" content={description} /> : null}
+    {canonical ? <meta property="og:url" content={canonical} /> : null}
+    {socialImageUrl ? <meta property="og:image" content={socialImageUrl} /> : null}
+    <meta name="twitter:card" content={socialImageUrl ? "summary_large_image" : "summary"} />
+    <meta name="twitter:title" content={title} />
+    {description ? <meta name="twitter:description" content={description} /> : null}
+    {socialImageUrl ? <meta name="twitter:image" content={socialImageUrl} /> : null}${faviconLink}${feedLink}
 ${fontLinks}    <link rel="stylesheet" href="/styles/global.css" />
-${customCssLink}
     <link rel="stylesheet" href="/styles/zephus-managed.css" />
+${customCssLink}
     {customHeadHtml ? <Fragment set:html={customHeadHtml} /> : null}
   </head>
   <body>
@@ -555,6 +680,44 @@ function writeJsonFile(file: string, value: unknown): void {
   writeFileAtomic(file, JSON.stringify(value, null, 2) + "\n");
 }
 
+/** Writes site.json only when the site (ignoring generatedAt) actually
+ *  changed — every page save previously bumped generatedAt, churning the
+ *  committed file on body-copy-only saves. Returns the site byte-equal to
+ *  what is on disk so the renderer's drift check cannot false-positive. */
+function writeSiteJsonIfChanged(
+  projectPath: string,
+  site: SiteDocument,
+): SiteDocument {
+  const file = siteDocumentFile(projectPath);
+  const onDisk = readJsonFile<SiteDocument>(file);
+  const key = (value: SiteDocument): string =>
+    JSON.stringify({ ...value, generatedAt: "" });
+  if (onDisk && key(onDisk) === key(site)) {
+    return onDisk;
+  }
+  const updated: SiteDocument = {
+    ...site,
+    generatedAt: new Date().toISOString(),
+  };
+  writeJsonFile(file, updated);
+  return updated;
+}
+
+/** Writes only when content differs. Opening a project / saving a page used
+ *  to rewrite layout, styles, discovery files and site.json unconditionally —
+ *  git churn on every open, and O(N) writes per save. */
+function writeFileAtomicIfChanged(file: string, content: string): void {
+  try {
+    if (fs.existsSync(file) && fs.readFileSync(file, "utf8") === content) {
+      return;
+    }
+  } catch {
+    /* unreadable file: fall through and rewrite */
+  }
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  writeFileAtomic(file, content);
+}
+
 function pageMetaFromFrontmatter(
   page: string,
   pagesDir: string,
@@ -579,29 +742,66 @@ function pageMetaFromFrontmatter(
       typeof frontmatter["metaDescription"] === "string"
         ? frontmatter["metaDescription"]
         : "",
-    navVisible:
-      typeof frontmatter["navVisible"] === "boolean"
+    navVisible: isNotFoundSlug(slug)
+      ? false
+      : typeof frontmatter["navVisible"] === "boolean"
         ? frontmatter["navVisible"]
         : true,
     isHome: route === "/",
+    detached: false,
+    socialImage:
+      typeof frontmatter["socialImage"] === "string"
+        ? frontmatter["socialImage"]
+        : "",
+    canonicalUrl:
+      typeof frontmatter["canonicalUrl"] === "string"
+        ? frontmatter["canonicalUrl"]
+        : "",
+    noindex: isNotFoundSlug(slug) || frontmatter["noindex"] === true,
+    publishDate:
+      typeof frontmatter["publishDate"] === "string"
+        ? frontmatter["publishDate"]
+        : "",
+    author:
+      typeof frontmatter["author"] === "string" ? frontmatter["author"] : "",
   };
 }
 
+/**
+ * Decodes HTML entities (named, decimal, hex) exactly like the DOM parser:
+ * spec-conformant maximal-name matching, legacy no-semicolon references,
+ * numeric refs without semicolons, and U+FFFD for invalid code points. Uses
+ * the same `entities` decoder that parse5 (and therefore the renderer's DOM
+ * parser) uses internally, so both parsers produce byte-identical text.
+ * A literal `&amp;copy;` becomes the TEXT `&copy;` (never re-scanned).
+ */
+function decodeHtmlEntities(value: string): string {
+  if (!value.includes("&")) return value;
+  return decodeHTML(value);
+}
+
 function textFromHtml(html: string): string {
-  return html
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .trim();
+  // Only strip real tags, not arbitrary `<...>` runs: literal text like
+  // "2 < 3" must survive (a `<` not followed by a letter, `/`, or `!` is not
+  // a tag start). Comments are dropped; <br> becomes a newline. Entities are
+  // decoded the same way the DOM parser decodes them.
+  let out = "";
+  let lastIndex = 0;
+  TAG_TOKEN.lastIndex = 0;
+  const tokenRe = TAG_TOKEN;
+  let match: RegExpExecArray | null;
+  while ((match = tokenRe.exec(html))) {
+    out += html.slice(lastIndex, match.index);
+    if (/^<\/?br\b/i.test(match[0])) out += "\n";
+    lastIndex = tokenRe.lastIndex;
+  }
+  out += html.slice(lastIndex);
+  return decodeHtmlEntities(out).trim();
 }
 
 function attrValue(html: string, attr: string): string {
   const match = html.match(new RegExp(`${attr}\\s*=\\s*["']([^"']*)["']`, "i"));
-  return match?.[1] ?? "";
+  return match?.[1] ? decodeHtmlEntities(match[1]) : "";
 }
 
 /**
@@ -612,14 +812,19 @@ function attrValue(html: string, attr: string): string {
  */
 function dataAttrValue(html: string, attr: string): string {
   const match = html.match(new RegExp(`${attr}\\s*=\\s*"([^"]*)"`, "i"));
-  return match?.[1] ?? "";
+  return match?.[1] ? decodeHtmlEntities(match[1]) : "";
 }
 
 function parseInlineStyle(styleText: string): BlockStyle | undefined {
   if (!styleText.trim()) return undefined;
   const style: BlockStyle = {};
   for (const part of styleText.split(";")) {
-    const [rawKey, rawValue] = part.split(":");
+    // Split on the first colon only: values like `url(http://…)` contain
+    // colons of their own and must not be truncated.
+    const separator = part.indexOf(":");
+    if (separator < 0) continue;
+    const rawKey = part.slice(0, separator);
+    const rawValue = part.slice(separator + 1);
     if (!rawKey || !rawValue) continue;
     const key = rawKey.trim().toLowerCase();
     const value = rawValue.trim();
@@ -650,8 +855,21 @@ function parseInlineStyle(styleText: string): BlockStyle | undefined {
 }
 
 /** Returns the opening tag of a segment (e.g. "<h1 ...>"), or the whole string. */
+/** Returns the opening tag of a segment (e.g. */
 function openingTag(segment: string): string {
-  return segment.match(/^<[A-Za-z][\w:-]*\b[^>]*>/)?.[0] ?? segment;
+  if (!segment.startsWith("<")) return segment;
+  let quote: string | null = null;
+  for (let i = 1; i < segment.length; i += 1) {
+    const char = segment[i] as string;
+    if (quote) {
+      if (char === quote) quote = null;
+    } else if (char === '"' || char === "'") {
+      quote = char;
+    } else if (char === ">") {
+      return segment.slice(0, i + 1);
+    }
+  }
+  return segment;
 }
 
 function parseStoredBlock(segment: string): BlockNode | null {
@@ -671,8 +889,11 @@ function parseStoredBlock(segment: string): BlockNode | null {
     const style = encodedStyle
       ? (JSON.parse(decodeURIComponent(encodedStyle)) as BlockStyle)
       : undefined;
+    // Preserve the authored id (it anchors responsive CSS selectors) exactly
+    // like the DOM parser does.
+    const storedId = dataAttrValue(tag, "data-zephus-id").trim();
     return {
-      id: "b" + Math.random().toString(36).slice(2, 9),
+      id: storedId || "b" + Math.random().toString(36).slice(2, 9),
       type,
       props,
       style,
@@ -687,7 +908,7 @@ function parseStoredBlock(segment: string): BlockNode | null {
 function splitTopLevelNodes(inner: string): string[] {
   const out: string[] = [];
   let index = 0;
-  const tokenRe = /<!--[\s\S]*?-->|<\/?([A-Za-z][\w:-]*)\b[^>]*>/g;
+  const tokenRe = TAG_TOKEN;
 
   while (index < inner.length) {
     while (/\s/.test(inner[index] ?? "")) index += 1;
@@ -695,7 +916,13 @@ function splitTopLevelNodes(inner: string): string[] {
 
     if (inner.startsWith("<!--", index)) {
       const end = inner.indexOf("-->", index);
-      if (end < 0) break;
+      if (end < 0) {
+        // Unterminated comment (truncated file, typod "--!>"): keep the rest
+        // as content instead of silently dropping everything to EOF.
+        out.push(inner.slice(index));
+        index = inner.length;
+        continue;
+      }
       out.push(inner.slice(index, end + 3));
       index = end + 3;
       continue;
@@ -711,9 +938,20 @@ function splitTopLevelNodes(inner: string): string[] {
 
     tokenRe.lastIndex = index;
     const first = tokenRe.exec(inner);
-    if (!first || first.index !== index) break;
+    if (!first || first.index !== index) {
+      // A "<" that is not a tag or comment start (e.g. "2 < 3" in body
+      // text). Emit it as literal text and advance, so the rest of the
+      // content is not silently dropped by the parser.
+      out.push("<");
+      index += 1;
+      continue;
+    }
     const tagText = first[0];
     const tagName = (first[1] ?? "").toLowerCase();
+    // `/>` self-closes here even for container tags: the regex parser cannot
+    // replicate DOM tree-building for an unclosed `<div/>` (the DOM opens it
+    // and swallows following siblings). Both parsers preserve the content as
+    // html blocks either way — only the raw text differs.
     const selfClosing =
       tagText.endsWith("/>") ||
       VOID_TAGS.has(tagName) ||
@@ -728,6 +966,10 @@ function splitTopLevelNodes(inner: string): string[] {
     while (depth > 0) {
       const next = tokenRe.exec(inner);
       if (!next) {
+        // Unclosed container (e.g. a hand-edited page missing its close
+        // tag): keep the remaining markup instead of silently dropping it.
+        // The DOM parser leaves the element open and preserves it too.
+        out.push(inner.slice(index));
         index = inner.length;
         break;
       }
@@ -807,12 +1049,28 @@ function parseBlockSegment(segment: string): BlockNode {
     return { id, type: "divider", props: { cls }, style };
   }
   if (tag === "blockquote") {
-    const cite = segment.match(/<cite[^>]*>([\s\S]*?)<\/cite>/i)?.[1] ?? "";
+    const cite =
+      segment.match(
+        new RegExp(`<cite\\b${TAG_PATTERN_SOURCE}([\\s\\S]*?)<\\/cite>`, "i"),
+      )?.[1] ?? "";
+    // Join every paragraph with "\n" (not just the first), matching the
+    // renderer's DOM parser.
+    const paragraphs = Array.from(
+      segment.matchAll(
+        new RegExp(`<p\\b${TAG_PATTERN_SOURCE}([\\s\\S]*?)<\\/p>`, "gi"),
+      ),
+    )
+      .map((match) => textFromHtml(match[1] ?? ""))
+      .filter(Boolean);
+    const text =
+      paragraphs.length > 0
+        ? paragraphs.join("\n")
+        : textFromHtml(segment.replace(/<cite[\s\S]*?<\/cite>/i, ""));
     return {
       id,
       type: "quote",
       props: {
-        text: textFromHtml(segment.replace(/<cite[\s\S]*?<\/cite>/i, "")),
+        text,
         cite: textFromHtml(cite),
         cls,
       },
@@ -820,7 +1078,11 @@ function parseBlockSegment(segment: string): BlockNode {
     };
   }
   if (tag === "ul" || tag === "ol") {
-    const items = Array.from(segment.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/gi))
+    const items = Array.from(
+      segment.matchAll(
+        new RegExp(`<li\\b${TAG_PATTERN_SOURCE}([\\s\\S]*?)<\\/li>`, "gi"),
+      ),
+    )
       .map((match) => textFromHtml(match[1] ?? ""))
       .filter(Boolean)
       .join("\n");
@@ -847,25 +1109,42 @@ function parseBlockSegment(segment: string): BlockNode {
   return { id, type: "html", props: {}, raw: segment };
 }
 
-function extractManagedInner(raw: string): string {
+export function extractManagedInner(raw: string): string {
   const { body } = splitFrontmatter(raw);
-  const layoutMatch = body.match(
-    /<BaseLayout\b[^>]*>([\s\S]*?)<\/BaseLayout>/i,
+  // Match the SAME region as the renderer's splitManagedPageSource: the last
+  // closing tag (greedy), so a literal "</BaseLayout>" inside an HTML block
+  // cannot split the two parsers apart.
+  const layoutOpen = body.match(
+    new RegExp(`<BaseLayout\\b${TAG_PATTERN_SOURCE}`, "i"),
   );
-  if (layoutMatch?.[1]) return layoutMatch[1].trim();
+  if (layoutOpen && layoutOpen.index !== undefined) {
+    const openEnd = layoutOpen.index + layoutOpen[0].length;
+    // Case-insensitive close so "<BaseLayout>" + "</baseLayout>" still match.
+    const closeRegex = /<\/BaseLayout\s*>/gi;
+    let lastClose: RegExpExecArray | null = null;
+    let closeMatch: RegExpExecArray | null;
+    while ((closeMatch = closeRegex.exec(body))) lastClose = closeMatch;
+    // Only slice the layout region when it really wraps the whole body:
+    // content after the closing tag belongs to the page (hand-authored) and
+    // must survive parsing/regeneration — the renderer keeps it too.
+    if (
+      lastClose &&
+      lastClose.index > openEnd &&
+      body.slice(lastClose.index + lastClose[0].length).trim().length === 0
+    ) {
+      return body.slice(openEnd, lastClose.index).trim();
+    }
+  }
 
-  const bodyMatch = body.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i);
+  const bodyMatch = body.match(
+    new RegExp(`<body\\b${TAG_PATTERN_SOURCE}([\\s\\S]*?)<\\/body>`, "i"),
+  );
   if (bodyMatch?.[1]) return bodyMatch[1].trim();
 
   return body.trim();
 }
 
-function parseBlocksFromSource(raw: string): BlockNode[] {
-  const inner = extractManagedInner(raw);
-  return parseBlocksFromInner(inner);
-}
-
-function parseSectionsFromSource(raw: string): SectionNode[] {
+export function parseSectionsFromSource(raw: string): SectionNode[] {
   const inner = extractManagedInner(raw);
   const segments = splitTopLevelNodes(inner).filter((segment) => {
     const tag = openingTag(segment);
@@ -878,25 +1157,53 @@ function parseSectionsFromSource(raw: string): SectionNode[] {
     const tag = openingTag(segment);
     const tagName = tag.match(/^<([A-Za-z][\w:-]*)/)?.[1]?.toLowerCase();
     const stored = parseStoredBlock(segment);
-    if (tagName === "section" && stored?.type === "section") {
+    if (tagName === "section") {
+      // Structural block types such as columns and gallery intentionally use
+      // <section> as their outer element. They are blocks, not editable
+      // SectionNode wrappers; only a stored type of "section" is a section.
+      // Keeping this gate aligned with editorParse.ts preserves those blocks
+      // when a page is migrated from source after its sidecar is unavailable.
+      if (stored && stored.type !== "section") {
+        looseBlocks.push(stored);
+        continue;
+      }
       if (looseBlocks.length > 0) {
         sections.push(defaultSectionNode(looseBlocks.splice(0)));
       }
       const childInner = segment
-        .replace(/^<section\b[^>]*>/i, "")
+        .replace(new RegExp(`^<section\\b${TAG_PATTERN_SOURCE}`, "i"), "")
         .replace(/<\/section>\s*$/i, "");
-      sections.push({
-        id: stored.id,
-        type: "section",
-        label: stored.props["label"] || "Section",
-        props: {
-          wrapper: stored.props["wrapper"] ?? "box",
-          cls: stored.props["cls"] ?? "",
-        },
-        style: stored.style,
-        children: parseBlocksFromInner(childInner),
-        locked: stored.locked,
-      });
+      if (stored?.type === "section") {
+        sections.push({
+          id: stored.id,
+          type: "section",
+          label: stored.props["label"] || `Section ${sections.length + 1}`,
+          props: {
+            wrapper: stored.props["wrapper"] ?? "none",
+            cls: stored.props["cls"] ?? "",
+          },
+          style: stored.style,
+          children: parseBlocksFromInner(childInner),
+          locked: stored.locked,
+        });
+      } else {
+        // Legacy <section> wrapper without Zephus metadata: an editable
+        // SectionNode, matching the renderer's parseSections so both parsers
+        // migrate the same tree. Honor a stored data-zephus-id even when the
+        // props payload failed to parse — a fresh id would change bytes on
+        // the first save and break the responsive-CSS anchor.
+        const storedSectionId = dataAttrValue(tag, "data-zephus-id").trim();
+        sections.push({
+          id: storedSectionId || "b" + Math.random().toString(36).slice(2, 9),
+          type: "section",
+          label: `Section ${sections.length + 1}`,
+          props: {
+            wrapper: "box",
+            cls: attrValue(tag, "class"),
+          },
+          children: parseBlocksFromInner(childInner),
+        });
+      }
       continue;
     }
     looseBlocks.push(...parseBlocksFromInner(segment));
@@ -935,7 +1242,7 @@ function parseBlocksFromInner(inner: string): BlockNode[] {
       /data-zephus-block=/.test(segment)
     ) {
       const childInner = segment
-        .replace(/^<section\b[^>]*>/i, "")
+        .replace(new RegExp(`^<section\\b${TAG_PATTERN_SOURCE}`, "i"), "")
         .replace(/<\/section>\s*$/i, "");
       blocks.push(...parseBlocksFromInner(childInner));
       continue;
@@ -961,403 +1268,80 @@ function defaultSectionNode(blocks: BlockNode[]): SectionNode {
     id: "section-main",
     type: "section",
     label: "Main Content",
-    props: { wrapper: "none" },
+    props: { wrapper: "none", cls: "" },
     children: blocks,
   };
-}
-
-/**
- * Encodes a value as a URI-encoded JSON payload for a data-* attribute.
- * encodeURIComponent leaves apostrophes literal, so we encode them too to
- * guarantee the attribute value contains no quote characters.
- */
-function encodeDataPayload(value: unknown): string {
-  return encodeURIComponent(JSON.stringify(value)).replace(/'/g, "%27");
-}
-
-function blockMetadataAttrs(block: BlockNode): string {
-  const attrs = [
-    `data-zephus-id="${escapeAttr(block.id)}"`,
-    `data-zephus-block="${escapeAttr(block.type)}"`,
-    `data-zephus-props="${escapeAttr(encodeDataPayload(block.props))}"`,
-  ];
-  if (block.style) {
-    attrs.push(
-      `data-zephus-style="${escapeAttr(encodeDataPayload(block.style))}"`,
-    );
-  }
-  if (block.locked) attrs.push(`data-zephus-locked="true"`);
-  return " " + attrs.join(" ");
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
-
-function escapeAttr(value: string): string {
-  return escapeHtml(value).replace(/"/g, "&quot;");
-}
-
-/**
- * Blocks dangerous URL schemes for href/src values (mirror of the renderer's
- * safeUrl). Returns "" for javascript:/data:/vbscript:/file: so the built site
- * never emits an executable URL. Keep in sync with zephusEngine.ts.
- */
-function safeUrl(value: string): string {
-  const trimmed = (value ?? "").trim();
-  if (/^(javascript|vbscript|data|file):/i.test(trimmed)) return "";
-  return trimmed;
 }
 
 /**
  * Sanitizes a value destined for a CSS declaration. Strips characters that
  * could break out of the declaration/rule (`;{}<>` and newlines) to prevent
  * CSS injection from design-token values in site.json. Caps length.
+ * `:` and `@` are preserved: tokens like `var(--accent)` or `calc(...)`
+ * are advertised as valid inputs and would be destroyed otherwise.
  */
 function cssValue(value: string): string {
   return (value ?? "")
-    .replace(/[;{}<>:@*\\]/g, "")
+    .replace(/[;{}<>\\]/g, "")
     .replace(/\//g, "")
     .replace(/[\r\n]+/g, " ")
     .trim()
     .slice(0, 200);
 }
 
-function blockCssValue(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  if (!trimmed || /[;{}<>\r\n]/.test(trimmed)) return null;
-  return trimmed.slice(0, 240);
-}
-
-function addCssValue(css: string[], property: string, value: unknown): void {
-  const safe = blockCssValue(value);
-  if (safe) css.push(`${property}:${safe}`);
-}
-
-function plainTextToHtml(text: string): string {
-  return escapeHtml(text).replace(/\n/g, "<br />");
-}
-
-function renderListItems(items: string): string {
-  return items
-    .split(/\r?\n/)
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .map((item) => `<li>${plainTextToHtml(item)}</li>`)
-    .join("");
-}
-
-function styleAttr(block: BlockNode): string {
-  const style = block.style ?? {};
-  const css: string[] = [];
-  if (["left", "center", "right"].includes(String(style.align))) {
-    css.push(`text-align:${style.align}`);
-  }
-  addCssValue(css, "width", style.width);
-  addCssValue(css, "height", style.height);
-  addCssValue(css, "max-width", style.maxWidth);
-  addCssValue(css, "background", style.background);
-  addCssValue(css, "color", style.color);
-  addCssValue(css, "padding", style.padding);
-  addCssValue(css, "margin", style.margin);
-  addCssValue(css, "border-radius", style.radius);
-  addCssValue(css, "gap", style.gap);
-  addCssValue(css, "aspect-ratio", style.aspectRatio);
-  addCssValue(css, "object-fit", style.objectFit);
-  addCssValue(css, "object-position", style.objectPosition);
-  if (style.columns && (block.type === "columns" || block.type === "gallery")) {
-    css.push(
-      `grid-template-columns:repeat(${Math.max(1, Number(style.columns) || 1)}, minmax(0, 1fr))`,
-    );
-  }
-  if (style.shadow === "sm") css.push(`box-shadow:var(--shadow-sm)`);
-  if (style.shadow === "md") css.push(`box-shadow:var(--shadow-md)`);
-  if (style.shadow === "lg") css.push(`box-shadow:var(--shadow-lg)`);
-  if (block.type === "spacer" && !style.height) {
-    addCssValue(css, "height", block.props["height"] || "48px");
-  }
-  return css.length ? ` style="${escapeAttr(css.join(";"))}"` : "";
-}
-
-function responsiveCssDeclarations(
-  style: BlockStyle | undefined,
-): string | null {
-  if (!style) return null;
-  const css: string[] = [];
-  if (["left", "center", "right"].includes(String(style.align))) {
-    css.push(`text-align:${style.align}`);
-  }
-  addCssValue(css, "width", style.width);
-  addCssValue(css, "height", style.height);
-  addCssValue(css, "max-width", style.maxWidth);
-  addCssValue(css, "padding", style.padding);
-  addCssValue(css, "margin", style.margin);
-  addCssValue(css, "gap", style.gap);
-  if (style.columns) {
-    css.push(
-      `grid-template-columns:repeat(${Math.max(1, Number(style.columns) || 1)}, minmax(0, 1fr))`,
-    );
-  }
-  return css.length ? css.join(";") : null;
-}
-
-function collectResponsiveCss(sections: SectionNode[]): string {
-  const tabletRules: string[] = [];
-  const mobileRules: string[] = [];
-
-  const addRules = (
-    id: string,
-    style: BlockStyle | undefined,
-    includeStackRule = false,
-  ): void => {
-    const tablet = responsiveCssDeclarations(style?.responsive?.tablet);
-    const mobile = responsiveCssDeclarations(style?.responsive?.mobile);
-    const selector = `[data-zephus-id="${escapeAttr(id)}"]`;
-    if (tablet) tabletRules.push(`${selector}{${tablet}}`);
-    if (mobile) mobileRules.push(`${selector}{${mobile}}`);
-    if (includeStackRule && style?.stackOnMobile) {
-      mobileRules.push(`${selector}{grid-template-columns:1fr}`);
-    }
-  };
-
-  for (const section of sections) {
-    addRules(section.id, section.style);
-    for (const block of section.children) {
-      addRules(block.id, block.style, block.type === "columns");
-    }
-  }
-
-  const chunks: string[] = [];
-  if (tabletRules.length > 0) {
-    chunks.push(`@media (max-width: 1024px){${tabletRules.join("")}}`);
-  }
-  if (mobileRules.length > 0) {
-    chunks.push(`@media (max-width: 720px){${mobileRules.join("")}}`);
-  }
-  return chunks.join("\n");
-}
-
-function classAttr(block: BlockNode): string {
-  const cls = block.props["cls"];
-  return cls ? ` class="${escapeAttr(cls)}"` : "";
-}
-
-/** Metadata + style + a fixed structural class merged with the user's class. */
-function structuralCommon(block: BlockNode, fixedClass: string): string {
-  const userCls = block.props["cls"]
-    ? " " + escapeAttr(block.props["cls"])
-    : "";
-  return `${blockMetadataAttrs(block)} class="${fixedClass}${userCls}"${styleAttr(block)}`;
-}
-
-function splitLines(raw: string): string[] {
-  return (raw ?? "")
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-}
-
-/** Splits "left :: right" into a tuple; right is "" when no separator. */
-function splitPair(line: string, sep = "::"): [string, string] {
-  const i = line.indexOf(sep);
-  if (i < 0) return [line.trim(), ""];
-  return [line.slice(0, i).trim(), line.slice(i + sep.length).trim()];
-}
-
-export function renderBlockNode(block: BlockNode): string {
-  const common = `${blockMetadataAttrs(block)}${classAttr(block)}${styleAttr(block)}`;
-  switch (block.type) {
-    case "heading": {
-      const level = Math.max(1, Math.min(6, Number(block.props["level"] ?? 2)));
-      return `<h${level}${common}>${plainTextToHtml(
-        block.props["text"] ?? "",
-      )}</h${level}>`;
-    }
-    case "text":
-      return `<p${common}>${plainTextToHtml(block.props["text"] ?? "")}</p>`;
-    case "image":
-      return `<img${common} src="${escapeAttr(safeUrl(block.props["src"] ?? ""))}" alt="${escapeAttr(block.props["alt"] ?? "")}" />`;
-    case "button":
-      return `<a${common} href="${escapeAttr(safeUrl(block.props["href"] ?? "#") || "#")}">${plainTextToHtml(block.props["text"] ?? "")}</a>`;
-    case "section":
-      return `<section${common}>${plainTextToHtml(block.props["text"] ?? "")}</section>`;
-    case "divider":
-      return `<hr${common} />`;
-    case "spacer":
-      return `<div${common}></div>`;
-    case "columns": {
-      const cols = Number(block.style?.columns ?? block.props["count"] ?? 2);
-      const parts = Array.from(
-        { length: Math.max(2, Math.min(cols || 2, 4)) },
-        (_, index) => {
-          const key = `col${index + 1}`;
-          return `<div class="zephus-column">${plainTextToHtml(
-            block.props[key] ?? `Column ${index + 1}`,
-          )}</div>`;
-        },
-      ).join("");
-      return `<section${common}>${parts}</section>`;
-    }
-    case "card":
-      return `<article${common}><h3>${plainTextToHtml(
-        block.props["title"] ?? "Card title",
-      )}</h3><p>${plainTextToHtml(block.props["text"] ?? "Card body")}</p></article>`;
-    case "gallery": {
-      const images = (block.props["images"] ?? "")
-        .split(/\r?\n|,/)
-        .map((item) => item.trim())
-        .filter(Boolean);
-      return `<section${structuralCommon(block, "zephus-gallery")}>${images
-        .map(
-          (src, index) =>
-            `<img src="${escapeAttr(safeUrl(src))}" alt="${escapeAttr(
-              block.props[`alt${index + 1}`] ?? "",
-            )}" />`,
-        )
-        .join("")}</section>`;
-    }
-    case "quote":
-      return `<blockquote${common}><p>${plainTextToHtml(
-        block.props["text"] ?? "",
-      )}</p>${
-        block.props["cite"]
-          ? `<cite>${plainTextToHtml(block.props["cite"])}</cite>`
-          : ""
-      }</blockquote>`;
-    case "list": {
-      const tag = block.props["ordered"] === "true" ? "ol" : "ul";
-      return `<${tag}${common}>${renderListItems(
-        block.props["items"] ?? "",
-      )}</${tag}>`;
-    }
-    case "embed":
-      return `<iframe${common} src="${escapeAttr(safeUrl(block.props["src"] ?? ""))}" title="${escapeAttr(block.props["title"] ?? "Embed")}" loading="lazy"></iframe>`;
-    case "html":
-      return block.raw ?? "";
-    case "feature":
-      return `<div${structuralCommon(block, "zephus-feature")}><div class="zephus-feature-icon">${plainTextToHtml(
-        block.props["icon"] ?? "★",
-      )}</div><h3>${plainTextToHtml(
-        block.props["title"] ?? "Feature",
-      )}</h3><p>${plainTextToHtml(block.props["text"] ?? "")}</p></div>`;
-    case "testimonial":
-      return `<figure${structuralCommon(block, "zephus-testimonial")}><blockquote>${plainTextToHtml(
-        block.props["quote"] ?? "",
-      )}</blockquote><figcaption><strong>${plainTextToHtml(
-        block.props["author"] ?? "",
-      )}</strong>${
-        block.props["role"]
-          ? ` <span>${plainTextToHtml(block.props["role"])}</span>`
-          : ""
-      }</figcaption></figure>`;
-    case "accordion": {
-      const items = splitLines(block.props["items"] ?? "")
-        .map((line) => splitPair(line))
-        .map(
-          ([q, a]) =>
-            `<details><summary>${plainTextToHtml(q)}</summary><p>${plainTextToHtml(a)}</p></details>`,
-        )
-        .join("");
-      return `<div${structuralCommon(block, "zephus-accordion")}>${items}</div>`;
-    }
-    case "stats": {
-      const items = splitLines(block.props["items"] ?? "")
-        .map((line) => splitPair(line))
-        .map(
-          ([n, l]) =>
-            `<div class="zephus-stat"><span class="zephus-stat-num">${plainTextToHtml(
-              n,
-            )}</span><span class="zephus-stat-label">${plainTextToHtml(l)}</span></div>`,
-        )
-        .join("");
-      return `<div${structuralCommon(block, "zephus-stats")}>${items}</div>`;
-    }
-    case "pricing": {
-      const features = splitLines(block.props["features"] ?? "")
-        .map((f) => `<li>${plainTextToHtml(f)}</li>`)
-        .join("");
-      const cta = block.props["ctaText"]
-        ? `<a class="button" href="${escapeAttr(safeUrl(block.props["ctaHref"] ?? "#") || "#")}">${plainTextToHtml(
-            block.props["ctaText"],
-          )}</a>`
-        : "";
-      return `<div${structuralCommon(block, "zephus-pricing")}><h3>${plainTextToHtml(
-        block.props["plan"] ?? "Plan",
-      )}</h3><div class="zephus-price"><span class="zephus-price-amount">${plainTextToHtml(
-        block.props["price"] ?? "",
-      )}</span>${
-        block.props["period"]
-          ? `<span class="zephus-price-period">${plainTextToHtml(block.props["period"])}</span>`
-          : ""
-      }</div><ul>${features}</ul>${cta}</div>`;
-    }
-    case "cta": {
-      const cta = block.props["buttonText"]
-        ? `<a class="button" href="${escapeAttr(safeUrl(block.props["buttonHref"] ?? "#") || "#")}">${plainTextToHtml(
-            block.props["buttonText"],
-          )}</a>`
-        : "";
-      return `<div${structuralCommon(block, "zephus-cta")}><h2>${plainTextToHtml(
-        block.props["heading"] ?? "",
-      )}</h2>${
-        block.props["text"]
-          ? `<p>${plainTextToHtml(block.props["text"])}</p>`
-          : ""
-      }${cta}</div>`;
-    }
-    default: {
-      // Unknown block type (forward-compatible: a sidecar from a newer Zephus
-      // version, or hand-edited JSON). Preserve it as a data-annotated div so
-      // its content is not silently lost and it round-trips on next save.
-      const unknownType = (block as { type: string }).type;
+export function renderBlockNode(
+  block: BlockNode,
+  posts: RenderPostEntry[] = [],
+): string {
+  return renderBlockHtml(block, {
+    posts,
+    onUnknownBlockType: (unknownType) => {
       log.warn(
         `renderBlockNode: unknown block type "${unknownType}", preserving as HTML`,
       );
-      const payload = encodeDataPayload(block.props);
-      return `<div data-zephus-block="${escapeAttr(unknownType)}" data-zephus-props="${escapeAttr(payload)}" class="zephus-unknown-block"><!-- Unknown block type: ${escapeHtml(unknownType)} --></div>`;
-    }
-  }
+    },
+  });
 }
 
-function renderSections(sections: SectionNode[]): string {
-  const responsiveCss = collectResponsiveCss(sections);
-  const body = sections
-    .map((section) => {
-      const body = section.children
-        .map((child) => renderBlockNode(child))
-        .join("\n");
-      const hasSectionSurface =
-        Boolean(section.style && Object.keys(section.style).length > 0) ||
-        Boolean(section.locked) ||
-        Boolean(section.props["cls"]);
-      if (section.props["wrapper"] === "none" && !hasSectionSurface) {
-        return body;
-      }
-      const cls = section.props["cls"]
-        ? ` class="${escapeAttr(section.props["cls"])}"`
-        : "";
-      const style = styleAttr({
-        id: section.id,
-        type: "section",
-        props: section.props,
-        style: section.style,
-      } as BlockNode);
-      const metadata = blockMetadataAttrs({
-        id: section.id,
-        type: "section",
-        props: { ...section.props, label: section.label },
-        style: section.style,
-        locked: section.locked,
-      } as BlockNode);
-      return `<section${metadata}${cls}${style}>\n${body}\n</section>`;
-    })
-    .filter(Boolean)
-    .join("\n");
-  return responsiveCss ? `<style>${responsiveCss}</style>\n${body}` : body;
+function renderSections(
+  sections: SectionNode[],
+  posts: RenderPostEntry[] = [],
+): string {
+  return renderSectionsMarkup(sections, (block) =>
+    renderBlockNode(block, posts),
+  );
+}
+
+/** Builds the Post List index from saved page sidecars. */
+/**
+ * True for an ISO-ish `YYYY-MM-DD` publish date on a real calendar date.
+ * Invalid strings must not enter the post index or RSS feed: they would sort
+ * lexically and produce feed items with no pubDate.
+ */
+export function isValidPublishDate(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return false;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+}
+
+export function buildPostIndex(docs: PageMeta[]): RenderPostEntry[] {
+  return docs.map((doc) => ({
+    route: doc.route,
+    title: doc.title || doc.navLabel || doc.slug,
+    description: doc.metaDescription,
+    date: isValidPublishDate(doc.publishDate) ? doc.publishDate.trim() : "",
+    author: doc.author,
+    image: doc.socialImage,
+  }));
 }
 
 function pageImportPath(
@@ -1388,13 +1372,353 @@ function buildNavFromPages(pages: PageMeta[]): NavItem[] {
     }));
 }
 
-function updateAssetsIndex(projectPath: string, publicDir: string): void {
-  const result = listProjectImages(projectPath, publicDir);
-  const payload = {
-    updatedAt: new Date().toISOString(),
-    assets: result.ok ? result.assets : ([] as AssetEntry[]),
-  };
-  writeJsonFile(assetsIndexFile(projectPath), payload);
+/** Marker identifying files Zephus generates, so user-authored ones are kept. */
+const MANAGED_FILE_MARKER = "zephus:managed";
+
+function hasManagedPublicFileHeader(
+  fileName: string,
+  content: string,
+): boolean {
+  // Git may check generated files out with CRLF; normalize only line endings,
+  // then still require the exact file-specific header at byte zero.
+  const normalized = content.replace(/\r\n/g, "\n");
+  if (fileName === "robots.txt") {
+    return normalized.startsWith(`# ${MANAGED_FILE_MARKER} robots\n`);
+  }
+  if (fileName === "sitemap.xml") {
+    return normalized.startsWith(
+      `<?xml version="1.0" encoding="UTF-8"?>\n<!-- ${MANAGED_FILE_MARKER} sitemap -->\n`,
+    );
+  }
+  if (fileName === "rss.xml") {
+    return normalized.startsWith(
+      `<?xml version="1.0" encoding="UTF-8"?>\n<!-- ${MANAGED_FILE_MARKER} rss -->\n`,
+    );
+  }
+  return false;
+}
+
+/**
+ * Writes a Zephus-managed file only when it is safe to do so: the file must be
+ * absent, or already carry the managed marker. A hand-authored sitemap.xml or
+ * robots.txt is never overwritten.
+ */
+function writeManagedPublicFile(
+  publicRoot: string,
+  fileName: string,
+  content: string,
+): boolean {
+  const target = path.join(publicRoot, fileName);
+  if (fs.existsSync(target)) {
+    let existing: string;
+    try {
+      existing = fs.readFileSync(target, "utf8");
+    } catch {
+      return false;
+    }
+    // Existing user-authored discovery files count as available but are never
+    // replaced. This lets users supply their own feed intentionally.
+    if (!hasManagedPublicFileHeader(fileName, existing)) return true;
+    if (existing === content) return true;
+  }
+  fs.mkdirSync(publicRoot, { recursive: true });
+  writeFileAtomic(target, content);
+  return true;
+}
+
+/** Removes a stale discovery file only when Zephus previously generated it. */
+function removeManagedPublicFile(publicRoot: string, fileName: string): void {
+  const target = path.join(publicRoot, fileName);
+  if (!fs.existsSync(target)) return;
+  try {
+    const existing = fs.readFileSync(target, "utf8");
+    if (hasManagedPublicFileHeader(fileName, existing)) {
+      fs.rmSync(target, { force: true });
+    }
+  } catch {
+    // A discovery enhancement must never block ordinary page editing.
+  }
+}
+
+/** Resolves discovery metadata against the configured deployment base. */
+export function resolveAbsoluteHttpUrl(siteUrl: string, value: string): string {
+  if (!value.trim()) return "";
+  try {
+    const base = new URL(siteUrl);
+    if (base.protocol !== "http:" && base.protocol !== "https:") return "";
+    base.search = "";
+    base.hash = "";
+    if (!base.pathname.endsWith("/")) base.pathname += "/";
+
+    // A scheme-less canonical/social value shaped like a host ("example.com/x")
+    // resolved as a RELATIVE path — sitemap loc, RSS link and canonical all
+    // became https://site/example.com/x (a guaranteed 404). Treat bare
+    // host-shaped values as absolute https URLs.
+    const trimmed = value.trim();
+    const hasScheme = /^[A-Za-z][A-Za-z\d+.-]*:/.test(trimmed);
+    const isProtocolRelative = trimmed.startsWith("//");
+    const isHostShaped =
+      !hasScheme &&
+      !isProtocolRelative &&
+      !trimmed.startsWith("/") &&
+      /^[^/\s]+\.[a-z]{2,}([/?#]|$)/i.test(trimmed);
+    const effectiveValue = isHostShaped ? `https://${trimmed}` : trimmed;
+
+    const absoluteOrProtocolRelative =
+      /^[A-Za-z][A-Za-z\d+.-]*:/.test(effectiveValue) ||
+      effectiveValue.startsWith("//");
+    // "/x" is ROOT-relative: it must resolve against the origin, never the
+    // siteUrl's path base ("/blog/") — otherwise every sitemap/RSS/canonical
+    // href gained a bogus base prefix while the published site kept serving
+    // the root path.
+    const resolved = absoluteOrProtocolRelative
+      ? new URL(effectiveValue, base)
+      : new URL(
+          effectiveValue.startsWith("/")
+            ? effectiveValue
+            : effectiveValue.replace(/^\/+/, ""),
+          effectiveValue.startsWith("/") ? base.origin : base,
+        );
+    return resolved.protocol === "http:" || resolved.protocol === "https:"
+      ? resolved.href
+      : "";
+  } catch {
+    return "";
+  }
+}
+
+/** Astro serves `src/pages/404.astro` as the not-found response. */
+export function isNotFoundSlug(slug: string): boolean {
+  // Nested 404 routes (src/pages/404/index.astro) are reserved too.
+  return slug === "404" || slug.startsWith("404/");
+}
+
+function renderSitemap(siteUrl: string, docs: PageDocument[]): string {
+  const entries = docs
+    // An error page must never be advertised, even if its noindex flag was
+    // cleared by hand.
+    .filter((doc) => !doc.noindex && !isNotFoundSlug(doc.slug))
+    .flatMap((doc) => {
+      const loc =
+        resolveAbsoluteHttpUrl(siteUrl, doc.canonicalUrl.trim()) ||
+        resolveAbsoluteHttpUrl(siteUrl, doc.route);
+      return loc
+        ? [`  <url>\n    <loc>${escapeHtml(loc)}</loc>\n  </url>`]
+        : [];
+    })
+    .join("\n");
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<!-- ${MANAGED_FILE_MARKER} sitemap -->\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${entries}\n</urlset>\n`;
+}
+
+/** True when a page contains a Post List block anywhere in its section tree. */
+function hasPostListBlock(doc: PageDocument): boolean {
+  const scan = (nodes: Array<BlockNode | SectionNode>): boolean =>
+    nodes.some((node) => {
+      if (node.type === "postlist") return true;
+      const children = (node as SectionNode).children;
+      return Array.isArray(children) ? scan(children) : false;
+    });
+  return scan(doc.sections);
+}
+
+/**
+ * Regenerates pages whose Post List content depends on other pages.
+ *
+ * Post lists are rendered into the page at generation time, so adding, dating,
+ * renaming, or deleting a post would otherwise leave every listing page stale
+ * until the next build. Only pages that are provably unmodified on disk are
+ * rewritten; hand-edited ones are left alone.
+ */
+function refreshPostListPages(
+  projectPath: string,
+  pagesDir: string,
+  site: SiteDocument,
+  skipPage?: string,
+): void {
+  try {
+    const docs = listExistingPageDocuments(projectPath, pagesDir);
+    const posts = buildPostIndex(docs);
+    // Precompute every regeneration before writing anything, so a failure
+    // midway cannot leave some pages refreshed and others stale with no
+    // retry marker.
+    const pending: Array<{ file: string; doc: PageDocument; html: string }> =
+      [];
+    for (const doc of docs) {
+      if (doc.detached || doc.page === skipPage) continue;
+      if (!hasPostListBlock(doc)) continue;
+      const pageFile = safeResolve(projectPath, doc.page);
+      if (!fs.existsSync(pageFile)) continue;
+      const actual = fs.readFileSync(pageFile, "utf8");
+      // Only touch files Zephus generated and the user has not edited.
+      if (!doc.generatedHash || hashText(actual) !== doc.generatedHash)
+        continue;
+      const generated = renderAstroPage(
+        projectPath,
+        doc.page,
+        site,
+        doc,
+        posts,
+      );
+      if (normalizeHashText(generated) === normalizeHashText(actual)) continue;
+      pending.push({ file: pageFile, doc, html: generated });
+    }
+    for (const { file, doc, html } of pending) {
+      writeFileAtomic(file, html);
+      // A post-list refresh regenerates OTHER pages: suppress the watcher so
+      // the open page does not get a false "modified outside Zephus" prompt.
+      markSelfWritten(doc.page);
+      writePageDocumentFile(projectPath, {
+        ...doc,
+        generatedHash: hashText(html),
+      });
+    }
+  } catch (error) {
+    log.warn("Could not refresh post list pages", error);
+  }
+}
+
+/** Pages that count as blog posts for the feed: dated, indexable, not the 404. */
+function feedPosts(docs: PageDocument[]): PageDocument[] {
+  return docs
+    .filter(
+      (doc) =>
+        isValidPublishDate(doc.publishDate) &&
+        !doc.noindex &&
+        !isNotFoundSlug(doc.slug),
+    )
+    .sort((a, b) => (a.publishDate < b.publishDate ? 1 : -1));
+}
+
+/** RFC 822 date, which is what RSS readers expect. */
+function rssDate(value: string): string {
+  const parsed = new Date(`${value.trim()}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return parsed.toUTCString();
+}
+
+/** XML-1.0-safe escaping: like escapeHtml plus stripping of C0 control
+ *  characters XML forbids (pasted Word/terminal text carries them; a raw
+ *  \u0000- would make the whole feed invalid for every reader). */
+function escapeXml(value: string): string {
+  // C0 controls stripped individually (no-control-regex).
+  let cleaned = "";
+  for (const char of value) {
+    const code = char.charCodeAt(0);
+    if (
+      code === 0 ||
+      code === 1 ||
+      code === 2 ||
+      code === 3 ||
+      code === 4 ||
+      code === 5 ||
+      code === 6 ||
+      code === 7 ||
+      code === 8 ||
+      code === 11 ||
+      code === 12 ||
+      (code >= 14 && code <= 31)
+    ) {
+      continue;
+    }
+    cleaned += char;
+  }
+  return escapeHtml(cleaned);
+}
+
+export function renderRssFeed(
+  siteUrl: string,
+  site: SiteDocument,
+  docs: PageDocument[],
+): string {
+  const base = resolveAbsoluteHttpUrl(siteUrl, "/");
+  const feedUrl = resolveAbsoluteHttpUrl(siteUrl, "/rss.xml");
+  const title = site.shell.siteTitle || site.siteName;
+  const items = feedPosts(docs)
+    .map((doc) => {
+      const link =
+        resolveAbsoluteHttpUrl(siteUrl, doc.canonicalUrl.trim()) ||
+        resolveAbsoluteHttpUrl(siteUrl, doc.route);
+      const pubDate = rssDate(doc.publishDate);
+      return [
+        "    <item>",
+        `      <title>${escapeXml(doc.title)}</title>`,
+        `      <link>${escapeXml(link)}</link>`,
+        `      <guid isPermaLink="true">${escapeXml(link)}</guid>`,
+        doc.metaDescription
+          ? `      <description>${escapeXml(doc.metaDescription)}</description>`
+          : "",
+        pubDate ? `      <pubDate>${escapeXml(pubDate)}</pubDate>` : "",
+        doc.author
+          ? `      <dc:creator>${escapeXml(doc.author)}</dc:creator>`
+          : "",
+        "    </item>",
+      ]
+        .filter(Boolean)
+        .join("\n");
+    })
+    .join("\n");
+
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<!-- ${MANAGED_FILE_MARKER} rss -->\n<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:dc="http://purl.org/dc/elements/1.1/">\n  <channel>\n    <title>${escapeHtml(
+    title,
+  )}</title>\n    <link>${escapeHtml(base)}</link>\n    <description>${escapeHtml(
+    site.shell.announcementText.trim() || `Updates from ${title}`,
+  )}</description>\n    <language>${escapeHtml(site.language.trim() || "en")}</language>\n    <atom:link href="${escapeHtml(
+    feedUrl,
+  )}" rel="self" type="application/rss+xml" />\n${items}\n  </channel>\n</rss>\n`;
+}
+
+function renderRobotsTxt(siteUrl: string): string {
+  const sitemapUrl = resolveAbsoluteHttpUrl(siteUrl, "/sitemap.xml");
+  return `# ${MANAGED_FILE_MARKER} robots\nUser-agent: *\nAllow: /\n\nSitemap: ${sitemapUrl}\n`;
+}
+
+/**
+ * Generates sitemap.xml + robots.txt into the project's public directory.
+ * Both require a configured site URL: without an absolute base, a sitemap
+ * cannot contain valid `<loc>` values, so nothing is written.
+ */
+function writeDiscoveryFiles(
+  projectPath: string,
+  publicDir: string,
+  site: SiteDocument,
+  docs: PageDocument[],
+): boolean {
+  try {
+    const publicRoot = resolveProjectRelativeDir(
+      projectPath,
+      publicDir,
+      "public",
+    ).absolute;
+    const siteUrl = resolveAbsoluteHttpUrl(site.siteUrl.trim(), "/");
+    if (!siteUrl) {
+      removeManagedPublicFile(publicRoot, "sitemap.xml");
+      removeManagedPublicFile(publicRoot, "robots.txt");
+      removeManagedPublicFile(publicRoot, "rss.xml");
+      return false;
+    }
+
+    writeManagedPublicFile(
+      publicRoot,
+      "sitemap.xml",
+      renderSitemap(siteUrl, docs),
+    );
+    writeManagedPublicFile(publicRoot, "robots.txt", renderRobotsTxt(siteUrl));
+    // Only publish and advertise a feed once there is an eligible dated post.
+    if (feedPosts(docs).length > 0) {
+      return writeManagedPublicFile(
+        publicRoot,
+        "rss.xml",
+        renderRssFeed(siteUrl, site, docs),
+      );
+    }
+
+    removeManagedPublicFile(publicRoot, "rss.xml");
+    return false;
+  } catch (error) {
+    // Discovery files are an enhancement; never fail schema generation for them.
+    log.warn("Could not write sitemap/robots/feed", error);
+    return false;
+  }
 }
 
 function defaultSiteDocument(
@@ -1410,7 +1734,88 @@ function defaultSiteDocument(
     generatedAt: new Date().toISOString(),
     design: defaultDesignTokens(),
     shell: defaultShell(siteName, layoutPath),
-    templates: [],
+    siteUrl: "",
+    language: "en",
+    faviconPath: "",
+  };
+}
+
+/**
+ * Fills in SEO fields added after a project was scaffolded. Projects created by
+ * older versions have no `siteUrl`/`language`/`faviconPath`, and reading them
+ * as `undefined` would emit `lang="undefined"` into the managed layout.
+ */
+function withSiteDefaults(site: SiteDocument): SiteDocument {
+  const siteName = site.siteName || "Site";
+  // A site.json missing design/shell (ancient, hand-edited, or partially
+  // corrupted shape) must not crash downstream code (syncSiteShellOutputs
+  // reads site.shell.navItems, renderManagedStyles reads site.design.accent).
+  const design =
+    site.design && typeof site.design === "object"
+      ? { ...defaultDesignTokens(), ...site.design }
+      : defaultDesignTokens();
+  const shell =
+    site.shell && typeof site.shell === "object"
+      ? { ...defaultShell(siteName, ""), ...site.shell }
+      : defaultShell(siteName, "");
+  // A hand-edited site.json with non-string nav fields used to THROW in
+  // renderManagedLayout (label.trim()/safeUrl) and refuse the whole project.
+  if (Array.isArray(shell.navItems)) {
+    const sanitized: NavItem[] = [];
+    for (const item of shell.navItems) {
+      if (typeof item !== "object" || item === null) continue;
+      sanitized.push({
+        ...item,
+        id:
+          typeof item.id === "string"
+            ? item.id
+            : `nav-${Math.random().toString(36).slice(2, 8)}`,
+        label: typeof item.label === "string" ? item.label : "",
+        href: typeof item.href === "string" ? item.href : "#",
+        visible: item.visible !== false,
+        page: typeof item.page === "string" ? item.page : undefined,
+        children: Array.isArray(item.children) ? item.children : [],
+      });
+    }
+    shell.navItems = sanitized;
+  }
+  if (typeof shell.siteTitle !== "string") shell.siteTitle = siteName;
+  if (typeof shell.logoText !== "string") shell.logoText = siteName;
+  if (typeof shell.announcementText !== "string") shell.announcementText = "";
+  if (typeof shell.navCtaLabel !== "string") shell.navCtaLabel = "";
+  if (typeof shell.navCtaHref !== "string") shell.navCtaHref = "#";
+  if (typeof shell.footerHtml !== "string") shell.footerHtml = "";
+  if (typeof shell.customHeadHtml !== "string") shell.customHeadHtml = "";
+  return {
+    ...site,
+    schemaVersion: site.schemaVersion ?? ZEPHUS_SCHEMA_VERSION,
+    themeId: site.themeId ?? "project",
+    siteName,
+    design,
+    shell,
+    siteUrl: typeof site.siteUrl === "string" ? site.siteUrl : "",
+    language:
+      typeof site.language === "string" && site.language.trim()
+        ? site.language
+        : "en",
+    faviconPath: typeof site.faviconPath === "string" ? site.faviconPath : "",
+  };
+}
+
+/** Fills in per-page SEO fields added after a page sidecar was written. */
+function withPageMetaDefaults<T extends PageMeta>(doc: T): T {
+  const reservedNotFound = isNotFoundSlug(doc.slug);
+  return {
+    ...doc,
+    // Sidecars predating the field have `navVisible: undefined` — treat that
+    // as the default (visible), matching the frontmatter path, or the page
+    // silently vanishes from the generated navigation after an upgrade.
+    navVisible: reservedNotFound ? false : doc.navVisible !== false,
+    socialImage: typeof doc.socialImage === "string" ? doc.socialImage : "",
+    canonicalUrl: typeof doc.canonicalUrl === "string" ? doc.canonicalUrl : "",
+    noindex: reservedNotFound || doc.noindex === true,
+    publishDate: typeof doc.publishDate === "string" ? doc.publishDate : "",
+    author: typeof doc.author === "string" ? doc.author : "",
   };
 }
 
@@ -1420,10 +1825,28 @@ function readPageDocumentFile(
 ): PageDocument | null {
   const doc = readJsonFile<PageDocument>(pageSchemaFile(projectPath, slug));
   if (!doc) return null;
-  return { ...doc, page: toProjectRelativePath(doc.page) };
+  // Shape guard: a corrupt-but-valid-JSON sidecar (hand-edited or truncated
+  // with `sections` missing/non-array) used to throw inside renderAstroPage
+  // during ensureVisualSchema — the WHOLE project refused to open and every
+  // subsequent read/save failed the same way, with no gate catching it.
+  if (!Array.isArray(doc.sections)) {
+    log.warn(
+      "Page sidecar for",
+      slug,
+      "has a malformed sections array; defaulting to empty.",
+    );
+    doc.sections = [];
+  }
+  return withPageMetaDefaults({
+    ...doc,
+    page: toProjectRelativePath(doc.page),
+  });
 }
 
-function writePageDocumentFile(projectPath: string, doc: PageDocument): void {
+export function writePageDocumentFile(
+  projectPath: string,
+  doc: PageDocument,
+): void {
   writeJsonFile(pageSchemaFile(projectPath, doc.slug), doc);
 }
 
@@ -1432,12 +1855,33 @@ function renderAstroPage(
   pageRel: string,
   site: SiteDocument,
   doc: PageDocument,
+  posts: RenderPostEntry[] = [],
 ): string {
   const title = doc.title || defaultTitleFromSlug(doc.slug);
-  const body = renderSections(doc.sections)
+  const seoAttrs = [
+    doc.metaDescription
+      ? `description="${escapeAstroAttr(doc.metaDescription)}"`
+      : "",
+    doc.canonicalUrl
+      ? `canonicalUrl="${escapeAstroAttr(safeUrl(doc.canonicalUrl) || "")}"`
+      : "",
+    doc.socialImage
+      ? `socialImage="${escapeAstroAttr(safeUrl(doc.socialImage) || "")}"`
+      : "",
+    // Must be an expression, not a bare attribute: Astro serializes `noindex`
+    // to the empty string, which is falsy in the layout's default destructuring.
+    doc.noindex ? `noindex={true}` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const layoutAttrs = seoAttrs ? ` ${seoAttrs}` : "";
+  const body = renderSections(doc.sections, posts)
     .split("\n")
     .map((line) => (line ? `  ${line}` : line))
-    .join("\n");
+    .join("\n")
+    // Restore real newlines inside html-block raws AFTER the indent (same
+    // sentinel the shared renderer emits) so interior lines never grow.
+    .replace(/\uE000/g, "\n");
   const importPath = pageImportPath(
     projectPath,
     pageRel,
@@ -1447,12 +1891,16 @@ function renderAstroPage(
   // The import MUST live inside the frontmatter fence (Astro component script);
   // the schema marker is a JS comment so it is ignored by the frontmatter
   // metadata parser. Page metadata lives authoritatively in the JSON sidecar.
+  // The import path is JSON-escaped (handles quotes/backslashes in project
+  // paths), and attribute text is brace-escaped — Astro evaluates `{...}`
+  // inside quoted attributes, so a literal brace in a title/description would
+  // otherwise become a JS expression or crash the build.
   return `---
-import BaseLayout from '${importPath}';
+import BaseLayout from ${JSON.stringify(importPath)};
 // zephus:managed schema=${schemaRel}
 ---
 
-<BaseLayout title="${escapeAttr(title)}">
+<BaseLayout title="${escapeAstroAttr(title)}"${layoutAttrs}>
 ${body}
 </BaseLayout>
 `;
@@ -1477,17 +1925,43 @@ function syncLegacyLayoutNav(
   const links = navItems
     .map(
       (item) =>
-        `        <a href="${escapeAttr(item.href)}">${escapeHtml(item.label)}</a>`,
+        // safeUrl before escapeAttr: a javascript: nav href must not reach
+        // the layout (matches renderManagedLayout).
+        `        <a href="${escapeAttr(safeUrl(item.href) || "#")}">${escapeHtml(item.label)}</a>`,
     )
     .join("\n");
   const navBlock = `<nav>\n${links}\n      </nav>`;
   const content = fs.readFileSync(layoutFile, "utf8");
-  if (!/<nav>[\s\S]*?<\/nav>/.test(content)) return;
-  fs.writeFileSync(
-    layoutFile,
-    content.replace(/<nav>[\s\S]*?<\/nav>/, navBlock),
-    "utf8",
+  // Find the outer <nav>…</nav> by depth counting (a layout with nested navs
+  // must not be truncated at the first closing tag) and replace only that
+  // region, leaving everything else untouched.
+  const navOpen = content.search(
+    new RegExp(`<nav\\b${TAG_PATTERN_SOURCE}`, "i"),
   );
+  if (navOpen < 0) return;
+  // Depth counting from AFTER the opener: starting at 1 and re-counting the
+  // opener (depth 2) meant every balanced nav exited with depth 1 and the
+  // replacement NEVER fired — legacy-layout nav labels/visibility/CTAs were
+  // permanently stale (the function was a complete no-op).
+  let depth = 0;
+  let index = navOpen;
+  const depthRe = new RegExp(`<\\/?nav\\b${TAG_PATTERN_SOURCE}`, "gi");
+  depthRe.lastIndex = navOpen;
+  let match: RegExpExecArray | null;
+  while (depth >= 0 && (match = depthRe.exec(content))) {
+    if (match[0].startsWith("</")) depth -= 1;
+    else depth += 1;
+    if (depth === 0) {
+      index = depthRe.lastIndex;
+      break;
+    }
+  }
+  if (depth !== 0) return;
+  const updated = content.slice(0, navOpen) + navBlock + content.slice(index);
+  // No-op short-circuit: opening a legacy-layout project rewrote this file on
+  // EVERY open (mtime churn, git noise). Only write when the nav differs.
+  if (updated === content) return;
+  writeFileAtomic(layoutFile, updated);
 }
 
 function syncSiteShellOutputs(
@@ -1498,6 +1972,10 @@ function syncSiteShellOutputs(
   previousSite?: SiteDocument | null,
 ): SiteDocument {
   const docs = pageDocs ?? listExistingPageDocuments(projectPath, pagesDir);
+  const astro = detectAstro(projectPath);
+  // Write discovery files first so the managed layout advertises only a feed
+  // that is confirmed to exist (including a preserved hand-authored feed).
+  const hasFeed = writeDiscoveryFiles(projectPath, astro.publicDir, site, docs);
   site.shell.navItems = mergePageNavItems(site.shell.navItems, docs);
 
   if (site.shell.layoutMode === "managed") {
@@ -1514,38 +1992,24 @@ function syncSiteShellOutputs(
       site.shell.customScriptsPath,
     );
     fs.mkdirSync(path.dirname(layoutFile), { recursive: true });
-    fs.writeFileSync(
+    writeFileAtomicIfChanged(
       layoutFile,
       renderManagedLayout(
         site,
         site.shell.navItems,
         customCssHref,
         customScriptHref,
+        hasFeed,
       ),
-      "utf8",
     );
     const styleFile = safeResolve(projectPath, MANAGED_STYLE_PATH);
     fs.mkdirSync(path.dirname(styleFile), { recursive: true });
-    fs.writeFileSync(styleFile, renderManagedStyles(site), "utf8");
-    return site;
+    writeFileAtomicIfChanged(styleFile, renderManagedStyles(site));
+  } else {
+    syncLegacyLayoutNav(projectPath, site, pagesDir);
   }
 
-  syncLegacyLayoutNav(projectPath, site, pagesDir);
   return site;
-}
-
-function buildPageDocument(
-  page: string,
-  pagesDir: string,
-  blocks: BlockNode[],
-  frontmatter: Record<string, string | boolean>,
-): PageDocument {
-  return buildPageDocumentWithSections(
-    page,
-    pagesDir,
-    [defaultSectionNode(blocks)],
-    frontmatter,
-  );
 }
 
 function buildPageDocumentWithSections(
@@ -1558,7 +2022,6 @@ function buildPageDocumentWithSections(
   return {
     ...meta,
     schemaVersion: ZEPHUS_SCHEMA_VERSION,
-    templateId: null,
     sections,
     detached: false,
     detachedAt: null,
@@ -1575,12 +2038,58 @@ function migratePageToDocument(
   const raw = fs.readFileSync(safeResolve(projectPath, page), "utf8");
   const { frontmatter } = splitFrontmatter(raw);
   const parsedFrontmatter = parseFrontmatter(frontmatter);
-  return buildPageDocumentWithSections(
+  const doc = buildPageDocumentWithSections(
     page,
     pagesDir,
     parseSectionsFromSource(raw),
     parsedFrontmatter,
   );
+  // Non-.astro files (legacy .md/.mdx/.html pages) can never be regenerated:
+  // writing Astro-component source (BaseLayout import, <section> markup) into
+  // a .md/.mdx/.html file corrupts it in place — the file keeps its old
+  // extension while its content becomes invalid for that format. They are
+  // always reported as hand-authored (out-of-sync), never just-migrated.
+  if (path.extname(page).toLowerCase() !== ".astro") {
+    return { ...doc, managedFileStatus: "out-of-sync" };
+  }
+  // A page that parses as canonical Zephus output (BaseLayout import only,
+  // no Astro expressions/script/style blocks) round-trips losslessly and may
+  // be regenerated from its tree. Anything else is hand-authored: the parse
+  // tree cannot represent imports, consts, expressions, or style blocks, and
+  // materializing it would destroy the user's file. Such pages are kept
+  // untouched and reported as out-of-sync instead.
+  if (!isCanonicalManagedSource(raw)) {
+    return { ...doc, managedFileStatus: "out-of-sync" };
+  }
+  return doc;
+}
+
+/**
+ * True when the page source looks like canonical Zephus output that can be
+ * regenerated losslessly: frontmatter limited to the BaseLayout import,
+ * key/value metadata (legacy Zephus pages store title/navLabel etc. there),
+ * and comments — and no Astro `{...}` expressions, <script>, or <style>.
+ */
+function isCanonicalManagedSource(raw: string): boolean {
+  const { frontmatter, body } = splitFrontmatter(raw);
+  for (const line of frontmatter.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    if (trimmed === "---") continue;
+    if (trimmed.startsWith("//")) continue;
+    if (/^[A-Za-z][\w-]*\s*:/.test(trimmed)) continue;
+    if (
+      /^import\s+(?:[^'"\n]*?\s+from\s+)?['"][^'"]*BaseLayout[^'"]*['"]/i.test(
+        trimmed,
+      )
+    ) {
+      continue;
+    }
+    return false;
+  }
+  if (/<style\b|<script\b/i.test(body)) return false;
+  if (/\{[^{}\n]*\}/.test(body)) return false;
+  return true;
 }
 
 export function getVisualSchemaStatus(
@@ -1630,10 +2139,27 @@ export function getVisualSchemaStatus(
   };
 }
 
+export interface EnsureVisualSchemaOptions {
+  /**
+   * Regenerate managed `.astro` pages that are unmodified on disk but stale
+   * relative to their sidecar (or to a newer generator). Off by default so
+   * opening a project never rewrites the user's files.
+   */
+  refreshManagedPages?: boolean;
+  /**
+   * Regenerate pages whose sidecar has no stored hash, whatever the disk
+   * content is. Used by site creation right after scaffolding: the on-disk
+   * files are the scaffold's placeholders, not user work, and must become
+   * the real generated pages before the first open.
+   */
+  regenerateHashlessPages?: boolean;
+}
+
 export function ensureVisualSchema(
   projectPath: string,
   pagesDir: string,
   themeId?: string,
+  options?: EnsureVisualSchemaOptions,
 ): SchemaEnsureResult {
   try {
     const astro = detectAstro(projectPath);
@@ -1671,27 +2197,81 @@ export function ensureVisualSchema(
           "saved next to it. Restore it from version control to continue.",
       };
     }
-    const site =
-      siteCheck.data ??
-      defaultSiteDocument(projectPath, layoutPath, nextThemeId);
+    // Never downgrade: a project created by a NEWER Zephus (higher
+    // schemaVersion) must not be read, re-merged, and rewritten by this older
+    // build — that silently overwrites the newer layout/nav/design with this
+    // version's markup and stamps the older schemaVersion onto the pages.
+    if (
+      siteCheck.data &&
+      typeof (siteCheck.data as SiteDocument).schemaVersion === "number" &&
+      (siteCheck.data as SiteDocument).schemaVersion! > ZEPHUS_SCHEMA_VERSION
+    ) {
+      return {
+        ok: false,
+        status: null,
+        error:
+          "This project was created with a newer version of Zephus " +
+          `(schema v${(siteCheck.data as SiteDocument).schemaVersion}). ` +
+          "Please update Zephus to open it — this build would overwrite " +
+          "newer data.",
+      };
+    }
+    const site = siteCheck.data
+      ? withSiteDefaults(siteCheck.data)
+      : defaultSiteDocument(projectPath, layoutPath, nextThemeId);
+    // A partial/hand-edited site.json may carry an empty or missing
+    // layoutPath; the shell defaults cannot know the project layout, so fill
+    // it from the detected layout here (an empty layoutPath made
+    // syncLegacyLayoutNav read a directory and fail the whole open).
+    if (!site.shell?.layoutPath) {
+      site.shell.layoutPath = layoutPath;
+    }
 
     const pages = listPages(projectPath, pagesDir);
+    const justMigratedSlugs = new Set<string>();
     const pageDocs = pages.map((page) => {
       const slug = slugFromPage(page, pagesDir);
       let doc = readPageDocumentFile(projectPath, slug);
       if (!doc) {
         doc = migratePageToDocument(projectPath, page, pagesDir);
         writePageDocumentFile(projectPath, doc);
+        // Only losslessly-round-trippable pages may be regenerated from their
+        // tree. Hand-authored pages (imports/expressions/style blocks) are
+        // flagged out-of-sync by migratePageToDocument; writing them back
+        // would destroy content, so they are never marked just-migrated.
+        if (doc.managedFileStatus !== "out-of-sync") {
+          justMigratedSlugs.add(slug);
+        }
       }
       return doc;
     });
 
     syncSiteShellOutputs(projectPath, site, pagesDir, pageDocs, site);
-    site.generatedAt = new Date().toISOString();
-    writeJsonFile(siteDocumentFile(projectPath), site);
+    // Skip the site.json rewrite (and its generatedAt bump → git churn on
+    // every open) when nothing about the site actually changed.
+    const previousDefaults = siteCheck.data
+      ? withSiteDefaults(siteCheck.data)
+      : null;
+    const siteChanged =
+      !previousDefaults ||
+      JSON.stringify({ ...site, generatedAt: "" }) !==
+        JSON.stringify({ ...previousDefaults, generatedAt: "" });
+    if (siteChanged) {
+      site.generatedAt = new Date().toISOString();
+      writeJsonFile(siteDocumentFile(projectPath), site);
+    } else {
+      site.generatedAt = previousDefaults?.generatedAt ?? site.generatedAt;
+    }
+    const postIndex = buildPostIndex(pageDocs);
     for (const doc of pageDocs) {
       if (doc.detached) continue;
-      const generatedSource = renderAstroPage(projectPath, doc.page, site, doc);
+      const generatedSource = renderAstroPage(
+        projectPath,
+        doc.page,
+        site,
+        doc,
+        postIndex,
+      );
       const pageFile = safeResolve(projectPath, doc.page);
       const actualSource = fs.existsSync(pageFile)
         ? fs.readFileSync(pageFile, "utf8")
@@ -1700,23 +2280,82 @@ export function ensureVisualSchema(
         doc,
         actualSource,
         generatedSource,
+        justMigratedSlugs.has(doc.slug) ||
+          (options?.regenerateHashlessPages === true && !doc.generatedHash),
       );
+      const normalizedGenerated = normalizeHashText(generatedSource);
+      const normalizedActual =
+        actualSource !== null ? normalizeHashText(actualSource) : null;
+      const onDiskMatchesGenerated =
+        normalizedActual !== null && normalizedActual === normalizedGenerated;
+
+      const onDiskMatchesStoredHash =
+        actualSource !== null &&
+        Boolean(doc.generatedHash) &&
+        hashText(actualSource) === doc.generatedHash;
+
+      let nextGeneratedHash = doc.generatedHash ?? hashText(generatedSource);
+      if (actualSource === null) {
+        nextGeneratedHash = hashText(generatedSource);
+      } else if (onDiskMatchesGenerated) {
+        nextGeneratedHash = hashText(generatedSource);
+      } else if (onDiskMatchesStoredHash) {
+        nextGeneratedHash = doc.generatedHash!;
+      }
+
+      // Opening a project must not rewrite the user's .astro files (that would
+      // create spurious diffs on every open), so a page whose disk copy still
+      // matches the recorded hash is left alone here. `refreshManagedPages`
+      // opts into regenerating those — used before a build, where stale output
+      // would otherwise be published. A hash-less sidecar is only rewritten
+      // when the page was migrated in this same pass, or when site creation
+      // explicitly asks for it (its scaffold placeholders are not user work).
+      const justMigrated =
+        justMigratedSlugs.has(doc.slug) ||
+        (options?.regenerateHashlessPages === true && !doc.generatedHash);
+      const shouldWriteAstro =
+        managedFileStatus !== "out-of-sync" &&
+        (actualSource === null ||
+          onDiskMatchesGenerated ||
+          (justMigrated && !doc.generatedHash) ||
+          (options?.refreshManagedPages === true && onDiskMatchesStoredHash));
+
+      if (
+        shouldWriteAstro &&
+        actualSource !== null &&
+        !onDiskMatchesGenerated
+      ) {
+        nextGeneratedHash = hashText(generatedSource);
+      }
+
       const nextDoc = {
         ...doc,
-        generatedHash: hashText(generatedSource),
+        generatedHash: nextGeneratedHash,
         managedFileStatus:
           managedFileStatus === "missing"
             ? ("managed" as const)
             : managedFileStatus,
       };
-      writePageDocumentFile(projectPath, nextDoc);
-      if (managedFileStatus !== "out-of-sync") {
+      // No-op short-circuit: previously every open rewrote every sidecar,
+      // even when nothing changed (hundreds of writes on large projects).
+      writeFileAtomicIfChanged(
+        pageSchemaFile(projectPath, doc.slug),
+        JSON.stringify(nextDoc, null, 2) + "\n",
+      );
+
+      if (shouldWriteAstro) {
         fs.mkdirSync(path.dirname(pageFile), { recursive: true });
-        fs.writeFileSync(pageFile, generatedSource, "utf8");
+        if (actualSource === null || !onDiskMatchesGenerated) {
+          writeFileAtomic(pageFile, generatedSource);
+          // Directory watches also observe atomic rename events. Mark every
+          // page regenerated here so publish/schema refreshes cannot look like
+          // edits made by another tool in the open editor.
+          markSelfWritten(doc.page);
+        }
       }
     }
-    updateAssetsIndex(projectPath, astro.publicDir);
 
+    pruneSelfWrittenMarkers();
     return {
       ok: true,
       status: getVisualSchemaStatus(projectPath, pagesDir),
@@ -1737,7 +2376,7 @@ export function readSiteDocument(projectPath: string): SiteDocumentResult {
     if (!site) {
       return { ok: false, site: null, error: "Site schema not found." };
     }
-    return { ok: true, site };
+    return { ok: true, site: withSiteDefaults(site) };
   } catch (error) {
     return {
       ok: false,
@@ -1756,10 +2395,10 @@ export function writeSiteDocument(
     const currentSite = readJsonFile<SiteDocument>(
       siteDocumentFile(projectPath),
     );
-    const nextSite: SiteDocument = {
+    const nextSite: SiteDocument = withSiteDefaults({
       ...site,
-      generatedAt: new Date().toISOString(),
-    };
+      generatedAt: currentSite?.generatedAt ?? new Date().toISOString(),
+    });
     syncSiteShellOutputs(
       projectPath,
       nextSite,
@@ -1767,7 +2406,7 @@ export function writeSiteDocument(
       undefined,
       currentSite,
     );
-    writeJsonFile(siteDocumentFile(projectPath), nextSite);
+    writeSiteJsonIfChanged(projectPath, nextSite);
     return { ok: true };
   } catch (error) {
     return {
@@ -1806,13 +2445,20 @@ function resolveManagedStatus(
   doc: PageDocument,
   actualSource: string | null,
   generatedSource: string,
+  justMigrated = false,
 ): ManagedFileStatus {
   if (doc.detached) return "detached";
   if (actualSource === null) return "missing";
   if (normalizeHashText(actualSource) === normalizeHashText(generatedSource)) {
     return "managed";
   }
-  if (!doc.generatedHash) return "managed";
+  if (!doc.generatedHash) {
+    // A sidecar without a stored hash is only trusted right after a migration
+    // that just regenerated the page in this pass. Any other hash-less sidecar
+    // whose disk copy differs from current output may be hand-edited — do not
+    // treat it as managed or its source will be rewritten on open.
+    return justMigrated ? "managed" : "out-of-sync";
+  }
   return hashText(actualSource) === doc.generatedHash
     ? "managed"
     : "out-of-sync";
@@ -1875,7 +2521,13 @@ export function readPageDocument(
     const actualSource = fs.existsSync(actualPath)
       ? fs.readFileSync(actualPath, "utf8")
       : null;
-    const generatedSource = renderAstroPage(projectPath, page, site, doc);
+    const generatedSource = renderAstroPage(
+      projectPath,
+      page,
+      site,
+      doc,
+      buildPostIndex(listExistingPageDocuments(projectPath, pagesDir)),
+    );
     const managedFileStatus = resolveManagedStatus(
       doc,
       actualSource,
@@ -1936,9 +2588,36 @@ export function writePageDocument(
         error: "Site schema not found.",
       };
     }
+    const nextSlug = slugFromPage(doc.page, pagesDir);
+    if (nextSlug.split("/").some((segment) => segment === "..")) {
+      // Path traversal: "../../layouts/BaseLayout.astro" would make
+      // pagePathFromSlug normalize OUTSIDE pagesDir and clobber any project
+      // file with generated page content. Reject, never canonicalize around.
+      return {
+        ok: false,
+        site: null,
+        pageDocument: null,
+        source: null,
+        generatedSource: null,
+        error: "Page path must stay inside the pages directory.",
+      };
+    }
+    const nextIsNotFound = isNotFoundSlug(nextSlug);
+    // Derive the write target from the normalized slug — never trust doc.page.
+    // A stale/compromised renderer could otherwise submit page:"package.json"
+    // (or any project-relative path) and clobber that file with generated page
+    // content, bypassing the files.ts protected-target denylist. Canonicalizing
+    // to pagesDir/<slug>.astro confines every write to a real page file.
+    const nextExt = path.extname(doc.page) || ".astro";
+    const nextPage = pagePathFromSlug(pagesDir, nextSlug, nextExt);
     const nextDoc: PageDocument = {
       ...doc,
-      slug: slugFromPage(doc.page, pagesDir),
+      page: nextPage,
+      slug: nextSlug,
+      // The 404 route has a non-negotiable navigation/search policy, even if
+      // a stale or compromised renderer submits conflicting metadata.
+      navVisible: nextIsNotFound ? false : doc.navVisible,
+      noindex: nextIsNotFound ? true : doc.noindex,
       schemaVersion: ZEPHUS_SCHEMA_VERSION,
       detached: false,
       detachedAt: null,
@@ -1949,31 +2628,110 @@ export function writePageDocument(
       nextDoc.page,
       site,
       nextDoc,
+      // The saved page itself may be a post, so index after merging it in.
+      buildPostIndex(
+        listExistingPageDocuments(projectPath, pagesDir).map((entry) =>
+          entry.page === nextDoc.page ? nextDoc : entry,
+        ),
+      ),
     );
     nextDoc.generatedHash = hashText(generatedSource);
     writePageDocumentFile(projectPath, nextDoc);
-    fs.mkdirSync(path.dirname(safeResolve(projectPath, nextDoc.page)), {
-      recursive: true,
-    });
-    fs.writeFileSync(
-      safeResolve(projectPath, nextDoc.page),
-      generatedSource,
-      "utf8",
+    // Atomic write: a crash mid-write must not corrupt the .astro (the
+    // sidecar hash was already written above, so a half-written page would
+    // be flagged out-of-sync on the next open).
+    writeFileAtomic(safeResolve(projectPath, nextDoc.page), generatedSource);
+    // The file watcher (open-page external-change detection) must not treat
+    // this save as an external edit.
+    markSelfWritten(nextDoc.page);
+    // Pass the ON-DISK site as previousSite so the legacy-layout backup only
+    // fires on a genuine legacy -> managed transition. Without it, every
+    // first save committed a permanent-stale BaseLayout.zephus-legacy-backup.
+    const onDiskSite = readJsonFile<SiteDocument>(
+      siteDocumentFile(projectPath),
     );
-    syncSiteShellOutputs(projectPath, site, pagesDir);
-    writeJsonFile(siteDocumentFile(projectPath), {
-      ...site,
-      generatedAt: new Date().toISOString(),
-    });
+    syncSiteShellOutputs(projectPath, site, pagesDir, undefined, onDiskSite);
+    // This page's own metadata may have changed what other pages list.
+    refreshPostListPages(projectPath, pagesDir, site, nextDoc.page);
+    // The returned site MUST reflect what lands on disk (byte-equal), or the
+    // renderer's drift check false-positives "site changed on disk". A page
+    // write whose shell outputs did not change no longer bumps generatedAt.
+    const updatedSite = writeSiteJsonIfChanged(projectPath, site);
     return {
       ok: true,
-      site,
+      site: updatedSite,
       pageDocument: nextDoc,
       source: generatedSource,
       generatedSource,
     };
   } catch (error) {
     log.error("Failed to write page document", error);
+    return {
+      ok: false,
+      site: null,
+      pageDocument: null,
+      source: null,
+      generatedSource: null,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+/**
+ * Metadata-only write for detached / out-of-sync pages. Unlike
+ * writePageDocument it does NOT regenerate the .astro from the sidecar tree
+ * and does NOT reattach the page — the hand-authored source stays byte-for-
+ * byte intact. Only the JSON sidecar's metadata fields change, then the site
+ * shell outputs (layout nav) are resynced so visibility edits still publish.
+ *
+ * This is what protects eye-toggle / settings-save / stage-navigation on a
+ * detached page from silently destroying hand-authored code: the previous
+ * code path routed through writePageDocument, which regenerated the file from
+ * the (stale) sidecar tree and flipped the page back to "managed".
+ */
+export function writePageMetadataPreservingSource(
+  projectPath: string,
+  pagesDir: string,
+  doc: PageDocument,
+): PageDocumentResult {
+  try {
+    const site = readJsonFile<SiteDocument>(siteDocumentFile(projectPath));
+    if (!site) {
+      return {
+        ok: false,
+        site: null,
+        pageDocument: null,
+        source: null,
+        generatedSource: null,
+        error: "Site schema not found.",
+      };
+    }
+    const nextSlug = slugFromPage(doc.page, pagesDir);
+    const nextIsNotFound = isNotFoundSlug(nextSlug);
+    const nextDoc: PageDocument = {
+      ...doc,
+      slug: nextSlug,
+      navVisible: nextIsNotFound ? false : doc.navVisible,
+      noindex: nextIsNotFound ? true : doc.noindex,
+      schemaVersion: ZEPHUS_SCHEMA_VERSION,
+      // Preserve the hand-authored state exactly as read.
+      detached: doc.detached,
+      detachedAt: doc.detachedAt,
+      managedFileStatus: doc.managedFileStatus,
+      generatedHash: doc.generatedHash,
+    };
+    writePageDocumentFile(projectPath, nextDoc);
+    syncSiteShellOutputs(projectPath, site, pagesDir);
+    const updatedSite = writeSiteJsonIfChanged(projectPath, site);
+    return {
+      ok: true,
+      site: updatedSite,
+      pageDocument: nextDoc,
+      source: null,
+      generatedSource: null,
+    };
+  } catch (error) {
+    log.error("Failed to write page metadata (preserving source)", error);
     return {
       ok: false,
       site: null,
@@ -1992,18 +2750,47 @@ export function detachPageDocument(
   source: string,
 ): PageDocumentResult {
   try {
+    // Confine the write target to a real page under pagesDir: the renderer
+    // supplies both path and bytes, and a bare writeFileSync would overwrite
+    // ANY in-root file (BaseLayout.astro, package.json, astro.config.mjs)
+    // with attacker-chosen content executed by later npm/dev/build spawns.
+    const slug = slugFromPage(page, pagesDir);
+    if (slug.split("/").some((segment) => segment === "..")) {
+      return {
+        ok: false,
+        site: null,
+        pageDocument: null,
+        source: null,
+        generatedSource: null,
+        error: "Page path must stay inside the pages directory.",
+      };
+    }
+    const canonical = pagePathFromSlug(
+      pagesDir,
+      slug,
+      path.extname(page) || ".astro",
+    );
     const current = readPageDocument(projectPath, page, pagesDir);
     if (!current.ok || !current.pageDocument || !current.site) {
       return current;
     }
     const nextDoc: PageDocument = {
       ...current.pageDocument,
+      page: canonical,
+      slug,
       detached: true,
       detachedAt: new Date().toISOString(),
       managedFileStatus: "detached",
     };
+    // Write the FILE first, atomically, then the sidecar: the user's code is
+    // the only copy once detached (the sidecar tree is stale by definition),
+    // so a crash mid-detach must never leave the page "detached" on disk with
+    // old managed content — or a truncated file.
+    writeFileAtomic(safeResolve(projectPath, canonical), source);
+    // Detaching is an app-owned atomic page write; suppress its watcher event
+    // so switching to hand-authored code does not immediately prompt reload.
+    markSelfWritten(canonical);
     writePageDocumentFile(projectPath, nextDoc);
-    fs.writeFileSync(safeResolve(projectPath, page), source, "utf8");
     return {
       ok: true,
       site: current.site,
@@ -2048,6 +2835,23 @@ export function reattachPageDocument(
     }
 
     const source = fs.readFileSync(safeResolve(projectPath, page), "utf8");
+    // Same lossless guard as migration: a hand-authored page (imports beyond
+    // BaseLayout, Astro expressions, <style>/<script>) cannot be represented
+    // by the parse tree — reattaching would silently drop those and rewrite
+    // the file. Refuse instead of destroying content.
+    if (!isCanonicalManagedSource(source)) {
+      return {
+        ok: false,
+        site: null,
+        pageDocument: null,
+        source,
+        generatedSource: null,
+        error:
+          "This page contains hand-authored code that visual mode cannot " +
+          "represent (imports, expressions, or style/script blocks). " +
+          "Reattaching would discard them.",
+      };
+    }
     const { frontmatter } = splitFrontmatter(source);
     const nextDoc = buildPageDocumentWithSections(
       page,
@@ -2074,36 +2878,64 @@ export function createSchemaPage(
   slug: string,
 ): PageDocumentResult {
   const page = pagePathFromSlug(pagesDir, slug);
-  const title = defaultTitleFromSlug(slug);
+  const notFound = isNotFoundSlug(slug);
+  const title = notFound ? "Page not found" : defaultTitleFromSlug(slug);
   const doc: PageDocument = {
     schemaVersion: ZEPHUS_SCHEMA_VERSION,
     page,
     route: slug === "index" ? "/" : `/${slug}`,
     slug,
     title,
-    navLabel: title,
+    navLabel: notFound ? "404" : title,
     metaDescription: "",
-    navVisible: true,
+    // A 404 page is an error response, not a destination: keep it out of the
+    // site navigation and out of search results.
+    navVisible: !notFound,
     isHome: slug === "index",
-    templateId: null,
+    socialImage: "",
+    canonicalUrl: "",
+    noindex: notFound,
+    publishDate: "",
+    author: "",
     sections: [
       {
         id: "section-main",
         type: "section",
         label: "Main Content",
         props: { wrapper: "none" },
-        children: [
-          {
-            id: "b" + Math.random().toString(36).slice(2, 9),
-            type: "heading",
-            props: { text: title, level: "1", cls: "" },
-          },
-          {
-            id: "b" + Math.random().toString(36).slice(2, 9),
-            type: "text",
-            props: { text: "New page. Start editing.", cls: "" },
-          },
-        ],
+        children: notFound
+          ? [
+              {
+                id: "b" + Math.random().toString(36).slice(2, 9),
+                type: "heading",
+                props: { text: "Page not found", level: "1", cls: "" },
+              },
+              {
+                id: "b" + Math.random().toString(36).slice(2, 9),
+                type: "text",
+                props: {
+                  text: "Sorry, we could not find the page you were looking for.",
+                  cls: "lead",
+                },
+              },
+              {
+                id: "b" + Math.random().toString(36).slice(2, 9),
+                type: "button",
+                props: { text: "Back to home", href: "/", cls: "" },
+              },
+            ]
+          : [
+              {
+                id: "b" + Math.random().toString(36).slice(2, 9),
+                type: "heading",
+                props: { text: title, level: "1", cls: "" },
+              },
+              {
+                id: "b" + Math.random().toString(36).slice(2, 9),
+                type: "text",
+                props: { text: "New page. Start editing.", cls: "" },
+              },
+            ],
       },
     ],
     detached: false,
@@ -2129,18 +2961,41 @@ export function renamePageSchema(
       nextSlug,
       path.extname(previousPage) || ".astro",
     );
+    const nextIsNotFound = isNotFoundSlug(nextSlug);
+    const previousWasNotFound = isNotFoundSlug(prevSlug);
     const nextDoc: PageDocument = {
       ...doc,
       page: nextPage,
       slug: nextSlug,
       route: nextSlug === "index" ? "/" : `/${nextSlug}`,
       isHome: nextSlug === "index",
+      // Entering/leaving the reserved 404 route applies the same search and
+      // navigation policy as creating that page directly.
+      navVisible: nextIsNotFound
+        ? false
+        : previousWasNotFound
+          ? true
+          : doc.navVisible,
+      noindex: nextIsNotFound
+        ? true
+        : previousWasNotFound
+          ? false
+          : doc.noindex,
     };
     const prevFile = pageSchemaFile(projectPath, prevSlug);
     const nextFile = pageSchemaFile(projectPath, nextSlug);
     fs.mkdirSync(path.dirname(nextFile), { recursive: true });
-    if (fs.existsSync(prevFile)) fs.rmSync(prevFile, { force: true });
+    // Write the new sidecar first, then remove the old one: deleting before
+    // the write would permanently lose the schema if the write fails.
     writeJsonFile(nextFile, nextDoc);
+    if (prevFile !== nextFile && fs.existsSync(prevFile)) {
+      fs.rmSync(prevFile, { force: true });
+    }
+    // The route changed, so Post List links pointing at it must be rebuilt.
+    const site = readJsonFile<SiteDocument>(siteDocumentFile(projectPath));
+    if (site) {
+      refreshPostListPages(projectPath, pagesDir, withSiteDefaults(site));
+    }
     return { ok: true };
   } catch (error) {
     return {
@@ -2172,11 +3027,28 @@ export function duplicatePageSchema(
       title: `${doc.title} Copy`,
       navLabel: `${doc.navLabel} Copy`,
       isHome: nextSlug === "index",
-      detached: false,
-      detachedAt: null,
-      managedFileStatus: "managed",
-      generatedHash: null,
+      // A duplicate must not claim the original's canonical URL, or search
+      // engines are told the copy is the same page as the original.
+      canonicalUrl: "",
+      // Preserve the original's authorship state: duplicating a detached /
+      // out-of-sync page must yield a detached copy whose hand-authored bytes
+      // (copied verbatim by duplicatePage) stay intact. Forcing "managed" here
+      // made the subsequent write regenerate the copy from the stale tree and
+      // drop all hand-authored content.
+      detached: doc.detached,
+      detachedAt: doc.detachedAt,
+      managedFileStatus: doc.managedFileStatus,
+      // The copied .astro is the ORIGINAL's bytes, so its hash carries over.
+      // A null hash on a managed copy made resolveManagedStatus see "disk !=
+      // generated (title differs) + no hash" → the duplicate was flagged
+      // out-of-sync on the next open and stuck in hand-authored mode.
+      generatedHash: doc.generatedHash,
     };
+    // Refuse to silently overwrite a stale sidecar (e.g. from a previously
+    // deleted page whose .astro was recreated by hand).
+    if (fs.existsSync(pageSchemaFile(projectPath, nextSlug))) {
+      return { ok: false, error: `A schema already exists for ${nextSlug}.` };
+    }
     writePageDocumentFile(projectPath, nextDoc);
     return { ok: true };
   } catch (error) {
@@ -2196,6 +3068,11 @@ export function deletePageSchema(
     const slug = slugFromPage(page, pagesDir);
     const file = pageSchemaFile(projectPath, slug);
     if (fs.existsSync(file)) fs.rmSync(file, { force: true });
+    // A deleted post must disappear from other pages' Post List blocks.
+    const site = readJsonFile<SiteDocument>(siteDocumentFile(projectPath));
+    if (site) {
+      refreshPostListPages(projectPath, pagesDir, withSiteDefaults(site), page);
+    }
     return { ok: true };
   } catch (error) {
     return {

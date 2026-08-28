@@ -44,7 +44,15 @@ export interface GitStatus {
   deleted: string[];
   /** True if .zephus/ is git-ignored (a misconfiguration). */
   zephusIgnored?: boolean;
+  /** True when the project folder is not a git repository. */
+  notARepository?: boolean;
+  /** True when the repo has at least one remote (push is possible). */
+  hasRemote?: boolean;
   error?: string;
+  /** Commits on the current branch not on @{upstream} (when upstream is set). */
+  ahead?: number;
+  /** Commits on @{upstream} not merged into HEAD (when upstream is set). */
+  behind?: number;
 }
 
 export interface GlobalSettings {
@@ -149,12 +157,14 @@ export type EditorBlockType =
   | "quote"
   | "list"
   | "embed"
+  | "video"
   | "feature"
   | "testimonial"
   | "accordion"
   | "stats"
   | "pricing"
-  | "cta";
+  | "cta"
+  | "postlist";
 
 export interface EditorBlock {
   id: string;
@@ -200,7 +210,6 @@ export interface FormDefinition {
 
 export interface BlockNode extends EditorBlock {
   children?: BlockNode[];
-  hidden?: boolean;
   asset?: AssetRef;
   link?: LinkRef;
   form?: FormDefinition;
@@ -213,7 +222,6 @@ export interface SectionNode {
   props: Record<string, string>;
   style?: BlockStyle;
   locked?: boolean;
-  hidden?: boolean;
   children: BlockNode[];
 }
 
@@ -272,11 +280,22 @@ export interface PageMeta {
   metaDescription: string;
   navVisible: boolean;
   isHome: boolean;
+  /** True when the page is detached from visual editing (code only). */
+  detached: boolean;
+  /** Social share image (web path like `/assets/images/x.png`, or absolute URL). */
+  socialImage: string;
+  /** Overrides the canonical URL derived from the site URL + route. */
+  canonicalUrl: string;
+  /** Emits `robots: noindex` and excludes the page from sitemap.xml. */
+  noindex: boolean;
+  /** Publish date as `YYYY-MM-DD`. */
+  publishDate: string;
+  /** Display name of the author, shown by Post List blocks. */
+  author: string;
 }
 
 export interface PageDocument extends PageMeta {
   schemaVersion: number;
-  templateId: string | null;
   sections: SectionNode[];
   detached: boolean;
   detachedAt: string | null;
@@ -291,7 +310,12 @@ export interface SiteDocument {
   generatedAt: string;
   design: DesignTokenSet;
   shell: ShellConfig;
-  templates: TemplateDefinition[];
+  /** Public base URL (e.g. */
+  siteUrl: string;
+  /** BCP 47 language tag emitted as `<html lang>`. */
+  language: string;
+  /** Web-root-relative favicon path (e.g. `/assets/images/favicon.png`). */
+  faviconPath: string;
 }
 
 export interface VisualSchemaStatus {
@@ -319,6 +343,53 @@ export type AssetCategory = "images" | "media" | "documents" | "other";
 export interface AssetListResult {
   ok: boolean;
   assets: AssetEntry[];
+  error?: string;
+}
+
+export interface AssetUsagePage {
+  page: string;
+  label: string;
+  count: number;
+}
+
+export interface AssetUsageResult {
+  ok: boolean;
+  pages: AssetUsagePage[];
+  /** Human-readable site-level places referencing the asset. */
+  siteReferences: string[];
+  error?: string;
+}
+
+export interface AssetMutationResult {
+  ok: boolean;
+  /** Web path after the operation (rename only). */
+  webPath?: string;
+  /** References repointed to the new path (rename only). */
+  updatedReferences?: number;
+  error?: string;
+}
+
+export interface SearchMatch {
+  page: string;
+  label: string;
+  count: number;
+  /** Short context snippets around the first matches. */
+  excerpts: string[];
+}
+
+export interface FindReplaceResult {
+  ok: boolean;
+  matches: SearchMatch[];
+  totalMatches: number;
+  /** Pages with matches that replaceAll will skip (detached/out-of-sync). */
+  skippedDetachedPages?: number;
+  error?: string;
+}
+
+export interface ReplaceAllResult {
+  ok: boolean;
+  replaced: number;
+  pagesChanged: number;
   error?: string;
 }
 

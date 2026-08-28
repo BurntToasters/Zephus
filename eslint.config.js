@@ -14,7 +14,7 @@ module.exports = tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    files: ['src/**/*.ts'],
+    files: ['src/**/*.{ts,tsx}'],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'module',
@@ -28,7 +28,7 @@ module.exports = tseslint.config(
     },
   },
   {
-    files: ['build-scripts/*.js'],
+    files: ['build-scripts/*.js', 'build-scripts/*.cjs'],
     languageOptions: {
       globals: {
         require: 'readonly',

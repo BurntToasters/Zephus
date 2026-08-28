@@ -2,7 +2,12 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
-import { validatePackage, detectAstro, listPages } from "../project";
+import {
+  validatePackage,
+  detectAstro,
+  listPages,
+  openProject,
+} from "../project";
 
 let tmpDir: string;
 
@@ -97,6 +102,43 @@ describe("detectAstro", () => {
     expect(result.configReadError).toBe(true);
   });
 
+  it("ignores commented-out and template-literal config dirs", () => {
+    // Regression: `// srcDir: './old'` in a comment (or a template literal
+    // like srcDir: `${path.join(...)}`) used to be read as the real config,
+    // sending the editor and build to a garbage folder.
+    fs.writeFileSync(
+      path.join(tmpDir, "astro.config.mjs"),
+      `// srcDir: './commented'
+export default defineConfig({
+  srcDir: './real-src',
+  outDir: \`\${path.join("a", "b")}\`,
+});`,
+    );
+    const pkg = { dependencies: { astro: "^5.0.0" } };
+    fs.writeFileSync(path.join(tmpDir, "package.json"), JSON.stringify(pkg));
+
+    const result = detectAstro(tmpDir);
+    expect(result.srcDir).toBe("real-src");
+    expect(result.outDir).toBe("dist");
+    expect(result.configReadError).toBe(false);
+  });
+
+  it("reads outDir from the new URL('./build', import.meta.url) pattern", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "astro.config.mjs"),
+      `import { defineConfig } from 'astro/config';
+export default defineConfig({
+  outDir: new URL('./build', import.meta.url),
+});`,
+    );
+    const pkg = { dependencies: { astro: "^5.0.0" } };
+    fs.writeFileSync(path.join(tmpDir, "package.json"), JSON.stringify(pkg));
+
+    const result = detectAstro(tmpDir);
+    expect(result.outDir).toBe("build");
+    expect(result.configReadError).toBe(false);
+  });
+
   it("detects Astro v6 project", () => {
     fs.writeFileSync(
       path.join(tmpDir, "astro.config.mjs"),
@@ -138,5 +180,42 @@ describe("listPages", () => {
     } finally {
       fs.rmSync(outside, { recursive: true, force: true });
     }
+  });
+
+  it("openProject fails cleanly for a missing path", () => {
+    const result = openProject(path.join(tmpDir, "does-not-exist"));
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("no longer exists");
+  });
+
+  it("openProject reports package and zephus state", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "package.json"),
+      JSON.stringify({ dependencies: { astro: "^6.0.0" } }),
+    );
+    fs.writeFileSync(
+      path.join(tmpDir, "astro.config.mjs"),
+      "export default {};",
+    );
+    const result = openProject(tmpDir);
+    expect(result.ok).toBe(true);
+    expect(result.name).toBe(path.basename(tmpDir));
+    expect(result.pkg).toBeTruthy();
+    expect(result.isZephusProject).toBe(false);
+    expect(result.astro.isAstro).toBe(true);
+  });
+
+  it("validatePackage reports an unparseable package.json", () => {
+    fs.writeFileSync(path.join(tmpDir, "package.json"), "{ broken");
+    const pkg = validatePackage(tmpDir);
+    expect(pkg.parseable).toBe(false);
+    expect(pkg.exists).toBe(true);
+  });
+
+  it("detectAstro flags an unreadable config file", () => {
+    // A directory where astro.config.mjs should be: reading it fails.
+    fs.mkdirSync(path.join(tmpDir, "astro.config.mjs"));
+    const astro = detectAstro(tmpDir);
+    expect(astro.configReadError).toBe(true);
   });
 });

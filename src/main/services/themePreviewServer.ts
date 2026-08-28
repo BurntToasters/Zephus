@@ -26,6 +26,13 @@ interface RunningThemePreviewServer {
 }
 
 let current: RunningThemePreviewServer | null = null;
+// Per-root pending promises: a second caller for the same root shares the
+// in-flight listen, while a caller for a DIFFERENT root no longer receives
+// the wrong bundle (previously the single pending promise served everyone).
+const pendingEnsures = new Map<string, Promise<ThemePreviewServerResult>>();
+// Bumped on every stop; a listen callback that observes a newer generation
+// knows a stop raced its startup and must not register as `current`.
+let serverGeneration = 0;
 
 export function getThemePreviewDistDir(): string {
   return path.join(__dirname, "..", "..", "..", "template-previews", "dist");
@@ -77,7 +84,18 @@ export function resolveThemePreviewFile(
 
   for (const candidate of candidates) {
     try {
-      if (fs.statSync(candidate).isFile()) return candidate;
+      if (!fs.statSync(candidate).isFile()) continue;
+      // Symlink-aware containment: an in-tree symlink must not let the server
+      // serve files from outside the preview bundle.
+      const realCandidate = fs.realpathSync.native(candidate);
+      const realRoot = fs.realpathSync.native(root);
+      if (
+        realCandidate !== realRoot &&
+        !realCandidate.startsWith(realRoot + path.sep)
+      ) {
+        return null;
+      }
+      return candidate;
     } catch {
       /* keep trying */
     }
@@ -108,24 +126,31 @@ export function createThemePreviewRequestHandler(
     const type =
       MIME_TYPES[path.extname(filePath).toLowerCase()] ??
       "application/octet-stream";
-    res.writeHead(200, {
-      "Cache-Control": "no-cache",
-      "Content-Type": type,
-    });
 
     if (req.method === "HEAD") {
+      res.writeHead(200, {
+        "Cache-Control": "no-cache",
+        "Content-Type": type,
+      });
       res.end();
       return;
     }
 
-    fs.createReadStream(filePath)
-      .on("error", () => {
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
-        }
-        res.end("Could not read preview asset");
-      })
-      .pipe(res);
+    // Open the file before writing a 200: if the file vanished or became
+    // unreadable between resolution and read, the client gets a 500 instead
+    // of a 200 with an empty body.
+    const stream = fs.createReadStream(filePath);
+    stream.once("error", () => {
+      res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+      res.end("Could not read preview asset");
+    });
+    stream.once("open", () => {
+      res.writeHead(200, {
+        "Cache-Control": "no-cache",
+        "Content-Type": type,
+      });
+      stream.pipe(res);
+    });
   };
 }
 
@@ -145,15 +170,25 @@ export function ensureThemePreviewServer(
     });
   }
 
-  if (current) stopThemePreviewServer();
+  const shared = pendingEnsures.get(resolvedRoot);
+  if (shared) return shared;
 
-  return new Promise<ThemePreviewServerResult>((resolve) => {
+  if (current) stopThemePreviewServer();
+  const generation = ++serverGeneration;
+
+  const pending = new Promise<ThemePreviewServerResult>((resolve) => {
     const server = http.createServer(
       createThemePreviewRequestHandler(resolvedRoot),
     );
 
     server.once("error", (error) => {
-      current = null;
+      // Close the errored server so it cannot linger as a dead listener.
+      try {
+        server.close();
+      } catch {
+        /* already closed */
+      }
+      if (current?.server === server) current = null;
       resolve({
         ok: false,
         baseUrl: null,
@@ -162,6 +197,22 @@ export function ensureThemePreviewServer(
     });
 
     server.listen(0, HOST, () => {
+      if (generation !== serverGeneration) {
+        // stopThemePreviewServer raced the listen: do not register this
+        // server, or an orphaned listener would serve a bundle nobody bound.
+        try {
+          server.close();
+        } catch {
+          /* already closed */
+        }
+        resolve({
+          ok: false,
+          baseUrl: null,
+          error:
+            "Theme preview server was stopped before it finished starting.",
+        });
+        return;
+      }
       const address = server.address() as AddressInfo | null;
       if (!address) {
         server.close();
@@ -177,11 +228,21 @@ export function ensureThemePreviewServer(
       current = { baseUrl, rootDir: resolvedRoot, server };
       resolve({ ok: true, baseUrl });
     });
+  }).finally(() => {
+    if (pendingEnsures.get(resolvedRoot) === pending) {
+      pendingEnsures.delete(resolvedRoot);
+    }
   });
+  pendingEnsures.set(resolvedRoot, pending);
+
+  return pending;
 }
 
 export function stopThemePreviewServer(): void {
+  serverGeneration += 1;
   if (!current) return;
-  current.server.close();
+  const { server } = current;
   current = null;
+  server.close();
+  server.closeAllConnections();
 }

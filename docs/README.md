@@ -11,7 +11,7 @@ This guide explains how to create, edit, preview, and publish Astro sites with Z
    - Add pages and content
    - Preview and publish your site
 
-2. **[Block Reference](./BLOCK_REFERENCE.md)**: All 20 content block types
+2. **[Block Reference](./BLOCK_REFERENCE.md)**: All 22 content block types
    - Text, images, galleries, buttons
    - Cards, columns, pricing, testimonials
    - Sections, embeds, HTML custom blocks
@@ -26,6 +26,7 @@ This guide explains how to create, edit, preview, and publish Astro sites with Z
    - Edit in code mode
    - Handle external file changes
    - Manage auto-saves
+   - Version control with Git (editor panel)
 
 4. **[Settings](./SETTINGS.md)**: Configuration & preferences
    - App theme and appearance
@@ -42,6 +43,11 @@ This guide explains how to create, edit, preview, and publish Astro sites with Z
    - Save and sync issues
    - Performance tips
 
+6. **[Development](./DEVELOPMENT.md)**: Contributing & architecture
+   - Build/test commands
+   - Render parity between build and editor
+   - Renderer module layout (`editorGit`, `editorSerialize`, …)
+
 ---
 
 ## What is Zephus?
@@ -51,7 +57,7 @@ This guide explains how to create, edit, preview, and publish Astro sites with Z
 - 🎨 **Visual drag-and-drop editor**: No coding required (optional)
 - 📝 **Code mode**: Full Astro/JSX control when needed
 - 💾 **Local-first**: Sites live on your machine, backed by Git
-- 🚀 **One-click deploy**: Publish to Netlify, Cloudflare Pages, GitHub Pages, or anywhere
+- 🚀 **One-click build**: Produces a ready-to-upload folder for Netlify, Cloudflare Pages, GitHub Pages, or any static host
 - 🔄 **No accounts**: No cloud databases, no lock-in, just Git
 
 ### Key Constraints
@@ -78,31 +84,53 @@ This guide explains how to create, edit, preview, and publish Astro sites with Z
 ## The Editor Interface
 
 ### Left Sidebar
-Your site's pages listed in a menu. Click to edit, click the eye icon to toggle visibility, use ⋯ menu for more options.
+
+Three tabs:
+
+- **Pages** — your site's pages and navigation. Click a page to edit, click the eye icon to toggle visibility, use the ⋯ menu for more options. Also holds **Site Shell** and **Design System**.
+- **Build** — the block palette and prebuilt section templates to drag onto the canvas.
+- **Layers** — an outline of the current page's sections and blocks.
 
 ### Center (Canvas)
+
 Your main editing area. Add blocks with the **+ Add Block** button, then click blocks to edit their content and properties.
 
-### Right Sidebar (Inspector)
-Properties for the currently selected block. Edit text, links, images, colors, and other settings here.
+### Right Sidebar
+
+Four tabs:
+
+- **Inspect** — properties for the current selection. Edit text, links, images, colors, and other settings here.
+- **Guide** — suggested next actions and SEO checks.
+- **Git** — branch status, changed files, and in-editor commit/push/pull when the project is a Git repository.
+- **Logs** — dev server and build output.
 
 ### Top Toolbar
+
 **Left:** Mode switcher (Visual ↔ Code), project info
 **Right:** Save, Preview, Publish buttons
+
+### Editing text
+
+Double-click text on the canvas to edit it in place. Select words and use the small toolbar or **Ctrl/Cmd+B / I / K** for bold, italic, and links.
+
+### Searching your site
+
+Press **Ctrl/Cmd+F** (or the magnifier in the Pages panel) to find and replace text across every page.
 
 ---
 
 ## Content Blocks at a Glance
 
-Zephus provides **20 content block types** organized by category:
+Zephus provides **22 content block types** organized by category:
 
-| Category | Blocks |
-|----------|--------|
-| **Text** | Heading, Text, Quote, List, Divider, Spacer |
-| **Media** | Image, Gallery, Embed |
-| **Interactive** | Button, HTML |
-| **Cards & Layouts** | Card, Columns, Section |
-| **Marketing** | Feature, Testimonial, Stats, Pricing, CTA, Accordion |
+| Category            | Blocks                                               |
+| ------------------- | ---------------------------------------------------- |
+| **Text**            | Heading, Text, Quote, List, Divider, Spacer          |
+| **Media**           | Image, Gallery, Embed, Video                         |
+| **Interactive**     | Button, HTML                                         |
+| **Cards & Layouts** | Card, Columns, Section                               |
+| **Marketing**       | Feature, Testimonial, Stats, Pricing, CTA, Accordion |
+| **Publishing**      | Post List                                            |
 
 → [Full Block Reference](./BLOCK_REFERENCE.md)
 
@@ -111,6 +139,7 @@ Zephus provides **20 content block types** organized by category:
 ## Common Workflows
 
 ### Create a Page
+
 1. Click **+ New Page** in left sidebar
 2. Enter a slug (URL path, e.g., `about`)
 3. Set page title, nav label, etc.
@@ -121,6 +150,7 @@ Zephus provides **20 content block types** organized by category:
 ---
 
 ### Add Content
+
 1. Click **+ Add Block** on the canvas
 2. Choose a block type (heading, text, image, etc.)
 3. Click the block to edit
@@ -132,6 +162,7 @@ Zephus provides **20 content block types** organized by category:
 ---
 
 ### Customize Design
+
 1. Find **Design System** in your project menu
 2. Set colors (accent, background, foreground, surface)
 3. Choose fonts (body, heading)
@@ -143,6 +174,7 @@ Zephus provides **20 content block types** organized by category:
 ---
 
 ### Configure Header & Footer
+
 1. Open **Site Shell** settings
 2. Enter site title, logo text, nav button
 3. Add announcement bar text (optional)
@@ -154,6 +186,7 @@ Zephus provides **20 content block types** organized by category:
 ---
 
 ### Import Images & Assets
+
 1. Click **Import Image** (or drag & drop an image onto the canvas)
 2. Choose a file from your computer
 3. Use the path in image blocks
@@ -162,7 +195,32 @@ Zephus provides **20 content block types** organized by category:
 
 ---
 
+### Set Up Search & Social Sharing
+
+1. Open **Site Shell** settings
+2. Under **Search & sharing**, set your **Site URL**, language, and favicon
+3. Add a meta description and social share image per page in **Page Settings**
+4. Click **Save**
+
+Zephus then adds canonical links and social share tags to every page, and generates `sitemap.xml` and `robots.txt`. Sites with dated, indexable posts also get an automatically discovered `rss.xml` feed.
+
+→ [Search & Sharing Guide](./WORKFLOWS.md#set-up-search--social-sharing)
+
+---
+
+### Publish a Blog
+
+1. Create articles under a route such as `posts/my-article`
+2. Set each article's publish date in **Page Settings**
+3. Add a **Post List** block and point it at `/posts`
+4. Set the public Site URL to generate and advertise `rss.xml`
+
+→ [Blog & RSS Guide](./WORKFLOWS.md#publish-a-blog--rss-feed)
+
+---
+
 ### Preview Your Site
+
 1. Click **Preview** in the top toolbar
 2. Your site opens in a browser with live reload
 3. Make changes in Zephus, then see them instantly in the browser
@@ -171,6 +229,7 @@ Zephus provides **20 content block types** organized by category:
 ---
 
 ### Publish to Production
+
 1. Click **Publish** in the top toolbar
 2. Zephus runs `npm run build`
 3. Your site is output to `dist/` (or your configured output directory)
@@ -185,6 +244,7 @@ Zephus provides **20 content block types** organized by category:
 ## Visual vs. Code Mode
 
 ### Visual Mode (Default)
+
 - Drag blocks up/down to reorder
 - Click blocks to edit content
 - Point-and-click styling
@@ -192,6 +252,7 @@ Zephus provides **20 content block types** organized by category:
 - Can't use if page is "detached"
 
 ### Code Mode
+
 - Edit raw Astro/JSX source
 - Full control, no restrictions
 - CodeMirror syntax highlighting
@@ -205,6 +266,7 @@ Zephus provides **20 content block types** organized by category:
 ## Advanced Topics
 
 ### Detach & Reattach Pages
+
 Sometimes you need full control. **Detach** a page to edit raw code, then **Reattach** to return to visual editing.
 
 → [Detach & Reattach Guide](./WORKFLOWS.md#detach--reattach-pages)
@@ -212,6 +274,7 @@ Sometimes you need full control. **Detach** a page to edit raw code, then **Reat
 ---
 
 ### Reusable Sections
+
 Save a section layout as a template, then reuse it on other pages.
 
 → [Reusable Sections Guide](./WORKFLOWS.md#save--reuse-sections)
@@ -219,6 +282,7 @@ Save a section layout as a template, then reuse it on other pages.
 ---
 
 ### Auto-Save Drafts
+
 Enable **Auto-Save** in Settings to save work-in-progress automatically every few seconds. Recover unsaved work if Zephus crashes.
 
 → [Draft Management Guide](./WORKFLOWS.md#manage-draft-auto-saves)
@@ -226,6 +290,7 @@ Enable **Auto-Save** in Settings to save work-in-progress automatically every fe
 ---
 
 ### External File Changes
+
 If you edit a page outside Zephus (in VS Code, Git, etc.), Zephus detects it and prompts you to reload or keep your version.
 
 → [External Changes Guide](./WORKFLOWS.md#handle-external-changes)
@@ -243,12 +308,17 @@ If you edit a page outside Zephus (in VS Code, Git, etc.), Zephus detects it and
 
 ## Keyboard Shortcuts
 
-| Shortcut | Action |
-|----------|--------|
-| **Ctrl+S** | Save |
-| **Ctrl+Z** | Undo |
-| **Ctrl+Y** | Redo |
-| **Ctrl+F** (in code mode) | Find |
+| Shortcut               | Action                                     |
+| ---------------------- | ------------------------------------------ |
+| **Ctrl/Cmd+S**         | Save                                       |
+| **Ctrl/Cmd+Z**         | Undo                                       |
+| **Ctrl/Cmd+Y**         | Redo                                       |
+| **Ctrl/Cmd+D**         | Duplicate selected block or section        |
+| **Ctrl/Cmd+C / X / V** | Copy, cut, paste selected block or section |
+| **Delete / Backspace** | Delete selected block or section           |
+| **Ctrl/Cmd+F**         | Find and replace across pages              |
+| **Ctrl/Cmd+B / I / K** | Bold, italic, link (while editing text)    |
+| **?** or **H**         | Open the in-app shortcut help              |
 
 ---
 
@@ -257,7 +327,7 @@ If you edit a page outside Zephus (in VS Code, Git, etc.), Zephus detects it and
 ✅ **Enable auto-save** in Settings (prevents losing work)
 ✅ **Use meaningful page slugs** (e.g., `/blog/my-post` instead of `/post-1`)
 ✅ **Add alt text to images** (helps accessibility and SEO)
-✅ **Test on mobile** (use preview browser devtools)
+✅ **Test on mobile** (open the responsive preview viewports in the editor, or use the preview window's devtools in development builds)
 ✅ **Commit to Git regularly** (version control backup)
 ✅ **Use Ctrl+S frequently** (extra safety before publishing)
 ✅ **Avoid editing the same file in two places** (Git conflicts)
@@ -267,25 +337,28 @@ If you edit a page outside Zephus (in VS Code, Git, etc.), Zephus detects it and
 ## Limitations & Important Notes
 
 - **Zephus-only projects**: Can't edit existing Astro sites
-- **No custom components**: Fixed 20 block types (no component builder)
+- **No custom components**: Fixed 22 block types (no component builder)
 - **Single schema version**: Major Zephus updates may require migration
 - **Detach/reattach**: Reattaching overwrites code changes
-- **Design tokens**: Live preview except Google Fonts (which don't load in CSP sandbox)
+- **Design tokens**: Live preview, including Google Fonts loaded in the editor workspace
 
 ---
 
 ## Support & Resources
 
 **Documentation Structure:**
+
 - 📖 [Getting Started](./GETTING_STARTED.md): First steps
 - 🧩 [Block Reference](./BLOCK_REFERENCE.md): All block types
 - 📋 [Workflows](./WORKFLOWS.md): Detailed tutorials
 - ⚙️ [Settings](./SETTINGS.md): Configuration
 - 🐛 [Troubleshooting](./TROUBLESHOOTING.md): Common issues & fixes
+- 🛠️ [Development](./DEVELOPMENT.md): Build, tests, render parity
 
 **External Links:**
+
 - [Astro Documentation](https://docs.astro.build): The framework Zephus uses
-- [Zephus GitHub](https://github.com/yourusername/zephus): Source code
+- [Zephus GitHub](https://github.com/BurntToasters/zephus): Source code
 
 ---
 
@@ -298,34 +371,44 @@ Zephus is actively developed. Check the **About** section in the app for your cu
 ## FAQ
 
 ### Can I use my existing Astro site?
+
 No, Zephus can only edit sites created within Zephus. It uses a custom schema incompatible with standard Astro projects. You'll need to recreate your site in Zephus.
 
 ### Is my data safe?
+
 Yes. Your site lives entirely on your machine. Everything is backed by Git, and Zephus does not send site data to cloud services.
 
 ### Can I edit my site in VS Code?
+
 You can detach a page to edit raw code. For full control, we recommend using VS Code for advanced edits, then re-creating the visual structure in Zephus or staying in code mode.
 
 ### What if I need more control?
+
 Code mode gives you full Astro/JSX control. You can switch to code mode for any page and edit raw markup.
 
 ### Can I use custom CSS?
+
 Yes. Every block has a `cls` property for CSS classes. Use your site's custom CSS file (`public/styles/zephus-custom.css`), or add inline CSS via the HTML block.
 
 ### Can I add custom fonts?
+
 Yes. In Design System settings, you can:
+
 - Use Google Fonts (paste the import URL)
 - Use system fonts (enter font stack)
 - Add @font-face rules in custom CSS
 
 ### How do I deploy?
+
 Zephus builds to `dist/` (by default). Deploy to:
+
 - **Netlify Drop**: Drag & drop
 - **Cloudflare Pages**: Git-connected
 - **GitHub Pages**: Push `dist/` to `gh-pages` branch
 - **Any host**: Upload `dist/` contents
 
 ### What's the performance like?
+
 Astro sites are fast by default (static HTML). Zephus editor performance is good for typical pages. Large pages (100+ blocks) may feel slow, so split them into multiple pages when needed.
 
 ---
@@ -338,4 +421,4 @@ Astro sites are fast by default (static HTML). Zephus editor performance is good
 
 ---
 
-*Zephus is a local-first, schema-backed visual editor for Astro websites. Your sites live on your machine, are backed by Git, and require no external accounts or cloud databases.*
+_Zephus is a local-first, schema-backed visual editor for Astro websites. Your sites live on your machine, are backed by Git, and require no external accounts or cloud databases._

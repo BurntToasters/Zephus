@@ -7,6 +7,7 @@ import {
   meetsMinimumNodeVersion,
   parseNodeVersion,
   validateNodePath,
+  windowsNodePaths,
 } from "../nodeCheck";
 import { npmCommand, resolveWindowsNpmCmd } from "../npmCommand";
 
@@ -189,5 +190,46 @@ describe("npmCommand", () => {
       command: "cmd.exe",
       args: ["/d", "/s", "/c", '"C:\\Program Files\\nodejs\\npm.cmd" run dev'],
     });
+  });
+
+  it("uses the APPDATA npm location on Windows", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "zephus-npm-appdata-"));
+    const npmDir = path.join(dir, "npm");
+    fs.mkdirSync(npmDir, { recursive: true });
+    const npm = path.join(npmDir, "npm.cmd");
+    fs.writeFileSync(npm, "@echo npm");
+    try {
+      expect(
+        npmCommand(["install"], "win32", {
+          PATH: "",
+          APPDATA: dir,
+        }),
+      ).toEqual({
+        command: "cmd.exe",
+        args: ["/d", "/s", "/c", `"${npm}" install`],
+      });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("windowsNodePaths", () => {
+  it("builds Windows candidate paths from the environment", () => {
+    const paths = windowsNodePaths("C:\\Users\\dev", {
+      ProgramFiles: "C:\\PF",
+      "ProgramFiles(x86)": "C:\\PF (x86)",
+    });
+    expect(paths).toEqual([
+      "C:\\PF\\nodejs\\node.exe",
+      "C:\\PF (x86)\\nodejs\\node.exe",
+      "C:\\Users\\dev\\AppData\\Roaming\\npm\\node.exe",
+    ]);
+  });
+
+  it("defaults Program Files locations", () => {
+    const paths = windowsNodePaths("C:\\Users\\dev", {});
+    expect(paths[0]).toBe("C:\\Program Files\\nodejs\\node.exe");
+    expect(paths[1]).toBe("C:\\Program Files (x86)\\nodejs\\node.exe");
   });
 });

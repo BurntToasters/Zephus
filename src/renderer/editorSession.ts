@@ -29,11 +29,13 @@ export interface EditorSessionState {
   suffix: string;
   pageDirty: boolean;
   siteDirty: boolean;
+  /** Monotonic edit generations used to avoid marking in-flight edits saved. */
+  pageRevision: number;
+  siteRevision: number;
   currentViewport: ViewportKey;
   pageChangeSummary: string[];
   siteChangeSummary: string[];
   previewUrl: string | null;
-  unsubLog: null | (() => void);
   unsubExternal: null | (() => void);
   undo: EditorSnapshot[];
   redo: EditorSnapshot[];
@@ -66,11 +68,12 @@ export function createEditorSession(): EditorSessionState {
     suffix: "",
     pageDirty: false,
     siteDirty: false,
+    pageRevision: 0,
+    siteRevision: 0,
     currentViewport: "desktop",
     pageChangeSummary: [],
     siteChangeSummary: [],
     previewUrl: null,
-    unsubLog: null,
     unsubExternal: null,
     undo: [],
     redo: [],
@@ -97,6 +100,7 @@ export function isGlobalDirty(state: EditorSessionState): boolean {
 }
 
 export function markPageDirty(state: EditorSessionState, dirty: boolean): void {
+  if (dirty) state.pageRevision += 1;
   state.pageDirty = dirty;
   if (!dirty) {
     state.pageChangeSummary = [];
@@ -105,6 +109,7 @@ export function markPageDirty(state: EditorSessionState, dirty: boolean): void {
 }
 
 export function markSiteDirty(state: EditorSessionState, dirty: boolean): void {
+  if (dirty) state.siteRevision += 1;
   state.siteDirty = dirty;
   if (!dirty) {
     state.siteChangeSummary = [];

@@ -30,7 +30,7 @@ export interface Theme extends ThemeMeta {
   baseLayout: string;
 }
 
-export const ASTRO_VERSION = "^6.0.0";
+export const ASTRO_VERSION = "^7.2.4";
 
 /* ---------- Static project files ---------- */
 
@@ -63,8 +63,10 @@ node_modules/
 # generated types
 .astro/
 # environment variables
-.env
-.env.production
+# .env.local is loaded by Vite/Astro with HIGHEST priority — it must be
+# ignored too, or "Commit All" stages local secrets.
+.env*
+!.env.example
 # macOS
 .DS_Store
 # logs
@@ -98,6 +100,7 @@ const GLOBAL_CSS = `:root {
 html { scroll-behavior: smooth; }
 body { margin: 0; line-height: 1.65; -webkit-font-smoothing: antialiased; }
 img { max-width: 100%; height: auto; display: block; border-radius: var(--zephus-radius, 12px); }
+video { max-width: 100%; display: block; border-radius: var(--zephus-radius, 12px); background: #000; }
 a { color: var(--accent); }
 .lead { font-size: 1.2rem; color: var(--muted); }
 .button {
@@ -130,6 +133,16 @@ a { color: var(--accent); }
 .zephus-price-amount { font-size: 2rem; font-weight: 800; }
 .zephus-price-period { color: var(--muted); }
 .zephus-cta { text-align: center; padding: 2.5rem 1.5rem; background: var(--surface); border-radius: var(--zephus-radius, 12px); }
+.zephus-postlist { display: grid; gap: 1.5rem; }
+.zephus-postlist-item { display: grid; gap: 0.4rem; padding-bottom: 1.25rem; border-bottom: 1px solid color-mix(in srgb, var(--fg) 12%, transparent); }
+.zephus-postlist-item:last-child { border-bottom: 0; padding-bottom: 0; }
+.zephus-postlist-title { margin: 0; font-size: 1.35rem; }
+.zephus-postlist-title a { color: inherit; text-decoration: none; }
+.zephus-postlist-title a:hover { color: var(--accent); }
+.zephus-postlist-meta { display: flex; flex-wrap: wrap; gap: 0.75rem; font-size: 0.85rem; opacity: 0.72; }
+.zephus-postlist-excerpt { margin: 0; }
+.zephus-postlist-image { width: 100%; max-height: 220px; object-fit: cover; border-radius: var(--zephus-radius, 12px); }
+.zephus-postlist-empty { opacity: 0.72; font-style: italic; }
 .zephus-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 0.75rem; }
 .zephus-gallery img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--zephus-radius, 12px); }
 /* Auto-grid sibling feature/pricing blocks so repeated cards lay out in
@@ -201,6 +214,23 @@ function list(items: string[], ordered = false): BlockNode {
     id: nid("b"),
     type: "list",
     props: { items: items.join("\n"), ordered: String(ordered), cls: "" },
+  };
+}
+/** Lists pages under a route prefix, newest first. */
+function postList(folder: string, limit = 5): BlockNode {
+  return {
+    id: nid("b"),
+    type: "postlist",
+    props: {
+      folder,
+      limit: String(limit),
+      showDate: "true",
+      showAuthor: "false",
+      showExcerpt: "true",
+      showImage: "false",
+      emptyText: "No posts yet. Add a page with a publish date.",
+      cls: "",
+    },
   };
 }
 function quote(text: string, cite = ""): BlockNode {
@@ -333,6 +363,9 @@ interface ThemePage {
   navLabel?: string;
   navVisible?: boolean;
   metaDescription?: string;
+  /** Set on blog-style pages so Post List blocks and rss.xml can date them. */
+  publishDate?: string;
+  author?: string;
   sections: SectionNode[];
 }
 
@@ -489,7 +522,11 @@ function buildSiteDocument(
     generatedAt: new Date(0).toISOString(),
     design: def.design,
     shell,
-    templates: [],
+    // Scaffolded sites have no public URL yet; the user sets it in Site SEO,
+    // which is what enables canonical tags and sitemap generation.
+    siteUrl: "",
+    language: "en",
+    faviconPath: "",
   };
 }
 
@@ -505,7 +542,11 @@ function buildPageDocument(page: ThemePage): PageDocument {
     metaDescription: page.metaDescription ?? "",
     navVisible: page.navVisible !== false,
     isHome: route === "/",
-    templateId: null,
+    socialImage: "",
+    canonicalUrl: "",
+    noindex: false,
+    publishDate: page.publishDate ?? "",
+    author: page.author ?? "",
     sections: page.sections,
     detached: false,
     detachedAt: null,
@@ -514,6 +555,8 @@ function buildPageDocument(page: ThemePage): PageDocument {
   };
 }
 
+/** Placeholder page for the scaffold: enumerates the page for the first
+ *  schema pass and keeps `npm run dev` runnable before generation. */
 function stubAstro(slug: string, title: string): string {
   const ups = slug.split("/").length;
   const prefix = "../".repeat(ups);
@@ -524,6 +567,7 @@ import BaseLayout from '${prefix}layouts/BaseLayout.astro';
 `;
 }
 
+/** Placeholder layout for the scaffold; replaced by the managed layout. */
 function stubLayout(siteName: string): string {
   return `---
 interface Props { title?: string }
@@ -683,7 +727,7 @@ function projectDef(): ThemeDef {
             stats([
               ["2k+", "Happy customers"],
               ["4.9/5", "Average rating"],
-              ["24/7", "Support"],
+              ["Fast", "Support"],
             ]),
           ]),
           band("Social proof", [
@@ -810,11 +854,13 @@ function docsDef(): ThemeDef {
             heading("Getting Started", 1),
             paragraph("Get up and running in a few minutes.", "lead"),
             heading("1. Install", 2),
-            paragraph("Describe the first step here."),
+            paragraph("Create an account and open your first project."),
             heading("2. Configure", 2),
-            paragraph("Explain any setup the reader needs to do."),
+            paragraph("Install the CLI with npm and connect your repository."),
             heading("3. Run", 2),
-            paragraph("Show them what success looks like."),
+            paragraph(
+              "Ship your first page and watch the preview update live.",
+            ),
           ]),
         ],
       },
@@ -839,7 +885,7 @@ function blogDef(siteName: string): ThemeDef {
     shell: {
       logoText: siteName,
       announcementText: "Welcome to the blog",
-      footerHtml: "<p>&copy; My Blog. Built with Zephus.</p>",
+      footerHtml: `<p>&copy; ${siteName}. Built with Zephus.</p>`,
     },
     pages: [
       {
@@ -850,12 +896,10 @@ function blogDef(siteName: string): ThemeDef {
           band("Posts", [
             heading("Latest posts", 1),
             paragraph(
-              "Welcome to the blog. Add new posts as pages and link them here.",
+              "Dated pages under /posts show up here automatically.",
               "lead",
             ),
-            image("/assets/images/placeholder-landscape.svg", "Featured post"),
-            list(["Hello World — our first post"]),
-            button("Read: Hello World", "/posts/hello-world", "secondary"),
+            postList("/posts"),
           ]),
           band("Topics", [
             heading("What we write about", 2),
@@ -877,6 +921,10 @@ function blogDef(siteName: string): ThemeDef {
         slug: "posts/hello-world",
         title: "Hello World",
         navVisible: false,
+        metaDescription:
+          "The first post on the blog, and a place to start writing.",
+        publishDate: new Date().toISOString().slice(0, 10),
+        author: "Site Owner",
         sections: [
           band("Article", [
             heading("Hello World", 1),
@@ -909,10 +957,10 @@ function portfolioDef(): ThemeDef {
       ),
     }),
     shell: {
-      logoText: "Your Name",
+      logoText: "Alex Chen",
       navCtaLabel: "Contact",
       navCtaHref: "mailto:hello@example.com",
-      footerHtml: "<p>&copy; Your Name. Built with Zephus.</p>",
+      footerHtml: "<p>&copy; Alex Chen. Built with Zephus.</p>",
     },
     pages: [
       {
@@ -921,7 +969,7 @@ function portfolioDef(): ThemeDef {
         navLabel: "Work",
         sections: [
           hero([
-            heading("Hi, I'm Your Name", 1),
+            heading("Hi, I'm Alex", 1),
             paragraph(
               "I design and build things for the web. Here's a selection of my recent work.",
               "lead",
@@ -933,18 +981,18 @@ function portfolioDef(): ThemeDef {
             heading("Selected work", 2),
             feature(
               "🎨",
-              "Project One",
-              "What it is, your role, and the outcome.",
+              "Tidewatch",
+              "A public tide and surf-forecast dashboard I designed and built end to end.",
             ),
             feature(
               "🛠️",
-              "Project Two",
-              "What it is, your role, and the outcome.",
+              "Fable",
+              "An open-source storytelling toolkit; I led the design system.",
             ),
             feature(
               "📐",
-              "Project Three",
-              "What it is, your role, and the outcome.",
+              "Fieldnotes",
+              "A travel journal PWA; my role covered the offline sync engine.",
             ),
           ]),
           band("Reviews", [
@@ -1104,7 +1152,7 @@ function saasDef(): ThemeDef {
               "lead",
             ),
             button("Try it free", "/pricing"),
-            button("See features", "#features", "secondary"),
+            button("See pricing", "/pricing", "secondary"),
             image("/assets/images/placeholder-wide.svg", "Apply dashboard"),
           ]),
           band("Features", [
@@ -1150,7 +1198,7 @@ function saasDef(): ThemeDef {
               "/mo",
               ["1 project", "Community support"],
               "Get started",
-              "#",
+              "/contact",
             ),
             pricing(
               "Pro",
@@ -1158,7 +1206,7 @@ function saasDef(): ThemeDef {
               "/mo",
               ["Unlimited projects", "Automations", "Priority support"],
               "Choose Pro",
-              "#",
+              "/contact",
             ),
             pricing(
               "Business",
@@ -1166,7 +1214,7 @@ function saasDef(): ThemeDef {
               "/mo",
               ["Everything in Pro", "SSO & roles", "Dedicated support"],
               "Choose Business",
-              "#",
+              "/contact",
             ),
           ]),
           band("FAQ", [
@@ -1239,7 +1287,7 @@ function restaurantDef(): ThemeDef {
               "Tue–Thu: 5pm – 10pm",
               "Fri–Sat: 5pm – 11pm",
               "Sunday: 11am – 9pm",
-              "123 Garden Street, Your City",
+              "123 Garden Street, Portland, OR",
             ]),
           ]),
         ],
@@ -1252,12 +1300,12 @@ function restaurantDef(): ThemeDef {
             heading("Menu", 1),
             paragraph("A taste of what we're serving this season.", "lead"),
             columns(2, [
-              "<h3>To Start</h3><p>Marinated olives · Whipped feta · Grilled bread</p>",
-              "<h3>Mains</h3><p>Lamb skewers · Roasted branzino · Garden orzo</p>",
+              "<strong>To Start</strong>\nMarinated olives · Whipped feta · Grilled bread",
+              "<strong>Mains</strong>\nLamb skewers · Roasted branzino · Garden orzo",
             ]),
             columns(2, [
-              "<h3>Sides</h3><p>Charred greens · Herbed potatoes</p>",
-              "<h3>Sweet</h3><p>Olive oil cake · Seasonal sorbet</p>",
+              "<strong>Sides</strong>\nCharred greens · Herbed potatoes",
+              "<strong>Sweet</strong>\nOlive oil cake · Seasonal sorbet",
             ]),
           ]),
         ],
@@ -1304,7 +1352,7 @@ function eventDef(): ThemeDef {
           hero([
             heading("DevConf 2026", 1),
             paragraph(
-              "One day, two stages, and the people building the future of the web. June 12 · Your City.",
+              "One day, two stages, and the people building the future of the web. October 9 · Portland, OR.",
               "lead",
             ),
             button("Register now", "/register"),
@@ -1314,12 +1362,12 @@ function eventDef(): ThemeDef {
           band("Speakers", [
             heading("Featured speakers", 2),
             feature("🎤", "Jordan Lee", "Principal Engineer, Northwind"),
-            feature("🎤", "Sam Patel", "Creator of OpenStack UI"),
+            feature("🎤", "Sam Patel", "Principal Engineer, Fable Systems"),
             feature("🎤", "Riya Chen", "Design Lead, Lumen"),
           ]),
           band("CTA", [
             cta(
-              "Join us in June",
+              "Join us in October",
               "Seats are limited — grab yours today.",
               "Register",
               "/register",
@@ -1502,9 +1550,13 @@ export function listThemes(): ThemeMeta[] {
 }
 
 /**
- * Builds the full file set for a theme: static project files plus the Zephus
- * schema sidecars (.zephus/site.json + .zephus/pages/*.json) and stub pages.
- * ensureVisualSchema() turns the sidecars into the real pages/layout/CSS.
+ * Builds the full file set for a theme: static project files, scaffold stub
+ * pages/layout (which enumerate the pages for the first schema pass and keep
+ * `npm run dev` runnable), plus the Zephus schema sidecars
+ * (.zephus/site.json + .zephus/pages/*.json).
+ * The wizard runs ensureVisualSchema with `regenerateHashlessPages` right
+ * after scaffolding, which replaces the stubs with the real generated pages
+ * and records their hashes — so a freshly created site opens fully "managed".
  */
 export function buildTheme(themeId: string, siteName: string): Theme | null {
   const def = buildThemeDef(themeId, siteName);

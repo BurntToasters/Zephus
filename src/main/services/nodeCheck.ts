@@ -14,16 +14,7 @@ export interface NodePathValidation {
   error?: string;
 }
 
-/**
- * Validates a user/renderer-supplied custom Node.js binary path *before* it is
- * persisted or executed. A renderer compromise must not be able to point the
- * app at an arbitrary executable that is later spawned (defense in depth on top
- * of contextIsolation/sandbox). Requirements:
- *   - absolute path
- *   - exists and is a regular file (symlinks to a file are allowed via stat)
- *   - basename is `node` or `node.exe` (case-insensitive)
- * Pure/synchronous and never spawns the binary; safe to call on every write.
- */
+/** Validates a user/renderer-supplied custom Node.js binary path *before* it is persisted or executed. */
 export function validateNodePath(input: unknown): NodePathValidation {
   if (typeof input !== "string" || input.trim().length === 0) {
     return { ok: false, error: "Node.js path must be a non-empty string." };
@@ -51,10 +42,7 @@ export function validateNodePath(input: unknown): NodePathValidation {
   return { ok: true, path: candidate };
 }
 
-/**
- * Minimum Node.js version required to build/preview Astro 6 projects.
- * Astro 6 dropped support for Node 18 and 20.
- */
+/** Minimum Node.js version required to build/preview Astro 6 projects. */
 export const MIN_NODE_VERSION = { major: 22, minor: 12, patch: 0 } as const;
 
 export const MIN_NODE_VERSION_STRING = `${MIN_NODE_VERSION.major}.${MIN_NODE_VERSION.minor}.${MIN_NODE_VERSION.patch}`;
@@ -107,6 +95,21 @@ export function meetsMinimumNodeVersion(version: ParsedVersion): boolean {
   return patch >= MIN_NODE_VERSION.patch;
 }
 
+/** Windows-specific candidate locations (pure, so the win32 branch is
+ *  testable on any platform). */
+export function windowsNodePaths(
+  homedir: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string[] {
+  const programFiles = env.ProgramFiles || "C:\\Program Files";
+  const programFilesX86 = env["ProgramFiles(x86)"] || "C:\\Program Files (x86)";
+  return [
+    path.win32.join(programFiles, "nodejs", "node.exe"),
+    path.win32.join(programFilesX86, "nodejs", "node.exe"),
+    path.win32.join(homedir, "AppData", "Roaming", "npm", "node.exe"),
+  ];
+}
+
 /**
  * Common locations where a Node.js binary lands from the official .pkg
  * installer, Homebrew, system package managers, and version managers.
@@ -124,14 +127,7 @@ export function commonNodePaths(homedir: string = os.homedir()): string[] {
     ];
   }
   if (process.platform === "win32") {
-    const programFiles = process.env.ProgramFiles || "C:\\Program Files";
-    const programFilesX86 =
-      process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)";
-    return [
-      path.join(programFiles, "nodejs", "node.exe"),
-      path.join(programFilesX86, "nodejs", "node.exe"),
-      path.join(homedir, "AppData", "Roaming", "npm", "node.exe"),
-    ];
+    return windowsNodePaths(homedir);
   }
   // linux and others
   return [
@@ -162,7 +158,7 @@ async function probeNode(binary: string): Promise<ParsedVersion | null> {
  *      meets the minimum version wins; otherwise the first that works at all
  *      (so the result can still report an outdated version).
  */
-async function resolveNodeBinary(
+async function resolveNodeBinaryUncached(
   customPath?: string | null,
 ): Promise<ResolvedNode | null> {
   const trimmedCustom = customPath?.trim();
@@ -192,6 +188,34 @@ async function resolveNodeBinary(
   }
 
   return firstWorking;
+}
+
+// Probing Node (up to 8 candidates, 10s timeout each) is expensive; every
+// build/preview/install was re-probing on each spawn. Cache the resolution,
+// keyed by the custom path so a settings change invalidates it. The cache is
+// time-limited: a user installing Node mid-session (or fixing PATH) must not
+// be stuck with the old "missing" result until restart.
+const NODE_RESOLUTION_CACHE_MS = 30 * 1000;
+let cachedNodeResolution: {
+  key: string;
+  resolved: ResolvedNode | null;
+  at: number;
+} | null = null;
+
+async function resolveNodeBinary(
+  customPath?: string | null,
+): Promise<ResolvedNode | null> {
+  const key = customPath?.trim() ?? "";
+  if (
+    cachedNodeResolution &&
+    cachedNodeResolution.key === key &&
+    Date.now() - cachedNodeResolution.at < NODE_RESOLUTION_CACHE_MS
+  ) {
+    return cachedNodeResolution.resolved;
+  }
+  const resolved = await resolveNodeBinaryUncached(customPath);
+  cachedNodeResolution = { key, resolved, at: Date.now() };
+  return resolved;
 }
 
 /**
@@ -240,10 +264,7 @@ const MISSING_MESSAGE =
   `Install Node.js from https://nodejs.org, or set a custom Node.js location ` +
   `in Settings if it is installed in a non-standard directory.`;
 
-/**
- * Resolves and evaluates the Node.js the app will use to spawn builds.
- * Considers the optional user-configured custom path first. Never throws.
- */
+/** Resolves and evaluates the Node.js the app will use to spawn builds. */
 export async function checkNodeVersion(
   customPath?: string | null,
 ): Promise<NodeCheckResult> {

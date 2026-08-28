@@ -13,6 +13,14 @@ Step-by-step guides for common tasks in Zephus.
 7. [Detach & Reattach Pages](#detach--reattach-pages)
 8. [Handle External Changes](#handle-external-changes)
 9. [Manage Draft Auto-Saves](#manage-draft-auto-saves)
+10. [Version Control with Git](#version-control-with-git)
+11. [Format Text Inline](#format-text-inline)
+12. [Find and Replace Across Pages](#find-and-replace-across-pages)
+13. [Set Up Search & Social Sharing](#set-up-search--social-sharing)
+14. [Add a 404 Page](#add-a-404-page)
+15. [Publish a Blog & RSS Feed](#publish-a-blog--rss-feed)
+16. [Responsive Viewports & Hiding Content](#responsive-viewports--hiding-content)
+17. [Lock Blocks & Sections](#lock-blocks--sections)
 
 ---
 
@@ -20,7 +28,7 @@ Step-by-step guides for common tasks in Zephus.
 
 ### Create a New Page
 
-1. Click **+ New Page** in the left sidebar
+1. Click **+ New Page** in the left sidebar's **Pages** tab
 2. Enter a **page slug** (URL):
    - Use lowercase letters, numbers, and hyphens
    - Spaces are auto-converted to hyphens
@@ -72,7 +80,7 @@ The new page copies all blocks and styling from the original. Modify it as neede
 
 ### Hide a Page from Navigation
 
-1. In the left sidebar, click the **👁️ icon** next to the page name
+1. In the left sidebar's **Pages** tab, click the **👁️ icon** next to the page name
 2. The icon toggles between:
    - **👁️ visible**: Shown in site header navigation
    - **👁️‍🗨️ hidden**: Hidden from navigation (still accessible via direct URL)
@@ -91,6 +99,11 @@ The new page copies all blocks and styling from the original. Modify it as neede
    - **Nav Label**: Name in navigation menu
    - **Meta Description**: SEO description (appears in search results)
    - **Show in Navigation**: Toggle visibility
+   - **Publish date**: Marks and orders blog posts, and includes indexable pages in RSS
+   - **Author**: Name displayed by Post List blocks
+   - **Social share image**: Picture shown when the page is shared
+   - **Canonical URL**: Leave empty unless this page duplicates another address
+   - **Hide from search engines**: Keeps the page out of search results and `sitemap.xml`
 4. Click **Save**
 
 ---
@@ -139,7 +152,7 @@ For analytics, meta tags, or scripts that belong in the `<head>`:
 2. Scroll to **Custom Head HTML**
 3. Enter raw HTML, e.g.:
    ```html
-   <meta name="og:title" content="My Site">
+   <meta name="og:title" content="My Site" />
    <script async src="https://analytics.example.com/script.js"></script>
    ```
 4. Click **Save**
@@ -164,37 +177,36 @@ Set colors, fonts, and layout tokens for your entire site.
 
 ### Set Colors
 
-| Token | Purpose | Example |
-|-------|---------|---------|
-| **Accent** | Primary brand color (buttons, links) | `#4f46e5` (indigo) |
-| **Background** | Page background | `#ffffff` (white) |
-| **Foreground** | Text color | `#0f172a` (dark blue) |
-| **Surface** | Secondary background (footer, cards) | `#f8fafc` (light gray) |
+| Token          | Purpose                              | Example                |
+| -------------- | ------------------------------------ | ---------------------- |
+| **Accent**     | Primary brand color (buttons, links) | `#4f46e5` (indigo)     |
+| **Background** | Page background                      | `#ffffff` (white)      |
+| **Foreground** | Text color                           | `#0f172a` (dark blue)  |
+| **Surface**    | Secondary background (footer, cards) | `#f8fafc` (light gray) |
 
 1. Click a color field
 2. Enter a hex color (e.g., `#ff6b6b`) or use the color picker
 3. Click **Save**
 
-The canvas preview updates in real time (except Google Fonts, which won't load due to security).
+The canvas preview updates in real time, including Google Fonts loaded from the font import URL.
 
 ---
 
 ### Set Fonts
 
-| Token | Purpose | Example |
-|--------|---------|---------|
-| **Body Font** | Paragraph and body text | "Segoe UI, sans-serif" |
-| **Heading Font** | H1–H6 and titles | "Inter, sans-serif" |
+| Token            | Purpose                 | Example                |
+| ---------------- | ----------------------- | ---------------------- |
+| **Body Font**    | Paragraph and body text | "Segoe UI, sans-serif" |
+| **Heading Font** | H1–H6 and titles        | "Inter, sans-serif"    |
 
 **Using Google Fonts:**
 
-1. Visit [Google Fonts](https://fonts.google.com)
-2. Select a font and click **Get font**
-3. Copy the import URL (e.g., `https://fonts.googleapis.com/css2?family=Inter:wght@400;700`)
-4. Paste into the **Font Import URL** field in Zephus
-5. Paste the CSS font stack (e.g., `'Inter', sans-serif`) into the font field
+1. Open **Design System** and pick a Google Font from the **Body font** / **Heading font** dropdowns (Inter, Roboto, Open Sans, Lato, Montserrat, Poppins, Playfair Display, Merriweather)
+2. The editor loads the font live on the canvas, and the built site loads it the same way
+3. For a custom font, choose **Custom…** and enter the CSS font stack (e.g., `'MyFont', sans-serif`)
 
 **Fallback stacks (no download):**
+
 ```
 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif
 ```
@@ -203,11 +215,11 @@ ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif
 
 ### Set Layout Tokens
 
-| Token | Purpose | Example |
-|--------|---------|---------|
-| **Container Width** | Max width of page content | `1080px`, `90vw` |
-| **Border Radius** | Roundedness of elements | `14px`, `0px` |
-| **Shadow** | Depth of shadows | "sm", "md", "lg", "none" |
+| Token               | Purpose                   | Example                  |
+| ------------------- | ------------------------- | ------------------------ |
+| **Container Width** | Max width of page content | `1080px`, `90vw`         |
+| **Border Radius**   | Roundedness of elements   | `14px`, `0px`            |
+| **Shadow**          | Depth of shadows          | "sm", "md", "lg", "none" |
 
 1. Enter values for container width (e.g., `1200px`)
 2. Choose shadow level (`sm` for subtle, `lg` for dramatic)
@@ -220,12 +232,14 @@ ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif
 ### Import an Image
 
 **Method 1: Import Dialog**
+
 1. Click **Import Image** or **+ Assets** button
 2. Choose a file from your computer (`.jpg`, `.png`, `.svg`, `.gif`, `.webp`)
 3. Click **Open**
-4. The image is copied to `.zephus/assets/` and assigned a web path
+4. The image is copied to `public/assets/` (by category) and assigned a web path
 
 **Method 2: Drag & Drop**
+
 1. Drag an image file from your computer
 2. Drop it into the editor canvas
 3. A new image block is created with the image
@@ -235,13 +249,15 @@ ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif
 ### Use an Image in a Block
 
 **Image Block:**
+
 1. Add an **Image** block
-2. In the right inspector, click on the `src` field
+2. In the **Inspect** tab, click on the `src` field
 3. Paste the image path or click **Browse** to select from imported assets
 4. Enter `alt` text (important for accessibility)
 5. Optionally add CSS classes for styling
 
 **Gallery Block:**
+
 1. Add a **Gallery** block
 2. In the inspector, enter image paths (one per line):
    ```
@@ -265,14 +281,27 @@ ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif
 
 ---
 
+### Rename an Asset
+
+1. Open the asset browser (for example **Choose…** on an image block, or the Inspector's image field)
+2. Hover the asset and click the **pencil** icon
+3. Enter a new name and confirm
+
+The file keeps its original type, and Zephus updates every reference to it across your pages and site settings in the same step, so nothing breaks. If the prompt says the file is in use, that list is what will be updated.
+
+> 💡 Save or discard your unsaved changes first — Zephus asks, because renaming rewrites saved page content.
+
+---
+
 ### Delete an Asset
 
-1. Open the **Assets** view
-2. Find the asset you want to delete
-3. Click the **X** or **Delete** button
-4. Confirm
+1. Open the asset browser
+2. Hover the asset and click the **trash** icon
+3. Confirm
 
-> ⚠️ **Warning**: Deleting an asset breaks any image blocks using it. Update those blocks before deleting.
+Before deleting, Zephus tells you which pages and site settings still use the file.
+
+> ⚠️ **Warning**: Deleting an asset that is still in use leaves those places pointing at a missing file. Update them, or pick a different image, first.
 
 ---
 
@@ -287,7 +316,7 @@ Save a frequently-used layout as a reusable template.
 3. Give it a memorable name (e.g., "Three-Column Cards")
 4. Click **Save**
 
-The section is stored in your site's reusable sections library.
+The section is stored inside the site at `.zephus/templates/reusable-sections.json`, so it travels with the project when you commit it to Git (like the rest of the Zephus save state). Sections saved by earlier Zephus versions are migrated into the project automatically.
 
 ---
 
@@ -327,7 +356,7 @@ For developers or advanced customization, edit raw Astro/JSX.
 
 - **Syntax highlighting** for HTML, JSX, CSS
 - **Line numbers** and error indicators
-- **Ctrl+Enter** to commit multi-line changes
+- **Ctrl+Enter** inserts a blank line; save multi-line edits with Ctrl/Cmd+S
 - **Ctrl+Z / Ctrl+Y** for undo/redo
 - **Ctrl+F** to find and replace
 
@@ -405,29 +434,28 @@ If you edit a page file outside of Zephus (e.g., in VS Code), Zephus detects the
 
 ## Manage Draft Auto-Saves
 
-Zephus automatically saves work-in-progress drafts to `.zephus/drafts/`.
+Zephus automatically saves work-in-progress drafts to the app's local data folder (kept out of your project and out of Git).
 
 ### Auto-Save Behavior
 
-- **Default:** Off (enable in Settings)
-- **When enabled:** Saves every few seconds as you edit
-- **Location:** `.zephus/drafts/` (one file per page/site)
-- **Restoration:** If Zephus crashes, drafts are available on restart
+- **Default:** Off
+- **When enabled:** Zephus saves the project when you **leave a page** or switch context (instead of prompting to save or discard)
+- **Crash recovery:** Zephus still keeps local recovery drafts in the app's data folder even when Auto-Save is off
+- **Disk commits:** Use **Ctrl+S** or **Save** to write pages to disk anytime
 
 ---
 
 ### Enable Auto-Save
 
-1. Click **Settings** on the start screen
-2. Find **Auto-Save**
-3. Toggle **On**
-4. Drafts now save automatically
+1. Click **Settings** on the start screen (or open Settings from the editor)
+2. Enable **Autosave changes**
+3. Read the hint under the toggle for how autosave differs from crash-recovery drafts
 
 ---
 
 ### Resume a Saved Draft
 
-1. If Zephus detects unsaved work on startup, it shows a **Resume Draft** button
+1. If Zephus detects unsaved work on startup, it may offer to resume a draft
 2. Click **Resume** to continue editing
 3. Or click **Discard** to start fresh
 
@@ -435,13 +463,189 @@ Zephus automatically saves work-in-progress drafts to `.zephus/drafts/`.
 
 ### Manual Save vs. Auto-Save
 
-| Action | Effect |
-|--------|--------|
-| **Ctrl+S** | Saves page to disk immediately |
-| **Click Save** | Same as Ctrl+S |
-| **Auto-Save (if enabled)** | Saves draft every few seconds, doesn't touch disk |
+| Action                     | Effect                                                                        |
+| -------------------------- | ----------------------------------------------------------------------------- |
+| **Ctrl+S**                 | Saves page to disk immediately                                                |
+| **Click Save**             | Same as Ctrl+S                                                                |
+| **Auto-Save (if enabled)** | Saves when leaving a page or resolving site editor conflicts without a prompt |
+| **Crash-recovery drafts**  | Local safety net; not a substitute for **Ctrl+S** before publish              |
 
-> 💡 **Tip**: Enable auto-save to prevent losing work if Zephus crashes. Still press Ctrl+S before publishing to ensure changes are written to disk.
+> 💡 **Tip**: Enable auto-save if you often switch pages without saving. Still press **Ctrl+S** before publishing.
+
+---
+
+## Version Control with Git
+
+Zephus projects are ordinary Git repositories on disk. You can use the terminal or the **Git** panel in the editor sidebar.
+
+### Initialize a Repository
+
+**When opening a project:** Zephus may offer to run `git init` if the folder is not yet a repo.
+
+**From the editor:** Open the **Git** panel. If Git is unavailable because the folder is not a repository, click **Initialize Git Repository**, then **Refresh**.
+
+> 💡 **Commit `.zephus/`:** Zephus stores managed page JSON and project state there. If `.zephus` is git-ignored, the panel warns you—remove it from `.gitignore` so the site opens correctly on other machines.
+
+---
+
+### Review Changes
+
+1. Open the **Git** tab in the right sidebar
+2. Click **Refresh** to update the file list
+3. Changed files show badges: **M** (modified), **A** (added), **D** (deleted)
+
+---
+
+### Commit from Zephus
+
+1. Check the files you want to include (use **Select all** / **Clear** as needed)
+2. Enter a **commit message**
+3. Click **Commit All Changes** when every changed file is selected, or **Commit N Selected** for a partial commit
+4. Zephus runs `git add` on the selected paths and `git commit`
+
+For full control (interactive staging, hooks, signing), use your terminal in the project folder.
+
+---
+
+### Push and Pull
+
+When a branch is checked out (not detached HEAD), the Git panel toolbar includes:
+
+- **Pull (Fast-Forward)** — runs `git pull --ff-only` (fails if a merge is required; resolve on the command line)
+- **Push to Remote** — runs `git push` to the configured upstream
+
+When the branch tracks a remote (`@{upstream}`), the branch label shows **↑N** / **↓N** (local commits to push / remote commits to pull), and the panel explains what to do next. Click **Refresh** to run a quiet `git fetch` and update those counts; routine status updates (e.g. after save) use the last fetch only.
+
+After a pull, if Astro sources changed outside Zephus, use **Reload From Disk** on the editor banner when prompted, or reload the page from the page list.
+
+---
+
+### Detached HEAD
+
+If you see **detached HEAD** in the branch tag, check out a branch in your terminal (`git checkout main`) before committing or pushing from Zephus.
+
+---
+
+## Responsive Viewports & Hiding Content
+
+### Switch Canvas Viewport
+
+1. In the editor toolbar, click **Desktop**, **Tablet**, or **Mobile** to preview the current page at that width
+2. The canvas narrows and block layouts reflow using each block's responsive overrides (Layout → per-viewport settings in the inspector)
+3. The published site applies the same rules automatically
+
+### Hide a Block or Section on a Viewport
+
+1. Select the block or section
+2. In the inspector, open **Layout → Hide on** and check the viewports where it should disappear
+3. On the canvas, content hidden on the active viewport keeps a **dashed outline** (dimmed) so you can still select and edit it — the built site hides it for real at that width
+
+---
+
+## Lock Blocks & Sections
+
+Lock a block or section to prevent accidental edits (copy, delete, move, drag-drop, and inspector changes are blocked until you unlock).
+
+- Select the block or section, then click the **lock** icon in the inspector or the canvas toolbar
+- Locked items show a lock state on the canvas; click **Unlock** to edit again
+- Locks are saved with the page (`.zephus` sidecars) and survive reloads
+
+---
+
+## Format Text Inline
+
+Bold a word, italicize a phrase, or turn selected words into a link without leaving the canvas.
+
+1. Double-click text on the canvas to start editing
+2. Select the words you want to change
+3. Use the small toolbar that appears, or a shortcut:
+   - **Ctrl/Cmd+B** — bold
+   - **Ctrl/Cmd+I** — italic
+   - **Ctrl/Cmd+K** — add a link (type the address, then press Enter)
+   - Toolbar also has underline-style options, remove link, and **clear formatting**
+4. Click outside the text, or press Enter on a single-line field, to finish
+
+Notes:
+
+- Button labels can be bolded but cannot contain their own link, because the whole button is already a link.
+- Pasting keeps plain text only, so pasted styling from a browser or word processor never leaks into your site.
+
+---
+
+## Find and Replace Across Pages
+
+1. Click the **magnifier** icon in the **Pages** panel, or press **Ctrl/Cmd+F**
+2. Type the text to find, and optionally the replacement
+3. Choose **Match case** or **Whole words only** if needed
+4. Click **Find** to see every match grouped by page, with surrounding text
+5. Click any result to open that page, or click **Replace All**
+
+Before replacing, Zephus tells you how many occurrences on how many pages will change and asks you to confirm.
+
+> ⚠️ **Warning**: Replace All writes directly to your pages. **Ctrl/Cmd+Z does not undo it.** If the project is in Git, commit first so you can revert.
+
+---
+
+## Set Up Search & Social Sharing
+
+Do this once per site so search engines and chat apps show your pages properly.
+
+1. Open **Site Shell** in the left sidebar
+2. Under **Search & sharing**, fill in:
+   - **Site URL** — your public address, e.g. `https://example.com`
+   - **Language** — the language your pages are written in
+   - **Favicon** — the small icon shown in browser tabs
+3. Click **Stage Shell**, then **Save**
+
+Once the site URL is set, every built page gets a canonical link and social share tags, and Zephus generates **`sitemap.xml`** and **`robots.txt`** in your `public/` folder. If at least one indexable, non-404 page has a publish date, it also generates **`rss.xml`** and adds feed discovery to every managed page.
+
+Then, per page, open **Page Settings** and add a **Meta description** and a **Social share image**.
+
+Notes:
+
+- Without a site URL, canonical links, social previews, and the sitemap cannot be generated (social platforms require full addresses).
+- If you already wrote your own `sitemap.xml` or `robots.txt`, Zephus leaves them alone.
+- Pages marked **Hide from search engines** are left out of the sitemap.
+
+---
+
+## Add a 404 Page
+
+A 404 page is what visitors see when they follow a broken or outdated link.
+
+1. Open the **Guide** tab in the right sidebar
+2. Click **Create 404 Page**
+
+Or add a page with the slug `404` yourself.
+
+Zephus creates it with a heading, a short message, and a link back home. Edit it like any other page. It is automatically kept out of your navigation, out of `sitemap.xml`, and out of search results.
+
+---
+
+## Publish a Blog & RSS Feed
+
+The **Post List** block turns ordinary pages into a local, API-free blog. The bundled **Blog** theme starts with a working post index and sample article.
+
+### Create and list posts
+
+1. Create article pages beneath one route, such as `posts/first-post` and `posts/second-post`
+2. Open each article's **Page Settings**
+3. Set a **Publish date**; optionally add an **Author**, **Meta description**, and **Social share image**
+4. Add a **Post List** block to your blog homepage
+5. In **Inspect**, set **Folder** to `/posts`, choose the maximum number of entries, and show or hide dates, authors, descriptions, and images
+6. Save the pages
+
+The list updates when a post is added, renamed, dated, edited, or deleted. It uses the page's title, description, author, date, social image, and route; you do not duplicate that content in the listing block.
+
+### Enable RSS
+
+1. Open **Site Shell**
+2. Set the public **Site URL** under **Search & sharing**
+3. Save the shell
+
+When the site has a URL and at least one dated, indexable page other than the 404 page, Zephus writes `public/rss.xml` and advertises it in the managed page `<head>`. Posts are ordered newest first. Clearing the site URL, removing every eligible publish date, or hiding all dated pages from search removes Zephus's stale feed; a hand-authored `rss.xml` is never deleted or overwritten.
+
+> 💡 **Draft posts**: Leave the publish date empty to keep a page out of RSS. A Post List block can still show an undated page if it lives under that block's folder; dated entries appear first.
 
 ---
 

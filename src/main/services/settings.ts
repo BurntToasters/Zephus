@@ -11,13 +11,7 @@ import {
 } from "../types";
 import { readJsonSafe, writeFileAtomic } from "./fsSafe";
 
-/**
- * Resolves the OS-specific user config directory for Zephus.
- * Electron's app.getPath('userData') already maps to:
- *   - Windows: %APPDATA%/Zephus
- *   - macOS:   ~/Library/Application Support/Zephus
- *   - Linux:   $XDG_CONFIG_HOME/Zephus or ~/.config/Zephus
- */
+/** Resolves the OS-specific user config directory for Zephus. */
 function globalSettingsPath(): string {
   return path.join(app.getPath("userData"), "settings.json");
 }
@@ -25,7 +19,15 @@ function globalSettingsPath(): string {
 export function readGlobalSettings(): GlobalSettings {
   const file = globalSettingsPath();
   if (!fs.existsSync(file)) {
-    writeGlobalSettings(DEFAULT_GLOBAL_SETTINGS);
+    try {
+      writeGlobalSettings(DEFAULT_GLOBAL_SETTINGS);
+    } catch (error) {
+      // A read must never throw (callers like getMergedSettings assume reads
+      // cannot fail). A read-only config directory just means defaults for
+      // this session; the write surfaces as a save error if the user changes
+      // a setting.
+      log.error("Could not create default settings.json", error);
+    }
     return { ...DEFAULT_GLOBAL_SETTINGS };
   }
   // Corrupt settings are backed up (not overwritten) by readJsonSafe; we fall
@@ -39,12 +41,28 @@ export function readGlobalSettings(): GlobalSettings {
     }
     return { ...DEFAULT_GLOBAL_SETTINGS };
   }
+  const theme =
+    data.theme && ["light", "dark", "system"].includes(data.theme)
+      ? data.theme
+      : DEFAULT_GLOBAL_SETTINGS.theme;
   return {
     ...DEFAULT_GLOBAL_SETTINGS,
     ...data,
+    // A hand-edited settings.json must not be able to point the app at an
+    // unknown theme (data-theme matches no CSS rule and theming silently
+    // breaks).
+    theme,
     recentProjects: Array.isArray(data.recentProjects)
-      ? data.recentProjects
+      ? // Hand-edited settings.json must not crash the project list: entries
+        // that are not strings (e.g. `123`) would throw in path.resolve.
+        data.recentProjects.filter(
+          (entry): entry is string => typeof entry === "string" && entry !== "",
+        )
       : [],
+    lastOpenedProject:
+      typeof data.lastOpenedProject === "string"
+        ? data.lastOpenedProject
+        : null,
   };
 }
 
@@ -55,10 +73,19 @@ export function writeGlobalSettings(settings: GlobalSettings): void {
   );
 }
 
+/** Canonical form for deduping: resolved absolute path, case-folded on win32. */
+function canonicalProjectPath(projectPath: string): string {
+  const resolved = path.resolve(projectPath);
+  return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+}
+
 /** Records a project path at the top of the recent-projects list (deduped, capped). */
 export function recordRecentProject(projectPath: string): GlobalSettings {
   const settings = readGlobalSettings();
-  const deduped = settings.recentProjects.filter((p) => p !== projectPath);
+  const canonical = canonicalProjectPath(projectPath);
+  const deduped = settings.recentProjects.filter(
+    (p) => canonicalProjectPath(p) !== canonical,
+  );
   deduped.unshift(projectPath);
   settings.recentProjects = deduped.slice(0, MAX_RECENT_PROJECTS);
   settings.lastOpenedProject = projectPath;
@@ -72,10 +99,11 @@ export function recordRecentProject(projectPath: string): GlobalSettings {
 
 export function removeRecentProject(projectPath: string): GlobalSettings {
   const settings = readGlobalSettings();
+  const canonical = canonicalProjectPath(projectPath);
   settings.recentProjects = settings.recentProjects.filter(
-    (p) => p !== projectPath,
+    (p) => canonicalProjectPath(p) !== canonical,
   );
-  if (settings.lastOpenedProject === projectPath) {
+  if (canonicalProjectPath(settings.lastOpenedProject ?? "") === canonical) {
     settings.lastOpenedProject = null;
   }
   try {
@@ -101,10 +129,7 @@ export function readRepoSettings(projectPath: string): RepoSettings {
   return { ...DEFAULT_REPO_SETTINGS, ...data };
 }
 
-/**
- * Merges global + repo settings with repo-over-global precedence (R6.7).
- * Keys present in both: repo wins. Repo-only keys added. Global-only kept.
- */
+/** Merges global + repo settings with repo-over-global precedence (R6.7). */
 export function getMergedSettings(projectPath: string): {
   global: GlobalSettings;
   repo: RepoSettings;

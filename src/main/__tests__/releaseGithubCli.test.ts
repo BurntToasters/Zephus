@@ -5,18 +5,29 @@ import { describe, expect, it } from "vitest";
 import githubCli from "../../../build-scripts/github-cli.js";
 import releaseUploadPolicy from "../../../build-scripts/release-upload-policy.js";
 
-const { githubCliEnvironment } = githubCli;
+const { githubCliEnvironment, githubStatusCode } = githubCli;
 const { getReleaseUploadFiles } = releaseUploadPolicy;
 
 describe("GitHub CLI release transport", () => {
   it("uses stored authentication instead of token environment variables", () => {
-    expect(
-      githubCliEnvironment({
-        PATH: "/bin",
-        GH_TOKEN: "old",
-        GITHUB_TOKEN: "old-too",
-      }),
-    ).toEqual({ PATH: "/bin" });
+    const environment = {
+      PATH: "/bin",
+      GH_TOKEN: "old",
+      GITHUB_TOKEN: "old-too",
+    };
+
+    expect(githubCliEnvironment(environment)).toEqual({ PATH: "/bin" });
+    expect(environment).toEqual({
+      PATH: "/bin",
+      GH_TOKEN: "old",
+      GITHUB_TOKEN: "old-too",
+    });
+  });
+
+  it("extracts GitHub API status codes for retry and race handling", () => {
+    expect(githubStatusCode("gh: Validation Failed (HTTP 422)")).toBe(422);
+    expect(githubStatusCode("request failed with status code 503")).toBe(503);
+    expect(githubStatusCode("network unavailable")).toBeUndefined();
   });
 
   it("uploads artifacts and every updater channel metadata file", () => {

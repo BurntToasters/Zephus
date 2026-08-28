@@ -1,14 +1,9 @@
 import * as fs from "fs";
 import * as path from "path";
 import { OperationResult } from "../types";
-import { assertRealpathInside, safeResolve } from "./fsSafe";
+import { assertRealpathInside, safeResolve, writeFileAtomic } from "./fsSafe";
 
-/**
- * Rejects reads/writes of sensitive project files that the visual editor never
- * needs but that a compromised renderer could try to exfiltrate or tamper with
- * (git internals and dotenv secret files). The `.zephus/` save state is managed
- * through dedicated schema/draft services, not this generic file bridge.
- */
+/** Rejects reads/writes of sensitive project files that the visual editor never needs but that a compromised renderer… */
 function assertEditablePath(relativePath: string): void {
   const normalized = relativePath.replace(/\\/g, "/");
   const segments = normalized.split("/").filter(Boolean);
@@ -97,8 +92,8 @@ export function writeProjectFile(
     const resolvedRel = path.relative(realRoot, realTarget);
     assertEditablePath(resolvedRel);
     assertWritablePath(resolvedRel);
-    fs.mkdirSync(path.dirname(full), { recursive: true });
-    fs.writeFileSync(full, content, "utf8");
+    // Atomic write: a crash mid-write must never leave a half-written file.
+    writeFileAtomic(full, content);
     return { ok: true };
   } catch (error) {
     return {

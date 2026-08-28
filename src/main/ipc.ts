@@ -2,6 +2,11 @@ import { BrowserWindow, dialog, ipcMain, app, shell } from "electron";
 import * as fs from "fs";
 import * as path from "path";
 import {
+  approved,
+  approveProjectRoot,
+  assertApprovedProject,
+} from "./ipcApproval";
+import {
   GlobalSettings,
   OperationResult,
   PageDocument,
@@ -17,25 +22,41 @@ import {
   removeRecentProject,
   writeGlobalSettings,
 } from "./services/settings";
-import { getGitStatus, initGitRepo } from "./services/git";
+import {
+  getGitStatus,
+  initGitRepo,
+  commitAllChanges,
+  commitProjectPaths,
+  pushCurrentBranch,
+  pullCurrentBranch,
+  type GetGitStatusOptions,
+} from "./services/git";
 import { createPage, createSite } from "./services/wizard";
 import { listThemes } from "./themes";
-import { readProjectFile, writeProjectFile } from "./services/files";
+import { readProjectFile } from "./services/files";
 import { licensesFilePath, readProductionLicenses } from "./services/licenses";
 import { startDevServer, stopDevServer } from "./services/devServer";
+import { resolveProjectRelativeDir } from "./services/projectPaths";
 import {
   ensureThemePreviewServer,
   stopThemePreviewServer,
 } from "./services/themePreviewServer";
 import { buildAndReveal } from "./services/publish";
-import { installDependencies, dependenciesInstalled } from "./services/install";
 import {
-  importImage,
+  installDependencies,
+  dependenciesInstalled,
+  cancelInstall,
+} from "./services/install";
+import {
   importAssets,
   importAssetsFromPaths,
+  deleteAsset,
+  renameAsset,
   listProjectAssets,
   readAssetDataUrl,
 } from "./services/assets";
+import { findAssetUsage, repointAssetReferences } from "./services/assetUsage";
+import { searchPages, replaceAllInPages } from "./services/findReplace";
 import {
   deletePage,
   duplicatePage,
@@ -69,9 +90,11 @@ import {
   downloadUpdate,
   cancelDownload,
   installUpdate,
+  getLastUpdaterStatus,
 } from "./updater";
 import { watchFile, stopWatching } from "./services/watch";
 import { checkNodeVersion, validateNodePath } from "./services/nodeCheck";
+import { onDevServerExit } from "./services/devServer";
 import { IPC } from "./ipcChannels";
 
 export { IPC };
@@ -80,38 +103,8 @@ interface IpcRegistrationOptions {
   assertUpdaterSender?: (senderId?: number) => boolean;
   markUpdateInstalling?: () => void;
   clearUpdateInstalling?: () => void;
-}
-
-const approvedProjectRoots = new Set<string>();
-
-function canonicalProjectRoot(projectPath: string): string {
-  if (typeof projectPath !== "string" || !projectPath) {
-    throw new Error("Invalid project path.");
-  }
-  const resolved = path.resolve(projectPath);
-  try {
-    return fs.realpathSync.native(resolved);
-  } catch {
-    return resolved;
-  }
-}
-
-function approveProjectRoot(projectPath: string): string {
-  const root = canonicalProjectRoot(projectPath);
-  approvedProjectRoots.add(root);
-  return root;
-}
-
-function assertApprovedProject(projectPath: string): void {
-  const root = canonicalProjectRoot(projectPath);
-  if (!approvedProjectRoots.has(root)) {
-    throw new Error("Unauthorized project path.");
-  }
-}
-
-function approved<T>(projectPath: string, fn: () => T): T {
-  assertApprovedProject(projectPath);
-  return fn();
+  /** Smoke runs must not pop Finder windows (publish reveal). */
+  isSmoke?: boolean;
 }
 
 export function registerIpcHandlers(
@@ -127,20 +120,30 @@ export function registerIpcHandlers(
 
   ipcMain.handle(IPC.openFolder, async () => {
     const win = getWindow();
-    const result = await dialog.showOpenDialog(win ?? undefined!, {
-      title: "Open Zephus Site",
-      properties: ["openDirectory"],
-    });
+    const result = await dialog.showOpenDialog(
+      win && !win.isDestroyed()
+        ? win
+        : (undefined as unknown as Electron.BaseWindow),
+      {
+        title: "Open Zephus Site",
+        properties: ["openDirectory"],
+      },
+    );
     if (result.canceled || result.filePaths.length === 0) return null;
     return result.filePaths[0];
   });
 
   ipcMain.handle(IPC.chooseNewSiteFolder, async () => {
     const win = getWindow();
-    const result = await dialog.showOpenDialog(win ?? undefined!, {
-      title: "Choose a Folder for the New Site",
-      properties: ["openDirectory", "createDirectory", "promptToCreate"],
-    });
+    const result = await dialog.showOpenDialog(
+      win && !win.isDestroyed()
+        ? win
+        : (undefined as unknown as Electron.BaseWindow),
+      {
+        title: "Choose a Folder for the New Site",
+        properties: ["openDirectory", "createDirectory", "promptToCreate"],
+      },
+    );
     if (result.canceled || result.filePaths.length === 0) return null;
     return result.filePaths[0];
   });
@@ -294,8 +297,66 @@ export function registerIpcHandlers(
       ),
   );
 
-  ipcMain.handle(IPC.gitStatus, (_e, projectPath: string) =>
-    approved(projectPath, () => getGitStatus(projectPath)),
+  ipcMain.handle(
+    IPC.gitStatus,
+    (_e, projectPath: string, options?: GetGitStatusOptions) =>
+      approved(projectPath, () => getGitStatus(projectPath, options)),
+  );
+
+  ipcMain.handle(
+    IPC.gitCommit,
+    async (
+      _e,
+      projectPath: string,
+      message: string,
+      paths?: string[],
+    ): Promise<OperationResult> => {
+      try {
+        assertApprovedProject(projectPath);
+        const result =
+          paths && paths.length > 0
+            ? await commitProjectPaths(projectPath, message, paths)
+            : await commitAllChanges(projectPath, message);
+        return result.ok ? { ok: true } : { ok: false, error: result.error };
+      } catch (error) {
+        return {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    IPC.gitPush,
+    async (_e, projectPath: string): Promise<OperationResult> => {
+      try {
+        assertApprovedProject(projectPath);
+        const result = await pushCurrentBranch(projectPath);
+        return result.ok ? { ok: true } : { ok: false, error: result.error };
+      } catch (error) {
+        return {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    IPC.gitPull,
+    async (_e, projectPath: string): Promise<OperationResult> => {
+      try {
+        assertApprovedProject(projectPath);
+        const result = await pullCurrentBranch(projectPath);
+        return result.ok ? { ok: true } : { ok: false, error: result.error };
+      } catch (error) {
+        return {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    },
   );
 
   ipcMain.handle(
@@ -359,13 +420,19 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC.nodePickPath, async () => {
     const win = getWindow();
     const isWindows = process.platform === "win32";
-    const result = await dialog.showOpenDialog(win ?? undefined!, {
+    const options: Electron.OpenDialogOptions = {
       title: "Select the Node.js Executable",
       properties: ["openFile"],
       filters: isWindows
         ? [{ name: "Executable", extensions: ["exe"] }]
         : undefined,
-    });
+    };
+    // Passing undefined as the parent makes Electron treat it as the options
+    // object and drop the real options (no .exe filter on Windows).
+    const result =
+      win && !win.isDestroyed()
+        ? await dialog.showOpenDialog(win, options)
+        : await dialog.showOpenDialog(options);
     if (result.canceled || result.filePaths.length === 0) {
       return checkNodeVersion(readGlobalSettings().customNodePath);
     }
@@ -385,7 +452,8 @@ export function registerIpcHandlers(
         message: validation.error ?? "The selected file is not valid.",
       };
     }
-    // Validate the selection before persisting it.
+    // Validate selection. Renderer persists it only when user clicks Settings
+    // Save; Cancel must not mutate global settings.
     const status = await checkNodeVersion(validation.path);
     if (status.status === "missing" || status.status === "unknown") {
       // The chosen file isn't a working Node binary; report without saving.
@@ -395,23 +463,18 @@ export function registerIpcHandlers(
       };
     }
 
-    const settings = readGlobalSettings();
-    settings.customNodePath = validation.path;
-    writeGlobalSettings(settings);
     return status;
   });
 
   ipcMain.handle(
     IPC.nodeSetPath,
     async (_e, customPath: string | null): Promise<unknown> => {
-      // Clearing the custom path is always allowed.
+      // Probe requested path. Renderer persists it only on Settings Save;
+      // choosing Auto-detect then Cancel must not change settings.json.
       if (
         customPath === null ||
         (typeof customPath === "string" && customPath.trim().length === 0)
       ) {
-        const settings = readGlobalSettings();
-        settings.customNodePath = null;
-        writeGlobalSettings(settings);
         return checkNodeVersion(null);
       }
       // Validate the path shape *before* persisting or probing it, so a
@@ -420,9 +483,6 @@ export function registerIpcHandlers(
       if (!validation.ok || !validation.path) {
         return checkNodeVersion(readGlobalSettings().customNodePath);
       }
-      const settings = readGlobalSettings();
-      settings.customNodePath = validation.path;
-      writeGlobalSettings(settings);
       return checkNodeVersion(validation.path);
     },
   );
@@ -434,27 +494,28 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC.licensesRead, () => readProductionLicenses());
 
   ipcMain.handle(IPC.licensesOpenFile, async (): Promise<OperationResult> => {
-    const file = licensesFilePath();
-    const result = await shell.openPath(file);
-    return result ? { ok: false, error: result } : { ok: true };
+    const source = licensesFilePath();
+    let file = source;
+    try {
+      if (app.isPackaged) {
+        // shell.openPath cannot open paths inside app.asar; export a copy to
+        // userData first so the user can actually read the file.
+        const target = path.join(app.getPath("userData"), "licenses.json");
+        fs.copyFileSync(source, target);
+        file = target;
+      }
+      const result = await shell.openPath(file);
+      return result ? { ok: false, error: result } : { ok: true };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
   });
 
   ipcMain.handle(IPC.fileRead, (_e, projectPath: string, rel: string) =>
     approved(projectPath, () => readProjectFile(projectPath, rel)),
-  );
-
-  ipcMain.handle(
-    IPC.fileWrite,
-    (_e, projectPath: string, rel: string, content: string) =>
-      approved(projectPath, () => writeProjectFile(projectPath, rel, content)),
-  );
-
-  ipcMain.handle(
-    IPC.importImage,
-    (_e, projectPath: string, publicDir: string) =>
-      approved(projectPath, () =>
-        importImage(getWindow(), projectPath, publicDir),
-      ),
   );
 
   ipcMain.handle(
@@ -485,14 +546,108 @@ export function registerIpcHandlers(
       ),
   );
 
-  ipcMain.handle(IPC.listReusableSections, () => listReusableSections());
-
-  ipcMain.handle(IPC.saveReusableSection, (_e, label: string, html: string) =>
-    saveReusableSection(label, html),
+  ipcMain.handle(
+    IPC.searchPages,
+    (
+      _e,
+      projectPath: string,
+      pagesDir: string,
+      query: string,
+      options: { caseSensitive?: boolean; wholeWord?: boolean },
+    ) =>
+      approved(projectPath, () =>
+        searchPages(projectPath, pagesDir, query, options ?? {}),
+      ),
   );
 
-  ipcMain.handle(IPC.deleteReusableSection, (_e, id: string) =>
-    deleteReusableSection(id),
+  ipcMain.handle(
+    IPC.replaceAll,
+    (
+      _e,
+      projectPath: string,
+      pagesDir: string,
+      query: string,
+      replacement: string,
+      options: { caseSensitive?: boolean; wholeWord?: boolean },
+      onlyPages?: string[],
+    ) =>
+      approved(projectPath, () =>
+        replaceAllInPages(
+          projectPath,
+          pagesDir,
+          query,
+          replacement,
+          options ?? {},
+          onlyPages,
+        ),
+      ),
+  );
+
+  ipcMain.handle(
+    IPC.assetDelete,
+    (_e, projectPath: string, publicDir: string, webPath: string) =>
+      approved(projectPath, () => deleteAsset(projectPath, publicDir, webPath)),
+  );
+
+  ipcMain.handle(
+    IPC.assetRename,
+    (
+      _e,
+      projectPath: string,
+      publicDir: string,
+      pagesDir: string,
+      webPath: string,
+      nextName: string,
+    ) =>
+      approved(projectPath, () => {
+        const renamed = renameAsset(projectPath, publicDir, webPath, nextName);
+        if (!renamed.ok || !renamed.webPath) return renamed;
+        // Repoint in the same call: a rename that left references behind would
+        // silently break every page using the old file name.
+        const repointed = repointAssetReferences(
+          projectPath,
+          pagesDir,
+          webPath,
+          renamed.webPath,
+        );
+        if (!repointed.ok) {
+          return {
+            ok: false,
+            webPath: renamed.webPath,
+            error: `Asset was renamed to ${renamed.webPath}, but references could not be updated: ${repointed.error ?? "unknown error"}`,
+          };
+        }
+        return {
+          ...renamed,
+          updatedReferences: repointed.updated,
+        };
+      }),
+  );
+
+  ipcMain.handle(
+    IPC.assetUsage,
+    (_e, projectPath: string, pagesDir: string, webPath: string) =>
+      approved(projectPath, () =>
+        findAssetUsage(projectPath, pagesDir, webPath),
+      ),
+  );
+
+  ipcMain.handle(IPC.listReusableSections, (_e, projectPath: string) =>
+    approved(projectPath, () => listReusableSections(projectPath)),
+  );
+
+  ipcMain.handle(
+    IPC.saveReusableSection,
+    (_e, projectPath: string, label: string, html: string) =>
+      approved(projectPath, () =>
+        saveReusableSection(projectPath, label, html),
+      ),
+  );
+
+  ipcMain.handle(
+    IPC.deleteReusableSection,
+    (_e, projectPath: string, id: string) =>
+      approved(projectPath, () => deleteReusableSection(projectPath, id)),
   );
 
   ipcMain.handle(
@@ -527,10 +682,20 @@ export function registerIpcHandlers(
     IPC.watchStart,
     (event, projectPath: string, rel: string): OperationResult => {
       assertApprovedProject(projectPath);
-      watchFile(projectPath, rel, (changed) => {
+      const started = watchFile(projectPath, rel, (changed) => {
         if (!event.sender.isDestroyed())
           event.sender.send(IPC.externalChange, changed);
       });
+      // A failed start means NO file is being watched (single global
+      // watcher) — the renderer must be told, or it believes external
+      // change detection is active when it is not.
+      if (!started) {
+        return {
+          ok: false,
+          error:
+            "Could not watch the page for external edits (path invalid or unreadable).",
+        };
+      }
       return { ok: true };
     },
   );
@@ -556,12 +721,71 @@ export function registerIpcHandlers(
     return { ok: true };
   });
 
-  ipcMain.handle(IPC.themePreviewEnsure, () => ensureThemePreviewServer());
+  // When the running dev server dies on its own (crash, port conflict, killed
+  // outside Zephus), tell the renderer so it can reset the preview UI instead
+  // of showing a dead preview window forever.
+  onDevServerExit(() => {
+    const win = getWindow();
+    if (win && !win.isDestroyed()) {
+      win.webContents.send(IPC.previewExited);
+    }
+  });
 
-  ipcMain.handle(IPC.publish, (_e, projectPath: string, outDir: string) =>
-    approved(projectPath, () => buildAndReveal(projectPath, outDir)),
+  ipcMain.handle(IPC.themePreviewEnsure, (event) => {
+    // Long-lived HTTP server: only the main editor window may start it.
+    if (
+      !options?.assertUpdaterSender ||
+      !options.assertUpdaterSender(event.sender.id)
+    ) {
+      return {
+        ok: false,
+        baseUrl: null,
+        error: "Unauthorized sender.",
+      };
+    }
+    return ensureThemePreviewServer();
+  });
+
+  ipcMain.handle(IPC.publish, (event, projectPath: string, outDir: string) =>
+    approved(projectPath, () =>
+      buildAndReveal(
+        projectPath,
+        outDir,
+        (chunk) => {
+          if (!event.sender.isDestroyed())
+            event.sender.send(IPC.publishLog, chunk);
+        },
+        { reveal: !options?.isSmoke },
+      ),
+    ),
   );
 
+  ipcMain.handle(
+    IPC.revealOutputFolder,
+    async (
+      _e,
+      projectPath: string,
+      outDir: string,
+    ): Promise<OperationResult> => {
+      try {
+        assertApprovedProject(projectPath);
+        const output = resolveProjectRelativeDir(
+          projectPath,
+          outDir,
+          "dist",
+        ).absolute;
+        const error = await shell.openPath(output);
+        return error ? { ok: false, error } : { ok: true };
+      } catch (error) {
+        return {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    },
+  );
+
+  ipcMain.handle(IPC.depsCancel, () => cancelInstall());
   ipcMain.handle(IPC.depsInstalled, (_e, projectPath: string): boolean =>
     approved(projectPath, () => dependenciesInstalled(projectPath)),
   );
@@ -574,6 +798,15 @@ export function registerIpcHandlers(
     ),
   );
 
+  ipcMain.handle(IPC.updaterStatusGet, (event) => {
+    if (!assertUpdaterSender(event.sender.id)) {
+      return { status: "error", error: "Unauthorized sender." };
+    }
+    // The startup check can resolve before the renderer's listener attaches;
+    // this lets the renderer claim the cached status instead of showing a
+    // false "Up to date".
+    return getLastUpdaterStatus();
+  });
   ipcMain.handle(IPC.updaterCheck, (event) => {
     if (!assertUpdaterSender(event.sender.id)) {
       return { status: "error", error: "Unauthorized sender." };
@@ -610,11 +843,9 @@ export function registerIpcHandlers(
     }
   });
   ipcMain.handle(IPC.getAppVersion, () => app.getVersion());
-  ipcMain.handle(IPC.openConfigFolder, () => {
-    shell.openPath(app.getPath("userData")).catch(() => {
-      /* best-effort */
-    });
-    return { ok: true };
+  ipcMain.handle(IPC.openConfigFolder, async () => {
+    const error = await shell.openPath(app.getPath("userData"));
+    return error ? { ok: false, error } : { ok: true };
   });
 
   app.on("before-quit", () => {

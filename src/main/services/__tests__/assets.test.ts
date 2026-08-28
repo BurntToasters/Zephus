@@ -1,13 +1,27 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import {
   categoryForExtension,
+  deleteAsset,
+  importAssets,
   importAssetsFromPaths,
+  importImage,
   listProjectAssets,
   readAssetDataUrl,
+  renameAsset,
 } from "../assets";
+
+const dialogMock = vi.hoisted(() => ({
+  showOpenDialog: vi.fn(),
+  showMessageBox: vi.fn(),
+}));
+
+vi.mock("electron", () => ({
+  dialog: dialogMock,
+  BrowserWindow: class {},
+}));
 
 let tmpDir: string;
 let projectDir: string;
@@ -36,8 +50,13 @@ describe("categoryForExtension", () => {
     expect(categoryForExtension("png")).toBe("images");
     expect(categoryForExtension(".JPG")).toBe("images");
     expect(categoryForExtension("mp4")).toBe("media");
+    expect(categoryForExtension("webm")).toBe("media");
+    expect(categoryForExtension("mp3")).toBe("media");
     expect(categoryForExtension("pdf")).toBe("documents");
+    expect(categoryForExtension("docx")).toBe("documents");
+    expect(categoryForExtension("md")).toBe("documents");
     expect(categoryForExtension("xyz")).toBe("other");
+    expect(categoryForExtension("")).toBe("other");
   });
 });
 
@@ -94,6 +113,106 @@ describe("importAssetsFromPaths", () => {
     } finally {
       fs.rmSync(outside, { recursive: true, force: true });
     }
+  });
+
+  it("rejects unsupported extensions and directories without failing the batch", () => {
+    const dirSource = path.join(sourceDir, "folder.png");
+    fs.mkdirSync(dirSource);
+    const result = importAssetsFromPaths(projectDir, "public", [
+      makeSource("evil.exe"),
+      dirSource,
+      makeSource("ok.jpg"),
+    ]);
+    expect(result.imported).toHaveLength(1);
+    expect(result.errors).toHaveLength(2);
+    expect(result.errors[0]).toContain("unsupported file type");
+    expect(result.errors[1]).toContain("not a file");
+    expect(result.ok).toBe(false);
+  });
+
+  it("ignores non-string entries in the source list", () => {
+    const result = importAssetsFromPaths(projectDir, "public", [
+      makeSource("ok.png"),
+      "",
+      undefined as unknown as string,
+      42 as unknown as string,
+    ]);
+    expect(result.ok).toBe(true);
+    expect(result.imported).toHaveLength(1);
+  });
+
+  it("deduplicates imported names against existing files", () => {
+    fs.mkdirSync(path.join(projectDir, "public/assets/images"), {
+      recursive: true,
+    });
+    fs.writeFileSync(path.join(projectDir, "public/assets/images/a.png"), "x");
+    const result = importAssetsFromPaths(projectDir, "public", [
+      makeSource("a.png"),
+    ]);
+    expect(result.imported[0]?.webPath).toBe("/assets/images/a-1.png");
+  });
+});
+
+describe("importImage dialog flow", () => {
+  beforeEach(() => {
+    dialogMock.showOpenDialog.mockReset();
+  });
+
+  it("returns the web path when the user picks a file", async () => {
+    dialogMock.showOpenDialog.mockResolvedValue({
+      canceled: false,
+      filePaths: [makeSource("picked.png")],
+    });
+    const result = await importImage(null, projectDir, "public");
+    expect(result.ok).toBe(true);
+    expect(result.webPath).toBe("/assets/images/picked.png");
+  });
+
+  it("reports cancel without an error", async () => {
+    dialogMock.showOpenDialog.mockResolvedValue({
+      canceled: true,
+      filePaths: [],
+    });
+    const result = await importImage(null, projectDir, "public");
+    expect(result.ok).toBe(false);
+    expect(result.canceled).toBe(true);
+    expect(result.error).toBeUndefined();
+  });
+
+  it("surfaces copy failures as errors", async () => {
+    dialogMock.showOpenDialog.mockResolvedValue({
+      canceled: false,
+      filePaths: [path.join(sourceDir, "missing.png")],
+    });
+    const result = await importImage(null, projectDir, "public");
+    expect(result.ok).toBe(false);
+    expect(result.error).toBeTruthy();
+  });
+});
+
+describe("importAssets dialog flow", () => {
+  beforeEach(() => {
+    dialogMock.showOpenDialog.mockReset();
+  });
+
+  it("imports the picked files", async () => {
+    dialogMock.showOpenDialog.mockResolvedValue({
+      canceled: false,
+      filePaths: [makeSource("pick.png"), makeSource("note.txt")],
+    });
+    const result = await importAssets(null, projectDir, "public");
+    expect(result.ok).toBe(true);
+    expect(result.imported).toHaveLength(2);
+  });
+
+  it("reports cancel as an empty result", async () => {
+    dialogMock.showOpenDialog.mockResolvedValue({
+      canceled: true,
+      filePaths: [],
+    });
+    const result = await importAssets(null, projectDir, "public");
+    expect(result.ok).toBe(false);
+    expect(result.imported).toEqual([]);
   });
 });
 
@@ -173,5 +292,267 @@ describe("readAssetDataUrl", () => {
     } finally {
       fs.rmSync(outside, { recursive: true, force: true });
     }
+  });
+
+  it("rejects unsupported image types", () => {
+    importAssetsFromPaths(projectDir, "public", [makeSource("doc.pdf")]);
+    const result = readAssetDataUrl(
+      projectDir,
+      "public",
+      "/assets/documents/doc.pdf",
+    );
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("Unsupported image type");
+  });
+
+  it("rejects files over the data URL size limit", () => {
+    fs.mkdirSync(path.join(projectDir, "public/assets/images"), {
+      recursive: true,
+    });
+    fs.writeFileSync(
+      path.join(projectDir, "public/assets/images/big.png"),
+      Buffer.alloc(6 * 1024 * 1024),
+    );
+    const result = readAssetDataUrl(
+      projectDir,
+      "public",
+      "/assets/images/big.png",
+    );
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("too large");
+  });
+
+  it("reports missing files", () => {
+    const result = readAssetDataUrl(
+      projectDir,
+      "public",
+      "/assets/images/nope.png",
+    );
+    expect(result.ok).toBe(false);
+  });
+});
+
+describe("deleteAsset", () => {
+  it("deletes a managed asset file", () => {
+    importAssetsFromPaths(projectDir, "public", [makeSource("del.png")]);
+    const result = deleteAsset(projectDir, "public", "/assets/images/del.png");
+    expect(result.ok).toBe(true);
+    expect(
+      fs.existsSync(path.join(projectDir, "public/assets/images/del.png")),
+    ).toBe(false);
+  });
+
+  it("rejects traversal paths", () => {
+    const result = deleteAsset(projectDir, "public", "/../src/pages/x.png");
+    expect(result.ok).toBe(false);
+    expect(result.error).toBeTruthy();
+  });
+
+  it("rejects missing and non-managed files", () => {
+    const missing = deleteAsset(
+      projectDir,
+      "public",
+      "/assets/images/nope.png",
+    );
+    expect(missing.ok).toBe(false);
+
+    importAssetsFromPaths(projectDir, "public", [makeSource("ok.png")]);
+    const directory = path.join(projectDir, "public/assets/images/sub");
+    fs.mkdirSync(directory, { recursive: true });
+    const dirResult = deleteAsset(projectDir, "public", "/assets/images/sub");
+    expect(dirResult.ok).toBe(false);
+
+    const exe = path.join(projectDir, "public/assets/images/tool.exe");
+    fs.writeFileSync(exe, "x");
+    const typeResult = deleteAsset(
+      projectDir,
+      "public",
+      "/assets/images/tool.exe",
+    );
+    expect(typeResult.ok).toBe(false);
+    expect(typeResult.error).toContain("Not a managed asset type");
+    expect(fs.existsSync(exe)).toBe(true);
+  });
+
+  it("rejects assets behind a symlink pointing outside the project", () => {
+    const outside = fs.mkdtempSync(
+      path.join(os.tmpdir(), "zephus-assets-out-"),
+    );
+    try {
+      // Create the images dir with a different file, then replace a target
+      // with a symlink pointing outside the project.
+      importAssetsFromPaths(projectDir, "public", [makeSource("host.png")]);
+      fs.writeFileSync(path.join(outside, "victim.png"), "x");
+      fs.rmSync(path.join(projectDir, "public/assets/images/victim.png"), {
+        force: true,
+      });
+      fs.symlinkSync(
+        path.join(outside, "victim.png"),
+        path.join(projectDir, "public/assets/images/victim.png"),
+      );
+
+      const result = deleteAsset(
+        projectDir,
+        "public",
+        "/assets/images/victim.png",
+      );
+      expect(result.ok).toBe(false);
+      expect(result.error).toContain("escapes");
+      expect(fs.existsSync(path.join(outside, "victim.png"))).toBe(true);
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses to delete or rename an in-project symlinked asset", () => {
+    // Regression: operations resolved the symlink and mutated the TARGET,
+    // leaving the in-project link dangling while the web path kept pointing
+    // at the link.
+    importAssetsFromPaths(projectDir, "public", [makeSource("real.png")]);
+    const target = path.join(projectDir, "public/assets/images/real.png");
+    const link = path.join(projectDir, "public/assets/images/link.png");
+    fs.symlinkSync(target, link);
+
+    const deleted = deleteAsset(
+      projectDir,
+      "public",
+      "/assets/images/link.png",
+    );
+    expect(deleted.ok).toBe(false);
+    expect(deleted.error).toContain("symlink");
+    expect(fs.existsSync(target)).toBe(true);
+
+    const renamed = renameAsset(
+      projectDir,
+      "public",
+      "/assets/images/link.png",
+      "moved.png",
+    );
+    expect(renamed.ok).toBe(false);
+    expect(renamed.error).toContain("symlink");
+    expect(fs.existsSync(target)).toBe(true);
+  });
+});
+
+describe("renameAsset", () => {
+  beforeEach(() => {
+    importAssetsFromPaths(projectDir, "public", [makeSource("pic.png")]);
+  });
+
+  it("renames in place and keeps the extension", () => {
+    const result = renameAsset(
+      projectDir,
+      "public",
+      "/assets/images/pic.png",
+      "renamed",
+    );
+    expect(result.ok).toBe(true);
+    expect(result.webPath).toBe("/assets/images/renamed.png");
+    expect(
+      fs.existsSync(path.join(projectDir, "public/assets/images/pic.png")),
+    ).toBe(false);
+    expect(
+      fs.existsSync(path.join(projectDir, "public/assets/images/renamed.png")),
+    ).toBe(true);
+  });
+
+  it("preserves the original extension even when one is given", () => {
+    const result = renameAsset(
+      projectDir,
+      "public",
+      "/assets/images/pic.png",
+      "other.jpg",
+    );
+    expect(result.ok).toBe(true);
+    expect(result.webPath).toBe("/assets/images/other.png");
+  });
+
+  it("strips directory parts from the requested name", () => {
+    const result = renameAsset(
+      projectDir,
+      "public",
+      "/assets/images/pic.png",
+      "../../escape/name",
+    );
+    expect(result.ok).toBe(true);
+    expect(result.webPath).toBe("/assets/images/name.png");
+  });
+
+  it("deduplicates on collision with a numeric suffix", () => {
+    fs.writeFileSync(
+      path.join(projectDir, "public/assets/images/renamed.png"),
+      "x",
+    );
+    const result = renameAsset(
+      projectDir,
+      "public",
+      "/assets/images/pic.png",
+      "renamed",
+    );
+    expect(result.ok).toBe(true);
+    expect(result.webPath).toBe("/assets/images/renamed-1.png");
+  });
+
+  it("no-ops when the name already matches", () => {
+    const result = renameAsset(
+      projectDir,
+      "public",
+      "/assets/images/pic.png",
+      "pic.png",
+    );
+    expect(result.ok).toBe(true);
+    expect(result.webPath).toBe("/assets/images/pic.png");
+  });
+
+  it("rejects empty names", () => {
+    const result = renameAsset(
+      projectDir,
+      "public",
+      "/assets/images/pic.png",
+      "   ",
+    );
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe("Enter a file name.");
+  });
+
+  it("rejects traversal web paths", () => {
+    const result = renameAsset(projectDir, "public", "/../../escape.png", "x");
+    expect(result.ok).toBe(false);
+  });
+
+  it("rejects renaming a missing asset", () => {
+    const result = renameAsset(
+      projectDir,
+      "public",
+      "/assets/images/nope.png",
+      "x",
+    );
+    expect(result.ok).toBe(false);
+  });
+});
+
+describe("listProjectAssets", () => {
+  it("walks nested directories and reports sizes", () => {
+    fs.mkdirSync(path.join(projectDir, "public/assets/images/2024"), {
+      recursive: true,
+    });
+    fs.writeFileSync(
+      path.join(projectDir, "public/assets/images/2024/hero.png"),
+      "abcd",
+    );
+    const result = listProjectAssets(projectDir, "public");
+    expect(result.ok).toBe(true);
+    const entry = result.assets.find(
+      (a) => a.fileName === "images/2024/hero.png",
+    );
+    expect(entry).toBeDefined();
+    expect(entry?.size).toBe(4);
+    expect(entry?.webPath).toBe("/assets/images/2024/hero.png");
+  });
+
+  it("returns an empty list when public does not exist", () => {
+    const result = listProjectAssets(projectDir, "public");
+    expect(result.ok).toBe(true);
+    expect(result.assets).toEqual([]);
   });
 });

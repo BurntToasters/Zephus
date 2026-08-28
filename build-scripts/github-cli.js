@@ -22,24 +22,32 @@ function runGitHub(args, { input } = {}) {
     stdio: ['pipe', 'pipe', 'pipe'],
     maxBuffer: 16 * 1024 * 1024,
   });
+
   if (result.error) {
     if (result.error.code === 'ENOENT') {
-      throw new Error('GitHub CLI is required. Install gh and run `gh auth login` on this release VM.');
+      throw new Error(
+        'GitHub CLI is required. Install gh and run `gh auth login` on this release VM.'
+      );
     }
     throw result.error;
   }
+
   if (result.status !== 0) {
     const detail = [result.stderr, result.stdout].filter(Boolean).join('\n').trim();
-    const error = new Error(`gh ${args.join(' ')} failed with status ${result.status}${detail ? `:\n${detail}` : ''}`);
+    const error = new Error(
+      `gh ${args.join(' ')} failed with status ${result.status}${detail ? `:\n${detail}` : ''}`
+    );
     error.statusCode = githubStatusCode(detail);
     throw error;
   }
+
   return result;
 }
 
 function githubApi(method, endpoint, body) {
   const args = ['api', '--method', method, endpoint];
   if (body !== undefined) args.push('--input', '-');
+
   const result = runGitHub(args, {
     input: body === undefined ? undefined : JSON.stringify(body),
   });

@@ -1,3 +1,4 @@
+import * as fs from "fs";
 import { app, BrowserWindow, dialog, shell, session, ipcMain } from "electron";
 import { pathToFileURL } from "url";
 import * as path from "path";
@@ -5,15 +6,27 @@ import log from "electron-log";
 import { registerIpcHandlers } from "./ipc";
 import { stopDevServer } from "./services/devServer";
 import { stopThemePreviewServer } from "./services/themePreviewServer";
+import { stopWatching } from "./services/watch";
 import { readGlobalSettings, writeGlobalSettings } from "./services/settings";
 import { setupAutoUpdater, checkForUpdates } from "./updater";
 import { checkNodeVersion, validateNodePath } from "./services/nodeCheck";
+import { createSite } from "./services/wizard";
+import { execFileSync } from "child_process";
 import { IPC } from "./ipcChannels";
 
+// Dev mode ONLY when not packaged: a shipped binary launched with --dev (or
+// NODE_ENV=development) previously got devTools AND silently disabled the
+// auto-updater. Gate on app.isPackaged so release builds always update.
 const isDev =
-  process.argv.includes("--dev") || process.env.NODE_ENV === "development";
+  !app.isPackaged &&
+  (process.argv.includes("--dev") ||
+    process.env.NODE_ENV === "development" ||
+    // `electron .` (npm start) runs the app WITHOUT the --dev flag and with
+    // process.defaultApp === true; it is still a dev run and needs devtools.
+    process.defaultApp === true);
 const isSmoke =
-  process.argv.includes("--smoke") || process.env.ZEPHUS_SMOKE === "1";
+  !app.isPackaged &&
+  (process.argv.includes("--smoke") || process.env.ZEPHUS_SMOKE === "1");
 const isPrimaryInstance =
   isSmoke || typeof app.requestSingleInstanceLock !== "function"
     ? true
@@ -32,7 +45,16 @@ if (log.transports?.file) {
 process.setMaxListeners(48);
 
 function cleanupBackgroundServices(): void {
+  if (splashCloseTimer) {
+    clearTimeout(splashCloseTimer);
+    splashCloseTimer = null;
+  }
+  if (splashWindow && !splashWindow.isDestroyed()) {
+    splashWindow.close();
+  }
+  splashWindow = null;
   closePreviewWindow();
+  stopWatching();
   stopDevServer();
   stopThemePreviewServer();
 }
@@ -62,7 +84,9 @@ process.on("unhandledRejection", (reason) => {
 let mainWindow: BrowserWindow | null = null;
 let previewWindow: BrowserWindow | null = null;
 let splashWindow: BrowserWindow | null = null;
+let splashCloseTimer: NodeJS.Timeout | null = null;
 let isInstallingUpdate = false;
+let smokeExitCode: number | null = null;
 
 function rendererPath(file: string): string {
   // main.js runs from dist/main; renderer files live at <root>/src/renderer.
@@ -98,7 +122,8 @@ function createSplash(): void {
     },
   });
   void splashWindow.loadFile(rendererPath("splash.html"));
-  setTimeout(() => {
+  splashCloseTimer = setTimeout(() => {
+    splashCloseTimer = null;
     if (splashWindow && !splashWindow.isDestroyed()) {
       splashWindow.close();
       splashWindow = null;
@@ -195,7 +220,7 @@ async function runRendererSmokeChecks(
         }
 
         if (typeof window.__zephusRunEditorSmoke === "function") {
-          const editorFailures = window.__zephusRunEditorSmoke();
+          const editorFailures = await window.__zephusRunEditorSmoke();
           for (const failure of editorFailures) failures.push(failure);
         } else {
           failures.push("Editor smoke hook is missing.");
@@ -219,28 +244,198 @@ async function runRendererSmokeChecks(
   )) as string[];
 }
 
-async function completeSmokeRun(windowRef: BrowserWindow): Promise<void> {
+function finishSmokeProcess(exitCode: number): void {
+  smokeExitCode = exitCode;
+  process.exitCode = exitCode;
+
+  let quitStarted = false;
+  let sendFallback: NodeJS.Timeout | null = null;
+  const quit = (): void => {
+    if (quitStarted) return;
+    quitStarted = true;
+    process.off("disconnect", onDisconnect);
+    if (sendFallback) {
+      clearTimeout(sendFallback);
+      sendFallback = null;
+    }
+    app.quit();
+  };
+  const onDisconnect = (): void => quit();
+
+  if (typeof process.send !== "function") {
+    quit();
+    return;
+  }
+
+  // Stay alive beyond the launcher's complete TERM/KILL budget so Windows
+  // taskkill /t never loses the root PID while traversing its process tree.
+  process.once("disconnect", onDisconnect);
+  sendFallback = setTimeout(quit, 10_000);
   try {
+    process.send(
+      { type: "zephus-smoke-complete", exitCode },
+      (error: Error | null) => {
+        if (!error) return;
+        log.warn("Could not notify smoke launcher:", error);
+        quit();
+      },
+    );
+  } catch (error) {
+    log.warn("Could not notify smoke launcher:", error);
+    quit();
+  }
+}
+
+let smokeCompletionStarted = false;
+
+async function completeSmokeRun(windowRef: BrowserWindow): Promise<void> {
+  if (smokeCompletionStarted) return;
+  smokeCompletionStarted = true;
+
+  let exitCode = 1;
+  // A real on-disk project lets the editor smoke drive save/publish/git/
+  // drafts end to end instead of synthesizing renderer-only state.
+  let smokeProjectPath: string | null = null;
+  try {
+    if (isSmoke) {
+      smokeProjectPath = scaffoldSmokeProject();
+      if (smokeProjectPath) {
+        await windowRef.webContents.executeJavaScript(
+          `window.__zephusSmokeProjectPath = ${JSON.stringify(smokeProjectPath)};`,
+          true,
+        );
+      }
+    }
     const failures = await runRendererSmokeChecks(windowRef);
     if (failures.length > 0) {
       for (const failure of failures) {
         log.error("[smoke]", failure);
       }
-      app.exit(1);
-      return;
+    } else {
+      exitCode = 0;
+      log.info("Smoke run: renderer checks passed, shutting down.");
     }
-    log.info("Smoke run: renderer checks passed, exiting.");
-    app.exit(0);
   } catch (error) {
     log.error("Smoke run failed:", error);
-    app.exit(1);
+  } finally {
+    if (smokeProjectPath) {
+      try {
+        fs.rmSync(smokeProjectPath, { recursive: true, force: true });
+      } catch {
+        /* best-effort cleanup */
+      }
+    }
+    cleanupBackgroundServices();
+    finishSmokeProcess(exitCode);
   }
+}
+
+/**
+ * Scaffolds a real minimal site into a temp dir for the editor smoke suite.
+ * Links the repo's node_modules so preview/publish builds resolve Astro
+ * without a network install. Returns the project path, or null on failure.
+ */
+function scaffoldSmokeProject(): string | null {
+  try {
+    // Every smoke run leaves its scaffold behind when killed hard (timeout,
+    // Ctrl+C) — the cleanup in completeSmokeRun's finally never runs. Purge
+    // stale scaffolds before creating a new one so the temp dir does not
+    // accumulate zephus-smoke-* folders.
+    const tempRoot = app.getPath("temp");
+    try {
+      const stale = fs.readdirSync(tempRoot, { withFileTypes: true }).filter(
+        (entry) =>
+          entry.isDirectory() &&
+          entry.name.startsWith("zephus-smoke-") &&
+          // Never touch a scaffold from an in-flight run on another
+          // machine profile: only purge when old enough that no smoke
+          // could still be using it (a fresh run starts seconds ago).
+          Date.now() - fs.statSync(path.join(tempRoot, entry.name)).mtimeMs >
+            10 * 60 * 1000,
+      );
+      for (const entry of stale) {
+        fs.rmSync(path.join(tempRoot, entry.name), {
+          recursive: true,
+          force: true,
+        });
+      }
+    } catch {
+      // Best-effort: a failed purge must not block the smoke scaffold.
+    }
+    const dir = fs.mkdtempSync(path.join(tempRoot, "zephus-smoke-"));
+    const project = path.join(dir, "site");
+    fs.mkdirSync(project);
+    const created = createSite(project, "minimal");
+    if (!created.ok) return null;
+    // createSite does NOT init git (the IPC handler does); the smoke needs a
+    // real repo with an identity so commit flows run end to end.
+    execFileSync("git", ["init"], { cwd: project, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "Zephus Smoke"], {
+      cwd: project,
+      stdio: "ignore",
+    });
+    execFileSync("git", ["config", "user.email", "smoke@zephus.local"], {
+      cwd: project,
+      stdio: "ignore",
+    });
+    // Give the scaffolded site the repo's toolchain (mirrors the real build
+    // tests) so `npm run build` resolves astro from the symlink.
+    const rootModules = path.resolve(__dirname, "..", "..", "node_modules");
+    if (fs.existsSync(rootModules)) {
+      const target = path.join(project, "node_modules");
+      try {
+        // Windows: directory symlinks need admin/Developer Mode; junctions
+        // work without either. macOS/Linux: plain dir symlink.
+        fs.symlinkSync(
+          rootModules,
+          target,
+          process.platform === "win32" ? "junction" : "dir",
+        );
+      } catch {
+        // Best-effort: the real-project flows degrade to renderer-only
+        // checks when the toolchain link cannot be created.
+      }
+    }
+    return project;
+  } catch (error) {
+    log.error("Smoke scaffold failed", error);
+    return null;
+  }
+}
+
+/** Decodes a file:// URL to a normalized absolute path (Windows drive aware). */
+function fileUrlToPath(url: URL): string {
+  let p = decodeURIComponent(url.pathname);
+  if (/^\/[A-Za-z]:/.test(p)) p = p.slice(1);
+  return path.normalize(p);
+}
+
+function isWithinPath(root: string, target: string): boolean {
+  // Trailing separators (a URL root like file://…/renderer/) must not make
+  // every containment test false: root + sep would become "…/renderer//".
+  const normalizedRoot = root.replace(/[\\/]+$/, "");
+  return (
+    target === normalizedRoot || target.startsWith(normalizedRoot + path.sep)
+  );
 }
 
 /** True for the renderer's own file:// origin or the localhost dev-server preview. */
 function isAllowedFrameUrl(target: string, rendererRootUrl: string): boolean {
-  if (target.startsWith(rendererRootUrl)) return true;
   if (target === "about:blank") return true;
+  if (target.startsWith("file://")) {
+    // Normalize the path (resolving `..` and percent-encoding) before the
+    // containment check: a raw prefix match would let
+    // file://…/renderer/../../../../etc/passwd through while Chromium
+    // normalizes the navigation to a file outside the app.
+    try {
+      return isWithinPath(
+        fileUrlToPath(new URL(rendererRootUrl)),
+        fileUrlToPath(new URL(target)),
+      );
+    } catch {
+      return false;
+    }
+  }
   return isLocalhostPreviewUrl(target);
 }
 
@@ -255,10 +450,21 @@ function installNavigationGuards(contents: Electron.WebContents): void {
   const rendererRootUrl = rendererRoot.endsWith("/")
     ? rendererRoot
     : `${rendererRoot}/`;
-  const isInternal = (target: string): boolean =>
-    target.startsWith(rendererRootUrl);
+  const isInternal = (target: string): boolean => {
+    if (!target.startsWith("file://")) return false;
+    try {
+      return isWithinPath(
+        fileUrlToPath(new URL(rendererRootUrl)),
+        fileUrlToPath(new URL(target)),
+      );
+    } catch {
+      return false;
+    }
+  };
   const openExternal = (url: string): void => {
-    if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
+    // mailto:/tel: links (portfolio CTAs, restaurant reservation buttons)
+    // must reach the OS handlers too, or clicking them silently does nothing.
+    if (/^(https?:\/\/|mailto:|tel:)/i.test(url)) void shell.openExternal(url);
   };
 
   contents.setWindowOpenHandler(({ url }) => {
@@ -303,6 +509,27 @@ function installGlobalNavigationGuards(): void {
   });
 }
 
+/** Electron dialogs route by parent INSTANCE: passing undefined makes the
+ *  second argument become the options object and the real options are
+ *  dropped. Branch explicitly instead of passing undefined. */
+function showOpenDialogFor(
+  parent: BrowserWindow | null | undefined,
+  options: Electron.OpenDialogOptions,
+): Promise<Electron.OpenDialogReturnValue> {
+  return parent && !parent.isDestroyed()
+    ? dialog.showOpenDialog(parent, options)
+    : dialog.showOpenDialog(options);
+}
+
+function showMessageBoxFor(
+  parent: BrowserWindow | null | undefined,
+  options: Electron.MessageBoxOptions,
+): Promise<Electron.MessageBoxReturnValue> {
+  return parent && !parent.isDestroyed()
+    ? dialog.showMessageBox(parent, options)
+    : dialog.showMessageBox(options);
+}
+
 /** True for an http(s) localhost/127.0.0.1 URL (the dev-server preview). */
 function isLocalhostPreviewUrl(target: string): boolean {
   return /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/|$)/i.test(
@@ -325,7 +552,7 @@ function openPreviewWindow(url: string): { ok: boolean; error?: string } {
     previewWindow.focus();
     return { ok: true };
   }
-  previewWindow = new BrowserWindow({
+  const win = new BrowserWindow({
     width: 1280,
     height: 860,
     minWidth: 480,
@@ -342,9 +569,16 @@ function openPreviewWindow(url: string): { ok: boolean; error?: string } {
       devTools: isDev,
     },
   });
-  void previewWindow.loadURL(url);
-  previewWindow.once("ready-to-show", () => previewWindow?.show());
-  previewWindow.on("closed", () => {
+  previewWindow = win;
+  void win.loadURL(url);
+  win.once("ready-to-show", () => {
+    if (previewWindow === win) win.show();
+  });
+  win.on("closed", () => {
+    // Guard the captured window: a close/reopen race must not let the OLD
+    // window's closed handler null out or tear down the NEW one (orphan
+    // window, dev server killed, renderer UI reset while preview B stays up).
+    if (previewWindow !== win) return;
     previewWindow = null;
     // Closing the preview always tears down the dev server it was showing.
     stopDevServer();
@@ -362,12 +596,65 @@ function closePreviewWindow(): void {
   previewWindow = null;
 }
 
+const WINDOW_STATE_FILE = "window-state.json";
+
+interface WindowState {
+  width?: number;
+  height?: number;
+  x?: number;
+  y?: number;
+  maximized?: boolean;
+}
+
+function readWindowState(): WindowState {
+  try {
+    const raw = fs.readFileSync(
+      path.join(app.getPath("userData"), WINDOW_STATE_FILE),
+      "utf8",
+    );
+    const parsed = JSON.parse(raw) as WindowState;
+    if (typeof parsed.width !== "number" || typeof parsed.height !== "number") {
+      return {};
+    }
+    return parsed;
+  } catch {
+    return {};
+  }
+}
+
+function writeWindowState(state: WindowState): void {
+  try {
+    fs.writeFileSync(
+      path.join(app.getPath("userData"), WINDOW_STATE_FILE),
+      JSON.stringify(state),
+    );
+  } catch {
+    // Non-fatal: window-state persistence is best effort.
+  }
+}
+
+function denyAllPermissions(ses: Electron.Session): void {
+  ses.setPermissionRequestHandler((_wc, _permission, callback) =>
+    callback(false),
+  );
+  ses.setPermissionCheckHandler(() => false);
+}
+
 function createMainWindow(): void {
-  mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 820,
+  // The editor needs no camera/mic/geolocation/notifications: embedded
+  // iframes (video/embed blocks, theme previews) must never be able to
+  // request them.
+  denyAllPermissions(session.defaultSession);
+  // Restore the window size/position from the previous session (every launch
+  // used to reset to 1280x820 at an OS-chosen spot).
+  const state = readWindowState();
+  const win = new BrowserWindow({
+    width: state.width ?? 1280,
+    height: state.height ?? 820,
     minWidth: 960,
     minHeight: 640,
+    x: state.x,
+    y: state.y,
     show: false,
     backgroundColor: "#1e1e2e",
     title: "Zephus",
@@ -380,6 +667,29 @@ function createMainWindow(): void {
       devTools: isDev,
     },
   });
+  mainWindow = win;
+  if (state.maximized) win.maximize();
+
+  // Persist bounds on close (and while moving/resizing, debounced) so the
+  // layout survives restarts.
+  let boundsTimer: NodeJS.Timeout | null = null;
+  const persistBounds = (): void => {
+    if (boundsTimer) clearTimeout(boundsTimer);
+    boundsTimer = setTimeout(() => {
+      boundsTimer = null;
+      if (!win || win.isDestroyed()) return;
+      const bounds = win.getNormalBounds();
+      writeWindowState({
+        width: bounds.width,
+        height: bounds.height,
+        x: bounds.x,
+        y: bounds.y,
+        maximized: win.isMaximized(),
+      });
+    }, 300);
+  };
+  win.on("resize", persistBounds);
+  win.on("move", persistBounds);
 
   void mainWindow.loadFile(rendererPath("index.html"), {
     query: isSmoke ? { smoke: "1" } : undefined,
@@ -389,12 +699,40 @@ function createMainWindow(): void {
   // via installGlobalNavigationGuards() (registered before this window is
   // created), so no per-window installation is needed here.
 
+  // Cmd/Ctrl+R must not bypass the unsaved-work guard: the menu accelerator
+  // fires before the renderer's keydown, so intercept it here and let the
+  // renderer resolve save/discard before reloading.
+  win.webContents.on("before-input-event", (event, input) => {
+    if (
+      input.type === "keyDown" &&
+      input.key.toLowerCase() === "r" &&
+      (input.control || input.meta)
+    ) {
+      event.preventDefault();
+      if (!win.isDestroyed()) {
+        win.webContents.send(IPC.reloadRequested);
+      }
+    }
+  });
+
   mainWindow.once("ready-to-show", () => {
+    if (splashCloseTimer) {
+      clearTimeout(splashCloseTimer);
+      splashCloseTimer = null;
+    }
     if (splashWindow) {
       splashWindow.close();
       splashWindow = null;
     }
     mainWindow?.show();
+
+    // ZEPHUS_BOOT_CHECK=1: verify the packaged binary boots — the renderer
+    // loaded + became visible. Exit 0 immediately (no UI automation).
+    if (process.env.ZEPHUS_BOOT_CHECK === "1") {
+      log.info("[boot-check] packaged renderer loaded successfully");
+      app.exit(0);
+      return;
+    }
 
     if (isDev && !isSmoke) {
       mainWindow?.webContents.openDevTools({ mode: "bottom" });
@@ -410,6 +748,38 @@ function createMainWindow(): void {
 
   mainWindow.on("closed", () => {
     mainWindow = null;
+  });
+
+  // A failed renderer load used to leave the window hidden forever (splash
+  // closed after 30s, no UI, no error). Surface it instead of hanging.
+  mainWindow.webContents.on(
+    "did-fail-load",
+    (_event, errorCode, errorDescription) => {
+      log.error("Renderer failed to load", errorCode, errorDescription);
+      if (splashWindow) {
+        splashWindow.close();
+        splashWindow = null;
+      }
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.show();
+        mainWindow.webContents.executeJavaScript(
+          `document.body.innerHTML =
+            '<div style="font-family:system-ui;padding:2rem;color:#18181b">' +
+            '<h2>Zephus could not load its interface</h2>' +
+            '<p>Reload the window to try again. If it keeps failing, reinstall Zephus.</p>' +
+            '<button id="z-reload">Reload Window</button></div>';` +
+            `document.getElementById('z-reload').addEventListener('click', () => location.reload());`,
+        );
+      }
+    },
+  );
+  mainWindow.webContents.on("render-process-gone", (_event, details) => {
+    log.error("Renderer process gone", details.reason);
+    cleanupBackgroundServices();
+    // Reload once on transient crashes (Chromium recovers most).
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.reload();
+    }
   });
 }
 
@@ -437,7 +807,8 @@ function initAutoUpdater(): void {
  */
 function setupSecurityHeaders(): void {
   const CSP =
-    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+    "font-src 'self' data: https://fonts.gstatic.com; " +
     "img-src 'self' data:; connect-src 'self'; object-src 'none'; " +
     "base-uri 'self'; frame-ancestors 'none'; form-action 'self'; " +
     "frame-src 'self' http://localhost:* http://127.0.0.1:* http://[::1]:*";
@@ -464,7 +835,7 @@ async function promptLocateNode(): Promise<void> {
   const target =
     mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
   const isWindows = process.platform === "win32";
-  const picked = await dialog.showOpenDialog(target as BrowserWindow, {
+  const picked = await showOpenDialogFor(target, {
     title: "Select the Node.js Executable",
     properties: ["openFile"],
     filters: isWindows
@@ -477,7 +848,7 @@ async function promptLocateNode(): Promise<void> {
   if (!selected) return;
   const validation = validateNodePath(selected);
   if (!validation.ok || !validation.path) {
-    await dialog.showMessageBox(target as BrowserWindow, {
+    await showMessageBoxFor(target, {
       type: "error",
       title: "Invalid Node.js Location",
       message: validation.error ?? "That file is not a valid Node.js path.",
@@ -489,7 +860,7 @@ async function promptLocateNode(): Promise<void> {
   }
   const status = await checkNodeVersion(validation.path);
   if (status.status === "missing" || status.status === "unknown") {
-    await dialog.showMessageBox(target as BrowserWindow, {
+    await showMessageBoxFor(target, {
       type: "error",
       title: "Invalid Node.js Location",
       message: "That file is not a working Node.js executable.",
@@ -504,7 +875,7 @@ async function promptLocateNode(): Promise<void> {
   settings.customNodePath = validation.path;
   writeGlobalSettings(settings);
 
-  await dialog.showMessageBox(target as BrowserWindow, {
+  await showMessageBoxFor(target, {
     type: status.status === "ok" ? "info" : "warning",
     title: "Node.js Location Saved",
     message:
@@ -534,7 +905,7 @@ async function runNodeVersionCheck(): Promise<void> {
           : "Node.js Check";
     const target =
       mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
-    const response = await dialog.showMessageBox(target as BrowserWindow, {
+    const response = await showMessageBoxFor(target, {
       type: "warning",
       title,
       message: title,
@@ -557,6 +928,10 @@ if (!isPrimaryInstance) {
   app.quit();
 } else {
   app.on("second-instance", () => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      createMainWindow();
+      return;
+    }
     focusMainWindow();
   });
 
@@ -564,6 +939,7 @@ if (!isPrimaryInstance) {
     setupSecurityHeaders();
     installGlobalNavigationGuards();
     registerIpcHandlers(getMainWindow, {
+      isSmoke,
       assertUpdaterSender: (senderId) =>
         Boolean(
           mainWindow &&
@@ -604,6 +980,13 @@ if (!isPrimaryInstance) {
     initNodeVersionCheck();
 
     app.on("activate", () => {
+      // macOS dock click: recreate when the main window is gone, even if a
+      // preview window is still open (previously a no-op — only quit+relaunch
+      // recovered the app).
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        createMainWindow();
+        return;
+      }
       if (BrowserWindow.getAllWindows().length === 0) {
         createMainWindow();
         return;
@@ -614,13 +997,30 @@ if (!isPrimaryInstance) {
 }
 
 app.on("window-all-closed", () => {
-  cleanupBackgroundServices();
-  if (process.platform !== "darwin") app.quit();
+  // On macOS the app stays alive after the window closes; tearing the dev
+  // server/watcher down here made every Cmd+W -> dock-reopen a dead preview
+  // that never restarted. Cleanup happens on real quit (will-quit).
+  if (process.platform !== "darwin") {
+    cleanupBackgroundServices();
+    app.quit();
+  }
 });
 
 app.on("before-quit", () => {
   if (isInstallingUpdate) {
     log.info("App quitting to install an update.");
   }
+  // NOTE: cleanup intentionally does NOT run here. before-quit fires before
+  // window close; the renderer's unsaved-work guard can CANCEL the close, and
+  // a cancel after cleanup left the dev server/watcher/theme server dead while
+  // the app kept running. will-quit fires only after every close confirmed.
+});
+
+app.on("will-quit", (event) => {
   cleanupBackgroundServices();
+  if (smokeExitCode === null) return;
+  event.preventDefault();
+  const exitCode = smokeExitCode;
+  smokeExitCode = null;
+  app.exit(exitCode);
 });

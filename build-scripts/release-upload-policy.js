@@ -11,7 +11,10 @@ function isReleaseUploadName(name) {
 }
 
 function getReleaseUploadFiles(releaseEntries, releaseDir) {
-  return releaseEntries.filter(isReleaseUploadName).sort().map((name) => path.join(releaseDir, name));
+  return releaseEntries
+    .filter(isReleaseUploadName)
+    .sort()
+    .map((name) => path.join(releaseDir, name));
 }
 
 module.exports = { getReleaseUploadFiles, isReleaseUploadName };

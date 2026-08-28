@@ -70,9 +70,13 @@ describe("design token CSS injection", () => {
       path.join(tmpDir, "public", "styles", "zephus-managed.css"),
       "utf8",
     );
-    // The injected closing brace / extra rule must not appear in the :root value.
-    const rootBlock = css.slice(0, css.indexOf("}") + 1);
-    expect(rootBlock).not.toContain("display: none");
+    // No injected closing brace or extra rule may survive: the accent
+    // declaration must be a single clean line ("display: none" can only
+    // persist as harmless text INSIDE the custom-property value).
+    const accentLine = css.match(/--zephus-accent: [^\n]+/)?.[0]?.trim() ?? "";
+    expect(accentLine.endsWith(";")).toBe(true);
+    expect(accentLine.slice(0, -1)).not.toContain(";");
+    expect(accentLine).not.toContain("}");
     expect(css).not.toContain("body { display: none }");
 
     const layout = fs.readFileSync(

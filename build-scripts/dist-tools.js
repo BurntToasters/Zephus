@@ -2,13 +2,17 @@ const fs = require("fs");
 const path = require("path");
 
 const FLATPAK_BUILD_DIR_PREFIX = "build-dir";
-const RENDERER_DIR = path.join("src", "renderer");
+// Resolve everything against the repo root (this script's directory), never
+// the caller's cwd: `node build-scripts/dist-tools.js clean` from a foreign
+// directory must not delete that directory's dist/release folders.
+const ROOT = path.resolve(__dirname, "..");
+const RENDERER_DIR = path.join(ROOT, "src", "renderer");
 const RENDERER_BUILD_ARTIFACTS = ["zephusEngine.js", "zephusEngine.js.map"];
 
 function listFlatpakBuildDirs() {
   try {
     return fs
-      .readdirSync(".", { withFileTypes: true })
+      .readdirSync(ROOT, { withFileTypes: true })
       .filter(
         (entry) =>
           entry.isDirectory() &&
@@ -23,10 +27,10 @@ function listFlatpakBuildDirs() {
 
 function cleanBuildArtifacts() {
   const dirs = [
-    "dist",
-    "template-previews/dist",
-    "template-previews/.tmp",
-    ...listFlatpakBuildDirs(),
+    path.join(ROOT, "dist"),
+    path.join(ROOT, "template-previews", "dist"),
+    path.join(ROOT, "template-previews", ".tmp"),
+    ...listFlatpakBuildDirs().map((dir) => path.join(ROOT, dir)),
   ];
   for (const dir of dirs) {
     try {
@@ -53,7 +57,7 @@ function cleanBuildArtifacts() {
 }
 
 function cleanReleaseArtifacts() {
-  const dirs = ["release"];
+  const dirs = [path.join(ROOT, "release")];
   for (const dir of dirs) {
     try {
       fs.rmSync(dir, {
@@ -69,9 +73,44 @@ function cleanReleaseArtifacts() {
 }
 
 function copyRuntimeAssets() {
-  console.log(
-    "  copy step complete (renderer files referenced in-place from src/)",
+  // Everything renderer is referenced in place from src/renderer, so the
+  // copy is a no-op — BUT zephusEngine.js is a gitignored build artifact in
+  // src/. electron-builder globs it silently; a missing or stale bundle
+  // packages an app whose script 404s (blank window) with zero errors.
+  // Verify it exists and is newer than the newest renderer source.
+  const bundle = path.join(ROOT, "src", "renderer", "zephusEngine.js");
+  if (!fs.existsSync(bundle)) {
+    throw new Error(
+      "Renderer bundle missing: " +
+        bundle +
+        ". Run npm run compile:renderer first.",
+    );
+  }
+  const bundleMtime = fs.statSync(bundle).mtimeMs;
+  const rendererDir = path.join(ROOT, "src", "renderer");
+  const newestSource = Math.max(
+    ...walkFiles(rendererDir)
+      .filter((f) => /\.[jt]sx?$/.test(f))
+      .map((f) => fs.statSync(f).mtimeMs),
   );
+  if (bundleMtime + 1000 < newestSource) {
+    throw new Error(
+      "Renderer bundle is STALE (newer source exists). Run npm run compile:renderer first.",
+    );
+  }
+  console.log(
+    "  copy step verified (renderer bundle fresh, files referenced in-place)",
+  );
+}
+
+function walkFiles(dir) {
+  const out = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...walkFiles(full));
+    else out.push(full);
+  }
+  return out;
 }
 
 const mode = process.argv[2];

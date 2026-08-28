@@ -3,11 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { getReleaseUploadFiles } = require('./release-upload-policy');
-const {
-  assertGitHubCliAuthenticated,
-  githubApi,
-  uploadReleaseAsset,
-} = require('./github-cli');
+const { assertGitHubCliAuthenticated, githubApi, uploadReleaseAsset } = require('./github-cli');
 
 // Environment variables are loaded via the `dotenv -e .env --` prefix in npm scripts.
 
@@ -26,13 +22,19 @@ const packageJson = require('../package.json');
 const VERSION = packageJson.version;
 const TAG_NAME = 'v' + VERSION;
 
+const PRERELEASE_TAG = /-(beta|alpha|rc|db)(?:[.-]|$|[0-9])/i;
+
 function isGithubPrereleaseVersion(version) {
-  return /-(beta|alpha|rc|db)(?:[.-]|$)/i.test(version);
+  return PRERELEASE_TAG.test(version);
 }
 
+// ONE shared suffix set: an alpha/rc version previously got flagged as a
+// GitHub prerelease but NO channel alias — its latest.yml was served to the
+// stable auto-update feed. Every prerelease must be pinned to a channel.
 function updateMetadataChannel(version) {
-  if (/-db(?:[.-]|$)/i.test(version)) return 'db';
-  if (/-beta(?:[.-]|$)/i.test(version)) return 'beta';
+  if (/-db(?:[.-]|$|[0-9])/i.test(version)) return 'db';
+  if (/-beta(?:[.-]|$|[0-9])/i.test(version)) return 'beta';
+  if (/-(alpha|rc)(?:[.-]|$|[0-9])/i.test(version)) return 'beta';
   return null;
 }
 
@@ -107,9 +109,13 @@ function getFilesToSign() {
     if (!hasSignableExt) return false;
     if (TARGET_ARCH) {
       const fileArch = getFileArch(file);
-      return fileArch === TARGET_ARCH || fileArch === null;
+      // Arch-less artifacts (AppImage, arch-less .exe/.dmg) matched BOTH
+      // --arch passes and were signed + checksummed twice; on Windows the
+      // second run overwrote the first arch's checksums. Include them only
+      // in the DEFAULT (non-arch-specific) pass.
+      if (fileArch === null) return TARGET_ARCH === 'default';
+      return fileArch === TARGET_ARCH;
     }
-
     return true;
   });
 }

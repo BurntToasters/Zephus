@@ -42,7 +42,11 @@ interface GitStatus {
   added: string[];
   deleted: string[];
   zephusIgnored?: boolean;
+  notARepository?: boolean;
+  hasRemote?: boolean;
   error?: string;
+  ahead?: number;
+  behind?: number;
 }
 
 interface GlobalSettings {
@@ -144,12 +148,14 @@ type EditorBlockType =
   | "quote"
   | "list"
   | "embed"
+  | "video"
   | "feature"
   | "testimonial"
   | "accordion"
   | "stats"
   | "pricing"
-  | "cta";
+  | "cta"
+  | "postlist";
 
 interface EditorBlock {
   id: string;
@@ -194,7 +200,6 @@ interface FormDefinition {
 
 interface BlockNode extends EditorBlock {
   children?: BlockNode[];
-  hidden?: boolean;
   asset?: AssetRef;
   link?: LinkRef;
   form?: FormDefinition;
@@ -207,7 +212,6 @@ interface SectionNode {
   props: Record<string, string>;
   style?: BlockStyle;
   locked?: boolean;
-  hidden?: boolean;
   children: BlockNode[];
 }
 
@@ -265,11 +269,22 @@ interface PageMeta {
   metaDescription: string;
   navVisible: boolean;
   isHome: boolean;
+  /** True when the page is detached from visual editing (code only). */
+  detached: boolean;
+  /** Social share image (web path like `/assets/images/x.png`, or absolute URL). */
+  socialImage: string;
+  /** Overrides the canonical URL derived from the site URL + route. */
+  canonicalUrl: string;
+  /** Emits `robots: noindex` and excludes the page from sitemap.xml. */
+  noindex: boolean;
+  /** Publish date as `YYYY-MM-DD`. */
+  publishDate: string;
+  /** Display name of the author, shown by Post List blocks. */
+  author: string;
 }
 
 interface PageDocument extends PageMeta {
   schemaVersion: number;
-  templateId: string | null;
   sections: SectionNode[];
   detached: boolean;
   detachedAt: string | null;
@@ -284,7 +299,12 @@ interface SiteDocument {
   generatedAt: string;
   design: DesignTokenSet;
   shell: ShellConfig;
-  templates: TemplateDefinition[];
+  /** Public base URL (e.g. */
+  siteUrl: string;
+  /** BCP 47 language tag emitted as `<html lang>`. */
+  language: string;
+  /** Web-root-relative favicon path (e.g. `/assets/images/favicon.png`). */
+  faviconPath: string;
 }
 
 interface VisualSchemaStatus {
@@ -310,6 +330,53 @@ interface AssetEntry {
 interface AssetListResult {
   ok: boolean;
   assets: AssetEntry[];
+  error?: string;
+}
+
+interface AssetUsagePage {
+  page: string;
+  label: string;
+  count: number;
+}
+
+interface AssetUsageResult {
+  ok: boolean;
+  pages: AssetUsagePage[];
+  /** Human-readable site-level places referencing the asset. */
+  siteReferences: string[];
+  error?: string;
+}
+
+interface AssetMutationResult {
+  ok: boolean;
+  /** Web path after the operation (rename only). */
+  webPath?: string;
+  /** References repointed to the new path (rename only). */
+  updatedReferences?: number;
+  error?: string;
+}
+
+interface SearchMatch {
+  page: string;
+  label: string;
+  count: number;
+  /** Short context snippets around the first matches. */
+  excerpts: string[];
+}
+
+interface FindReplaceResult {
+  ok: boolean;
+  matches: SearchMatch[];
+  totalMatches: number;
+  /** Pages with matches that replaceAll will skip (detached/out-of-sync). */
+  skippedDetachedPages?: number;
+  error?: string;
+}
+
+interface ReplaceAllResult {
+  ok: boolean;
+  replaced: number;
+  pagesChanged: number;
   error?: string;
 }
 
@@ -393,6 +460,18 @@ interface ProductionLicensesResult {
   error?: string;
 }
 
+interface RepoSettings {
+  schemaVersion: number;
+  editorRules: Record<string, unknown>;
+}
+
+interface UpdaterStatusPayload {
+  status: string;
+  version?: string;
+  percent?: number;
+  error?: string;
+}
+
 interface ZephusApi {
   openFolderDialog(): Promise<string | null>;
   chooseNewSiteFolder(): Promise<string | null>;
@@ -464,12 +543,22 @@ interface ZephusApi {
     page: string,
     pagesDir: string,
   ): Promise<PageDocumentResult>;
-  getGitStatus(projectPath: string): Promise<GitStatus>;
+  getGitStatus(
+    projectPath: string,
+    options?: { fetchRemote?: boolean },
+  ): Promise<GitStatus>;
   initGitRepo(projectPath: string): Promise<OperationResult>;
+  commitGitChanges(
+    projectPath: string,
+    message: string,
+    paths?: string[],
+  ): Promise<OperationResult>;
+  pushGitChanges(projectPath: string): Promise<OperationResult>;
+  pullGitChanges(projectPath: string): Promise<OperationResult>;
   readGlobalSettings(): Promise<GlobalSettings>;
   writeGlobalSettings(settings: GlobalSettings): Promise<OperationResult>;
   removeRecentProject(projectPath: string): Promise<GlobalSettings>;
-  readRepoSettings(projectPath: string): Promise<unknown>;
+  readRepoSettings(projectPath: string): Promise<RepoSettings>;
   getMergedSettings(projectPath: string): Promise<{
     global: GlobalSettings;
     repo: { schemaVersion: number; editorRules: Record<string, unknown> };
@@ -481,20 +570,6 @@ interface ZephusApi {
     projectPath: string,
     rel: string,
   ): Promise<{ ok: boolean; content?: string; error?: string }>;
-  writeFile(
-    projectPath: string,
-    rel: string,
-    content: string,
-  ): Promise<OperationResult>;
-  importImage(
-    projectPath: string,
-    publicDir: string,
-  ): Promise<{
-    ok: boolean;
-    webPath?: string;
-    canceled?: boolean;
-    error?: string;
-  }>;
   importAssets(
     projectPath: string,
     publicDir: string,
@@ -514,17 +589,52 @@ interface ZephusApi {
   }>;
   getDroppedFilePath(file: File): string;
   listAssets(projectPath: string, publicDir: string): Promise<AssetListResult>;
+  searchPages(
+    projectPath: string,
+    pagesDir: string,
+    query: string,
+    options: { caseSensitive?: boolean; wholeWord?: boolean },
+  ): Promise<FindReplaceResult>;
+  replaceAllInPages(
+    projectPath: string,
+    pagesDir: string,
+    query: string,
+    replacement: string,
+    options: { caseSensitive?: boolean; wholeWord?: boolean },
+    onlyPages?: string[],
+  ): Promise<ReplaceAllResult>;
+  deleteAsset(
+    projectPath: string,
+    publicDir: string,
+    webPath: string,
+  ): Promise<AssetMutationResult>;
+  renameAsset(
+    projectPath: string,
+    publicDir: string,
+    pagesDir: string,
+    webPath: string,
+    nextName: string,
+  ): Promise<AssetMutationResult>;
+  findAssetUsage(
+    projectPath: string,
+    pagesDir: string,
+    webPath: string,
+  ): Promise<AssetUsageResult>;
   readAssetDataUrl(
     projectPath: string,
     publicDir: string,
     webPath: string,
   ): Promise<{ ok: boolean; dataUrl?: string; error?: string }>;
-  listReusableSections(): Promise<ReusableSectionsResult>;
+  listReusableSections(projectPath: string): Promise<ReusableSectionsResult>;
   saveReusableSection(
+    projectPath: string,
     label: string,
     html: string,
   ): Promise<ReusableSectionsResult>;
-  deleteReusableSection(id: string): Promise<OperationResult>;
+  deleteReusableSection(
+    projectPath: string,
+    id: string,
+  ): Promise<OperationResult>;
   readDraft(
     projectPath: string,
     scope: DraftScope,
@@ -551,37 +661,53 @@ interface ZephusApi {
   openPreviewWindow(url: string): Promise<OperationResult>;
   closePreviewWindow(): Promise<OperationResult>;
   onPreviewClosed(callback: () => void): () => void;
+  onPreviewExited(callback: () => void): () => void;
+  onReloadRequested(callback: () => void): () => void;
   ensureThemePreviewServer(): Promise<ThemePreviewServerResult>;
   publish(
     projectPath: string,
     outDir: string,
-  ): Promise<{ ok: boolean; outputDir?: string; error?: string }>;
+  ): Promise<{
+    ok: boolean;
+    outputDir?: string;
+    revealed?: boolean;
+    error?: string;
+  }>;
+  onPublishLog(listener: (chunk: string) => void): () => void;
+  revealOutputFolder(
+    projectPath: string,
+    outDir: string,
+  ): Promise<OperationResult>;
   dependenciesInstalled(projectPath: string): Promise<boolean>;
   installDependencies(
     projectPath: string,
   ): Promise<{ ok: boolean; error?: string }>;
+  cancelInstall(): Promise<OperationResult>;
   onInstallLog(callback: (chunk: string) => void): () => void;
   onPreviewLog(callback: (chunk: string) => void): () => void;
-  checkForUpdates(): Promise<unknown>;
-  downloadUpdate(): Promise<unknown>;
-  cancelUpdateDownload(): Promise<unknown>;
-  installUpdate(): Promise<unknown>;
+  checkForUpdates(): Promise<UpdaterStatusPayload>;
+  downloadUpdate(): Promise<UpdaterStatusPayload>;
+  cancelUpdateDownload(): Promise<OperationResult>;
+  installUpdate(): Promise<OperationResult>;
+  /** Cached updater status from main — closes the startup-check race. */
+  getLastUpdaterStatus(): Promise<{
+    status: string;
+    version?: string;
+    percent?: number;
+    error?: string;
+  } | null>;
   getAppVersion(): Promise<string>;
-  openConfigFolder(): Promise<unknown>;
+  openConfigFolder(): Promise<OperationResult>;
   getNodeStatus(): Promise<NodeCheckResult>;
   pickNodePath(): Promise<NodeCheckResult>;
   setNodePath(customPath: string | null): Promise<NodeCheckResult>;
-  onUpdaterStatus(
-    callback: (data: {
-      status: string;
-      version?: string;
-      percent?: number;
-      error?: string;
-    }) => void,
-  ): () => void;
+  onUpdaterStatus(callback: (data: UpdaterStatusPayload) => void): () => void;
 }
 
 interface Window {
   zephus: ZephusApi;
-  __zephusRunEditorSmoke?: () => string[];
+  __zephusRunEditorSmoke?: () => string[] | Promise<string[]>;
+  refreshIcons?: () => void;
+  /** Set by the engine so programmatic quits (update install) bypass the unsaved-work close guard. */
+  zephusMarkForceCloseAllowed?: () => void;
 }

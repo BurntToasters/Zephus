@@ -1,57 +1,63 @@
 # Content Block Reference
 
-Zephus provides 20 different content block types to build your pages. Each block has specific properties you can edit in the inspector panel (right sidebar).
+Zephus provides 22 different content block types to build your pages. Each block has specific properties you can edit in the **Inspect** tab of the right sidebar.
+
+Text-based properties (headings, body copy, quotes, card and feature text, list items, and so on) also support inline **bold**, _italic_, and links — double-click the text on the canvas and use the toolbar or **Ctrl/Cmd+B / I / K**. Button labels support formatting but not their own link, since the button itself is already a link.
 
 ## Block Categories
 
 ### 🔤 Text & Typography
 
 #### **Heading**
+
 Large text for page titles and section headers.
 
-| Property | Type | Example |
-|----------|------|---------|
-| `text` | Text | "My Page Title" |
-| `level` | Dropdown (1–6) | 1 (largest) to 6 (smallest) |
-| `cls` | CSS class | "text-gradient" |
+| Property | Type           | Example                     |
+| -------- | -------------- | --------------------------- |
+| `text`   | Text           | "My Page Title"             |
+| `level`  | Dropdown (1–6) | 1 (largest) to 6 (smallest) |
+| `cls`    | CSS class      | "text-gradient"             |
 
 **Use for:** Page titles, section headers, emphasis
 
 ---
 
 #### **Text**
+
 Paragraph of body text.
 
-| Property | Type | Example |
-|----------|------|---------|
-| `text` | Text | "This is my paragraph..." |
-| `cls` | CSS class | "text-large" |
+| Property | Type      | Example                   |
+| -------- | --------- | ------------------------- |
+| `text`   | Text      | "This is my paragraph..." |
+| `cls`    | CSS class | "text-large"              |
 
 **Use for:** Paragraphs, descriptions, body copy
 
 ---
 
 #### **Quote**
+
 Styled blockquote with optional attribution.
 
-| Property | Type | Example |
-|----------|------|---------|
-| `text` | Text | "Innovation distinguishes leaders." |
-| `cite` | Text | "Steve Jobs" |
-| `cls` | CSS class | "" |
+| Property | Type      | Example                             |
+| -------- | --------- | ----------------------------------- |
+| `text`   | Text      | "Innovation distinguishes leaders." |
+| `cite`   | Text      | "Steve Jobs"                        |
+| `cls`    | CSS class | ""                                  |
 
 **Use for:** Testimonials, famous quotes, pull quotes
 
 ---
 
 #### **List**
+
 Ordered or unordered list of items.
 
-| Property | Type | Example |
-|----------|------|---------|
-| `items` | Text (newline-separated) | "Item 1\nItem 2\nItem 3" |
-| `ordered` | Toggle | false (bullet) or true (numbered) |
-| `cls` | CSS class | "" |
+| Property  | Type                     | Example                           |
+| --------- | ------------------------ | --------------------------------- |
+| `items`   | Text (newline-separated) | "Item 1\nItem 2\nItem 3"          |
+| `ordered` | Toggle                   | false (bullet) or true (numbered) |
+| `cls`     | CSS class                | ""                                |
 
 **Use for:** Features, steps, ingredients, benefits
 
@@ -62,13 +68,14 @@ Ordered or unordered list of items.
 ### 🖼️ Media & Gallery
 
 #### **Image**
+
 A single responsive image with alt text for accessibility.
 
-| Property | Type | Example |
-|----------|------|---------|
-| `src` | Path or URL | "/images/my-photo.jpg" |
-| `alt` | Text | "Team photo from 2024" |
-| `cls` | CSS class | "rounded-lg" |
+| Property | Type        | Example                |
+| -------- | ----------- | ---------------------- |
+| `src`    | Path or URL | "/images/my-photo.jpg" |
+| `alt`    | Text        | "Team photo from 2024" |
+| `cls`    | CSS class   | "rounded-lg"           |
 
 **Use for:** Photos, diagrams, illustrations
 
@@ -77,12 +84,13 @@ A single responsive image with alt text for accessibility.
 ---
 
 #### **Gallery**
+
 Multiple images displayed in a grid.
 
-| Property | Type | Example |
-|----------|------|---------|
+| Property | Type                      | Example                        |
+| -------- | ------------------------- | ------------------------------ |
 | `images` | Paths (newline-separated) | "/images/1.jpg\n/images/2.jpg" |
-| `cls` | CSS class | "gallery-dark" |
+| `cls`    | CSS class                 | "gallery-dark"                 |
 
 **Use for:** Portfolio projects, photo albums, case studies
 
@@ -93,17 +101,19 @@ Multiple images displayed in a grid.
 ### 🎯 Interactive Elements
 
 #### **Button**
+
 Clickable button that links to a URL.
 
-| Property | Type | Example |
-|----------|------|---------|
-| `text` | Text | "Get Started" |
-| `href` | URL | "/contact" or "https://example.com" |
-| `cls` | CSS class | "btn-large" |
+| Property | Type      | Example                             |
+| -------- | --------- | ----------------------------------- |
+| `text`   | Text      | "Get Started"                       |
+| `href`   | URL       | "/contact" or "https://example.com" |
+| `cls`    | CSS class | "btn-large"                         |
 
 **Use for:** Calls-to-action, navigation, links
 
 **URL formats:**
+
 - Relative: `/about`, `/blog/post-1`
 - Absolute: `https://example.com`
 - Email: `mailto:hello@example.com`
@@ -112,60 +122,83 @@ Clickable button that links to a URL.
 ---
 
 #### **Embed**
+
 Embed external content (YouTube, Vimeo, maps, etc.).
 
-| Property | Type | Example |
-|----------|------|---------|
-| `src` | Embed URL | "https://www.youtube.com/embed/..." |
-| `title` | Text | "Product Demo" |
-| `cls` | CSS class | "" |
+| Property | Type      | Example                             |
+| -------- | --------- | ----------------------------------- |
+| `src`    | Embed URL | "https://www.youtube.com/embed/..." |
+| `title`  | Text      | "Product Demo"                      |
+| `cls`    | CSS class | ""                                  |
 
 **Use for:** Videos, maps, custom embeds
 
 > 💡 **Getting embed URLs:**
+>
 > - **YouTube:** Right-click video → "Copy embed code" → extract `src` URL
 > - **Vimeo:** Click "Share" → "Embed" → copy `src` URL
 > - **Google Maps:** Right-click location → "Get link to this place" → convert to embed
 
 ---
 
-#### **HTML**
-Raw HTML/JSX for advanced customization (code mode only).
+#### **Video**
 
-| Property | Type | Example |
-|----------|------|---------|
-| Content | HTML/JSX | `<div class="custom">...</div>` |
+Plays a video file inline with native controls (no third-party player).
+
+| Property | Type      | Example                         |
+| -------- | --------- | ------------------------------- |
+| `src`    | Video URL | "https://example.com/movie.mp4" |
+| `title`  | Text      | "Showreel"                      |
+| `cls`    | CSS class | ""                              |
+
+**Use for:** MP4/WebM files — hosted anywhere, or inside your project's
+`public/assets/` folder (play them in the Preview browser).
+
+> 💡 **Tip:** For YouTube/Vimeo, use the **Embed** block with the player's
+> `src` URL instead.
+
+---
+
+#### **HTML**
+
+Raw HTML/JSX for advanced customization (edited in the Inspector Markup field).
+
+| Property | Type     | Example                         |
+| -------- | -------- | ------------------------------- |
+| Content  | HTML/JSX | `<div class="custom">...</div>` |
 
 **Use for:** Custom styling, interactive widgets, one-off designs
 
-> ⚠️ **Note**: HTML blocks can only be edited in Code mode. Switch to Code mode to edit the raw markup.
+> ⚠️ **Note**: HTML blocks are edited through the Inspector **Markup** field in Visual mode; use Code mode for full-page source.
 
 ---
 
 ### 📦 Content Cards & Layouts
 
 #### **Card**
+
 A self-contained box with title and description.
 
-| Property | Type | Example |
-|----------|------|---------|
-| `title` | Text | "Feature Name" |
-| `text` | Text | "Description of the feature..." |
-| `cls` | CSS class | "card-hover" |
+| Property | Type      | Example                         |
+| -------- | --------- | ------------------------------- |
+| `title`  | Text      | "Feature Name"                  |
+| `text`   | Text      | "Description of the feature..." |
+| `cls`    | CSS class | "card-hover"                    |
 
 **Use for:** Features, testimonials, team bios
 
 ---
 
 #### **Columns**
+
 Side-by-side layout for content (2 or 3 columns).
 
-| Property | Type | Example |
-|----------|------|---------|
-| `col1` | Text | Left column content |
-| `col2` | Text | Right column content |
-| `count` | Dropdown (2 or 3) | 2 (50/50) or 3 (equal thirds) |
-| `cls` | CSS class | "gap-large" |
+| Property | Type              | Example                       |
+| -------- | ----------------- | ----------------------------- |
+| `col1`   | Text              | Left column content           |
+| `col2`   | Text              | Right column content          |
+| `count`  | Dropdown (2 or 3) | 2 (50/50) or 3 (equal thirds) |
+| `cls`    | CSS class         | "gap-large"                   |
 
 **Use for:** Two-column layouts, feature comparisons, side-by-side text
 
@@ -174,14 +207,15 @@ Side-by-side layout for content (2 or 3 columns).
 ### 🎨 Marketing & Showcase
 
 #### **Feature**
+
 Icon, title, and description for highlighting a feature.
 
-| Property | Type | Example |
-|----------|------|---------|
-| `icon` | Icon name | "star", "zap", "heart" |
-| `title` | Text | "Fast Performance" |
-| `text` | Text | "Load 10x faster..." |
-| `cls` | CSS class | "" |
+| Property | Type      | Example                |
+| -------- | --------- | ---------------------- |
+| `icon`   | Icon name | "star", "zap", "heart" |
+| `title`  | Text      | "Fast Performance"     |
+| `text`   | Text      | "Load 10x faster..."   |
+| `cls`    | CSS class | ""                     |
 
 **Use for:** Product features, service highlights, value propositions
 
@@ -190,26 +224,28 @@ Icon, title, and description for highlighting a feature.
 ---
 
 #### **Testimonial**
+
 A styled customer quote with author name and role.
 
-| Property | Type | Example |
-|----------|------|---------|
-| `quote` | Text | "This product changed my business!" |
-| `author` | Text | "Jane Smith" |
-| `role` | Text | "CEO, Acme Corp" |
-| `cls` | CSS class | "" |
+| Property | Type      | Example                             |
+| -------- | --------- | ----------------------------------- |
+| `quote`  | Text      | "This product changed my business!" |
+| `author` | Text      | "Jane Smith"                        |
+| `role`   | Text      | "CEO, Acme Corp"                    |
+| `cls`    | CSS class | ""                                  |
 
 **Use for:** Customer testimonials, reviews, case study quotes
 
 ---
 
 #### **Stats**
+
 Display key numbers with labels (e.g., "10k+ customers").
 
-| Property | Type | Example |
-|----------|------|---------|
-| `items` | Format: `VALUE :: LABEL` (newline-separated) | "10k+ :: Customers\n50+ :: Countries" |
-| `cls` | CSS class | "" |
+| Property | Type                                         | Example                               |
+| -------- | -------------------------------------------- | ------------------------------------- |
+| `items`  | Format: `VALUE :: LABEL` (newline-separated) | "10k+ :: Customers\n50+ :: Countries" |
+| `cls`    | CSS class                                    | ""                                    |
 
 **Use for:** Metrics, achievements, results
 
@@ -218,44 +254,47 @@ Display key numbers with labels (e.g., "10k+ customers").
 ---
 
 #### **Pricing**
+
 A pricing tier card with plan, price, features, and CTA button.
 
-| Property | Type | Example |
-|----------|------|---------|
-| `plan` | Text | "Professional" |
-| `price` | Text | "$29" |
-| `period` | Text | "per month" |
+| Property   | Type                     | Example                |
+| ---------- | ------------------------ | ---------------------- |
+| `plan`     | Text                     | "Professional"         |
+| `price`    | Text                     | "$29"                  |
+| `period`   | Text                     | "per month"            |
 | `features` | List (newline-separated) | "Feature 1\nFeature 2" |
-| `ctaText` | Text | "Get Started" |
-| `ctaHref` | URL | "/signup" |
-| `cls` | CSS class | "" |
+| `ctaText`  | Text                     | "Get Started"          |
+| `ctaHref`  | URL                      | "/signup"              |
+| `cls`      | CSS class                | ""                     |
 
 **Use for:** Pricing tables, service tiers, subscription options
 
 ---
 
 #### **CTA** (Call-to-Action)
+
 Large highlighted section with heading, text, and button.
 
-| Property | Type | Example |
-|----------|------|---------|
-| `heading` | Text | "Ready to Get Started?" |
-| `text` | Text | "Join thousands of happy customers..." |
-| `buttonText` | Text | "Start Free Trial" |
-| `buttonHref` | URL | "/signup" |
-| `cls` | CSS class | "" |
+| Property     | Type      | Example                                |
+| ------------ | --------- | -------------------------------------- |
+| `heading`    | Text      | "Ready to Get Started?"                |
+| `text`       | Text      | "Join thousands of happy customers..." |
+| `buttonText` | Text      | "Start Free Trial"                     |
+| `buttonHref` | URL       | "/signup"                              |
+| `cls`        | CSS class | ""                                     |
 
 **Use for:** Promotional sections, conversion moments, main CTAs
 
 ---
 
 #### **Accordion**
+
 Collapsible sections (questions and answers, FAQs, etc.).
 
-| Property | Type | Example |
-|----------|------|---------|
-| `items` | Format: `QUESTION :: ANSWER` (newline-separated) | "How do I sign up? :: Click the button..." |
-| `cls` | CSS class | "" |
+| Property | Type                                             | Example                                    |
+| -------- | ------------------------------------------------ | ------------------------------------------ |
+| `items`  | Format: `QUESTION :: ANSWER` (newline-separated) | "How do I sign up? :: Click the button..." |
+| `cls`    | CSS class                                        | ""                                         |
 
 **Use for:** FAQs, feature details, expandable content
 
@@ -263,20 +302,47 @@ Collapsible sections (questions and answers, FAQs, etc.).
 
 ---
 
+### 📰 Publishing
+
+#### **Post List**
+
+Automatically lists pages from a route folder. Dated entries are ordered newest first, ahead of undated pages.
+
+| Property      | Type                   | Example         |
+| ------------- | ---------------------- | --------------- |
+| `folder`      | Route prefix           | "/posts"        |
+| `limit`       | Number (`0` shows all) | 5               |
+| `showDate`    | Show/Hide              | Show            |
+| `showAuthor`  | Show/Hide              | Hide            |
+| `showExcerpt` | Show/Hide              | Show            |
+| `showImage`   | Show/Hide              | Hide            |
+| `emptyText`   | Text                   | "No posts yet." |
+| `cls`         | CSS class              | ""              |
+
+**Use for:** Blog homepages, news indexes, release notes, article collections
+
+Add articles as pages beneath the configured route (for example, `posts/hello-world`). In **Page Settings**, set a publish date, author, description, and social share image. Dated, indexable pages other than the 404 page are also included in `rss.xml` when the Site URL is configured.
+
+> 💡 **Tip**: The folder controls which pages appear in this block. Publish dates control newest-first ordering and RSS inclusion.
+
+---
+
 ### 🎬 Structural & Layout
 
 #### **Section**
+
 A container that groups blocks together. Sections have their own styling.
 
-| Property | Type | Example |
-|----------|------|---------|
-| `label` | Text | "Hero" (for your reference) |
-| `wrapper` | Dropdown ("none" or "box") | "box" |
-| `cls` | CSS class | "hero-section" |
+| Property  | Type                       | Example                     |
+| --------- | -------------------------- | --------------------------- |
+| `label`   | Text                       | "Hero" (for your reference) |
+| `wrapper` | Dropdown ("none" or "box") | "box"                       |
+| `cls`     | CSS class                  | "hero-section"              |
 
 **Section-specific styling (in inspector):**
+
 - Background color
-- Text color  
+- Text color
 - Padding (top, bottom, left, right)
 - Margin
 - Border radius
@@ -291,23 +357,25 @@ A container that groups blocks together. Sections have their own styling.
 ---
 
 #### **Divider**
+
 A horizontal line to separate content.
 
-| Property | Type | Example |
-|----------|------|---------|
-| `cls` | CSS class | "" |
+| Property | Type      | Example |
+| -------- | --------- | ------- |
+| `cls`    | CSS class | ""      |
 
 **Use for:** Section breaks, visual separation
 
 ---
 
 #### **Spacer**
+
 Vertical whitespace to add breathing room.
 
-| Property | Type | Example |
-|----------|------|---------|
+| Property | Type       | Example               |
+| -------- | ---------- | --------------------- |
 | `height` | CSS length | "2rem", "40px", "5em" |
-| `cls` | CSS class | "" |
+| `cls`    | CSS class  | ""                    |
 
 **Use for:** Margins, spacing adjustments, layout breathing
 
@@ -345,6 +413,7 @@ Every block supports a `cls` property for adding custom CSS classes:
 ```
 
 You can:
+
 - Use your site's custom CSS classes (from `public/styles/zephus-custom.css`)
 - Add Tailwind classes if your project uses Tailwind CSS
 - Reference design tokens (e.g., `--zephus-accent`)
@@ -358,7 +427,7 @@ You can:
 ✅ **Test mobile view**: Preview on different screen sizes  
 ✅ **Images with alt text**: Always add descriptive alt text for accessibility  
 ✅ **Meaningful links**: Use clear button text (not "click here")  
-✅ **Consistent hierarchy**: Use heading levels 1–6 in order  
+✅ **Consistent hierarchy**: Use heading levels 1–6 in order
 
 ---
 

@@ -2,6 +2,10 @@ import { contextBridge, ipcRenderer, webUtils } from "electron";
 import { IPC } from "./ipcChannels";
 import type {
   AssetListResult,
+  AssetMutationResult,
+  AssetUsageResult,
+  FindReplaceResult,
+  ReplaceAllResult,
   DraftResult,
   DraftScope,
   DraftSummaryResult,
@@ -148,11 +152,27 @@ const api = {
   ): Promise<PageDocumentResult> =>
     ipcRenderer.invoke(IPC.pageDocumentReattach, projectPath, page, pagesDir),
 
-  getGitStatus: (projectPath: string): Promise<GitStatus> =>
-    ipcRenderer.invoke(IPC.gitStatus, projectPath),
+  getGitStatus: (
+    projectPath: string,
+    options?: { fetchRemote?: boolean },
+  ): Promise<GitStatus> =>
+    ipcRenderer.invoke(IPC.gitStatus, projectPath, options),
 
   initGitRepo: (projectPath: string): Promise<OperationResult> =>
     ipcRenderer.invoke(IPC.gitInit, projectPath),
+
+  commitGitChanges: (
+    projectPath: string,
+    message: string,
+    paths?: string[],
+  ): Promise<OperationResult> =>
+    ipcRenderer.invoke(IPC.gitCommit, projectPath, message, paths),
+
+  pushGitChanges: (projectPath: string): Promise<OperationResult> =>
+    ipcRenderer.invoke(IPC.gitPush, projectPath),
+
+  pullGitChanges: (projectPath: string): Promise<OperationResult> =>
+    ipcRenderer.invoke(IPC.gitPull, projectPath),
 
   readGlobalSettings: (): Promise<GlobalSettings> =>
     ipcRenderer.invoke(IPC.settingsReadGlobal),
@@ -186,23 +206,6 @@ const api = {
   ): Promise<{ ok: boolean; content?: string; error?: string }> =>
     ipcRenderer.invoke(IPC.fileRead, projectPath, rel),
 
-  writeFile: (
-    projectPath: string,
-    rel: string,
-    content: string,
-  ): Promise<OperationResult> =>
-    ipcRenderer.invoke(IPC.fileWrite, projectPath, rel, content),
-
-  importImage: (
-    projectPath: string,
-    publicDir: string,
-  ): Promise<{
-    ok: boolean;
-    webPath?: string;
-    canceled?: boolean;
-    error?: string;
-  }> => ipcRenderer.invoke(IPC.importImage, projectPath, publicDir),
-
   importAssets: (
     projectPath: string,
     publicDir: string,
@@ -225,6 +228,62 @@ const api = {
   /** Resolves the absolute filesystem path of a drag-and-dropped File. */
   getDroppedFilePath: (file: File): string => webUtils.getPathForFile(file),
 
+  searchPages: (
+    projectPath: string,
+    pagesDir: string,
+    query: string,
+    options: { caseSensitive?: boolean; wholeWord?: boolean },
+  ): Promise<FindReplaceResult> =>
+    ipcRenderer.invoke(IPC.searchPages, projectPath, pagesDir, query, options),
+
+  replaceAllInPages: (
+    projectPath: string,
+    pagesDir: string,
+    query: string,
+    replacement: string,
+    options: { caseSensitive?: boolean; wholeWord?: boolean },
+    onlyPages?: string[],
+  ): Promise<ReplaceAllResult> =>
+    ipcRenderer.invoke(
+      IPC.replaceAll,
+      projectPath,
+      pagesDir,
+      query,
+      replacement,
+      options,
+      onlyPages,
+    ),
+
+  deleteAsset: (
+    projectPath: string,
+    publicDir: string,
+    webPath: string,
+  ): Promise<AssetMutationResult> =>
+    ipcRenderer.invoke(IPC.assetDelete, projectPath, publicDir, webPath),
+
+  renameAsset: (
+    projectPath: string,
+    publicDir: string,
+    pagesDir: string,
+    webPath: string,
+    nextName: string,
+  ): Promise<AssetMutationResult> =>
+    ipcRenderer.invoke(
+      IPC.assetRename,
+      projectPath,
+      publicDir,
+      pagesDir,
+      webPath,
+      nextName,
+    ),
+
+  findAssetUsage: (
+    projectPath: string,
+    pagesDir: string,
+    webPath: string,
+  ): Promise<AssetUsageResult> =>
+    ipcRenderer.invoke(IPC.assetUsage, projectPath, pagesDir, webPath),
+
   listAssets: (
     projectPath: string,
     publicDir: string,
@@ -238,17 +297,23 @@ const api = {
   ): Promise<{ ok: boolean; dataUrl?: string; error?: string }> =>
     ipcRenderer.invoke(IPC.assetDataUrl, projectPath, publicDir, webPath),
 
-  listReusableSections: (): Promise<ReusableSectionsResult> =>
-    ipcRenderer.invoke(IPC.listReusableSections),
+  listReusableSections: (
+    projectPath: string,
+  ): Promise<ReusableSectionsResult> =>
+    ipcRenderer.invoke(IPC.listReusableSections, projectPath),
 
   saveReusableSection: (
+    projectPath: string,
     label: string,
     html: string,
   ): Promise<ReusableSectionsResult> =>
-    ipcRenderer.invoke(IPC.saveReusableSection, label, html),
+    ipcRenderer.invoke(IPC.saveReusableSection, projectPath, label, html),
 
-  deleteReusableSection: (id: string): Promise<OperationResult> =>
-    ipcRenderer.invoke(IPC.deleteReusableSection, id),
+  deleteReusableSection: (
+    projectPath: string,
+    id: string,
+  ): Promise<OperationResult> =>
+    ipcRenderer.invoke(IPC.deleteReusableSection, projectPath, id),
 
   readDraft: (
     projectPath: string,
@@ -307,14 +372,41 @@ const api = {
     return () => ipcRenderer.removeListener(IPC.previewClosed, listener);
   },
 
+  onPreviewExited: (callback: () => void): (() => void) => {
+    const listener = () => callback();
+    ipcRenderer.on(IPC.previewExited, listener);
+    return () => ipcRenderer.removeListener(IPC.previewExited, listener);
+  },
+
+  onReloadRequested: (callback: () => void): (() => void) => {
+    const listener = () => callback();
+    ipcRenderer.on(IPC.reloadRequested, listener);
+    return () => ipcRenderer.removeListener(IPC.reloadRequested, listener);
+  },
+
   ensureThemePreviewServer: (): Promise<ThemePreviewServerResult> =>
     ipcRenderer.invoke(IPC.themePreviewEnsure),
 
   publish: (
     projectPath: string,
     outDir: string,
-  ): Promise<{ ok: boolean; outputDir?: string; error?: string }> =>
-    ipcRenderer.invoke(IPC.publish, projectPath, outDir),
+  ): Promise<{
+    ok: boolean;
+    outputDir?: string;
+    revealed?: boolean;
+    error?: string;
+  }> => ipcRenderer.invoke(IPC.publish, projectPath, outDir),
+  onPublishLog: (listener: (chunk: string) => void): (() => void) => {
+    const wrapped = (_event: unknown, chunk: string): void => listener(chunk);
+    ipcRenderer.on(IPC.publishLog, wrapped);
+    return () => ipcRenderer.removeListener(IPC.publishLog, wrapped);
+  },
+
+  revealOutputFolder: (
+    projectPath: string,
+    outDir: string,
+  ): Promise<OperationResult> =>
+    ipcRenderer.invoke(IPC.revealOutputFolder, projectPath, outDir),
 
   dependenciesInstalled: (projectPath: string): Promise<boolean> =>
     ipcRenderer.invoke(IPC.depsInstalled, projectPath),
@@ -323,6 +415,8 @@ const api = {
     projectPath: string,
   ): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke(IPC.depsInstall, projectPath),
+  cancelInstall: (): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke(IPC.depsCancel),
 
   onInstallLog: (callback: (chunk: string) => void): (() => void) => {
     const listener = (_e: unknown, chunk: string) => callback(chunk);
@@ -342,8 +436,10 @@ const api = {
   cancelUpdateDownload: (): Promise<unknown> =>
     ipcRenderer.invoke(IPC.updaterCancel),
   installUpdate: (): Promise<unknown> => ipcRenderer.invoke(IPC.updaterInstall),
+  getLastUpdaterStatus: (): Promise<unknown> =>
+    ipcRenderer.invoke(IPC.updaterStatusGet),
   getAppVersion: (): Promise<string> => ipcRenderer.invoke(IPC.getAppVersion),
-  openConfigFolder: (): Promise<unknown> =>
+  openConfigFolder: (): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke(IPC.openConfigFolder),
 
   getNodeStatus: (): Promise<unknown> => ipcRenderer.invoke(IPC.nodeStatus),

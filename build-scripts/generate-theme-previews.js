@@ -61,7 +61,12 @@ function buildPreview(themeMeta, deps, astroCli) {
 
   // Turn the shipped schema sidecars + stubs into real pages/layout/CSS,
   // using the exact editor pipeline so previews match what users get.
-  const ensured = ensureVisualSchema(tempDir, path.join("src", "pages"));
+  // regenerateHashlessPages is required: the scaffold stubs have hash-less
+  // sidecars, so without it they are treated as out-of-sync and never
+  // materialized — every preview would build as an empty shell.
+  const ensured = ensureVisualSchema(tempDir, path.join("src", "pages"), undefined, {
+    regenerateHashlessPages: true,
+  });
   if (!ensured.ok) {
     throw new Error(
       `ensureVisualSchema failed for ${themeMeta.id}: ${ensured.error ?? "unknown"}`,

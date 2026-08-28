@@ -162,10 +162,55 @@ function runConfigChecks() {
         pkg.scripts['compile:main'].includes('bundle-preload.js'),
       'package.json: scripts.compile:main must bundle preload.js after tsc'
     );
-    assertConfig(
-      typeof pkg.scripts?.watch === 'string' && pkg.scripts.watch === 'node build-scripts/watch.js',
-      'package.json: scripts.watch must run build-scripts/watch.js'
+    const bootCheckSource = fs.readFileSync(
+      path.join(process.cwd(), 'build-scripts/boot-check.js'),
+      'utf8',
     );
+    assertConfig(
+      bootCheckSource.includes('mac-universal'),
+      'build-scripts/boot-check.js: mac packaged boot checks must support mac-universal output',
+    );
+    const mainTsconfig = JSON.parse(
+      fs.readFileSync(path.join(process.cwd(), 'tsconfig.main.json'), 'utf8'),
+    );
+    assertConfig(
+      !mainTsconfig.exclude?.includes('src/**/*.test.ts'),
+      'tsconfig.main.json: main/shared tests must remain in dedicated typecheck',
+    );
+    const eslintSource = fs.readFileSync(
+      path.join(process.cwd(), 'eslint.config.js'),
+      'utf8',
+    );
+    assertConfig(
+      eslintSource.includes('src/**/*.{ts,tsx}'),
+      'eslint.config.js: security rules must cover both TS and TSX source',
+    );
+    assertConfig(
+      typeof pkg.scripts?.watch === 'string' &&
+        pkg.scripts.watch === 'node build-scripts/watch.js',
+      'package.json: scripts.watch must run build-scripts/watch.js',
+    );
+
+    const dbReleaseScripts = [
+      'release:db:win',
+      'release:db:win:x64',
+      'release:db:win:arm64',
+      'release:db:mac',
+      'release:db:mac:ssh',
+      'release:db:linux',
+      'release:db:linux:x64',
+      'release:db:linux:arm64',
+      'release:db:all',
+    ];
+    for (const scriptName of dbReleaseScripts) {
+      const script = pkg.scripts?.[scriptName] || '';
+      assertConfig(
+        script.includes('RELEASE_PIPELINE=1') &&
+          script.includes('RELEASE_CHANNEL=db') &&
+          script.includes('release-gate.js'),
+        `package.json: ${scriptName} must fail closed through release-gate.js for the db channel`,
+      );
+    }
 
     const baseConfigPath = path.join(process.cwd(), 'electron-builder.base.yml');
     const githubConfigPath = path.join(process.cwd(), 'electron-builder.github.yml');
@@ -264,6 +309,38 @@ function run() {
   runSyntaxChecks();
   runConfigChecks();
 
+  // End-to-end gates that used to live OUTSIDE test:all — the renderer could
+  // fail to boot, coverage could regress, and generated pages could break the
+  // Astro build while this script exited 0 green.
+  // CI runs the packaged-app smoke in its own job (see test-all.yml); the
+  // matrix test job passes --skip-smoke so it does not duplicate the run.
+  // Local test:all keeps the smoke. Headless Linux still needs xvfb.
+  if (!process.argv.includes('--skip-smoke')) {
+    const smokeCommand =
+      process.platform === 'linux' && !process.env.DISPLAY
+        ? 'xvfb-run -a npm run smoke:runtime'
+        : 'npm run smoke:runtime';
+    const smokeResult = runCommand('smoke', smokeCommand, (out) => ({
+      ok: /Smoke run: renderer checks passed/.test(out),
+      passed: /Smoke run: renderer checks passed/.test(out) ? 1 : 0,
+    }));
+    results.smoke = { status: smokeResult.ok ? 'passed' : 'failed' };
+  } else {
+    results.smoke = { status: 'skipped' };
+  }
+
+  const astroResult = runCommand('astro-build', 'npm run test:astro-build', (out) => ({
+    ok: !/fail|error/i.test(out) && /All themes build successfully/.test(out),
+    passed: /All themes build successfully/.test(out) ? 1 : 0,
+  }));
+  results.astroBuild = { status: astroResult.ok ? 'passed' : 'failed' };
+
+  const covResult = runCommand('coverage', 'npm run test:cov', (out) => ({
+    ok: /Coverage thresholds passed/.test(out),
+    passed: /Coverage thresholds passed/.test(out) ? 1 : 0,
+  }));
+  results.coverage = { status: covResult.ok ? 'passed' : 'failed' };
+
   printBanner('SUMMARY');
 
   const summaryLines = [
@@ -274,6 +351,9 @@ function run() {
     `${colors.bold}Typecheck:${colors.reset} ${results.typecheck.status === 'passed' ? colors.green + '✓ PASS' : colors.red + '✗ FAIL'}${colors.reset}`,
     `${colors.bold}Syntax:${colors.reset}    ${results.syntax.status === 'passed' ? colors.green + '✓ PASS' : colors.red + '✗ FAIL'}${colors.reset} (${results.syntax.checked} checked${results.syntax.failed > 0 ? `, ${results.syntax.failed} failed` : ''})`,
     `${colors.bold}Config:${colors.reset}    ${results.config.status === 'passed' ? colors.green + '✓ PASS' : colors.red + '✗ FAIL'}${colors.reset} (${results.config.checks} checks${results.config.failed > 0 ? `, ${results.config.failed} failed` : ''})`,
+    `${colors.bold}Smoke:${colors.reset}     ${results.smoke.status === 'passed' ? colors.green + '✓ PASS' : results.smoke.status === 'skipped' ? colors.yellow + '⏭ SKIPPED' : colors.red + '✗ FAIL'}${colors.reset}`,
+    `${colors.bold}Astro build:${colors.reset} ${results.astroBuild.status === 'passed' ? colors.green + '✓ PASS' : colors.red + '✗ FAIL'}${colors.reset}`,
+    `${colors.bold}Coverage:${colors.reset}  ${results.coverage.status === 'passed' ? colors.green + '✓ PASS' : colors.red + '✗ FAIL'}${colors.reset}`,
   ];
   for (const line of summaryLines) {
     console.log(line);
@@ -293,7 +373,9 @@ function run() {
     }
   }
 
-  const allPassed = Object.values(results).every((r) => r.status === 'passed');
+  const allPassed = Object.values(results).every(
+    (r) => r.status === 'passed' || r.status === 'skipped',
+  );
   console.log('');
   if (allPassed) {
     console.log(`${colors.green}${colors.bold}✓ All checks passed!${colors.reset}`);

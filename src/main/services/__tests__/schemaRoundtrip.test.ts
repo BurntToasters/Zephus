@@ -189,7 +189,7 @@ describe("schema round-trip", () => {
     expect(astro).toContain('data-zephus-id="h"');
     expect(astro).toContain("@media (max-width: 720px)");
     expect(astro).toContain(
-      '[data-zephus-id="section-main"]{width:320px;height:240px}',
+      '[data-zephus-id="section-main"]{width:320px!important;height:240px!important}',
     );
     // The data payload attribute must not contain a literal apostrophe.
     const propMatch = astro.match(/data-zephus-props="([^"]*)"/);

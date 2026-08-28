@@ -13,46 +13,240 @@
         margin: 0;
         height: 100%;
         font-family:
-          system-ui,
-          -apple-system,
-          Segoe UI,
-          Roboto,
-          sans-serif;
-        background: #1e1e2e;
-        color: #cdd6f4;
+          ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+          "Liberation Mono", "Courier New", monospace;
+        background: #09090b; /* Zinc 950 matching app style */
+        color: #a1a1aa; /* Zinc 400 */
         overflow: hidden;
+        user-select: none;
       }
+
       .wrap {
         height: 100%;
         display: flex;
         flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        gap: 12px;
+        justify-content: space-between;
+        padding: 24px;
+        box-sizing: border-box;
+        position: relative;
       }
-      .logo {
-        font-size: 42px;
-        font-weight: 700;
-        letter-spacing: 2px;
-        color: #89b4fa;
-      }
-      .tag {
-        font-size: 13px;
-        opacity: 0.7;
-      }
-      .version {
+
+      /* Scanlines effect */
+      .wrap::after {
+        content: " ";
+        display: block;
         position: absolute;
-        bottom: 14px;
+        inset: 0;
+        background:
+          linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%),
+          linear-gradient(
+            90deg,
+            rgba(255, 0, 0, 0.06),
+            rgba(0, 255, 0, 0.02),
+            rgba(0, 0, 255, 0.06)
+          );
+        background-size:
+          100% 3px,
+          6px 100%;
+        z-index: 10;
+        pointer-events: none;
+        opacity: 0.45;
+      }
+
+      .terminal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 1px solid #27272a;
+        padding-bottom: 8px;
         font-size: 11px;
-        opacity: 0.5;
+        color: #71717a;
+      }
+
+      .terminal-dots {
+        display: flex;
+        gap: 6px;
+      }
+
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 99px;
+      }
+
+      .dot.red {
+        background: #ef4444;
+      }
+      .dot.yellow {
+        background: #f59e0b;
+      }
+      .dot.green {
+        background: #10b981;
+      }
+
+      .console {
+        flex: 1;
+        margin-top: 16px;
+        font-size: 12px;
+        line-height: 1.7;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .prompt {
+        color: #f4f4f5; /* Zinc 100 */
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .prompt::before {
+        content: "$";
+        color: #4f46e5; /* Indigo accent */
+        font-weight: 700;
+      }
+
+      /* Typewriter Animation for first prompt line */
+      .typing {
+        display: inline-block;
+        overflow: hidden;
+        white-space: nowrap;
+        border-right: 2px solid #8da2ff;
+        width: 0;
+        animation:
+          type 0.8s steps(18, end) forwards,
+          blink 0.75s step-end infinite;
+      }
+
+      .line {
+        opacity: 0;
+        transform: translateY(4px);
+        animation: fade-in-line 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      }
+
+      .line.success::before {
+        content: "[ok] ";
+        color: #10b981; /* Emerald green */
+        font-weight: 600;
+      }
+
+      .line.info {
+        color: #38bdf8; /* Sky blue */
+      }
+
+      /* Timed delays for sequential output appearance */
+      .delayed-1 {
+        animation-delay: 0.9s;
+      }
+      .delayed-2 {
+        animation-delay: 1.4s;
+      }
+      .delayed-3 {
+        animation-delay: 1.9s;
+      }
+      .delayed-4 {
+        animation-delay: 2.4s;
+      }
+      .delayed-5 {
+        animation-delay: 2.8s;
+      }
+
+      .version {
+        font-size: 10px;
+        color: #52525b; /* Zinc 600 */
+        align-self: flex-end;
+        font-family: var(--font-mono);
+      }
+
+      /* Blinking cursor at the end */
+      .cursor {
+        display: inline-block;
+        width: 6px;
+        height: 12px;
+        background: #8da2ff;
+        animation: blink 0.75s step-end infinite;
+        vertical-align: middle;
+        margin-left: 4px;
+      }
+
+      @keyframes type {
+        from {
+          width: 0;
+        }
+        to {
+          width: 140px;
+        }
+      }
+
+      @keyframes blink {
+        from,
+        to {
+          background-color: transparent;
+        }
+        50% {
+          background-color: #8da2ff;
+        }
+      }
+
+      @keyframes fade-in-line {
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          animation: none !important;
+          transition: none !important;
+        }
+
+        .typing {
+          width: auto;
+          border-right: 0;
+        }
+
+        .line {
+          opacity: 1;
+          transform: none;
+        }
+
+        .cursor {
+          animation: none !important;
+          opacity: 0;
+        }
       }
     </style>
   </head>
   <body>
     <div class="wrap">
-      <div class="logo">Zephus</div>
-      <div class="tag">Local WYSIWYG editor for Astro</div>
-      <div class="version" id="version-display">v0.1.0-db.12</div>
+      <div class="terminal-header">
+        <div class="terminal-dots">
+          <div class="dot red"></div>
+          <div class="dot yellow"></div>
+          <div class="dot green"></div>
+        </div>
+        <div>zephus_core_launcher</div>
+      </div>
+
+      <div class="console">
+        <div class="prompt">
+          <span class="typing">zephus --launch</span>
+        </div>
+        <div class="line delayed-1">Checking environment parameters...</div>
+        <div class="line success delayed-2">Node.js sandbox operational</div>
+        <div class="line success delayed-3">Local Git repository synced</div>
+        <div class="line success delayed-4">
+          Loaded 22 content block schemas
+        </div>
+        <div class="line info delayed-5">
+          Launching editor command center...<span class="cursor"></span>
+        </div>
+      </div>
+
+      <div class="version" id="version-display">v0.1.0-beta.5</div>
     </div>
   </body>
 </html>
