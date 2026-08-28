@@ -12,7 +12,7 @@ export interface LinkPickerModalState {
   kind: LinkPickerKind;
   pageOptions: LinkPickerPageOption[];
   pageValue: string;
-    /** The current link is a route not present in pageOptions — never silently replace it with the first listed page. */
+  /** The current link is a route not present in pageOptions — never silently replace it with the first listed page. */
   pageValueMissing?: boolean;
   rawValue: string;
   onKindChange: (value: LinkPickerKind) => void;

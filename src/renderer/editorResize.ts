@@ -25,7 +25,7 @@ const MIN_RESIZE_WIDTH = 40;
 const MIN_RESIZE_HEIGHT = 24;
 
 export function createResizeController(deps: ResizeDeps) {
-    /** Largest width a resized element may take without spilling outside the page: the content width of its containing… */
+  /** Largest width a resized element may take without spilling outside the page: the content width of its containing… */
   function maxResizeWidthFor(subject: HTMLElement): number {
     const parent = subject.parentElement;
     if (!parent) return Number.POSITIVE_INFINITY;

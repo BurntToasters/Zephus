@@ -11,7 +11,7 @@ export interface InlineEditTarget {
   multiline?: boolean;
   lineIndex?: number;
   pairSide?: "left" | "right";
-    /** Enables the inline formatting toolbar (bold/italic/link) for prose targets. */
+  /** Enables the inline formatting toolbar (bold/italic/link) for prose targets. */
   rich?: boolean;
   /** False where the text is rendered inside an `<a>`, so links are invalid. */
   allowLinks?: boolean;

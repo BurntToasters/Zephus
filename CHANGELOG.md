@@ -31,6 +31,7 @@
 **Packaging & CI:**
 - **Packaged boot check** (`smoke:packaged`): builds the app dir, launches the signed binary with `ZEPHUS_BOOT_CHECK=1`, asserts the renderer loads and the process exits 0 — the gate that shipped binaries actually boot (the runtime smoke is intentionally disabled packaged). Wired into the CI build-smoke job on all three OSes (xvfb on Linux).
 - **Smoke publish no longer opens Finder windows** — `buildAndReveal` gains `reveal: false` in smoke mode; stale `zephus-smoke-*` temp dirs purge automatically (older than 10 min).
+- **GitHub release authentication now uses the `gh` CLI credential store** — stale `.env` tokens can no longer break draft creation or artifact uploads, matching ROSI's release flow.
 
 **UX polish:**
 - **Window title now follows the project + page** ("Site — Page — Zephus"), reset on close — asserted by the smoke suite.

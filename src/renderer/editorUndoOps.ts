@@ -94,7 +94,7 @@ export function createUndoOps(deps: UndoOpsDeps) {
     updateUndoRedoButtons();
   }
 
-    /** Undoing a site change back to the saved baseline leaves the site clean — any site draft on disk is then stale, and… */
+  /** Undoing a site change back to the saved baseline leaves the site clean — any site draft on disk is then stale, and… */
   function clearStaleDraftAfterRevert(): void {
     if (!state.project || state.siteDirty || state.pendingSiteDocument) return;
     void window.zephus

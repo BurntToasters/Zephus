@@ -3,6 +3,7 @@
 require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
+const { assertGitHubCliAuthenticated } = require("./github-cli");
 
 const failures = [];
 
@@ -41,8 +42,13 @@ try {
   );
 }
 
-if (!process.env.GH_TOKEN) {
-  failures.push("GH_TOKEN is required to upload release assets and publish the draft.");
+try {
+  assertGitHubCliAuthenticated();
+} catch (error) {
+  failures.push(
+    "GitHub CLI authentication is required to upload release assets: " +
+      (error && error.message ? error.message : String(error)),
+  );
 }
 
 if (!process.env.GPG_KEY_ID) {
@@ -81,4 +87,4 @@ if (failures.length > 0) {
   for (const f of failures) console.error(`   - ${f}`);
   process.exit(1);
 }
-console.log("✓ Release gate passed (GH_TOKEN, GPG key, signing config present).");
+console.log("✓ Release gate passed (GitHub CLI, GPG key, signing config present).");
