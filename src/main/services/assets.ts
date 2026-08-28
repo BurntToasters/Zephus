@@ -170,16 +170,15 @@ export async function importImage(
   projectPath: string,
   publicDir: string,
 ): Promise<ImportImageResult> {
-  const result = await dialog.showOpenDialog(
+  const options: Electron.OpenDialogOptions = {
+    title: "Choose an Image",
+    properties: ["openFile"],
+    filters: [{ name: "Images", extensions: IMAGE_EXTENSIONS }],
+  };
+  const result =
     win && !win.isDestroyed()
-      ? win
-      : (undefined as unknown as Electron.BaseWindow),
-    {
-      title: "Choose an Image",
-      properties: ["openFile"],
-      filters: [{ name: "Images", extensions: IMAGE_EXTENSIONS }],
-    },
-  );
+      ? await dialog.showOpenDialog(win, options)
+      : await dialog.showOpenDialog(options);
   if (result.canceled || result.filePaths.length === 0) {
     return { ok: false, canceled: true };
   }
@@ -206,21 +205,20 @@ export async function importAssets(
   projectPath: string,
   publicDir: string,
 ): Promise<ImportAssetsResult> {
-  const result = await dialog.showOpenDialog(
+  const options: Electron.OpenDialogOptions = {
+    title: "Choose Assets",
+    properties: ["openFile", "multiSelections"],
+    filters: [
+      { name: "All Assets", extensions: ALL_ASSET_EXTENSIONS },
+      { name: "Images", extensions: EXTENSIONS_BY_CATEGORY.images },
+      { name: "Media", extensions: EXTENSIONS_BY_CATEGORY.media },
+      { name: "Documents", extensions: EXTENSIONS_BY_CATEGORY.documents },
+    ],
+  };
+  const result =
     win && !win.isDestroyed()
-      ? win
-      : (undefined as unknown as Electron.BaseWindow),
-    {
-      title: "Choose Assets",
-      properties: ["openFile", "multiSelections"],
-      filters: [
-        { name: "All Assets", extensions: ALL_ASSET_EXTENSIONS },
-        { name: "Images", extensions: EXTENSIONS_BY_CATEGORY.images },
-        { name: "Media", extensions: EXTENSIONS_BY_CATEGORY.media },
-        { name: "Documents", extensions: EXTENSIONS_BY_CATEGORY.documents },
-      ],
-    },
-  );
+      ? await dialog.showOpenDialog(win, options)
+      : await dialog.showOpenDialog(options);
   if (result.canceled || result.filePaths.length === 0) {
     return { ok: false, imported: [], errors: [] };
   }
