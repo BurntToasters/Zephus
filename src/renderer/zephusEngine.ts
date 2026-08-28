@@ -2173,8 +2173,10 @@ function pushUndoForControlChange(): void {
   if (!inspectorEditLatch.isActive()) pushUndo();
 }
 
-/** Cache of webPath → data URL for canvas image hydration. */
+/** Cache of webPath → data URL for canvas image hydration. Capped to prevent
+ *  unbounded memory growth in gallery-heavy projects. */
 const assetDataUrlCache = new Map<string, Promise<string | null>>();
+const ASSET_CACHE_MAX_ENTRIES = 100;
 
 function clearAssetCache(): void {
   assetDataUrlCache.clear();
@@ -2190,6 +2192,11 @@ function fetchAssetDataUrl(webPath: string): Promise<string | null> {
   if (!state.project) return Promise.resolve(null);
   const cached = assetDataUrlCache.get(webPath);
   if (cached) return cached;
+  // LRU eviction: drop the oldest entry when the cache exceeds the cap.
+  if (assetDataUrlCache.size >= ASSET_CACHE_MAX_ENTRIES) {
+    const oldest = assetDataUrlCache.keys().next().value;
+    if (oldest !== undefined) assetDataUrlCache.delete(oldest);
+  }
   const project = state.project;
   const promise = window.zephus
     .readAssetDataUrl(project.path, project.astro.publicDir, webPath)
