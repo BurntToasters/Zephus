@@ -57,12 +57,7 @@ function readChangelogReleaseBody() {
   return body;
 }
 
-/**
- * The commit the draft must target: the latest commit on RELEASE_BRANCH
- * (e.g. beta), resolved from the remote so the Windows VM does not need to
- * be checked out at that commit. FORCE_TARGET_COMMIT overrides for manual
- * wiring.
- */
+/** The commit the draft must target: the latest commit on RELEASE_BRANCH (e.g. */
 async function latestBranchCommit() {
   const forced = process.env.FORCE_TARGET_COMMIT;
   if (forced && forced.trim()) {

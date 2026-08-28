@@ -1,8 +1,4 @@
-/**
- * Canvas resize handles: the corner grips on selected blocks/sections and the
- * pointer/keyboard resizing they drive. Writes back to the block/section
- * style (desktop base or the active viewport's responsive override).
- */
+/** Canvas resize handles: the corner grips on selected blocks/sections and the pointer/keyboard resizing they drive. */
 
 import type { BlockStyle, EditorBlock, SectionNode } from "../main/types";
 
@@ -29,11 +25,7 @@ const MIN_RESIZE_WIDTH = 40;
 const MIN_RESIZE_HEIGHT = 24;
 
 export function createResizeController(deps: ResizeDeps) {
-  /**
-   * Largest width a resized element may take without spilling outside the
-   * page: the content width of its containing element (section body for
-   * blocks, the canvas for sections). Infinity when no sensible bound exists.
-   */
+    /** Largest width a resized element may take without spilling outside the page: the content width of its containing… */
   function maxResizeWidthFor(subject: HTMLElement): number {
     const parent = subject.parentElement;
     if (!parent) return Number.POSITIVE_INFINITY;

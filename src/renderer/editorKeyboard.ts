@@ -1,8 +1,4 @@
-/**
- * Global keyboard shortcuts for the editor. Extracted from the engine: the
- * guards (modal open, editing, chrome-control focus, loading/closed) and the
- * visual/code dispatch live in one testable place.
- */
+/** Global keyboard shortcuts for the editor. */
 
 import type { EditorSessionState } from "./editorSession";
 import type { EditorBlock, SectionNode } from "../main/types";

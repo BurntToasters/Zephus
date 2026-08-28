@@ -18,10 +18,7 @@ export interface EditorBlockRenderOptions {
   posts?: RenderPostEntry[];
 }
 
-/**
- * Defense-in-depth sanitizer for raw `html` blocks on the live editor canvas.
- * Parsing into a <template> is inert (no script execution, no resource loads).
- */
+/** Defense-in-depth sanitizer for raw `html` blocks on the live editor canvas. */
 export function sanitizeHtmlForCanvas(html: string): string {
   const tpl = document.createElement("template");
   tpl.innerHTML = html;
@@ -38,6 +35,10 @@ export function sanitizeHtmlForCanvas(html: string): string {
       tag === "object" ||
       tag === "embed" ||
       tag === "iframe" ||
+      // Forms can submit or navigate the editor document even when their
+      // action is same-origin; the live canvas is a preview, never a form
+      // runtime. The built site still preserves authored HTML.
+      tag === "form" ||
       // <base> rewrites every relative URL on the canvas (images, links, css)
       // to an attacker-chosen origin — remove it outright.
       tag === "base"
@@ -76,11 +77,7 @@ export function sanitizeHtmlForCanvas(html: string): string {
   return tpl.innerHTML;
 }
 
-/**
- * Filters a srcset attribute ("/a.png 1x, /b.png 2x") down to entries with
- * safe URL schemes. Returns null when every entry is dangerous (the caller
- * then drops the attribute). An empty srcset is treated as safe (no-op).
- */
+/** Filters a srcset attribute ("/a.png 1x, /b.png 2x") down to entries with safe URL schemes. */
 function sanitizeSrcset(value: string): string | null {
   const entries = value
     .split(",")

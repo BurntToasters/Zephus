@@ -25,7 +25,7 @@ afterEach(() => {
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
-function waitFor(onChange: () => void, ms = 10000): Promise<void> {
+function waitFor(onChange: () => boolean, ms = 10000): Promise<void> {
   return new Promise((resolve, reject) => {
     const started = Date.now();
     const timer = setInterval(() => {
@@ -85,6 +85,18 @@ describe("watchFile", () => {
     fs.writeFileSync(path.join(project, pageRel), "<h1>external2</h1>");
     await waitFor(() => fires > 0);
     expect(fires).toBeGreaterThan(0);
+  });
+
+  it("does not retain a self-write marker for another file", async () => {
+    let fired = false;
+    watchFile(project, pageRel, () => {
+      fired = true;
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    markSelfWritten("src/pages/about.astro");
+    fs.writeFileSync(path.join(project, pageRel), "<h1>external</h1>");
+    await waitFor(() => fired);
+    expect(fired).toBe(true);
   });
 
   it("matches only the watched file from event filenames", () => {

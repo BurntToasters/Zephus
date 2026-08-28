@@ -45,9 +45,7 @@ export function handlePlainTextPaste(event: ClipboardEvent): void {
   }
 }
 
-/** Extracts the TEXT of an HTML fragment, mapping <br> and block boundaries
- *  to newlines — container.textContent fused "a<br>b" into "ab" for sources
- *  that expose only text/html. */
+/** Extracts the TEXT of an HTML fragment, mapping <br> and block boundaries to newlines — container.textContent fused… */
 function htmlTextContent(root: Element): string {
   let out = "";
   for (const node of Array.from(root.childNodes)) {
@@ -96,10 +94,7 @@ export function syncUndoRedoToolbar(options: {
   );
 }
 
-/**
- * Mounts a Solid panel when its container exists. Missing containers are
- * treated as optional (success). Thrown mount errors are reported via onError.
- */
+/** Mounts a Solid panel when its container exists. */
 export function tryMountPanel(
   label: string,
   container: HTMLElement | null | undefined,

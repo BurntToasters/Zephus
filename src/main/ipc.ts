@@ -2,6 +2,11 @@ import { BrowserWindow, dialog, ipcMain, app, shell } from "electron";
 import * as fs from "fs";
 import * as path from "path";
 import {
+  approved,
+  approveProjectRoot,
+  assertApprovedProject,
+} from "./ipcApproval";
+import {
   GlobalSettings,
   OperationResult,
   PageDocument,
@@ -100,38 +105,6 @@ interface IpcRegistrationOptions {
   clearUpdateInstalling?: () => void;
   /** Smoke runs must not pop Finder windows (publish reveal). */
   isSmoke?: boolean;
-}
-
-const approvedProjectRoots = new Set<string>();
-
-function canonicalProjectRoot(projectPath: string): string {
-  if (typeof projectPath !== "string" || !projectPath) {
-    throw new Error("Invalid project path.");
-  }
-  const resolved = path.resolve(projectPath);
-  try {
-    return fs.realpathSync.native(resolved);
-  } catch {
-    return resolved;
-  }
-}
-
-function approveProjectRoot(projectPath: string): string {
-  const root = canonicalProjectRoot(projectPath);
-  approvedProjectRoots.add(root);
-  return root;
-}
-
-function assertApprovedProject(projectPath: string): void {
-  const root = canonicalProjectRoot(projectPath);
-  if (!approvedProjectRoots.has(root)) {
-    throw new Error("Unauthorized project path.");
-  }
-}
-
-function approved<T>(projectPath: string, fn: () => T): T {
-  assertApprovedProject(projectPath);
-  return fn();
 }
 
 export function registerIpcHandlers(

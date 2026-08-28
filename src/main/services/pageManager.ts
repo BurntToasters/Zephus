@@ -27,9 +27,7 @@ function resolvePage(projectPath: string, relativePath: string): string {
   return full;
 }
 
-/** A page path must live under pagesDir and carry a page extension. Without
- *  this, delete/rename/duplicate accepted ANY in-root file (.env, .git/config,
- *  package.json) — arbitrary project-file deletion and exfiltration. */
+/** A page path must live under pagesDir and carry a page extension. */
 function pageInsidePagesDir(page: string, pagesDir: string): boolean {
   const normPage = page.replace(/\\/g, "/").replace(/^\/+/, "");
   const normDir = pagesDir.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");

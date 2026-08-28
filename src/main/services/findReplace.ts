@@ -1,10 +1,4 @@
-/**
- * Project-wide text search and replace across saved page content.
- *
- * Operates on the `.zephus/pages/*.json` sidecars (the source of truth), not on
- * generated `.astro` output, so a replace goes through `writePageDocument` and
- * regenerates pages the same way an editor save does.
- */
+/** Project-wide text search and replace across saved page content. */
 
 import {
   BlockNode,

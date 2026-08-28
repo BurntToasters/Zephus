@@ -1,9 +1,5 @@
 #!/usr/bin/env node
-/**
- * Release gate: fails the pipeline fast when credentials required for a
- * VERIFIABLE release are missing. Prevents shipping unsigned artifacts with
- * green exits.
- */
+/** Release gate: fails the pipeline fast when credentials required for a VERIFIABLE release are missing. */
 require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
@@ -14,6 +10,12 @@ const failures = [];
 // version's section is missing, so a release never ships without notes.
 const packageJson = require("../package.json");
 const VERSION = packageJson.version;
+const RELEASE_CHANNEL = (process.env.RELEASE_CHANNEL || "").trim().toLowerCase();
+if (RELEASE_CHANNEL === "db" && !/-db(?:[.-]|$|[0-9])/i.test(VERSION)) {
+  failures.push(
+    `RELEASE_CHANNEL=db requires a -db version, but package.json is ${VERSION}.`,
+  );
+}
 const CHANGELOG_PATH = path.join(__dirname, "..", "CHANGELOG.md");
 try {
   const changelog = fs.readFileSync(CHANGELOG_PATH, "utf8");

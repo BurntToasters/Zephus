@@ -1,10 +1,5 @@
 // @vitest-environment jsdom
-/**
- * Parser parity: the main-process regex parser (schema.ts) and the renderer's
- * DOM parser (editorParse.ts) must produce the SAME section/block tree from
- * the same managed page source. Divergence here means a Code→Visual→Save
- * cycle corrupts content (the tree is re-serialized from whichever parser ran).
- */
+/** Parser parity: the main-process regex parser (schema.ts) and the renderer's DOM parser (editorParse.ts) must produce… */
 import { describe, it, expect } from "vitest";
 import { parseSectionsFromSource } from "../../main/services/schema";
 import { createEditorPageParser } from "../editorParse";

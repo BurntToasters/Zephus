@@ -1,10 +1,5 @@
 #!/usr/bin/env node
-/**
- * Full-pipeline Astro build check: scaffolds every bundled theme, generates
- * the managed schema, and runs a REAL `astro build` on each site. Slower than
- * the unit-level compiler check (astroBuild.test.ts) but proves the generated
- * pages actually build and render with Astro's full toolchain.
- */
+/** Full-pipeline Astro build check: scaffolds every bundled theme, generates the managed schema, and runs a REAL `astro… */
 const fs = require("fs");
 const os = require("os");
 const path = require("path");

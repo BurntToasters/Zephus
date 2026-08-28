@@ -14,16 +14,7 @@ export interface NodePathValidation {
   error?: string;
 }
 
-/**
- * Validates a user/renderer-supplied custom Node.js binary path *before* it is
- * persisted or executed. A renderer compromise must not be able to point the
- * app at an arbitrary executable that is later spawned (defense in depth on top
- * of contextIsolation/sandbox). Requirements:
- *   - absolute path
- *   - exists and is a regular file (symlinks to a file are allowed via stat)
- *   - basename is `node` or `node.exe` (case-insensitive)
- * Pure/synchronous and never spawns the binary; safe to call on every write.
- */
+/** Validates a user/renderer-supplied custom Node.js binary path *before* it is persisted or executed. */
 export function validateNodePath(input: unknown): NodePathValidation {
   if (typeof input !== "string" || input.trim().length === 0) {
     return { ok: false, error: "Node.js path must be a non-empty string." };
@@ -51,10 +42,7 @@ export function validateNodePath(input: unknown): NodePathValidation {
   return { ok: true, path: candidate };
 }
 
-/**
- * Minimum Node.js version required to build/preview Astro 6 projects.
- * Astro 6 dropped support for Node 18 and 20.
- */
+/** Minimum Node.js version required to build/preview Astro 6 projects. */
 export const MIN_NODE_VERSION = { major: 22, minor: 12, patch: 0 } as const;
 
 export const MIN_NODE_VERSION_STRING = `${MIN_NODE_VERSION.major}.${MIN_NODE_VERSION.minor}.${MIN_NODE_VERSION.patch}`;
@@ -276,10 +264,7 @@ const MISSING_MESSAGE =
   `Install Node.js from https://nodejs.org, or set a custom Node.js location ` +
   `in Settings if it is installed in a non-standard directory.`;
 
-/**
- * Resolves and evaluates the Node.js the app will use to spawn builds.
- * Considers the optional user-configured custom path first. Never throws.
- */
+/** Resolves and evaluates the Node.js the app will use to spawn builds. */
 export async function checkNodeVersion(
   customPath?: string | null,
 ): Promise<NodeCheckResult> {

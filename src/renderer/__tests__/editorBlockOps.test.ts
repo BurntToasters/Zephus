@@ -92,7 +92,10 @@ function makeDeps(overrides: Record<string, unknown> = {}) {
       children: [],
     }),
     defaultProps: () => ({}),
-    uid: () => `u${Math.random().toString(36).slice(2)}`,
+    uid: (() => {
+      let nextUid = 0;
+      return () => `u${nextUid++}`;
+    })(),
     ...overrides,
   } as never;
   return { deps, state, statuses };

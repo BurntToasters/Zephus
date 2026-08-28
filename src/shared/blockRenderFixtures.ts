@@ -88,6 +88,16 @@ export const BLOCK_RENDER_FIXTURES: BlockNode[] = [
     buttonHref: "/start",
     cls: "",
   }),
+  blockRenderFixture("postlist", {
+    folder: "/posts",
+    limit: "5",
+    showDate: "true",
+    showAuthor: "false",
+    showExcerpt: "true",
+    showImage: "false",
+    emptyText: "No posts.",
+    cls: "",
+  }),
 ];
 
 /** Matches Astro/build output; editor serialization must use this, not canvas caps. */

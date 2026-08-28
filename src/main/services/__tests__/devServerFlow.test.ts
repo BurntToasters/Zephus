@@ -3,6 +3,7 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import { EventEmitter } from "events";
+import type { Mock } from "vitest";
 
 const spawnMock = vi.hoisted(() => vi.fn());
 const buildSpawnEnvMock = vi.hoisted(() => vi.fn());
@@ -38,13 +39,13 @@ function fakeChild(): EventEmitter & {
   pid: number;
   stdout: EventEmitter;
   stderr: EventEmitter;
-  kill: ReturnType<typeof vi.fn>;
+  kill: Mock<() => boolean>;
 } {
   const child = new EventEmitter() as EventEmitter & {
     pid: number;
     stdout: EventEmitter;
     stderr: EventEmitter;
-    kill: ReturnType<typeof vi.fn>;
+    kill: Mock<() => boolean>;
   };
   child.pid = 4242;
   child.stdout = new EventEmitter();

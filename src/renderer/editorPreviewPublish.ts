@@ -1,9 +1,4 @@
-/**
- * Preview / publish / dependency-install for the editor. Extracted from the
- * engine so the ~370 lines and their three pieces of module state
- * (previewStartInFlight, publishInFlight, previewLogSubscriptions) live in
- * one place with an explicit deps contract.
- */
+/** Preview / publish / dependency-install for the editor. */
 
 import { appendCappedLog } from "./editorLog";
 import { renderPublishSuccessModalBody } from "./MiscModals";
@@ -83,7 +78,7 @@ export function createPreviewPublishActions(deps: PreviewPublishDeps) {
     ] as const) {
       const button = $(id);
       button.classList.toggle("active", vp === value);
-      button.setAttribute("aria-pressed", String(vp === value));
+      button.setAttribute("aria-checked", String(vp === value));
     }
     // Always repaint in visual mode: while the preview window is open the wrap
     // classes shrink the canvas container immediately, but the block HTML and

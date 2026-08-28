@@ -76,12 +76,12 @@ describe("start view tabs", () => {
 
     expect(createTab.classList.contains("active")).toBe(true);
     expect(createTab.getAttribute("aria-selected")).toBe("true");
-    expect(
-      document.getElementById("pane-create")!.classList.contains("hidden"),
-    ).toBe(false);
-    expect(
-      document.getElementById("pane-recent")!.classList.contains("hidden"),
-    ).toBe(true);
+    const createPane = document.getElementById("pane-create")!;
+    const recentPane = document.getElementById("pane-recent")!;
+    expect(createPane.classList.contains("hidden")).toBe(false);
+    expect(createPane.hidden).toBe(false);
+    expect(recentPane.classList.contains("hidden")).toBe(true);
+    expect(recentPane.hidden).toBe(true);
   });
 
   it("moves focus with arrow keys (roving tabindex)", async () => {

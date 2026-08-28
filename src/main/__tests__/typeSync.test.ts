@@ -2,14 +2,7 @@ import { describe, it, expect } from "vitest";
 import * as fs from "fs";
 import * as path from "path";
 
-/**
- * The EditorBlockType union is declared in BOTH src/main/types.ts and
- * src/renderer/zephus.d.ts and must stay in sync (the documented invariant).
- * The two files live under separate tsconfig rootDirs, so a one-sided edit
- * compiles cleanly and silently breaks editor/build render parity at runtime.
- * This guard parses the union members from each source and fails if they
- * diverge.
- */
+/** The EditorBlockType union is declared in BOTH src/main/types.ts and src/renderer/zephus.d.ts and must stay in sync… */
 function extractBlockTypes(file: string): string[] {
   const source = fs.readFileSync(file, "utf8");
   const match = /EditorBlockType\s*=\s*([\s\S]*?);/.exec(source);

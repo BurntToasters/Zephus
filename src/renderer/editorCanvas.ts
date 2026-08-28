@@ -1,9 +1,4 @@
-/**
- * Canvas rendering + drag/drop + the properties (inspector) panel. Extracted
- * from the engine so the ~500 lines and their module state (drag slots, drop
- * indicator, double-click tracking, inspector selection key) live in one
- * place with an explicit deps contract.
- */
+/** Canvas rendering + drag/drop + the properties (inspector) panel. */
 
 import {
   updateCanvas,

@@ -114,7 +114,7 @@ describe("settings modal", () => {
     const { deps, getProps } = makeDeps();
     const actions = createSettingsModalActions(deps);
     await actions.openSettingsModal();
-    await new Promise((r) => setTimeout(r, 0));
+    await Promise.resolve();
     expect(getProps()).not.toBeNull();
   });
 
@@ -122,7 +122,7 @@ describe("settings modal", () => {
     const { deps, writes, getProps, getActions } = makeDeps();
     const actions = createSettingsModalActions(deps);
     await actions.openSettingsModal();
-    await new Promise((r) => setTimeout(r, 0));
+    await Promise.resolve();
 
     getProps()!.onSettingChange("theme", "light");
     const save = getActions().find((a) => a.label === "Save")!;
@@ -139,7 +139,7 @@ describe("settings modal", () => {
     const { deps, writes, getActions } = makeDeps();
     const actions = createSettingsModalActions(deps);
     await actions.openSettingsModal();
-    await new Promise((r) => setTimeout(r, 0));
+    await Promise.resolve();
 
     const reset = getActions().find((a) => a.label === "Reset to Defaults")!;
     await reset.onClick();
@@ -156,7 +156,7 @@ describe("settings modal", () => {
     ).confirmDestructive = vi.fn(async () => false);
     const actions = createSettingsModalActions(deps);
     await actions.openSettingsModal();
-    await new Promise((r) => setTimeout(r, 0));
+    await Promise.resolve();
 
     const reset = getActions().find((a) => a.label === "Reset to Defaults")!;
     await reset.onClick();
@@ -167,7 +167,7 @@ describe("settings modal", () => {
     const { deps, getProps } = makeDeps();
     const actions = createSettingsModalActions(deps);
     await actions.openSettingsModal();
-    await new Promise((r) => setTimeout(r, 0));
+    await Promise.resolve();
 
     (
       window as unknown as { zephus: { pickNodePath: unknown } }
@@ -189,7 +189,7 @@ describe("settings modal", () => {
     const { deps, getProps } = makeDeps();
     const actions = createSettingsModalActions(deps);
     await actions.openSettingsModal();
-    await new Promise((r) => setTimeout(r, 0));
+    await Promise.resolve();
 
     await getProps()!.onAutoNodePath?.();
     expect(
@@ -202,7 +202,7 @@ describe("settings modal", () => {
     const { deps, getProps, getActions, getCheckCalls } = makeDeps();
     const actions = createSettingsModalActions(deps);
     await actions.openSettingsModal();
-    await new Promise((r) => setTimeout(r, 0));
+    await Promise.resolve();
 
     await getProps()!.onUpdaterAction("check");
     expect(getCheckCalls()).toBe(1);

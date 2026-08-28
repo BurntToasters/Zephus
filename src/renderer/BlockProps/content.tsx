@@ -1,7 +1,4 @@
-/**
- * Per-block-type content editors (the ContentGroup switch). Split from
- * BlockProperties.tsx so each block type's editor is a small focused case.
- */
+/** Per-block-type content editors (the ContentGroup switch). */
 
 import {
   ButtonVariantField,

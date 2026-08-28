@@ -2,13 +2,7 @@ import type { GlobalSettings } from "../types";
 
 export type ReleaseFeedChannel = "latest" | "beta" | "db";
 
-/**
- * Stability ranking used to decide allowed transitions between channels.
- * Higher = more stable. This intentionally diverges from raw semver, where
- * prerelease tags are compared alphabetically (so "beta" < "db"). For Zephus,
- * `db` (Developer Beta) is the least stable / bleeding edge, then `beta`, then
- * stable releases.
- */
+/** Stability ranking used to decide allowed transitions between channels. */
 const DEVELOPER_RANK = 0;
 const BETA_RANK = 1;
 const STABLE_RANK = 2;
@@ -107,26 +101,7 @@ function compareBase(
   return 0;
 }
 
-/**
- * Decides whether `candidate` should be offered as an update to `current`,
- * using Zephus channel semantics rather than raw semver:
- *
- *  - A newer base version (major.minor.patch) is always an upgrade.
- *  - An older base version is never an upgrade (no downgrades).
- *  - At the same base version, moving to a more stable channel is an upgrade
- *    (db -> beta -> stable). Moving to a less stable channel is not.
- *  - Within the same base + same channel, a higher prerelease build wins.
- *
- * Examples (all return true):
- *   isChannelUpgrade("0.1.0-db.1", "0.1.0-beta.5")
- *   isChannelUpgrade("0.1.0-db.1", "0.1.0")
- *   isChannelUpgrade("0.1.0-db.1", "0.1.0-db.2")
- *
- * Examples (all return false):
- *   isChannelUpgrade("0.2.0-db.1", "0.1.0")        // older base
- *   isChannelUpgrade("0.1.0", "0.1.0-beta.5")      // same base, less stable
- *   isChannelUpgrade("0.1.0-beta.3", "0.1.0-db.9") // same base, less stable
- */
+/** Decides whether `candidate` should be offered as an update to `current`, using Zephus channel semantics rather than… */
 export function isChannelUpgrade(current: string, candidate: string): boolean {
   const c = parseVersion(current);
   const n = parseVersion(candidate);
@@ -139,10 +114,7 @@ export function isChannelUpgrade(current: string, candidate: string): boolean {
   return n.pre > c.pre;
 }
 
-/** Stable-channel safety: a candidate with a prerelease tag must never be
- *  offered on the stable feed. GitHub's /releases/latest can point at a
- *  prerelease build (a public beta marked as the "latest" release), which
- *  previously flowed to stable users as if it were a production release. */
+/** Stable-channel safety: a candidate with a prerelease tag must never be offered on the stable feed. */
 export function isStableChannelCandidate(
   feed: ReleaseFeedChannel,
   candidate: string,
@@ -151,13 +123,7 @@ export function isStableChannelCandidate(
   return versionStabilityRank(candidate) === STABLE_RANK;
 }
 
-/**
- * Whether electron-updater's `allowDowngrade` must be enabled for a given
- * feed + installed version. This is only needed when graduating to a more
- * stable channel at the same base version, where the target build is a lower
- * semver (e.g. db.1 -> beta.4). `isChannelUpgrade` remains the final gate, so
- * enabling this never allows an actual base-version downgrade.
- */
+/** Whether electron-updater's `allowDowngrade` must be enabled for a given feed + installed version. */
 export function shouldAllowFeedDowngrade(
   feed: ReleaseFeedChannel,
   installedVersion: string,

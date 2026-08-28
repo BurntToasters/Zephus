@@ -1,8 +1,4 @@
-/**
- * Site-level editing modals: the Site Shell editor and the Design System
- * editor. Both stage their changes into the pending site document (written
- * on Save, discarded on revert) — one module, one deps contract.
- */
+/** Site-level editing modals: the Site Shell editor and the Design System editor. */
 
 import { renderDesignSystemModalBody } from "./DesignSystemModal";
 import { renderSiteShellModalBody } from "./MiscModals";
@@ -221,11 +217,7 @@ export function createSiteEditorActions(deps: SiteEditorDeps) {
     registerCleanup(shellModalDispose);
   }
 
-  /**
-   * Validates the site URL and strips any trailing slash. Returns null when the
-   * value is not a usable absolute http(s) origin, so the caller can reject it —
-   * a malformed base would otherwise produce broken canonical/sitemap URLs.
-   */
+    /** Validates the site URL and strips any trailing slash. */
   function normalizeSiteUrl(value: string): string | null {
     const trimmed = value.trim();
     if (!trimmed) return "";

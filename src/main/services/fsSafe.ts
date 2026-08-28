@@ -2,11 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 import log from "electron-log";
 
-/**
- * Writes a file atomically: write to a temp sibling, then rename over the
- * target. Rename is atomic on the same filesystem, so a crash mid-write can
- * never leave a half-written/corrupt file.
- */
+/** Writes a file atomically: write to a temp sibling, then rename over the target. */
 export function writeFileAtomic(file: string, content: string): void {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const tmp = `${file}.tmp-${process.pid}-${Date.now()}`;

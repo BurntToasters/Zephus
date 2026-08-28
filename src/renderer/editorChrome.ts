@@ -1,9 +1,4 @@
-/**
- * Window chrome: startup guards (close/reload with unsaved work), toolbar
- * button wiring, preview-window listeners, viewport toggles, keyboard
- * registration, and the bootstrap sequence (settings, updater, last-project
- * restore, first-run onboarding).
- */
+/** Window chrome: startup guards (close/reload with unsaved work), toolbar button wiring, preview-window listeners… */
 
 import { isGlobalDirty } from "./editorSession";
 import type { EditorSessionState } from "./editorSession";

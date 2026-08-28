@@ -405,6 +405,20 @@ describe("editorSave runSave", () => {
     );
   });
 
+  it("refreshes indicators after a page succeeds but site persistence is rejected", async () => {
+    const state = makeState({ siteDirty: true });
+    const { deps } = makeDeps(state, {
+      persistPendingSiteDocument: vi.fn(async () => false),
+    });
+    const { performSave } = createEditorSaveActions(deps);
+
+    expect(await performSave()).toBe(false);
+    expect(state.pageDirty).toBe(false);
+    expect(state.siteDirty).toBe(true);
+    expect(deps.persistPendingSiteDocument).toHaveBeenCalled();
+    expect(deps.renderDirtyIndicators).toHaveBeenCalled();
+  });
+
   it("reports a draft-clear failure without failing the save", async () => {
     const state = makeState();
     const { deps, clearDraft } = makeDeps(state);

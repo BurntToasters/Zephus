@@ -1,9 +1,4 @@
-/**
- * Home screen status + updater UI. Extracted from the engine: the home
- * recovery cards, recent-projects list, sidebar update status, and the
- * update prompts all read the same module state (updater snapshot, draft
- * summaries) — one module, one deps contract.
- */
+/** Home screen status + updater UI. */
 
 import { updateHomeDraftRecovery } from "./HomeDraftRecovery";
 import { updateRecentProjects } from "./RecentProjects";

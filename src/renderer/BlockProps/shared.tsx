@@ -1,8 +1,4 @@
-/**
- * Shared field components + state contract for the per-block-type property
- * editors. Split from BlockProperties.tsx so each block type's editor lives
- * in a small focused file.
- */
+/** Shared field components + state contract for the per-block-type property editors. */
 
 import { SelectField } from "../SectionProperties";
 export {

@@ -118,7 +118,7 @@ describe("schema service", () => {
       ...current.pageDocument!,
       sections: [
         {
-          ...current.pageDocument!.sections[0],
+          ...current.pageDocument!.sections[0]!,
           children: [
             {
               id: "b1",
@@ -188,7 +188,7 @@ describe("schema service", () => {
       ...current.pageDocument!,
       sections: [
         {
-          ...current.pageDocument!.sections[0],
+          ...current.pageDocument!.sections[0]!,
           props: { wrapper: "box", cls: "team-shell" },
           style: {
             background: "#eef2ff",
@@ -278,6 +278,7 @@ import { Image } from 'astro:assets';
         {
           id: "unsafe-section",
           type: "section",
+          label: "Unsafe",
           props: { wrapper: "box", cls: "" },
           style: {
             width: "100px;color:red",

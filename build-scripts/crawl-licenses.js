@@ -24,12 +24,7 @@ function packageNameOf(key) {
   return at > 0 ? key.slice(0, at) : key;
 }
 
-/**
- * Reads the esbuild metafile and returns the set of node_modules package names
- * that were inlined into the shipped renderer bundle. These ship inside
- * zephusEngine.js (CodeMirror, lezer, etc.) and must be attributed even though
- * they are devDependencies.
- */
+/** Reads the esbuild metafile and returns the set of node_modules package names that were inlined into the shipped… */
 function bundledRendererPackages() {
   if (!fs.existsSync(RENDERER_META)) {
     // A stale/missing metafile silently dropped every bundled-renderer

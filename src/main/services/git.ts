@@ -75,10 +75,7 @@ export interface GetGitStatusOptions {
   fetchRemote?: boolean;
 }
 
-/**
- * Reports the git status of a project: branch (or detached HEAD) and the
- * lists of modified, added, and deleted files in the working tree.
- */
+/** Reports the git status of a project: branch (or detached HEAD) and the lists of modified, added, and deleted files in… */
 export async function getGitStatus(
   projectPath: string,
   options: GetGitStatusOptions = {},
@@ -297,11 +294,7 @@ export async function pullCurrentBranch(
   }
 }
 
-/**
- * Returns true if `.zephus/` is excluded by git in this project. That would be
- * a misconfiguration: the .zephus directory is the Zephus project save state
- * and must be committed so the project opens correctly on other machines.
- */
+/** Returns true if `.zephus/` is excluded by git in this project. */
 export async function isZephusIgnored(projectPath: string): Promise<boolean> {
   // `git check-ignore` exits 0 when the path IS ignored, 1 when it is not.
   // --no-index makes the check work even when .zephus does not exist yet, and

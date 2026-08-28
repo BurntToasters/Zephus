@@ -83,8 +83,9 @@ function makeDeps(initialState: Record<string, unknown> = {}) {
 }
 
 /** Flushes both the promise-reaction queue and the await fast-path queue. */
-function flush(): Promise<void> {
-  return new Promise((r) => setTimeout(r, 0));
+async function flush(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
 }
 
 const okResult = (matches: unknown[], total = matches.length) => ({

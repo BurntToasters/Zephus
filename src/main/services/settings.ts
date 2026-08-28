@@ -11,13 +11,7 @@ import {
 } from "../types";
 import { readJsonSafe, writeFileAtomic } from "./fsSafe";
 
-/**
- * Resolves the OS-specific user config directory for Zephus.
- * Electron's app.getPath('userData') already maps to:
- *   - Windows: %APPDATA%/Zephus
- *   - macOS:   ~/Library/Application Support/Zephus
- *   - Linux:   $XDG_CONFIG_HOME/Zephus or ~/.config/Zephus
- */
+/** Resolves the OS-specific user config directory for Zephus. */
 function globalSettingsPath(): string {
   return path.join(app.getPath("userData"), "settings.json");
 }
@@ -135,10 +129,7 @@ export function readRepoSettings(projectPath: string): RepoSettings {
   return { ...DEFAULT_REPO_SETTINGS, ...data };
 }
 
-/**
- * Merges global + repo settings with repo-over-global precedence (R6.7).
- * Keys present in both: repo wins. Repo-only keys added. Global-only kept.
- */
+/** Merges global + repo settings with repo-over-global precedence (R6.7). */
 export function getMergedSettings(projectPath: string): {
   global: GlobalSettings;
   repo: RepoSettings;

@@ -1,7 +1,4 @@
-/**
- * Shared block + section HTML serialization for build (schema) and editor.
- * Editor passes viewport/forCanvas; build uses defaults (desktop, not canvas).
- */
+/** Shared block + section HTML serialization for build (schema) and editor. */
 
 import {
   addCssValue,
@@ -29,10 +26,7 @@ export interface RenderBlockInput extends Omit<BlockMetadataSource, "style"> {
   style?: BlockStyle;
 }
 
-/**
- * A page as seen by a Post List block. Built from the same page sidecars in
- * both processes, so the canvas and the build render identical lists.
- */
+/** A page as seen by a Post List block. */
 export interface RenderPostEntry {
   route: string;
   title: string;

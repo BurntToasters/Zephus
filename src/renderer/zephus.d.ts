@@ -277,10 +277,7 @@ interface PageMeta {
   canonicalUrl: string;
   /** Emits `robots: noindex` and excludes the page from sitemap.xml. */
   noindex: boolean;
-  /**
-   * Publish date as `YYYY-MM-DD`. Set on posts; empty for ordinary pages.
-   * Post List blocks and rss.xml use it for ordering and dates.
-   */
+    /** Publish date as `YYYY-MM-DD`. */
   publishDate: string;
   /** Display name of the author, shown by Post List blocks. */
   author: string;
@@ -302,10 +299,7 @@ interface SiteDocument {
   generatedAt: string;
   design: DesignTokenSet;
   shell: ShellConfig;
-  /**
-   * Public base URL (e.g. `https://example.com`). Required for canonical tags,
-   * absolute Open Graph image URLs, and sitemap.xml generation.
-   */
+    /** Public base URL (e.g. */
   siteUrl: string;
   /** BCP 47 language tag emitted as `<html lang>`. */
   language: string;
@@ -714,7 +708,6 @@ interface Window {
   zephus: ZephusApi;
   __zephusRunEditorSmoke?: () => string[] | Promise<string[]>;
   refreshIcons?: () => void;
-  /** Set by the engine so programmatic quits (update install) bypass the
-   *  unsaved-work close guard. */
+    /** Set by the engine so programmatic quits (update install) bypass the unsaved-work close guard. */
   zephusMarkForceCloseAllowed?: () => void;
 }

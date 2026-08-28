@@ -1,7 +1,4 @@
-/**
- * Vitest stub so main-process modules can load without a downloaded Electron binary.
- * Real Electron is only required to run the app (`electron .`) and electron-builder.
- */
+/** Vitest stub so main-process modules can load without a downloaded Electron binary. */
 
 import * as os from "os";
 import * as path from "path";

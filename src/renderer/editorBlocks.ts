@@ -1,9 +1,4 @@
-/**
- * The block catalog: palette order/icons, default props per block type, the
- * prebuilt section templates, and the runtime allowlist of block types.
- * Pure data + tiny factories, so the editor engine stays thinner and the
- * catalog is unit-testable in isolation.
- */
+/** The block catalog: palette order/icons, default props per block type, the prebuilt section templates, and the runtime… */
 
 import type { BlockNode, BlockStyle, EditorBlockType } from "../main/types";
 

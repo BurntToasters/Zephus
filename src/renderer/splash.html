@@ -195,6 +195,29 @@
           transform: translateY(0);
         }
       }
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          animation: none !important;
+          transition: none !important;
+        }
+
+        .typing {
+          width: auto;
+          border-right: 0;
+        }
+
+        .line {
+          opacity: 1;
+          transform: none;
+        }
+
+        .cursor {
+          animation: none !important;
+          opacity: 0;
+        }
+      }
     </style>
   </head>
   <body>

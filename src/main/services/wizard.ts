@@ -18,12 +18,7 @@ function sanitizeSiteName(folderPath: string): string {
   return safe || "zephus-site";
 }
 
-/**
- * Scaffolds a brand-new Zephus site into targetPath from a bundled theme.
- * Writes theme files, package.json, astro config, the .zephus marker, then the
- * caller initializes git. Fails atomically: on any write error nothing partial
- * is left claiming to be a Zephus_Project (the .zephus dir is written last).
- */
+/** Scaffolds a brand-new Zephus site into targetPath from a bundled theme. */
 export function createSite(
   targetPath: string,
   themeId: string,

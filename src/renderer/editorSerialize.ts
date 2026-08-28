@@ -13,14 +13,10 @@ export interface SplitManagedPage {
   inner: string;
 }
 
-/** Quote-aware tag matcher: a `>` inside a quoted attribute must not end the
- *  tag (mirrors the main-process parser). */
+/** Quote-aware tag matcher: a `>` inside a quoted attribute must not end the tag (mirrors the main-process parser). */
 const TAG_PATTERN_SOURCE = "(?:[^>\"']|\"[^\"]*\"|'[^']*')*>";
 
-/**
- * Splits raw managed page source into Astro frontmatter, outer frame, and inner
- * HTML (the region Zephus parses into sections/blocks).
- */
+/** Splits raw managed page source into Astro frontmatter, outer frame, and inner HTML (the region Zephus parses into… */
 export function splitManagedPageSource(raw: string): SplitManagedPage {
   const frame: ManagedPageFrame = {
     frontmatter: "",

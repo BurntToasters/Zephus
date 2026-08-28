@@ -162,10 +162,55 @@ function runConfigChecks() {
         pkg.scripts['compile:main'].includes('bundle-preload.js'),
       'package.json: scripts.compile:main must bundle preload.js after tsc'
     );
-    assertConfig(
-      typeof pkg.scripts?.watch === 'string' && pkg.scripts.watch === 'node build-scripts/watch.js',
-      'package.json: scripts.watch must run build-scripts/watch.js'
+    const bootCheckSource = fs.readFileSync(
+      path.join(process.cwd(), 'build-scripts/boot-check.js'),
+      'utf8',
     );
+    assertConfig(
+      bootCheckSource.includes('mac-universal'),
+      'build-scripts/boot-check.js: mac packaged boot checks must support mac-universal output',
+    );
+    const mainTsconfig = JSON.parse(
+      fs.readFileSync(path.join(process.cwd(), 'tsconfig.main.json'), 'utf8'),
+    );
+    assertConfig(
+      !mainTsconfig.exclude?.includes('src/**/*.test.ts'),
+      'tsconfig.main.json: main/shared tests must remain in dedicated typecheck',
+    );
+    const eslintSource = fs.readFileSync(
+      path.join(process.cwd(), 'eslint.config.js'),
+      'utf8',
+    );
+    assertConfig(
+      eslintSource.includes('src/**/*.{ts,tsx}'),
+      'eslint.config.js: security rules must cover both TS and TSX source',
+    );
+    assertConfig(
+      typeof pkg.scripts?.watch === 'string' &&
+        pkg.scripts.watch === 'node build-scripts/watch.js',
+      'package.json: scripts.watch must run build-scripts/watch.js',
+    );
+
+    const dbReleaseScripts = [
+      'release:db:win',
+      'release:db:win:x64',
+      'release:db:win:arm64',
+      'release:db:mac',
+      'release:db:mac:ssh',
+      'release:db:linux',
+      'release:db:linux:x64',
+      'release:db:linux:arm64',
+      'release:db:all',
+    ];
+    for (const scriptName of dbReleaseScripts) {
+      const script = pkg.scripts?.[scriptName] || '';
+      assertConfig(
+        script.includes('RELEASE_PIPELINE=1') &&
+          script.includes('RELEASE_CHANNEL=db') &&
+          script.includes('release-gate.js'),
+        `package.json: ${scriptName} must fail closed through release-gate.js for the db channel`,
+      );
+    }
 
     const baseConfigPath = path.join(process.cwd(), 'electron-builder.base.yml');
     const githubConfigPath = path.join(process.cwd(), 'electron-builder.github.yml');

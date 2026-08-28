@@ -30,6 +30,14 @@ function git(args: string[]): string {
   return execFileSync("git", args, { cwd: repoDir, encoding: "utf8" });
 }
 
+function expectFailure(result: {
+  ok: boolean;
+  error?: string;
+}): asserts result is { ok: false; error: string } {
+  expect(result.ok).toBe(false);
+  expect(result.error).toBeTruthy();
+}
+
 describe("git service (real repository)", () => {
   it("reports git unavailable for a non-repository", async () => {
     const status = await getGitStatus(repoDir);
@@ -74,6 +82,7 @@ describe("git service (real repository)", () => {
   it("rejects empty commit messages", async () => {
     const result = await commitAllChanges(repoDir, "   ");
     expect(result.ok).toBe(false);
+    expectFailure(result);
     expect(result.error).toContain("Commit message is required");
   });
 
@@ -173,6 +182,7 @@ describe("git service (real repository)", () => {
     git(["init", "-q", "-b", "main"]);
     const result = await commitProjectPaths(repoDir, "msg", []);
     expect(result.ok).toBe(false);
+    expectFailure(result);
     expect(result.error).toContain("Select at least one file");
   });
 
@@ -181,6 +191,7 @@ describe("git service (real repository)", () => {
     fs.writeFileSync(path.join(repoDir, "a.txt"), "x");
     const empty = await commitAllChanges(repoDir, "   ");
     expect(empty.ok).toBe(false);
+    expectFailure(empty);
     expect(empty.error).toContain("Commit message is required");
     const bare = await commitProjectPaths(repoDir, "", ["a.txt"]);
     expect(bare.ok).toBe(false);
@@ -196,9 +207,11 @@ describe("git service (real repository)", () => {
 
     const pushed = await pushCurrentBranch(repoDir);
     expect(pushed.ok).toBe(false);
+    expectFailure(pushed);
     expect(pushed.error).toContain("detached HEAD");
     const pulled = await pullCurrentBranch(repoDir);
     expect(pulled.ok).toBe(false);
+    expectFailure(pulled);
     expect(pulled.error).toContain("detached HEAD");
   });
 
@@ -232,6 +245,7 @@ describe("git service (real repository)", () => {
 
     const second = await commitAllChanges(repoDir, "nothing new");
     expect(second.ok).toBe(false);
+    expectFailure(second);
     expect(second.error.length).toBeGreaterThan(0);
   });
 

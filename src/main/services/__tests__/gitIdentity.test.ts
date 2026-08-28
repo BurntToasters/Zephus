@@ -6,6 +6,14 @@ import { execFileSync } from "child_process";
 import { commitAllChanges } from "../git";
 import { getGitStatus } from "../git";
 
+function expectFailure(result: {
+  ok: boolean;
+  error?: string;
+}): asserts result is { ok: false; error: string } {
+  expect(result.ok).toBe(false);
+  expect(result.error).toBeTruthy();
+}
+
 describe("git identity and status", () => {
   it("reports a missing-identity error for the renderer to translate", async () => {
     if (
@@ -46,6 +54,7 @@ describe("git identity and status", () => {
         fs.rmSync(fakeHome, { recursive: true, force: true });
       }
       expect(result.ok).toBe(false);
+      expectFailure(result);
       expect(result.error).toMatch(/Please tell me who you are|user\.name/i);
     } finally {
       fs.rmSync(repo, { recursive: true, force: true });

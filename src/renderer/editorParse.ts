@@ -1,6 +1,4 @@
-/**
- * Parses managed page inner HTML into section/block trees (visual editor load path).
- */
+/** Parses managed page inner HTML into section/block trees (visual editor load path). */
 
 import type {
   BlockStyle,
@@ -68,12 +66,7 @@ export interface EditorParseDeps {
   knownBlockTypes: ReadonlySet<string>;
 }
 
-/**
- * Reads an element's text like the main-process regex parser does: <br>
- * becomes "\n" and nested elements contribute their text. Mirrors the
- * `textFromHtml` behavior in schema.ts so both parsers produce the same
- * stored value.
- */
+/** Reads an element's text like the main-process regex parser does: <br> becomes "\n" and nested elements contribute… */
 function elementTextRaw(el: Element): string {
   let out = "";
   for (const child of Array.from(el.childNodes)) {
@@ -96,10 +89,7 @@ function elementText(el: Element): string {
   return elementTextRaw(el).trim();
 }
 
-/** The serializer indents every interior line of a raw html block by 2
- *  spaces (indentManagedBody). Without dedenting on parse, each save cycle
- *  added 2 more spaces to the stored raw — indefinite file growth, hash
- *  mismatch, postlist-refresh rewrites. Strip the common indent prefix. */
+/** The serializer indents every interior line of a raw html block by 2 spaces (indentManagedBody). */
 function dedentHtmlRaw(raw: string): string {
   const lines = raw.split("\n");
   if (lines.length <= 1) return raw;

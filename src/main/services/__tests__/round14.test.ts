@@ -62,7 +62,7 @@ describe("round 14 output correctness", () => {
         publishDate: "2026-01-01",
         author: "",
       },
-    ]);
+    ] as unknown as PageDocument[]);
     expect(feed).not.toContain("\u0000");
     expect(feed).not.toContain("\u0001");
     expect(feed).toContain("Titlewithcontrols");

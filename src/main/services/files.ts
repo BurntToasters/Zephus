@@ -3,12 +3,7 @@ import * as path from "path";
 import { OperationResult } from "../types";
 import { assertRealpathInside, safeResolve, writeFileAtomic } from "./fsSafe";
 
-/**
- * Rejects reads/writes of sensitive project files that the visual editor never
- * needs but that a compromised renderer could try to exfiltrate or tamper with
- * (git internals and dotenv secret files). The `.zephus/` save state is managed
- * through dedicated schema/draft services, not this generic file bridge.
- */
+/** Rejects reads/writes of sensitive project files that the visual editor never needs but that a compromised renderer… */
 function assertEditablePath(relativePath: string): void {
   const normalized = relativePath.replace(/\\/g, "/");
   const segments = normalized.split("/").filter(Boolean);

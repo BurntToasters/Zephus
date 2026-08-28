@@ -5,14 +5,7 @@ import {
   BLOCK_RENDER_FIXTURES,
 } from "../../../shared/blockRenderFixtures";
 
-/**
- * Golden snapshot of the build-side block renderer (`renderBlockHtml` in
- * src/shared/blockRender.ts, re-exported as schema.ts `renderBlockNode`).
- * This is the canonical markup the editor must emit for serialization
- * (forCanvas: false). If a block's output changes here, update blockRender.ts.
- *
- * Block ids are fixed so the snapshots are deterministic.
- */
+/** Golden snapshot of the build-side block renderer (`renderBlockHtml` in src/shared/blockRender.ts, re-exported as… */
 describe("build render parity (renderBlockNode goldens)", () => {
   it("covers every block fixture without throwing", () => {
     for (const block of BLOCK_RENDER_FIXTURES) {

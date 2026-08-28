@@ -322,7 +322,10 @@ describe("assetUsage", () => {
           type: "section",
           label: "Main",
           props: { wrapper: "none", cls: "" },
-          style: { columns: 2, responsive: { mobile: { gap: "4px" } } },
+          style: {
+            columns: 2 as unknown as string,
+            responsive: { mobile: { gap: "4px" } },
+          },
           children: [
             {
               id: "img1",
