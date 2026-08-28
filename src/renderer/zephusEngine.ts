@@ -2219,7 +2219,15 @@ function hydrateCanvasAssets(root: HTMLElement): void {
     const webPath = img.getAttribute("data-asset-src");
     if (!webPath) return;
     void fetchAssetDataUrl(webPath).then((dataUrl) => {
-      if (dataUrl) img.src = dataUrl;
+      // Guard against stale in-flight promises: only assign the data URL if
+      // the img is still in the DOM and still expects this particular asset.
+      if (
+        dataUrl &&
+        img.isConnected &&
+        img.getAttribute("data-asset-src") === webPath
+      ) {
+        img.src = dataUrl;
+      }
     });
   });
 }

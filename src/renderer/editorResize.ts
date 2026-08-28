@@ -195,14 +195,23 @@ export function createResizeController(deps: ResizeDeps) {
         MIN_RESIZE_HEIGHT,
         Math.round(startHeight + (fromTop ? -dy : dy)),
       );
-      const style = resizeStyleTarget(target);
-      if (
-        !undoPushed &&
-        (style.width !== `${width}px` || style.height !== `${height}px`)
-      ) {
-        undoPushed = true;
-        deps.pushUndo();
+      // Push undo BEFORE resizeStyleTarget creates any style/responsive objects
+      // so the snapshot captures the true pre-mutation state.
+      if (!undoPushed) {
+        const viewport = deps.getViewport();
+        const existing =
+          viewport === "desktop"
+            ? target.node.style
+            : target.node.style?.responsive?.[viewport];
+        if (
+          existing?.width !== `${width}px` ||
+          existing?.height !== `${height}px`
+        ) {
+          undoPushed = true;
+          deps.pushUndo();
+        }
       }
+      const style = resizeStyleTarget(target);
       style.width = `${width}px`;
       style.height = `${height}px`;
       subject.style.width = style.width;

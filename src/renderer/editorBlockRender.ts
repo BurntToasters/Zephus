@@ -47,7 +47,14 @@ export function sanitizeHtmlForCanvas(html: string): string {
       // The built site preserves these; only the live canvas strips them.
       tag === "style" ||
       tag === "link" ||
-      tag === "meta"
+      tag === "meta" ||
+      // SVG animation elements can trigger script execution via timing/event
+      // attributes that bypass on* stripping. <foreignobject> can host HTML
+      // content that escapes the SVG sandbox. Defense-in-depth (CSP primary).
+      tag === "animate" ||
+      tag === "animatetransform" ||
+      tag === "set" ||
+      tag === "foreignobject"
     ) {
       toRemove.push(node);
     } else {

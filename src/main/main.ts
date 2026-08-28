@@ -72,7 +72,11 @@ function showFatalErrorDialog(error: Error): void {
 
 process.on("uncaughtException", (error) => {
   log.error("Uncaught exception:", error);
-  cleanupBackgroundServices();
+  try {
+    cleanupBackgroundServices();
+  } catch (cleanupErr) {
+    log.error("Cleanup failed during uncaught exception handling:", cleanupErr);
+  }
   showFatalErrorDialog(error);
   process.exit(1);
 });
@@ -773,12 +777,31 @@ function createMainWindow(): void {
       }
     },
   );
+  let rendererCrashCount = 0;
+  let lastCrashTime = 0;
+  const MAX_CRASH_RELOADS = 3;
+  const CRASH_WINDOW_MS = 30_000;
+
   mainWindow.webContents.on("render-process-gone", (_event, details) => {
     log.error("Renderer process gone", details.reason);
     cleanupBackgroundServices();
-    // Reload once on transient crashes (Chromium recovers most).
-    if (mainWindow && !mainWindow.isDestroyed()) {
+
+    const now = Date.now();
+    if (now - lastCrashTime > CRASH_WINDOW_MS) rendererCrashCount = 0;
+    lastCrashTime = now;
+    rendererCrashCount += 1;
+
+    // Auto-reload on transient crashes, but cap to prevent infinite loops.
+    if (
+      rendererCrashCount <= MAX_CRASH_RELOADS &&
+      mainWindow &&
+      !mainWindow.isDestroyed()
+    ) {
       mainWindow.webContents.reload();
+    } else {
+      log.error(
+        `Renderer crashed ${rendererCrashCount} times in ${CRASH_WINDOW_MS}ms — not reloading`,
+      );
     }
   });
 }

@@ -54,7 +54,19 @@ function runCommand(name, command, parser) {
   console.log(`${colors.blue}${colors.bold}Running ${name}...${colors.reset}`);
   try {
     const output = execSync(command, { encoding: "utf8", stdio: "pipe" });
-    if (parser) parser(output);
+    const parsed = parser ? parser(output) : undefined;
+    // Honor parser assertion: if the parser explicitly returns ok:false,
+    // treat the step as failed even though the process exited 0.
+    if (parsed && parsed.ok === false) {
+      const details = stripAnsi(output)
+        .trim()
+        .split(/\r?\n/)
+        .slice(-12)
+        .join("\n");
+      if (details) console.log(`${colors.yellow}${details}${colors.reset}`);
+      console.log(`${colors.red}✗ ${name} failed${colors.reset}\n`);
+      return { ok: false, output };
+    }
     console.log(`${colors.green}✓ ${name} passed${colors.reset}\n`);
     return { ok: true, output };
   } catch (error) {

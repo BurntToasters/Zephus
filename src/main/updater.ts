@@ -262,9 +262,10 @@ export function cancelDownload(getWindow: () => BrowserWindow | null): void {
     downloadToken.cancel();
     downloadToken = null;
     // The in-flight downloadUpdate promise settles (rejects with "cancelled")
-    // and clears isDownloading itself. Keeping it true here prevents a new
-    // download from starting a second concurrent transfer on the same
-    // autoUpdater before the first promise has resolved.
+    // and clears isDownloading itself. However, if the promise already settled
+    // (download completed just before cancel), no catch will run to reset it.
+    // Unconditionally reset here to prevent a permanently-stuck state.
+    isDownloading = false;
     approvedVersion = null;
     approvedFeedChannel = null;
     downloadedVersion = null;

@@ -26,7 +26,10 @@ const CHANGELOG_PATH = path.join(__dirname, "..", "CHANGELOG.md");
 try {
   const changelog = fs.readFileSync(CHANGELOG_PATH, "utf8");
   const escapedVersion = VERSION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const sectionHeader = new RegExp(`^#{1,3}\\s+.*${escapedVersion}.*$`, "m");
+  const sectionHeader = new RegExp(
+    `^#{1,3}\\s+.*${escapedVersion}(?![0-9.]).*$`,
+    "m",
+  );
   if (!changelog.trim()) {
     failures.push(
       "CHANGELOG.md is empty — the draft release notes would be blank.",
