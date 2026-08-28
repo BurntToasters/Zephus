@@ -170,7 +170,7 @@
   "dependencies": {
     "electron-log": "^5.3.4",
     "electron-updater": "^6.3.9",
-    "entities": "^6.0.1",
+    "entities": "^8.0.0",
     "lucide": "^1.31.0",
     "sanitize-filename": "^1.6.3",
     "solid-js": "^1.9.14"
