@@ -288,7 +288,7 @@ export interface PageMeta {
   canonicalUrl: string;
   /** Emits `robots: noindex` and excludes the page from sitemap.xml. */
   noindex: boolean;
-    /** Publish date as `YYYY-MM-DD`. */
+  /** Publish date as `YYYY-MM-DD`. */
   publishDate: string;
   /** Display name of the author, shown by Post List blocks. */
   author: string;
@@ -310,7 +310,7 @@ export interface SiteDocument {
   generatedAt: string;
   design: DesignTokenSet;
   shell: ShellConfig;
-    /** Public base URL (e.g. */
+  /** Public base URL (e.g. */
   siteUrl: string;
   /** BCP 47 language tag emitted as `<html lang>`. */
   language: string;
