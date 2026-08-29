@@ -19,6 +19,10 @@ function getReleaseUploadFiles(releaseEntries, releaseDir) {
     .map((name) => path.join(releaseDir, name));
 }
 
+function isGithubPrereleaseVersion(version) {
+  return /-(beta|alpha|rc|db)(?:[.-]|$|[0-9])/i.test(String(version));
+}
+
 function selectMatchingDraft(releases, tagName) {
   if (!Array.isArray(releases)) {
     return { draft: null, published: null };
@@ -61,6 +65,7 @@ function releaseSourceFailures({
 
 module.exports = {
   getReleaseUploadFiles,
+  isGithubPrereleaseVersion,
   isReleaseUploadName,
   releaseSourceFailures,
   selectMatchingDraft,

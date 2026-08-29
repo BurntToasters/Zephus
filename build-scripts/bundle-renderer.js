@@ -4,17 +4,16 @@
 const esbuild = require("esbuild");
 const { solidPlugin } = require("esbuild-plugin-solid");
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
 
 const root = path.resolve(__dirname, "..");
 const watch = process.argv.includes("--watch");
 
-// Records which node_modules packages get inlined into the shipped bundle, so
-// crawl-licenses.js can attribute them (they ship inside zephusEngine.js even
-// though npm classifies them as devDependencies). Kept in the OS temp dir so it
-// is never committed or packaged into the app.
-const META_OUT = path.join(os.tmpdir(), "zephus-renderer-meta.json");
+// Records which node_modules packages get inlined into the shipped bundle so
+// crawl-licenses.js can attribute them. A repo-local cache is deterministic,
+// excluded from packaging, and removed by dist-tools clean; a fixed os.tmpdir
+// file could survive another checkout/version and silently misattribute licenses.
+const META_OUT = path.join(root, ".cache", "zephus", "renderer-meta.json");
 
 const options = {
   entryPoints: [path.join(root, "src", "renderer", "zephusEngine.ts")],
@@ -33,7 +32,13 @@ const options = {
 function writeMeta(metafile) {
   if (!metafile) return;
   fs.mkdirSync(path.dirname(META_OUT), { recursive: true });
-  fs.writeFileSync(META_OUT, JSON.stringify(metafile));
+  const temporary = `${META_OUT}.tmp-${process.pid}`;
+  try {
+    fs.writeFileSync(temporary, JSON.stringify(metafile));
+    fs.renameSync(temporary, META_OUT);
+  } finally {
+    fs.rmSync(temporary, { force: true });
+  }
 }
 
 // Guards against a "success" that produced no usable artifact (e.g. an esbuild

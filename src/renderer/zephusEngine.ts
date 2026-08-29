@@ -564,10 +564,15 @@ function setStatus(message: string): void {
     statusTimer = null;
   }
   $("status-bar").textContent = message;
+  const modalStatus = $maybe("modal-status");
+  if (modalStatus) {
+    modalStatus.textContent = modalController.isOpen() ? message : "";
+  }
   // Auto-clear transient confirmations so the bar doesn't show stale text.
   if (message) {
     statusTimer = setTimeout(() => {
       $("status-bar").textContent = "";
+      if (modalStatus) modalStatus.textContent = "";
       statusTimer = null;
     }, 6000);
   }
@@ -2554,6 +2559,7 @@ const editorSiteSave = createEditorSiteSaveActions({
   getState: () => state,
   setStatus,
   onSiteStateChanged: () => {
+    applyDesignPreview();
     renderDirtyIndicators();
     if (state.siteDirty) scheduleDraftWrite();
     if (state.project) renderNavEditor(state.project);
@@ -2737,6 +2743,7 @@ function resetOpenPageState(): void {
   // "activate inspect tab").
   canvasActions.resetCanvasClickTracking();
   canvasActions.resetInspectorSelectionKey();
+  canvasActions.disposeInspector();
   cancelScheduledEditorDraftWrite(state);
   clearChanges();
   markDirty(false);

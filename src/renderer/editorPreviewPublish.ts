@@ -377,8 +377,12 @@ export function createPreviewPublishActions(deps: PreviewPublishDeps) {
       const unsubBuildLog = window.zephus.onPublishLog((chunk) => {
         appendCappedLog(devLogEl, chunk);
       });
-      const r = await window.zephus.publish(project.path, project.astro.outDir);
-      unsubBuildLog();
+      let r: Awaited<ReturnType<typeof window.zephus.publish>>;
+      try {
+        r = await window.zephus.publish(project.path, project.astro.outDir);
+      } finally {
+        unsubBuildLog();
+      }
       if (state.project?.path !== project.path) return;
       if (!r.ok) {
         showModal("Build Failed", friendlyError(r.error), [

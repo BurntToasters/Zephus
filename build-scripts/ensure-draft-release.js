@@ -10,7 +10,10 @@ const { execFileSync } = require("child_process");
 
 require("dotenv").config();
 const { assertGitHubCliAuthenticated, githubApi } = require("./github-cli");
-const { selectMatchingDraft } = require("./release-upload-policy");
+const {
+  isGithubPrereleaseVersion,
+  selectMatchingDraft,
+} = require("./release-upload-policy");
 
 const REPO_OWNER = "BurntToasters";
 const REPO_NAME = "zephus";
@@ -42,7 +45,7 @@ const WAIT_POLL_INTERVAL_MS = Number.parseInt(
 const packageJson = require("../package.json");
 const VERSION = packageJson.version;
 const TAG_NAME = "v" + VERSION;
-const IS_PRERELEASE = VERSION.includes("beta") || VERSION.includes("alpha");
+const IS_PRERELEASE = isGithubPrereleaseVersion(VERSION);
 
 /** Release notes = the full CHANGELOG.md (mirrors the Zinnia release flow). */
 function readChangelogReleaseBody() {

@@ -385,9 +385,9 @@ export function renderPropertiesEmpty(
   container: HTMLElement,
   hasPage: boolean,
   onPageSettings: () => void,
-): void {
+): () => void {
   container.innerHTML = "";
-  render(
+  return render(
     () => (
       <div class="prop-empty">
         <p class="muted">Select a section or block to edit its properties.</p>
@@ -405,9 +405,9 @@ export function renderPropertiesEmpty(
 export function renderSectionProperties(
   container: HTMLElement,
   state: SectionPropertiesState,
-): void {
+): () => void {
   container.innerHTML = "";
-  render(
+  return render(
     () => (
       <>
         <div class="prop-header">

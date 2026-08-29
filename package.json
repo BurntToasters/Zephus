@@ -26,7 +26,7 @@
     "hooks:install": "node build-scripts/install-hooks.js",
     "clean": "node build-scripts/dist-tools.js clean && node build-scripts/dist-tools.js clean-release",
     "licenses": "node build-scripts/crawl-licenses.js",
-    "licenses:strict": "cross-env CRAWL_LICENSES_STRICT=1 node build-scripts/crawl-licenses.js",
+    "licenses:strict": "npm run compile:renderer && cross-env CRAWL_LICENSES_STRICT=1 node build-scripts/crawl-licenses.js",
     "compile:main": "tsc --project tsconfig.main.json && node build-scripts/bundle-preload.js",
     "generate:theme-previews": "node build-scripts/generate-theme-previews.js",
     "compile:renderer": "node build-scripts/bundle-renderer.js",

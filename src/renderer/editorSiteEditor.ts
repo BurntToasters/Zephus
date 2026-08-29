@@ -261,7 +261,7 @@ export function createSiteEditorActions(deps: SiteEditorDeps) {
     };
 
     const wrap = document.createElement("div");
-    renderDesignSystemModalBody(wrap, {
+    const designModalDispose = renderDesignSystemModalBody(wrap, {
       accent: designState.accent,
       background: designState.background,
       foreground: designState.foreground,
@@ -353,6 +353,7 @@ export function createSiteEditorActions(deps: SiteEditorDeps) {
         },
       },
     ]);
+    registerCleanup(designModalDispose);
   }
 
   return { openSiteShellModal, openDesignSystemModal };

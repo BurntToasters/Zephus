@@ -173,6 +173,8 @@ export function createModalController(refreshIcons: () => void) {
   }
 
   function finishShowing(wasOpen: boolean): void {
+    const modalStatus = document.getElementById("modal-status");
+    if (modalStatus) modalStatus.textContent = "";
     modalElement("modal-overlay").classList.remove("hidden");
     refreshIcons();
     activateFocusTrap(wasOpen);
@@ -245,6 +247,8 @@ export function createModalController(refreshIcons: () => void) {
 
   function closeModal(): void {
     cancelPendingFocus();
+    const modalStatus = document.getElementById("modal-status");
+    if (modalStatus) modalStatus.textContent = "";
     // External close (another modal, close button, project shutdown) must
     // cancel current promise-backed modal before restoring its parent.
     const closeHandler = currentCloseHandler;

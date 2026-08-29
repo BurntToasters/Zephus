@@ -4,7 +4,10 @@
 
 require("dotenv").config();
 const { assertGitHubCliAuthenticated, githubApi } = require("./github-cli");
-const { selectMatchingDraft } = require("./release-upload-policy");
+const {
+  isGithubPrereleaseVersion,
+  selectMatchingDraft,
+} = require("./release-upload-policy");
 
 const packageJson = require("../package.json");
 
@@ -20,10 +23,6 @@ const GH_REQUEST_RETRY_DELAY_MS = Number.parseInt(
   process.env.GH_REQUEST_RETRY_DELAY_MS || "1500",
   10,
 );
-
-function isGithubPrereleaseVersion(version) {
-  return /-(beta|alpha|rc|db)(?:[.-]|$)/i.test(version);
-}
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));

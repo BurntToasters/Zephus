@@ -221,9 +221,9 @@ export interface DesignSystemModalState {
 export function renderDesignSystemModalBody(
   container: HTMLElement,
   state: DesignSystemModalState,
-): void {
+): () => void {
   container.innerHTML = "";
-  render(
+  return render(
     () => (
       <div class="meta-form">
         <ColorField

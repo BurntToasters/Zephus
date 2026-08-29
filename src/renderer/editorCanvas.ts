@@ -68,7 +68,7 @@ export interface CanvasDeps {
     panel: HTMLElement,
     hasPage: boolean,
     onMeta: () => void,
-  ) => void;
+  ) => () => void;
   openPageMetaModal: (page: string) => Promise<void>;
   openBlockInsertModal: (index: number, sectionId: string) => void;
   duplicateSection: (id: string) => void;
@@ -206,6 +206,12 @@ export function createCanvasActions(deps: CanvasDeps) {
     updateCanvasSelection(state.selectedId, state.selectedSectionId);
   }
   let lastInspectorSelectionKey = "none";
+  let disposeInspectorRoot: (() => void) | null = null;
+
+  function disposeInspector(): void {
+    disposeInspectorRoot?.();
+    disposeInspectorRoot = null;
+  }
 
   function renderCanvas(): void {
     // A canvas re-render while an inline text session is active REPLACES the
@@ -421,9 +427,11 @@ export function createCanvasActions(deps: CanvasDeps) {
 
   function renderProperties(): void {
     const panel = $("properties");
+    disposeInspector();
+    panel.innerHTML = "";
     if (state.mode === "code") {
       lastInspectorSelectionKey = "none";
-      renderPropertiesEmpty(panel, !!state.page, () => {
+      disposeInspectorRoot = renderPropertiesEmpty(panel, !!state.page, () => {
         if (state.page) void openPageMetaModal(state.page);
       });
       return;
@@ -444,7 +452,7 @@ export function createCanvasActions(deps: CanvasDeps) {
     panel.innerHTML = "";
 
     if (!block && !section) {
-      renderPropertiesEmpty(panel, !!state.page, () => {
+      disposeInspectorRoot = renderPropertiesEmpty(panel, !!state.page, () => {
         if (state.page) void openPageMetaModal(state.page);
       });
       return;
@@ -475,7 +483,7 @@ export function createCanvasActions(deps: CanvasDeps) {
         (section.style as Record<string, unknown>)[key] = value;
         commitInspectorChange(`Updated ${section.label} style`);
       };
-      renderSectionProperties(panel, {
+      disposeInspectorRoot = renderSectionProperties(panel, {
         sectionLabel: section.label,
         currentPageLabel: currentPageLabel(),
         wrapper: section.props["wrapper"] ?? "none",
@@ -547,7 +555,7 @@ export function createCanvasActions(deps: CanvasDeps) {
     const supportedBlockTypes = new Set<string>(KNOWN_BLOCK_TYPES);
 
     if (supportedBlockTypes.has(block.type)) {
-      renderBlockProperties(panel, {
+      disposeInspectorRoot = renderBlockProperties(panel, {
         title: blockLabel(block),
         subtitle: `${currentPageLabel()} / ${section?.label ?? "section"} / ${block.type}`,
         blockType: block.type,
@@ -724,6 +732,7 @@ export function createCanvasActions(deps: CanvasDeps) {
     renderCanvasSelection,
     handleDrop,
     renderProperties,
+    disposeInspector,
     resetDragState,
     showIndicator,
     getDraggingSectionId: (): string | null => draggingSectionId,

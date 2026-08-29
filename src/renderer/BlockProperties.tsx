@@ -15,9 +15,9 @@ import {
 export function renderBlockProperties(
   container: HTMLElement,
   state: BlockPropertiesState,
-): void {
+): () => void {
   container.innerHTML = "";
-  render(
+  return render(
     () => (
       <>
         <div class="prop-header">

@@ -1,14 +1,14 @@
 "use strict";
 
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
 const checker = require("license-checker-rseidelsohn");
 
 const ROOT = path.join(__dirname, "..");
 const OUTPUT = path.join(ROOT, "licenses.json");
-// Written by bundle-renderer.js: the esbuild metafile for the shipped renderer.
-const RENDERER_META = path.join(os.tmpdir(), "zephus-renderer-meta.json");
+// Written atomically by bundle-renderer.js and removed by dist-tools clean.
+const RENDERER_META = path.join(ROOT, ".cache", "zephus", "renderer-meta.json");
+const STRICT = process.env.CRAWL_LICENSES_STRICT === "1";
 
 function crawl(opts) {
   return new Promise((resolve, reject) => {
@@ -28,21 +28,10 @@ function packageNameOf(key) {
 /** Reads the esbuild metafile and returns the set of node_modules package names that were inlined into the shipped… */
 function bundledRendererPackages() {
   if (!fs.existsSync(RENDERER_META)) {
-    // A stale/missing metafile silently dropped every bundled-renderer
-    // attribution (fresh CI container, cleared tmp). During a RELEASE run
-    // that is a licensing failure, not a warning — but `npm run u` (update +
-    // test) must not fail because a build artifact is missing.
-    if (
-      process.env.CRAWL_LICENSES_STRICT === "1" &&
-      process.env.RELEASE_PIPELINE === "1"
-    ) {
-      console.error(
-        "✗ FATAL: renderer esbuild metafile missing (" +
-          RENDERER_META +
-          "). " +
-          "Run compile:renderer first.",
+    if (STRICT) {
+      throw new Error(
+        `Renderer esbuild metafile missing (${RENDERER_META}). Run compile:renderer first.`,
       );
-      process.exit(1);
     }
     return new Set();
   }
@@ -58,6 +47,12 @@ function bundledRendererPackages() {
     }
     return names;
   } catch (error) {
+    if (STRICT) {
+      throw new Error(
+        `Renderer esbuild metafile is unreadable (${RENDERER_META}): ${error.message || error}`,
+        { cause: error },
+      );
+    }
     console.warn("⚠ Could not read renderer metafile:", error.message || error);
     return new Set();
   }

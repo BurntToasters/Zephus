@@ -2,7 +2,10 @@ const { execSync, execFileSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
-const { getReleaseUploadFiles } = require("./release-upload-policy");
+const {
+  getReleaseUploadFiles,
+  isGithubPrereleaseVersion,
+} = require("./release-upload-policy");
 const {
   assertGitHubCliAuthenticated,
   githubApi,
@@ -28,12 +31,6 @@ const GH_REQUEST_RETRY_DELAY_MS = Number.parseInt(
 const packageJson = require("../package.json");
 const VERSION = packageJson.version;
 const TAG_NAME = "v" + VERSION;
-
-const PRERELEASE_TAG = /-(beta|alpha|rc|db)(?:[.-]|$|[0-9])/i;
-
-function isGithubPrereleaseVersion(version) {
-  return PRERELEASE_TAG.test(version);
-}
 
 // ONE shared suffix set: an alpha/rc version previously got flagged as a
 // GitHub prerelease but NO channel alias — its latest.yml was served to the
