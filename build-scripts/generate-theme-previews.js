@@ -3,8 +3,11 @@ const fs = require("fs");
 const path = require("path");
 
 const ROOT = path.resolve(__dirname, "..");
-const DIST_ROOT = path.join(ROOT, "template-previews", "dist");
-const TEMP_ROOT = path.join(ROOT, "template-previews", ".tmp");
+const PREVIEWS_ROOT = path.join(ROOT, "template-previews");
+const DIST_ROOT = path.join(PREVIEWS_ROOT, "dist");
+const STAGING_ROOT = path.join(PREVIEWS_ROOT, ".dist-staging");
+const BACKUP_ROOT = path.join(PREVIEWS_ROOT, ".dist-backup");
+const TEMP_ROOT = path.join(PREVIEWS_ROOT, ".tmp");
 const THEMES_MODULE = path.join(ROOT, "dist", "main", "themes.js");
 const SCHEMA_MODULE = path.join(ROOT, "dist", "main", "services", "schema.js");
 
@@ -45,7 +48,7 @@ export default defineConfig({ output: 'static', base: '/theme/${themeId}' });
 `;
 }
 
-function buildPreview(themeMeta, deps, astroCli) {
+function buildPreview(themeMeta, deps, astroCli, outputRoot) {
   const { buildPreviewTheme, rewritePreviewAbsoluteUrls, ensureVisualSchema } =
     deps;
   const theme = buildPreviewTheme(
@@ -56,7 +59,7 @@ function buildPreview(themeMeta, deps, astroCli) {
     throw new Error(`Could not build preview theme for ${themeMeta.id}`);
 
   const tempDir = path.join(TEMP_ROOT, themeMeta.id);
-  const outDir = path.join(DIST_ROOT, "theme", themeMeta.id);
+  const outDir = path.join(outputRoot, "theme", themeMeta.id);
 
   writeThemeFiles(theme, tempDir);
 
@@ -103,10 +106,10 @@ function buildPreview(themeMeta, deps, astroCli) {
   }
 }
 
-function writeManifest(themes) {
-  fs.mkdirSync(DIST_ROOT, { recursive: true });
+function writeManifest(themes, outputRoot) {
+  fs.mkdirSync(outputRoot, { recursive: true });
   fs.writeFileSync(
-    path.join(DIST_ROOT, "manifest.json"),
+    path.join(outputRoot, "manifest.json"),
     JSON.stringify(
       {
         themes: themes.map(({ id, name, description, previewPath }) => ({
@@ -123,6 +126,44 @@ function writeManifest(themes) {
   );
 }
 
+// Recover from an interrupted prior run and clear stale scratch dirs before
+// building into a fresh staging directory. The existing dist is never touched
+// here, so any build failure leaves the last-good previews in place.
+function prepareWorkspace() {
+  // If a previous publish was interrupted after moving dist to backup but
+  // before staging landed, dist is missing while backup holds the good copy —
+  // restore it.
+  if (!fs.existsSync(DIST_ROOT) && fs.existsSync(BACKUP_ROOT)) {
+    fs.renameSync(BACKUP_ROOT, DIST_ROOT);
+  }
+  // Otherwise any leftover staging/backup is stale scratch — remove it.
+  fs.rmSync(STAGING_ROOT, { recursive: true, force: true });
+  fs.rmSync(BACKUP_ROOT, { recursive: true, force: true });
+  fs.rmSync(TEMP_ROOT, { recursive: true, force: true });
+  fs.mkdirSync(STAGING_ROOT, { recursive: true });
+  fs.mkdirSync(TEMP_ROOT, { recursive: true });
+}
+
+// Atomically-ish swap freshly built staging into place. Rename current dist
+// aside as a backup, move staging into dist, and only drop the backup once the
+// swap succeeds — rolling the backup back if the staging rename fails.
+function publishStaging() {
+  const hadDist = fs.existsSync(DIST_ROOT);
+  if (hadDist) {
+    fs.rmSync(BACKUP_ROOT, { recursive: true, force: true });
+    fs.renameSync(DIST_ROOT, BACKUP_ROOT);
+  }
+  try {
+    fs.renameSync(STAGING_ROOT, DIST_ROOT);
+  } catch (error) {
+    if (hadDist && fs.existsSync(BACKUP_ROOT) && !fs.existsSync(DIST_ROOT)) {
+      fs.renameSync(BACKUP_ROOT, DIST_ROOT);
+    }
+    throw error;
+  }
+  fs.rmSync(BACKUP_ROOT, { recursive: true, force: true });
+}
+
 function main() {
   const themesMod = ensureModule(THEMES_MODULE, "themes module");
   const schemaMod = ensureModule(SCHEMA_MODULE, "schema module");
@@ -137,19 +178,20 @@ function main() {
   );
   const themes = themesMod.listThemes();
 
-  fs.rmSync(DIST_ROOT, { recursive: true, force: true });
-  fs.rmSync(TEMP_ROOT, { recursive: true, force: true });
-  fs.mkdirSync(TEMP_ROOT, { recursive: true });
+  prepareWorkspace();
 
   try {
     for (const theme of themes) {
       console.log(`Generating preview: ${theme.id}`);
-      buildPreview(theme, deps, astroCli);
+      buildPreview(theme, deps, astroCli, STAGING_ROOT);
     }
-    writeManifest(themes);
+    writeManifest(themes, STAGING_ROOT);
+    publishStaging();
     console.log(`Theme previews written to ${DIST_ROOT}`);
   } finally {
+    // Always drop the temp project workspace and any failed staging output.
     fs.rmSync(TEMP_ROOT, { recursive: true, force: true });
+    fs.rmSync(STAGING_ROOT, { recursive: true, force: true });
   }
 }
 

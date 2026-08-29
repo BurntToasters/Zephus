@@ -3,9 +3,24 @@
 // supports require('electron') natively — any relative imports must be inlined.
 const esbuild = require("esbuild");
 const path = require("path");
+const fs = require("fs");
 
 const root = path.resolve(__dirname, "..");
 const watchMode = process.argv.includes("--watch");
+
+// Guards against a "success" that produced no usable artifact: assert the
+// outfile exists and is non-empty before printing success.
+function verifyOutput(outfile) {
+  let stat;
+  try {
+    stat = fs.statSync(outfile);
+  } catch {
+    throw new Error(`Expected bundle output missing: ${outfile}`);
+  }
+  if (!stat.isFile() || stat.size === 0) {
+    throw new Error(`Bundle output is empty: ${outfile}`);
+  }
+}
 
 function buildOptions() {
   return {
@@ -24,7 +39,9 @@ function buildOptions() {
 
 async function main() {
   if (!watchMode) {
-    await esbuild.build(buildOptions());
+    const options = buildOptions();
+    await esbuild.build(options);
+    verifyOutput(options.outfile);
     console.log("Preload bundle written to dist/main/preload.js");
     return;
   }

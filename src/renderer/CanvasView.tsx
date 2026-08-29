@@ -648,3 +648,28 @@ export function mountCanvas(container: HTMLElement): void {
   render(() => <CanvasPanel />, container);
   scheduleIconRefresh();
 }
+
+/** Updates only selection-dependent canvas state without re-rendering block HTML. */
+export function updateCanvasSelection(
+  selectedBlockId: string | null,
+  selectedSectionId: string | null,
+): void {
+  const current = unwrap(canvasState);
+  setCanvasState(
+    reconcile(
+      {
+        sections: current.sections.map((section) => ({
+          ...section,
+          selected:
+            section.id === selectedSectionId && selectedBlockId === null,
+          children: section.children.map((block) => ({
+            ...block,
+            selected: block.id === selectedBlockId,
+            shellAriaLabel: `${block.label} block${block.id === selectedBlockId ? ", selected" : ""}`,
+          })),
+        })),
+      },
+      { key: "id" },
+    ),
+  );
+}

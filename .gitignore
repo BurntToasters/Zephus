@@ -155,3 +155,8 @@ licenses.json
 # Compiled renderer output (TypeScript compiled in-place)
 src/renderer/**/*.js
 src/renderer/**/*.js.map
+
+# Transactional theme-preview work directories
+template-previews/.tmp/
+template-previews/.dist-staging/
+template-previews/.dist-backup/

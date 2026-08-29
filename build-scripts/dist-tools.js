@@ -30,6 +30,8 @@ function cleanBuildArtifacts() {
     path.join(ROOT, "dist"),
     path.join(ROOT, "template-previews", "dist"),
     path.join(ROOT, "template-previews", ".tmp"),
+    path.join(ROOT, "template-previews", ".dist-staging"),
+    path.join(ROOT, "template-previews", ".dist-backup"),
     ...listFlatpakBuildDirs().map((dir) => path.join(ROOT, dir)),
   ];
   for (const dir of dirs) {

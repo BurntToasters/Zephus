@@ -2,6 +2,7 @@
 
 import {
   updateCanvas,
+  updateCanvasSelection,
   mountCanvas,
   registerCanvasHandlers,
 } from "./CanvasView";
@@ -201,6 +202,9 @@ export function createCanvasActions(deps: CanvasDeps) {
 
   // ---- Inspector selection tracking.
 
+  function renderCanvasSelection(): void {
+    updateCanvasSelection(state.selectedId, state.selectedSectionId);
+  }
   let lastInspectorSelectionKey = "none";
 
   function renderCanvas(): void {
@@ -286,7 +290,7 @@ export function createCanvasActions(deps: CanvasDeps) {
       state.selectedId = null;
       state.selectedSectionId = null;
       renderLayers();
-      renderCanvas();
+      renderCanvasSelection();
       renderProperties();
     };
   }
@@ -717,6 +721,7 @@ export function createCanvasActions(deps: CanvasDeps) {
 
   return {
     renderCanvas,
+    renderCanvasSelection,
     handleDrop,
     renderProperties,
     resetDragState,
@@ -914,7 +919,7 @@ export function bindCanvasHandlers(
         state.selectedId = null;
         state.selectedSectionId = section.id;
         renderLayers();
-        canvas.renderCanvas();
+        canvas.renderCanvasSelection();
         renderProperties();
       },
       onBlockKeyDown: (event, sectionView, blockView, preview) => {
@@ -934,7 +939,7 @@ export function bindCanvasHandlers(
           state.selectedId = block.id;
           state.selectedSectionId = section.id;
           renderLayers();
-          canvas.renderCanvas();
+          canvas.renderCanvasSelection();
           renderProperties();
         }
       },
@@ -956,7 +961,7 @@ export function bindCanvasHandlers(
         state.selectedId = block.id;
         state.selectedSectionId = section.id;
         renderLayers();
-        canvas.renderCanvas();
+        canvas.renderCanvasSelection();
         renderProperties();
       },
       onSectionDragStart: (event, section) => {

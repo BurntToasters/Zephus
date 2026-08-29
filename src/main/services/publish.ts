@@ -1,4 +1,4 @@
-import { spawn } from "child_process";
+import { spawn, type ChildProcess } from "child_process";
 import { shell } from "electron";
 import log from "electron-log";
 import { OperationResult } from "../types";
@@ -15,6 +15,35 @@ export interface PublishResult extends OperationResult {
   outputDir?: string;
 }
 
+const BUILD_TIMEOUT_MS = 30 * 60 * 1000;
+
+function killBuildTree(child: ChildProcess, hard: boolean): void {
+  if (!child.pid) return;
+  if (process.platform === "win32") {
+    const args = ["/pid", String(child.pid), "/t"];
+    if (hard) args.push("/f");
+    try {
+      spawn("taskkill", args, { windowsHide: true, stdio: "ignore" });
+    } catch (error) {
+      log.warn("Could not terminate build process tree with taskkill", error);
+      try {
+        child.kill();
+      } catch {
+        /* best effort */
+      }
+    }
+    return;
+  }
+  try {
+    process.kill(-child.pid, hard ? "SIGKILL" : "SIGTERM");
+  } catch {
+    try {
+      child.kill(hard ? "SIGKILL" : "SIGTERM");
+    } catch {
+      /* best effort */
+    }
+  }
+}
 let activeBuild: Promise<PublishResult> | null = null;
 
 /** Runs `npm run build` (Astro production build) in the project directory. */
@@ -78,16 +107,66 @@ async function runBuild(
           cwd: projectPath,
           windowsHide: true,
           windowsVerbatimArguments: npm.windowsVerbatimArguments,
+          detached: process.platform !== "win32",
           env: { ...env, FORCE_COLOR: "0" },
         });
+        let settled = false;
+        let timedOut = false;
+        let hardKillTimer: NodeJS.Timeout | null = null;
+        const finish = (error?: Error, code: number | null = null): void => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(buildTimer);
+          if (error) reject(error);
+          else resolve(code);
+        };
+        const buildTimer = setTimeout(() => {
+          timedOut = true;
+          onBuildLog?.(
+            `\n[build timed out after ${BUILD_TIMEOUT_MS / 60000} minutes; terminating.]\n`,
+          );
+          killBuildTree(child, false);
+          hardKillTimer = setTimeout(() => {
+            const exited =
+              child.exitCode !== null && child.exitCode !== undefined;
+            const signalled =
+              child.signalCode !== null && child.signalCode !== undefined;
+            if (!exited && !signalled) killBuildTree(child, true);
+            finish(
+              new Error(
+                `npm run build timed out after ${BUILD_TIMEOUT_MS / 60000} minutes.`,
+              ),
+            );
+          }, 3000);
+        }, BUILD_TIMEOUT_MS);
         const handle = (data: Buffer) => {
           const text = data.toString();
           onBuildLog?.(text);
         };
         child.stdout?.on("data", handle);
         child.stderr?.on("data", handle);
-        child.on("error", reject);
-        child.on("exit", (code) => resolve(code));
+        child.on("error", (error) => {
+          if (hardKillTimer) clearTimeout(hardKillTimer);
+          finish(
+            timedOut
+              ? new Error(
+                  `npm run build timed out after ${BUILD_TIMEOUT_MS / 60000} minutes.`,
+                )
+              : error,
+          );
+        });
+        child.on("exit", (code) => {
+          if (hardKillTimer) clearTimeout(hardKillTimer);
+          if (timedOut) {
+            finish(
+              new Error(
+                `npm run build timed out after ${BUILD_TIMEOUT_MS / 60000} minutes.`,
+              ),
+            );
+          } else {
+            finish(undefined, code);
+          }
+        });
       });
       if (exitCode !== 0) {
         throw new Error(

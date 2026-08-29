@@ -281,18 +281,64 @@ export function renamePage(
       }
       const saved = writePageDocument(projectPath, pagesDir, nextDoc);
       if (!saved.ok) {
-        fs.writeFileSync(from, originalSource, "utf8");
-        if (fs.existsSync(to)) {
-          fs.rmSync(to, { force: true });
+        // Best-effort rollback must attempt every step even if one fails; a
+        // single thrown restore operation must not leave the source and
+        // sidecar permanently split across old/new slugs.
+        const rollbackErrors: string[] = [];
+        try {
+          fs.writeFileSync(from, originalSource, "utf8");
+        } catch (error) {
+          rollbackErrors.push(
+            `source restore failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
         }
-        renamePageSchema(
-          projectPath,
-          pagesDir,
-          nextRel,
-          current.pageDocument.slug,
-        );
-        writePageDocument(projectPath, pagesDir, current.pageDocument);
-        return { ok: false, error: saved.error };
+        try {
+          if (fs.existsSync(to)) fs.rmSync(to, { force: true });
+        } catch (error) {
+          rollbackErrors.push(
+            `renamed source cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+        try {
+          const schemaRollback = renamePageSchema(
+            projectPath,
+            pagesDir,
+            nextRel,
+            current.pageDocument.slug,
+          );
+          if (!schemaRollback.ok) {
+            rollbackErrors.push(
+              `schema restore failed: ${schemaRollback.error ?? "unknown error"}`,
+            );
+          }
+        } catch (error) {
+          rollbackErrors.push(
+            `schema restore failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+        try {
+          const documentRollback = writePageDocument(
+            projectPath,
+            pagesDir,
+            current.pageDocument,
+          );
+          if (!documentRollback.ok) {
+            rollbackErrors.push(
+              `document restore failed: ${documentRollback.error ?? "unknown error"}`,
+            );
+          }
+        } catch (error) {
+          rollbackErrors.push(
+            `document restore failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+        const rollbackDetail = rollbackErrors.length
+          ? ` Rollback was incomplete (${rollbackErrors.join("; ")}).`
+          : "";
+        return {
+          ok: false,
+          error: `${saved.error ?? "Page save failed."}${rollbackDetail}`,
+        };
       }
     }
     return { ok: true };

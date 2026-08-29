@@ -27,8 +27,9 @@ const isDev =
 const isSmoke =
   !app.isPackaged &&
   (process.argv.includes("--smoke") || process.env.ZEPHUS_SMOKE === "1");
+const isBootCheck = process.env.ZEPHUS_BOOT_CHECK === "1";
 const isPrimaryInstance =
-  isSmoke || typeof app.requestSingleInstanceLock !== "function"
+  isSmoke || isBootCheck || typeof app.requestSingleInstanceLock !== "function"
     ? true
     : app.requestSingleInstanceLock();
 
@@ -732,7 +733,7 @@ function createMainWindow(): void {
 
     // ZEPHUS_BOOT_CHECK=1: verify the packaged binary boots — the renderer
     // loaded + became visible. Exit 0 immediately (no UI automation).
-    if (process.env.ZEPHUS_BOOT_CHECK === "1") {
+    if (isBootCheck) {
       log.info("[boot-check] packaged renderer loaded successfully");
       app.exit(0);
       return;
@@ -802,12 +803,35 @@ function createMainWindow(): void {
       log.error(
         `Renderer crashed ${rendererCrashCount} times in ${CRASH_WINDOW_MS}ms — not reloading`,
       );
+      void showMessageBoxFor(mainWindow, {
+        type: "error",
+        title: "Zephus could not recover",
+        message: "The editor interface repeatedly crashed.",
+        detail:
+          "Reload once more, or quit Zephus and reopen it. Your autosaved drafts remain on disk.",
+        buttons: ["Reload", "Quit"],
+        defaultId: 0,
+        cancelId: 1,
+        noLink: true,
+      })
+        .then(({ response }) => {
+          if (response === 0 && mainWindow && !mainWindow.isDestroyed()) {
+            rendererCrashCount = 0;
+            mainWindow.webContents.reload();
+          } else {
+            app.quit();
+          }
+        })
+        .catch((error) => {
+          log.error("Could not show renderer crash recovery dialog", error);
+          app.quit();
+        });
     }
   });
 }
 
 function initAutoUpdater(): void {
-  if (isDev || isSmoke || !app.isPackaged) return;
+  if (isDev || isSmoke || isBootCheck || !app.isPackaged) return;
   setupAutoUpdater(() => mainWindow, readGlobalSettings);
   const settings = readGlobalSettings();
   if (settings.autoCheckUpdates) {
@@ -1000,7 +1024,7 @@ if (!isPrimaryInstance) {
     createSplash();
     createMainWindow();
     initAutoUpdater();
-    initNodeVersionCheck();
+    if (!isBootCheck) initNodeVersionCheck();
 
     app.on("activate", () => {
       // macOS dock click: recreate when the main window is gone, even if a

@@ -78,7 +78,7 @@ function safeResolve(projectPath: string, relativePath: string): string {
 }
 
 function zephusDir(projectPath: string): string {
-  return path.join(projectPath, ".zephus");
+  return safeResolve(projectPath, ".zephus");
 }
 
 function siteDocumentFile(projectPath: string): string {

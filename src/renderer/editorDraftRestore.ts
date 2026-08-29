@@ -34,9 +34,174 @@ export function encodeSiteDraftContent(
   return JSON.stringify({ kind: kind ?? "shell", site }, null, 2);
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isString(value: unknown): value is string {
+  return typeof value === "string";
+}
+
+/** Validates the full shape written by current Zephus versions. */
+function isSiteDocument(value: unknown): value is SiteDocument {
+  if (
+    !isRecord(value) ||
+    !isRecord(value["design"]) ||
+    !isRecord(value["shell"])
+  ) {
+    return false;
+  }
+  const d = value["design"];
+  const s = value["shell"];
+  return (
+    typeof value["schemaVersion"] === "number" &&
+    Number.isFinite(value["schemaVersion"]) &&
+    isString(value["themeId"]) &&
+    isString(value["siteName"]) &&
+    isString(value["generatedAt"]) &&
+    isString(value["siteUrl"]) &&
+    isString(value["language"]) &&
+    isString(value["faviconPath"]) &&
+    isString(d["accent"]) &&
+    isString(d["background"]) &&
+    isString(d["foreground"]) &&
+    isString(d["surface"]) &&
+    isString(d["fontFamily"]) &&
+    isString(d["headingFontFamily"]) &&
+    isString(d["radius"]) &&
+    isString(d["containerWidth"]) &&
+    (d["shadow"] === "none" ||
+      d["shadow"] === "sm" ||
+      d["shadow"] === "md" ||
+      d["shadow"] === "lg") &&
+    (s["layoutMode"] === "legacy" || s["layoutMode"] === "managed") &&
+    isString(s["layoutPath"]) &&
+    isString(s["siteTitle"]) &&
+    isString(s["logoText"]) &&
+    isString(s["announcementText"]) &&
+    typeof s["announcementVisible"] === "boolean" &&
+    Array.isArray(s["navItems"]) &&
+    isString(s["navCtaLabel"]) &&
+    isString(s["navCtaHref"]) &&
+    isString(s["footerHtml"]) &&
+    isString(s["customHeadHtml"]) &&
+    isString(s["customScriptsPath"]) &&
+    isString(s["customCssPath"])
+  );
+}
+
+/** Merges legacy partial drafts onto a known-good saved document. */
+function restoreSiteDocument(
+  saved: SiteDocument,
+  draft: Partial<SiteDocument>,
+): SiteDocument {
+  if (isSiteDocument(draft)) return draft;
+  // Defensive fallback for an already-malformed saved document. Normal project
+  // loads are normalized by main, but merging rather than throwing still lets
+  // the user recover/export the draft.
+  if (!isSiteDocument(saved)) {
+    const savedRecord: Record<string, unknown> = isRecord(saved) ? saved : {};
+    const draftRecord: Record<string, unknown> = isRecord(draft) ? draft : {};
+    return {
+      ...savedRecord,
+      ...draftRecord,
+      design: {
+        ...(isRecord(savedRecord["design"]) ? savedRecord["design"] : {}),
+        ...(isRecord(draftRecord["design"]) ? draftRecord["design"] : {}),
+      },
+      shell: {
+        ...(isRecord(savedRecord["shell"]) ? savedRecord["shell"] : {}),
+        ...(isRecord(draftRecord["shell"]) ? draftRecord["shell"] : {}),
+      },
+    } as unknown as SiteDocument;
+  }
+  const raw = draft as Record<string, unknown>;
+  const design = isRecord(raw["design"]) ? raw["design"] : {};
+  const shell = isRecord(raw["shell"]) ? raw["shell"] : {};
+  const stringValue = (value: unknown, fallback: string): string =>
+    isString(value) ? value : fallback;
+  return {
+    ...saved,
+    schemaVersion:
+      typeof raw["schemaVersion"] === "number" &&
+      Number.isFinite(raw["schemaVersion"])
+        ? raw["schemaVersion"]
+        : saved.schemaVersion,
+    themeId: stringValue(raw["themeId"], saved.themeId),
+    siteName: stringValue(raw["siteName"], saved.siteName),
+    generatedAt: stringValue(raw["generatedAt"], saved.generatedAt),
+    siteUrl: stringValue(raw["siteUrl"], saved.siteUrl),
+    language: stringValue(raw["language"], saved.language),
+    faviconPath: stringValue(raw["faviconPath"], saved.faviconPath),
+    design: {
+      ...saved.design,
+      accent: stringValue(design["accent"], saved.design.accent),
+      background: stringValue(design["background"], saved.design.background),
+      foreground: stringValue(design["foreground"], saved.design.foreground),
+      surface: stringValue(design["surface"], saved.design.surface),
+      fontFamily: stringValue(design["fontFamily"], saved.design.fontFamily),
+      headingFontFamily: stringValue(
+        design["headingFontFamily"],
+        saved.design.headingFontFamily,
+      ),
+      radius: stringValue(design["radius"], saved.design.radius),
+      containerWidth: stringValue(
+        design["containerWidth"],
+        saved.design.containerWidth,
+      ),
+      fontImportUrl: isString(design["fontImportUrl"])
+        ? design["fontImportUrl"]
+        : saved.design.fontImportUrl,
+      shadow:
+        design["shadow"] === "none" ||
+        design["shadow"] === "sm" ||
+        design["shadow"] === "md" ||
+        design["shadow"] === "lg"
+          ? design["shadow"]
+          : saved.design.shadow,
+    },
+    shell: {
+      ...saved.shell,
+      layoutMode:
+        shell["layoutMode"] === "legacy" || shell["layoutMode"] === "managed"
+          ? shell["layoutMode"]
+          : saved.shell.layoutMode,
+      layoutPath: stringValue(shell["layoutPath"], saved.shell.layoutPath),
+      siteTitle: stringValue(shell["siteTitle"], saved.shell.siteTitle),
+      logoText: stringValue(shell["logoText"], saved.shell.logoText),
+      announcementText: stringValue(
+        shell["announcementText"],
+        saved.shell.announcementText,
+      ),
+      announcementVisible:
+        typeof shell["announcementVisible"] === "boolean"
+          ? shell["announcementVisible"]
+          : saved.shell.announcementVisible,
+      navItems: Array.isArray(shell["navItems"])
+        ? (shell["navItems"] as NavItem[])
+        : saved.shell.navItems,
+      navCtaLabel: stringValue(shell["navCtaLabel"], saved.shell.navCtaLabel),
+      navCtaHref: stringValue(shell["navCtaHref"], saved.shell.navCtaHref),
+      footerHtml: stringValue(shell["footerHtml"], saved.shell.footerHtml),
+      customHeadHtml: stringValue(
+        shell["customHeadHtml"],
+        saved.shell.customHeadHtml,
+      ),
+      customScriptsPath: stringValue(
+        shell["customScriptsPath"],
+        saved.shell.customScriptsPath,
+      ),
+      customCssPath: stringValue(
+        shell["customCssPath"],
+        saved.shell.customCssPath,
+      ),
+    },
+  };
+}
+
 export function decodeSiteDraftContent(
   draftContent: string,
-): { site: SiteDocument; kind: SiteEditorKind } | null {
+): { site: Partial<SiteDocument>; kind: SiteEditorKind } | null {
   try {
     const parsed = JSON.parse(draftContent) as unknown;
     if (
@@ -46,30 +211,21 @@ export function decodeSiteDraftContent(
       "kind" in (parsed as Record<string, unknown>)
     ) {
       const wrapped = parsed as { site: unknown; kind: unknown };
-      // Validate minimal SiteDocument shape and kind value.
       if (
-        typeof wrapped.site !== "object" ||
-        wrapped.site === null ||
-        (wrapped.kind !== "shell" &&
-          wrapped.kind !== "design" &&
-          wrapped.kind !== null)
+        !isSiteDocument(wrapped.site) ||
+        (wrapped.kind !== "shell" && wrapped.kind !== "design")
       ) {
         return null;
       }
       return {
-        site: wrapped.site as SiteDocument,
-        kind: wrapped.kind as SiteEditorKind,
+        site: wrapped.site,
+        kind: wrapped.kind,
       };
     }
-    // Legacy draft: raw site JSON — validate it is at least an object.
-    if (
-      typeof parsed !== "object" ||
-      parsed === null ||
-      Array.isArray(parsed)
-    ) {
-      return null;
-    }
-    return { site: parsed as SiteDocument, kind: "shell" };
+    // Legacy drafts stored a raw, sometimes partial, SiteDocument. The caller
+    // merges valid fields onto the known-good saved document before use.
+    if (!isRecord(parsed)) return null;
+    return { site: parsed as Partial<SiteDocument>, kind: "shell" };
   } catch {
     return null;
   }
@@ -145,7 +301,7 @@ export function createEditorDraftRestoreActions(deps: EditorDraftRestoreDeps) {
       try {
         const decoded = decodeSiteDraftContent(draft.draft.content);
         if (!decoded) throw new Error("malformed site draft");
-        const restored = decoded.site;
+        const restored = restoreSiteDocument(state.siteDocument, decoded.site);
         state.pendingSiteDocument = restored;
         state.pendingSiteEditorKind = decoded.kind;
         state.recoveredSiteDraft = draft.draft;
@@ -190,7 +346,7 @@ export function createEditorDraftRestoreActions(deps: EditorDraftRestoreDeps) {
     try {
       const decoded = decodeSiteDraftContent(draft.draft.content);
       if (!decoded) throw new Error("malformed site draft");
-      const restored = decoded.site;
+      const restored = restoreSiteDocument(state.siteDocument, decoded.site);
       state.pendingSiteDocument = restored;
       state.pendingSiteEditorKind = decoded.kind;
       state.recoveredSiteDraft = draft.draft;

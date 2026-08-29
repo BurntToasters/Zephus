@@ -36,6 +36,20 @@ function writeMeta(metafile) {
   fs.writeFileSync(META_OUT, JSON.stringify(metafile));
 }
 
+// Guards against a "success" that produced no usable artifact (e.g. an esbuild
+// resolve that emitted nothing): assert the outfile exists and is non-empty.
+function verifyOutput(outfile) {
+  let stat;
+  try {
+    stat = fs.statSync(outfile);
+  } catch {
+    throw new Error(`Expected bundle output missing: ${outfile}`);
+  }
+  if (!stat.isFile() || stat.size === 0) {
+    throw new Error(`Bundle output is empty: ${outfile}`);
+  }
+}
+
 async function run() {
   if (watch) {
     const ctx = await esbuild.context(options);
@@ -44,6 +58,7 @@ async function run() {
   } else {
     const result = await esbuild.build(options);
     writeMeta(result.metafile);
+    verifyOutput(options.outfile);
     console.log("Renderer bundle written to src/renderer/zephusEngine.js");
   }
 }

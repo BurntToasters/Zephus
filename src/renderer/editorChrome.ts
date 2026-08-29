@@ -137,32 +137,17 @@ export function createChromeActions(deps: ChromeDeps) {
     // refuse to quit. Instead, surface the app's own save/discard/cancel modal
     // and, once resolved, re-close with the guard lifted.
     let forceCloseAllowed = false;
-    // Distinguishes CLOSE from RELOAD in beforeunload: a reload replaces the
-    // navigation entry (type "reload"); a close leaves it untouched. Closing
-    // after an earlier reload must still close — compare against the type of
-    // the FIRST load this window performed.
-    const initialNavType =
-      (
-        performance.getEntriesByType("navigation")[0] as
-          PerformanceNavigationTiming | undefined
-      )?.type ?? "navigate";
     const onBeforeUnload = (event: BeforeUnloadEvent): void => {
       if (forceCloseAllowed) return;
       if (!state.project || !isGlobalDirty(state)) return;
       event.preventDefault();
       event.returnValue = "";
-      const navType = (
-        performance.getEntriesByType("navigation")[0] as
-          PerformanceNavigationTiming | undefined
-      )?.type;
-      const isReload = navType === "reload" && navType !== initialNavType;
       void (async () => {
         const resolved = await maybeResolveUnsavedWork();
         if (!resolved) return;
-        if (isReload) {
-          location.reload();
-          return;
-        }
+        // Reloads initiated by Zephus are resolved through onReloadRequested
+        // below. beforeunload itself cannot reliably distinguish a native close
+        // from a browser reload, so treat this path strictly as close/quit.
         forceCloseAllowed = true;
         window.removeEventListener("beforeunload", onBeforeUnload);
         window.close();

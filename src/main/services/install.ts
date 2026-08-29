@@ -113,6 +113,7 @@ export async function installDependencies(
     activeChild = null;
     let timeout: NodeJS.Timeout | null = null;
     let settled = false;
+    let timedOut = false;
     let escalationTimer: NodeJS.Timeout | null = null;
     const finish = (result: OperationResult): void => {
       if (settled) return;
@@ -120,7 +121,6 @@ export async function installDependencies(
       installing = false;
       activeChild = null;
       if (timeout) clearTimeout(timeout);
-      if (escalationTimer) clearTimeout(escalationTimer);
       resolve(result);
     };
     try {
@@ -149,20 +149,34 @@ export async function installDependencies(
     }
 
     timeout = setTimeout(() => {
+      timedOut = true;
       onLog(
         `\n[npm install timed out after ${INSTALL_TIMEOUT_MS / 60000} minutes; terminating.]\n`,
       );
       if (child) {
         killInstallTree(child, false);
-        // Escalate: SIGTERM may be ignored by stuck postinstall scripts.
+        // Keep the operation active through escalation so app shutdown/cancel
+        // can still reach the child and no ignored-SIGTERM process is orphaned.
+        const timedOutChild = child;
         escalationTimer = setTimeout(() => {
-          if (child && !child.killed) killInstallTree(child, true);
+          const exited =
+            timedOutChild.exitCode !== null &&
+            timedOutChild.exitCode !== undefined;
+          const signalled =
+            timedOutChild.signalCode !== null &&
+            timedOutChild.signalCode !== undefined;
+          if (!exited && !signalled) killInstallTree(timedOutChild, true);
+          finish({
+            ok: false,
+            error: `npm install timed out after ${INSTALL_TIMEOUT_MS / 60000} minutes.`,
+          });
         }, 3000);
+      } else {
+        finish({
+          ok: false,
+          error: `npm install timed out after ${INSTALL_TIMEOUT_MS / 60000} minutes.`,
+        });
       }
-      finish({
-        ok: false,
-        error: `npm install timed out after ${INSTALL_TIMEOUT_MS / 60000} minutes.`,
-      });
     }, INSTALL_TIMEOUT_MS);
 
     const handle = (data: Buffer) => onLog(data.toString());
@@ -170,19 +184,34 @@ export async function installDependencies(
     child.stderr?.on("data", handle);
 
     child.on("error", (error) => {
+      if (escalationTimer) clearTimeout(escalationTimer);
       log.error("npm install failed to start", error);
-      finish({
-        ok: false,
-        error:
-          error.message.includes("ENOENT") || /not found/i.test(error.message)
-            ? "Node.js / npm not found. Install Node.js or set a custom Node.js location in Settings."
-            : error.message,
-      });
+      finish(
+        timedOut
+          ? {
+              ok: false,
+              error: `npm install timed out after ${INSTALL_TIMEOUT_MS / 60000} minutes.`,
+            }
+          : {
+              ok: false,
+              error:
+                error.message.includes("ENOENT") ||
+                /not found/i.test(error.message)
+                  ? "Node.js / npm not found. Install Node.js or set a custom Node.js location in Settings."
+                  : error.message,
+            },
+      );
     });
 
     child.on("exit", (code) => {
+      if (escalationTimer) clearTimeout(escalationTimer);
       onLog(`\n[npm install exited with code ${code ?? "null"}]\n`);
-      if (code === 0) finish({ ok: true });
+      if (timedOut) {
+        finish({
+          ok: false,
+          error: `npm install timed out after ${INSTALL_TIMEOUT_MS / 60000} minutes.`,
+        });
+      } else if (code === 0) finish({ ok: true });
       else
         finish({
           ok: false,

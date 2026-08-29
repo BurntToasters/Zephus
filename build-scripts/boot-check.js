@@ -65,6 +65,21 @@ if (!binary || !fs.existsSync(binary)) {
   process.exit(1);
 }
 
+// electron-builder applies fuses after Electron's upstream signature. On
+// macOS, intentionally unsigned CI packages are then killed by the kernel as
+// Code Signature Invalid before JS starts. Ad-hoc sign ONLY when signing
+// discovery was explicitly disabled; real release signatures are never
+// replaced by this check.
+if (
+  process.platform === "darwin" &&
+  process.env.CSC_IDENTITY_AUTO_DISCOVERY === "false"
+) {
+  const appBundle = path.resolve(path.dirname(binary), "..", "..");
+  console.log(`Ad-hoc signing unsigned smoke package: ${appBundle}`);
+  run("codesign", ["--force", "--deep", "--sign", "-", appBundle]);
+  run("codesign", ["--verify", "--deep", "--strict", appBundle]);
+}
+
 console.log(`Launching packaged binary: ${binary}`);
 const env = {
   ...process.env,

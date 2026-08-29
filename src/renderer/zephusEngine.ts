@@ -530,7 +530,7 @@ const canvasActions = createCanvasActions({
   modalController,
 });
 
-const { renderCanvas, renderProperties } = canvasActions;
+const { renderCanvas, renderCanvasSelection, renderProperties } = canvasActions;
 // Inline text editing (double-click, format toolbar) — created at module
 // level; all deps are hoisted function declarations.
 const inlineEdit = createInlineEditController({
@@ -3236,14 +3236,14 @@ function init(): void {
         state.selectedId = null;
         state.selectedSectionId = id;
         renderLayers();
-        renderCanvas();
+        renderCanvasSelection();
         renderProperties();
       },
       onSelectChild: (sectionId, childId) => {
         state.selectedId = childId;
         state.selectedSectionId = sectionId;
         renderLayers();
-        renderCanvas();
+        renderCanvasSelection();
         renderProperties();
       },
     });

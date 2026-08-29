@@ -109,6 +109,9 @@ export function installEditorSmokeHook(deps: EditorSmokeDeps): void {
     state.currentViewport = "desktop";
     state.undo = [];
     state.redo = [];
+    // Synthetic shortcuts must not try to clear drafts for the deliberately
+    // unapproved /smoke-project placeholder. Real draft IPC is exercised below.
+    state.siteDirty = true;
     markPageDirty(state, false);
     syncBlocksFromSections();
 
@@ -191,7 +194,15 @@ export function installEditorSmokeHook(deps: EditorSmokeDeps): void {
     // Undo/redo through the real inspector latch: typing commits one undo
     // entry on blur, Ctrl+Z reverts it, Ctrl+Shift+Z (or Cmd+Y) redoes.
     // Re-query the input: renderProperties() replaced the panel element.
+    const focusCanvas = (): void => {
+      // Model the real shortcut path: after leaving an inspector field, focus
+      // returns to the canvas. A detached input can otherwise remain Chromium's
+      // activeElement briefly and the editable-focus guard correctly ignores
+      // the synthetic document-level shortcut.
+      $("canvas").focus();
+    };
     const redoKeys = (): void => {
+      focusCanvas();
       document.dispatchEvent(
         new KeyboardEvent("keydown", {
           bubbles: true,
@@ -201,14 +212,17 @@ export function installEditorSmokeHook(deps: EditorSmokeDeps): void {
         }),
       );
     };
+    let lastUndoPrevented = false;
     const undoKey = (): void => {
-      document.dispatchEvent(
-        new KeyboardEvent("keydown", {
-          bubbles: true,
-          key: "z",
-          ctrlKey: true,
-        }),
-      );
+      focusCanvas();
+      const event = new KeyboardEvent("keydown", {
+        bubbles: true,
+        cancelable: true,
+        key: "z",
+        ctrlKey: true,
+      });
+      document.dispatchEvent(event);
+      lastUndoPrevented = event.defaultPrevented;
     };
     const freshInput = document.querySelector<HTMLInputElement>(
       "#properties input.text",
@@ -229,6 +243,11 @@ export function installEditorSmokeHook(deps: EditorSmokeDeps): void {
       freshInput.removeEventListener("input", directListener);
       const afterInput = section.children[0]?.props["text"];
       freshInput.blur();
+      // Electron smoke windows are not guaranteed to be OS-focused; Chromium
+      // can update activeElement without delivering the native blur callback.
+      // Dispatch the event explicitly so this harness exercises the same
+      // inspector commit path as a real focus transition.
+      freshInput.dispatchEvent(new FocusEvent("blur"));
       const afterBlur = section.children[0]?.props["text"];
       assert(
         afterBlur === "Undo Me",
@@ -236,12 +255,12 @@ export function installEditorSmokeHook(deps: EditorSmokeDeps): void {
       );
       undoKey();
       assert(
-        section.children[0]?.props["text"] !== "Undo Me",
-        "Editor smoke: Ctrl+Z did not revert the inspector edit.",
+        findBlockLocation("smoke-heading")?.block.props["text"] !== "Undo Me",
+        `Editor smoke: Ctrl+Z did not revert the inspector edit (undo=${state.undo.length} redo=${state.redo.length} prevented=${lastUndoPrevented} active=${(document.activeElement as HTMLElement | null)?.id || (document.activeElement as HTMLElement | null)?.tagName || "none"} mode=${state.mode} modalHidden=${document.getElementById("modal-overlay")?.classList.contains("hidden")}).`,
       );
       redoKeys();
       assert(
-        section.children[0]?.props["text"] === "Undo Me",
+        findBlockLocation("smoke-heading")?.block.props["text"] === "Undo Me",
         "Editor smoke: redo did not restore the inspector edit.",
       );
     }
