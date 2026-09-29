@@ -428,6 +428,12 @@ function run() {
   }));
   results.coverage = { status: covResult.ok ? "passed" : "failed" };
 
+  const e2eResult = runCommand("e2e-failures", "npm run test:e2e", (out) => ({
+    ok: /E2E: \d+ passed, 0 failed/.test(out),
+    passed: /E2E: \d+ passed, 0 failed/.test(out) ? 1 : 0,
+  }));
+  results.e2e = { status: e2eResult.ok ? "passed" : "failed" };
+
   printBanner("SUMMARY");
 
   const summaryLines = [
@@ -441,6 +447,7 @@ function run() {
     `${colors.bold}Smoke:${colors.reset}     ${results.smoke.status === "passed" ? colors.green + "✓ PASS" : results.smoke.status === "skipped" ? colors.yellow + "⏭ SKIPPED" : colors.red + "✗ FAIL"}${colors.reset}`,
     `${colors.bold}Astro build:${colors.reset} ${results.astroBuild.status === "passed" ? colors.green + "✓ PASS" : colors.red + "✗ FAIL"}${colors.reset}`,
     `${colors.bold}Coverage:${colors.reset}  ${results.coverage.status === "passed" ? colors.green + "✓ PASS" : colors.red + "✗ FAIL"}${colors.reset}`,
+    `${colors.bold}E2E failures:${colors.reset} ${results.e2e.status === "passed" ? colors.green + "✓ PASS" : colors.red + "✗ FAIL"}${colors.reset}`,
   ];
   for (const line of summaryLines) {
     console.log(line);

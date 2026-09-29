@@ -50,6 +50,8 @@
     "r": "git fetch origin && git reset --hard && git clean -fd && git switch -C main origin/main && git reset --hard origin/main && git clean -fd && npm run vi && npm run gitprune:force",
     "u": "npm update && npm run release:prepare && npm run format && npm run test:all",
     "test:watch": "vitest",
+    "test:e2e": "node build-scripts/e2e-failure-suite.js",
+    "test:e2e:all": "node build-scripts/e2e-failure-suite.js --themes=all",
     "test:all": "node build-scripts/test-all.js",
     "test:cov": "vitest run --coverage && node build-scripts/check-coverage-thresholds.js",
     "lint": "eslint src/ build-scripts/",
