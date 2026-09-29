@@ -159,7 +159,8 @@ The Windows VM is the single draft creator (`npm run release:draft` runs
 `release:wait-draft` (`--wait` mode never creates).
 
 Every release command requires a clean checkout whose `HEAD` exactly matches
-the selected release branch (normally `beta`), refuses a version that already
+the selected release branch (`beta` for prereleases, `main` for stable
+1.0.0+), refuses a version that already
 has a remote tag, and runs the full test suite before packaging. Each release
 VM must therefore check out the same commit before building.
 
@@ -167,13 +168,13 @@ The draft is created with:
 
 - **Release notes** = the full `CHANGELOG.md` (the `release-gate.js` fails fast
   when the current version's section is missing from it).
-- **Target commit** = the latest commit on the `beta` branch (resolved from the
+- **Target commit** = the latest commit on the selected release branch (resolved from the
   GitHub API, falling back to `git ls-remote`), so the draft always points at
   the most recent merged PR regardless of the release VM's checked-out commit.
 
 Both are re-synced on every `release:draft` run (PATCH), so a draft created
-before the final beta merge is retargeted automatically. Overrides:
-`RELEASE_BRANCH` (default `beta`) and `FORCE_TARGET_COMMIT` (manual pinning).
+before the final merge is retargeted automatically. Overrides:
+`RELEASE_BRANCH` (default `beta`; use `RELEASE_BRANCH=main` for stable) and `FORCE_TARGET_COMMIT` (manual pinning).
 
 After every platform has uploaded its artifacts and signatures, verify the
 asset set and publish the draft manually in GitHub. Never replace a published
