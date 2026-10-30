@@ -13,10 +13,10 @@
     "cross-platform"
   ],
   "main": "dist/main/main.js",
-  "packageManager": "npm@11.10.1",
+  "packageManager": "npm@12.2.1",
   "engines": {
-    "node": ">=24",
-    "npm": ">=10"
+    "node": "^24.22.1 || >=26.13.0",
+    "npm": ">=12.2.1"
   },
   "scripts": {
     "gitprune": "node build-scripts/git-prune-local-branches.js",

@@ -23,6 +23,7 @@ export default defineConfig({
     ],
   },
   test: {
+    execArgv: Number(process.versions.node.split(".")[0]) >= 25 ? ["--no-webstorage"] : [],
     include: ["src/**/*.test.ts"],
     exclude: ["node_modules", "dist", "release"],
     // Real fs.watch delivery (watch.test.ts) is unreliable under parallel

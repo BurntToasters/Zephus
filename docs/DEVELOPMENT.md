@@ -4,7 +4,7 @@ Notes for working on the Zephus Electron app and editor.
 
 ## Prerequisites
 
-- **Node.js** ≥ 24 and **npm** ≥ 10 (see `package.json` `engines`)
+- **Node.js** `^24.22.1 || >=26.13.0` and **npm** `>=12.2.1` (see `package.json` `engines`)
 - **Git** (for project version control and for testing the in-editor Git panel)
 
 ## Common commands

@@ -2,7 +2,7 @@ const { execSync } = require("child_process");
 const os = require("os");
 const fs = require("fs");
 
-const RUNTIME_VERSION = "24.08";
+const RUNTIME_VERSION = "26.08";
 const ARCHS = ["x86_64", "aarch64"];
 
 if (process.platform !== "linux") {
@@ -16,7 +16,7 @@ const FLATPAK_RUNTIMES = [
   "org.electronjs.Electron2.BaseApp",
 ];
 
-const SDK_EXTENSIONS = ["org.freedesktop.Sdk.Extension.node22"];
+const SDK_EXTENSIONS = ["org.freedesktop.Sdk.Extension.node24"];
 
 function run(cmd, opts = {}) {
   console.log(`\n> ${cmd}`);
