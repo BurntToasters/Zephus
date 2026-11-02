@@ -55,21 +55,21 @@ Zephus couldn't open your site.
 
 ### "Cannot start preview server"
 
-Clicking **Preview** shows an error.
+Clicking **Start Preview** shows an error.
 
 **Likely causes:**
 
-- Node.js not installed or wrong version
+- Node.js not installed or wrong version (need **22.12+**)
 - `npm install` hasn't been run
-- Port 4321 is already in use
+- Another dev server or process is already using the preview port
 - `astro.config.mjs` is invalid
 
 **Fix (in order):**
 
 1. Check Node.js: `node --version` should be 22.12+
 2. In your project folder, run: `npm install`
-3. Try preview again
-4. If port conflict, kill the process: `lsof -i :4321` (Linux/macOS) or `netstat -ano` (Windows)
+3. Click **Stop Preview**, wait a moment, then try **Start Preview** again
+4. Check the **Logs** tab for the port Astro chose and stop any conflicting process
 5. Check `astro.config.mjs` syntax (should be valid JavaScript)
 6. In Zephus Settings, try custom Node.js path
 

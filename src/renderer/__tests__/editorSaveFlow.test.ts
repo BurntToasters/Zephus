@@ -53,6 +53,7 @@ function makeDeps(
   const clearDraft = vi.fn(
     async (): Promise<{ ok: boolean; error?: string }> => ({ ok: true }),
   );
+  const writeDraft = vi.fn(async () => ({ ok: true as const }));
   // Wire the real session helpers so dirty state actually flips, while
   // keeping spies for call assertions.
   const persistPendingSiteDocument = vi.fn(async () => {
@@ -83,7 +84,7 @@ function makeDeps(
     reloadPages: vi.fn(async () => undefined),
     persistPendingSiteDocument,
     afterSave: vi.fn(),
-    zephus: { writePageDocument, detachPageDocument, clearDraft },
+    zephus: { writePageDocument, detachPageDocument, clearDraft, writeDraft },
     ...mocks,
   };
   return {
@@ -91,6 +92,7 @@ function makeDeps(
     writePageDocument,
     detachPageDocument,
     clearDraft,
+    writeDraft,
     persistPendingSiteDocument,
     setCode,
   };
@@ -147,7 +149,7 @@ describe("editorSave runSave", () => {
 
   it("keeps newer edits dirty when they arrive mid-save", async () => {
     const state = makeState();
-    const { deps, clearDraft } = makeDeps(state);
+    const { deps, clearDraft, writeDraft } = makeDeps(state);
     // Hold the draft-clear open: edits that land between the write and the
     // cleanup must re-mark the session dirty after it was cleared.
     let resolveClear: (value: { ok: boolean; error?: string }) => void;
@@ -178,6 +180,12 @@ describe("editorSave runSave", () => {
     );
     // The dirty session also re-arms the crash-recovery draft.
     expect(deps.scheduleDraftWrite).toHaveBeenCalled();
+    expect(writeDraft).toHaveBeenCalledWith(
+      "/proj",
+      "page",
+      "index.astro",
+      "<h1>visual</h1>",
+    );
   });
 
   it("stops cleanly when the open page changed mid-write", async () => {

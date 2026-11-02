@@ -381,6 +381,8 @@ export function renderThemePreviewModalBody(
             src={state.previewUrl}
             sandbox="allow-same-origin allow-scripts"
             title={`${state.themeName} preview`}
+            tabindex="-1"
+            aria-hidden="true"
           />
         </div>
       </div>

@@ -53,8 +53,14 @@ describe("GitHub CLI release transport", () => {
       path.join("/release", "Zephus.exe.blockmap"),
       path.join("/release", "beta.yml"),
       path.join("/release", "db-linux.yml"),
-      path.join("/release", "latest.yml"),
     ]);
+    expect(
+      getReleaseUploadFiles(
+        ["latest.yml", "beta.yml", "Zephus.exe"],
+        "/release",
+        "1.0.0",
+      ),
+    ).toContain(path.join("/release", "latest.yml"));
   });
 
   it("disables electron-builder publishing in release commands", () => {

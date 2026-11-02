@@ -16,6 +16,7 @@ import {
   splitPair,
   styleAttr,
 } from "../renderHelpers";
+import { collectResponsiveCss } from "../blockRender";
 
 describe("renderHelpers", () => {
   it("escapes HTML and attributes", () => {
@@ -117,14 +118,31 @@ describe("renderHelpers", () => {
     // by canvas CSS) so they stay selectable — no inline display:none here.
     expect(mobile).not.toContain("display:none");
 
-    // The build hides at the marked viewport via the responsive <style> block
-    // (collectResponsiveCss), and inline for the desktop viewport.
+    // Desktop hideOn is emitted only in collectResponsiveCss (not inline).
     const buildDesktop = styleAttr({
       type: "columns",
       props: {},
       style: { hideOn: ["desktop"] },
     });
-    expect(buildDesktop).toContain("display:none");
+    expect(buildDesktop).not.toContain("display:none");
+    const desktopHideCss = collectResponsiveCss([
+      {
+        id: "sec-hide-desktop",
+        type: "section",
+        label: "S",
+        props: { wrapper: "none", cls: "" },
+        children: [
+          {
+            id: "block-hide-desktop",
+            type: "columns",
+            props: {},
+            style: { hideOn: ["desktop"] },
+          },
+        ],
+      },
+    ]);
+    expect(desktopHideCss).toMatch(/@media\s*\(\s*min-width:\s*1025px\s*\)/);
+    expect(desktopHideCss).toContain("display:none");
   });
 });
 

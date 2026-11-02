@@ -342,20 +342,82 @@ export function createNextActionsRenderer(deps: NextActionsDeps) {
               const projectPath = state.project?.path;
               const page = state.page;
               if (!projectPath || !page) return;
-              const cleared = await window.zephus.clearDraft(
-                projectPath,
-                "page",
-                page,
-              );
-              void cleared;
+              const pageRevisionAtStart = state.pageRevision;
+              const siteRevisionAtStart = state.siteRevision;
+              const beforeClear = getState();
+              if (
+                beforeClear.project?.path !== projectPath ||
+                beforeClear.page !== page ||
+                beforeClear.pageRevision !== pageRevisionAtStart ||
+                beforeClear.siteRevision !== siteRevisionAtStart
+              ) {
+                setStatus(
+                  "New edits were made while discarding; they were kept.",
+                );
+                return;
+              }
+              try {
+                await loadPage(page, {
+                  skipUnsavedGuard: true,
+                  skipDraftRestore: true,
+                  forceReload: true,
+                });
+              } catch {
+                markDirty(true);
+                setStatus(
+                  "Could not discard page changes: reload from disk failed.",
+                );
+                return;
+              }
+              const afterReload = getState();
+              if (
+                afterReload.project?.path !== projectPath ||
+                afterReload.page !== page ||
+                afterReload.pageRevision !== pageRevisionAtStart ||
+                afterReload.siteRevision !== siteRevisionAtStart
+              ) {
+                setStatus(
+                  "New edits were made while discarding; they were kept.",
+                );
+                return;
+              }
+              let cleared: { ok: boolean; error?: string };
+              try {
+                cleared = await window.zephus.clearDraft(
+                  projectPath,
+                  "page",
+                  page,
+                );
+              } catch {
+                markDirty(true);
+                setStatus(
+                  "Could not discard page changes: recovery draft cleanup failed.",
+                );
+                return;
+              }
+              if (!cleared.ok) {
+                markDirty(true);
+                setStatus(
+                  "Could not discard page changes: " +
+                    (cleared.error ?? "recovery draft cleanup failed"),
+                );
+                return;
+              }
+              const afterClear = getState();
+              if (
+                afterClear.project?.path !== projectPath ||
+                afterClear.page !== page ||
+                afterClear.pageRevision !== pageRevisionAtStart ||
+                afterClear.siteRevision !== siteRevisionAtStart
+              ) {
+                setStatus(
+                  "New edits were made while discarding; they were kept.",
+                );
+                return;
+              }
               clearChanges();
               markDirty(false);
               renderDirtyIndicators();
-              await loadPage(page, {
-                skipUnsavedGuard: true,
-                skipDraftRestore: true,
-                forceReload: true,
-              });
               setStatus("Discarded unsaved page changes.");
             })();
           },

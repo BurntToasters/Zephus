@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import {
+  collectResponsiveCss,
   renderBlockHtml,
   selectPostEntries,
   renderSectionsMarkup,
@@ -252,7 +253,18 @@ describe("canvas vs build parity", () => {
     };
     const build = renderBlockHtml(block, {});
     const canvas = renderBlockHtml(block, { forCanvas: true });
-    expect(build).toContain("display:none");
+    expect(build).not.toContain("display:none");
+    const css = collectResponsiveCss([
+      {
+        id: "sec-hide",
+        type: "section",
+        label: "S",
+        props: { wrapper: "none", cls: "" },
+        children: [block],
+      },
+    ]);
+    expect(css).toMatch(/@media\s*\(\s*min-width:\s*1025px\s*\)/);
+    expect(css).toContain("display:none");
     expect(canvas).not.toContain("display:none");
   });
 });

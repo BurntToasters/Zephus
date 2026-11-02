@@ -67,9 +67,9 @@ export function GitBranchTag() {
       type="button"
       class="git-branch-chip"
       title="Open Git panel"
-      aria-label="Open Git panel"
       onClick={openGitTab}
     >
+      <span class="sr-only">Open Git panel</span>
       <Show when={gitStatus()}>
         {(status) => (
           <Show
@@ -172,20 +172,25 @@ export function GitPanelContent() {
 
   const canSyncRemote = () => {
     const status = gitStatus();
-    return (
-      !!status?.available &&
-      !status.detachedHead &&
-      !!status.branch &&
-      // A repo with NO remote has nothing to push/pull to: previously the
-      // Push button appeared anyway and every click failed with a raw
-      // "No configured push destination" (a guaranteed-error dead end).
-      !!status.hasRemote
-    );
+    if (
+      !status?.available ||
+      status.detachedHead ||
+      !status.branch ||
+      !status.hasRemote
+    ) {
+      return false;
+    }
+    const ahead = status.ahead ?? 0;
+    const behind = status.behind ?? 0;
+    // Diverged: fast-forward pull and plain push both fail — disable sync.
+    if (ahead > 0 && behind > 0) return false;
+    return true;
   };
 
   const submitCommit = async () => {
     const message = commitMessage().trim();
     if (!message || !gitPanelHandlers || busy()) return;
+    if (gitStatus()?.detachedHead) return;
     const paths = [...selectedFiles()];
     if (paths.length === 0) return;
     const status = gitStatus();
@@ -444,7 +449,11 @@ export function GitPanelContent() {
                   rows={3}
                   value={commitMessage()}
                   placeholder="Describe your changes"
-                  disabled={committing() || gitPanelEditorDirty()}
+                  disabled={
+                    committing() ||
+                    gitPanelEditorDirty() ||
+                    !!gitStatus()?.detachedHead
+                  }
                   onInput={(event) =>
                     setCommitMessage(event.currentTarget.value)
                   }
@@ -457,7 +466,8 @@ export function GitPanelContent() {
                   !commitMessage().trim() ||
                   busy() ||
                   selectedCount() === 0 ||
-                  gitPanelEditorDirty()
+                  gitPanelEditorDirty() ||
+                  !!gitStatus()?.detachedHead
                 }
                 onClick={() => void submitCommit()}
               >

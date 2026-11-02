@@ -260,6 +260,7 @@ export interface EditorDraftRestoreDeps {
     message: string,
   ) => Promise<DraftRestoreChoice>;
   onSiteDraftRestored: () => void;
+  getEditorSessionGeneration: () => number;
   zephus: Pick<Window["zephus"], "readDraft" | "clearDraft">;
 }
 
@@ -273,11 +274,21 @@ export function createEditorDraftRestoreActions(deps: EditorDraftRestoreDeps) {
   ): Promise<string | null> {
     const state = deps.getState();
     if (!state.project || !state.siteDocument) return null;
+    const projectPath = state.project.path;
+    const sessionGeneration = deps.getEditorSessionGeneration();
+    const sessionStale = (): boolean => {
+      const current = deps.getState();
+      return (
+        current.project?.path !== projectPath ||
+        deps.getEditorSessionGeneration() !== sessionGeneration
+      );
+    };
     const draft = await deps.zephus.readDraft(
-      state.project.path,
+      projectPath,
       "site",
       SITE_DRAFT_TARGET,
     );
+    if (sessionStale()) return null;
     if (!draft.ok || !draft.draft?.content) return null;
     if (siteDraftContentMatchesSaved(draft.draft.content, state.siteDocument)) {
       // The draft is stale (its content now equals the saved site — e.g. the
@@ -285,10 +296,11 @@ export function createEditorDraftRestoreActions(deps: EditorDraftRestoreDeps) {
       // home screen show a permanent "Unsaved Work Recovery" card whose
       // "Resume Draft" silently does nothing; clear it.
       const cleared = await deps.zephus.clearDraft(
-        state.project.path,
+        projectPath,
         "site",
         SITE_DRAFT_TARGET,
       );
+      if (sessionStale()) return null;
       if (!cleared.ok) {
         const warning = cleanupWarning("site", cleared.error);
         deps.setStatus(warning);
@@ -301,6 +313,7 @@ export function createEditorDraftRestoreActions(deps: EditorDraftRestoreDeps) {
       try {
         const decoded = decodeSiteDraftContent(draft.draft.content);
         if (!decoded) throw new Error("malformed site draft");
+        if (sessionStale()) return null;
         const restored = restoreSiteDocument(state.siteDocument, decoded.site);
         state.pendingSiteDocument = restored;
         state.pendingSiteEditorKind = decoded.kind;
@@ -313,10 +326,11 @@ export function createEditorDraftRestoreActions(deps: EditorDraftRestoreDeps) {
         );
       } catch {
         const cleared = await deps.zephus.clearDraft(
-          state.project.path,
+          projectPath,
           "site",
           SITE_DRAFT_TARGET,
         );
+        if (sessionStale()) return null;
         if (!cleared.ok) {
           const warning = cleanupWarning("site", cleared.error);
           deps.setStatus(warning);
@@ -329,12 +343,14 @@ export function createEditorDraftRestoreActions(deps: EditorDraftRestoreDeps) {
       "Restore Site Draft",
       formatSiteDraftRestoreMessage(draft.draft.savedAt),
     );
+    if (sessionStale()) return null;
     if (choice === "discard") {
       const cleared = await deps.zephus.clearDraft(
-        state.project.path,
+        projectPath,
         "site",
         SITE_DRAFT_TARGET,
       );
+      if (sessionStale()) return null;
       if (!cleared.ok) {
         const warning = cleanupWarning("site", cleared.error);
         deps.setStatus(warning);
@@ -346,6 +362,7 @@ export function createEditorDraftRestoreActions(deps: EditorDraftRestoreDeps) {
     try {
       const decoded = decodeSiteDraftContent(draft.draft.content);
       if (!decoded) throw new Error("malformed site draft");
+      if (sessionStale()) return null;
       const restored = restoreSiteDocument(state.siteDocument, decoded.site);
       state.pendingSiteDocument = restored;
       state.pendingSiteEditorKind = decoded.kind;
@@ -359,10 +376,11 @@ export function createEditorDraftRestoreActions(deps: EditorDraftRestoreDeps) {
       return null;
     } catch {
       const cleared = await deps.zephus.clearDraft(
-        state.project.path,
+        projectPath,
         "site",
         SITE_DRAFT_TARGET,
       );
+      if (sessionStale()) return null;
       if (!cleared.ok) {
         const warning = cleanupWarning("site", cleared.error);
         deps.setStatus(warning);

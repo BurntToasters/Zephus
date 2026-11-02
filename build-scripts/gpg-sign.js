@@ -505,7 +505,11 @@ async function main() {
   const releaseEntries = fs
     .readdirSync(RELEASE_DIR)
     .filter((name) => fs.statSync(path.join(RELEASE_DIR, name)).isFile());
-  const filesToUpload = getReleaseUploadFiles(releaseEntries, RELEASE_DIR);
+  const filesToUpload = getReleaseUploadFiles(
+    releaseEntries,
+    RELEASE_DIR,
+    VERSION,
+  );
 
   console.log("\nFiles queued for upload:");
   filesToUpload.forEach((f) => console.log("   • " + path.basename(f)));

@@ -28,7 +28,7 @@ Step-by-step guides for common tasks in Zephus.
 
 ### Create a New Page
 
-1. Click **+ New Page** in the left sidebar's **Pages** tab
+1. Click the **New page** icon button in the left sidebar's **Pages** tab
 2. Enter a **page slug** (URL):
    - Use lowercase letters, numbers, and hyphens
    - Spaces are auto-converted to hyphens
@@ -167,7 +167,7 @@ Set colors, fonts, and layout tokens for your entire site.
 
 ### Open Design System Settings
 
-1. Look for the **Design System** or **Colors & Fonts** button in your project
+1. Look for the **Design System** button in your project
 2. A modal opens with these sections:
    - **Colors**
    - **Typography**
@@ -356,9 +356,9 @@ For developers or advanced customization, edit raw Astro/JSX.
 
 - **Syntax highlighting** for HTML, JSX, CSS
 - **Line numbers** and error indicators
-- **Ctrl+Enter** inserts a blank line; save multi-line edits with Ctrl/Cmd+S
-- **Ctrl+Z / Ctrl+Y** for undo/redo
-- **Ctrl+F** to find and replace
+- **Ctrl/Cmd+Z / Ctrl/Cmd+Y** (or **Shift+Ctrl/Cmd+Z**) for undo/redo in the code editor
+- **Ctrl/Cmd+S** saves the page to disk
+- **Tab / Shift+Tab** indent and unindent
 
 ---
 

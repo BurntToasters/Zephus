@@ -62,6 +62,14 @@ export function HelpModalContent() {
               </td>
               <td>Find and Replace Across Pages</td>
             </tr>
+            <tr>
+              <td>
+                <kbd>?</kbd> or <kbd>H</kbd>
+              </td>
+              <td>
+                Open this shortcut help (canvas or dashboard background only)
+              </td>
+            </tr>
           </tbody>
         </table>
       </div>
@@ -89,6 +97,20 @@ export function HelpModalContent() {
                 <kbd>Ctrl/Cmd</kbd> + <kbd>K</kbd>
               </td>
               <td>Add Link to Selection</td>
+            </tr>
+            <tr>
+              <td>
+                <kbd>Enter</kbd>
+              </td>
+              <td>Confirm single-line edit</td>
+            </tr>
+            <tr>
+              <td>
+                <kbd>Ctrl/Cmd</kbd> + <kbd>Enter</kbd>
+              </td>
+              <td>
+                Confirm multi-line text edit (plain Enter inserts a line break)
+              </td>
             </tr>
             <tr>
               <td>
@@ -121,6 +143,12 @@ export function HelpModalContent() {
                 <kbd>Ctrl/Cmd</kbd> + <kbd>S</kbd>
               </td>
               <td>Save page to disk</td>
+            </tr>
+            <tr>
+              <td>
+                <kbd>Tab</kbd> / <kbd>Shift</kbd> + <kbd>Tab</kbd>
+              </td>
+              <td>Indent / unindent</td>
             </tr>
           </tbody>
         </table>

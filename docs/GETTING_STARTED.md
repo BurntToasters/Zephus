@@ -19,11 +19,11 @@ Zephus is a local-first visual editor for Astro websites. Use it to create and e
 When you launch Zephus, you'll see the **Start** screen with several options:
 
 - **Recent Projects**: Reopen sites you've worked on
-- **Explore Templates**: Create a new site from a theme
+- **Starter Themes**: Create a new site from a theme
 - **App Settings**: Configure preferences
 - **About & Licenses**: View app information
 
-Click **Explore Templates** to see the available themes:
+Open the **Starter Themes** tab to see the available themes (on an empty recent list, the welcome card also offers **Explore Templates**, which opens the same tab):
 
 - **Documentation**: Clean, focused documentation pages
 - **Project**: Marketing / landing site template
@@ -53,7 +53,7 @@ Once the project is created, Zephus opens the **Editor** view. You now have:
 - **Canvas** (center): Your page editor
 - **Build rail** (left): Pages, blocks, and layers
 - **Inspector rail** (right): Properties for the current block, plus guidance, Git, and logs
-- **Toolbar** (top): Save, Preview, Publish buttons
+- **Toolbar** (top): Save, **Start Preview** / **Stop Preview**, Publish buttons
 
 ## The Editor Interface
 
@@ -64,9 +64,9 @@ The left rail has three tabs, so only one panel is open at a time.
 **Pages** lists your site pages. You can:
 
 - **Click** a page name to edit it
-- **👁️ Icon**: Toggle visibility in site navigation
+- **👁️ Icon**: Hide or show the page in site navigation (does not unpublish the page)
 - **⋯ Menu**: Rename, duplicate, or delete pages
-- **+ New Page**: Create a new page
+- **New page** icon button (title **New page**): Create a new page
 
 It also holds your site **Navigation** list and the **Site Shell** and **Design System** buttons.
 
@@ -112,12 +112,12 @@ Edit these fields to customize your content. In **Code** mode the Inspector show
 **Right section:**
 
 - **Save**: Save your page
-- **Preview**: Start the development server and open a preview in your browser
+- **Start Preview** / **Stop Preview**: Start or stop the dev server and separate preview window (saved files on disk)
 - **Publish**: Build for production
 
 ## Creating Your First Page
 
-1. On the left sidebar, click **+ New Page**
+1. On the left sidebar, click the **New page** icon button
 2. Enter a page slug (e.g., `about` → `/about`):
    - Slugs must be lowercase
    - Hyphens `-` are allowed, and spaces are auto-converted
@@ -155,14 +155,14 @@ For advanced users or detached pages:
 
 ## Previewing Your Site
 
-Click **Preview** to:
+Click **Start Preview** to:
 
-1. Start the Astro development server (`npm run dev`)
-2. Open your site in a web browser
-3. See live changes as you edit (with hot reload)
+1. Save unsaved work if prompted, then start the Astro development server (`npm run dev`)
+2. Open a **separate preview window** that loads **saved site files** (not the unsaved canvas)
+3. Save in Zephus and use hot reload or refresh in the preview window to see updates
 4. Review design tokens and custom fonts
 
-The preview window stays open while you edit. Click **Stop Preview** to shut down the server.
+Click **Stop Preview** to shut down the server and close the preview flow.
 
 > 💡 **Note**: Custom Google Fonts load in the editor canvas too, so what you see in Zephus matches the dev server and production build.
 

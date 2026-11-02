@@ -76,6 +76,22 @@ describe("sanitizeHtmlForCanvas", () => {
     expect(out).toContain('srcset="/a.png 1x, /b.png 2x"');
   });
 
+  it("blocks javascript: when a C0 control leads the scheme", () => {
+    const out = sanitizeHtmlForCanvas(
+      '<a href="\u0001' + "java" + 'script:alert(1)">x</a>',
+    );
+    expect(out).not.toContain("href");
+    expect(out).toContain(">x</a>");
+  });
+
+  it("keeps benign URLs after stripping stray C0 controls", () => {
+    const out = sanitizeHtmlForCanvas(
+      '<a href="/ab\u0001out">About</a><img src="/assets/\u0002x.png">',
+    );
+    expect(out).toContain('href="/about"');
+    expect(out).toContain('src="/assets/x.png"');
+  });
+
   it("keeps safe content intact", () => {
     const out = sanitizeHtmlForCanvas(
       '<a href="/about">About</a><img src="/assets/x.png" alt="X"><strong>bold</strong>',

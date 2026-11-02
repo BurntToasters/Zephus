@@ -35,7 +35,10 @@ function makeProject(): void {
           {
             id: "b1",
             type: "text",
-            props: { text: "Hello world", cls: "" },
+            props: {
+              text: 'See <a href="/about">Hello</a> world',
+              cls: "",
+            },
           },
         ],
       },
@@ -80,6 +83,23 @@ describe("findReplace payload validation", () => {
     const result = searchPages(projectDir, "src/pages", "Hello");
     expect(result.ok).toBe(true);
     expect(result.totalMatches).toBe(1);
+    const replaced = replaceAllInPages(
+      projectDir,
+      "src/pages",
+      "Hello",
+      "Visit",
+    );
+    expect(replaced.ok).toBe(true);
+    expect(replaced.replaced).toBe(1);
+    const page = readPageDocument(
+      projectDir,
+      path.join("src", "pages", "index.astro"),
+      "src/pages",
+    );
+    const text = page.pageDocument?.sections[0]?.children[0]?.props["text"];
+    expect(text).toContain("Visit");
+    expect(text).toContain('href="/about"');
+    expect(text).not.toContain(">Hello<");
   });
 
   it("skips detached pages in search counts and reports them", () => {

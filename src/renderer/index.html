@@ -11,7 +11,6 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <a class="skip-link" href="#canvas">Skip to canvas</a>
     <!-- Project selection view -->
     <section id="view-start" class="view">
       <div class="start-atmosphere"></div>
@@ -35,7 +34,7 @@
               tabindex="0"
             >
               <i data-lucide="clock"></i>
-              <span>Recent Sites</span>
+              <span>Recent Projects</span>
             </button>
             <button
               id="tab-create"
@@ -94,7 +93,6 @@
 
             <header class="pane-header">
               <div class="pane-header-title">
-                <p class="pane-kicker">Resume Work</p>
                 <h2 class="pane-title">Recent Projects</h2>
               </div>
               <div class="pane-header-actions">
@@ -122,8 +120,7 @@
           >
             <header class="pane-header">
               <div class="pane-header-title">
-                <p class="pane-kicker">Start New</p>
-                <h2 class="pane-title">Theme Discovery</h2>
+                <h2 class="pane-title">Starter Themes</h2>
               </div>
               <div class="pane-header-actions">
                 <button id="btn-create" class="btn primary disabled" disabled>
@@ -149,7 +146,6 @@
           >
             <header class="pane-header">
               <div class="pane-header-title">
-                <p class="pane-kicker">Configuration</p>
                 <h2 class="pane-title">App Settings</h2>
               </div>
             </header>
@@ -171,7 +167,6 @@
           >
             <header class="pane-header">
               <div class="pane-header-title">
-                <p class="pane-kicker">Information</p>
                 <h2 class="pane-title">About & Licenses</h2>
               </div>
             </header>
@@ -233,6 +228,7 @@
 
     <!-- Editor view -->
     <section id="view-editor" class="view hidden">
+      <a class="skip-link" href="#canvas">Skip to canvas</a>
       <header class="topbar">
         <div class="topbar-left">
           <span class="brand-sm">Zephus</span>
@@ -315,7 +311,7 @@
           >
             <i data-lucide="redo-2"></i> Redo
           </button>
-          <button id="btn-preview" class="btn" aria-label="Start Live Preview">
+          <button id="btn-preview" class="btn" aria-label="Start Preview">
             <i data-lucide="play"></i> Start Preview
           </button>
           <button
@@ -387,9 +383,10 @@
               role="tab"
               aria-selected="true"
               aria-controls="workspace-left-pages"
+              aria-label="Pages"
               data-workspace-tab="pages"
             >
-              <i data-lucide="files"></i><span>Pages</span>
+              <i data-lucide="files" aria-hidden="true"></i><span>Pages</span>
             </button>
             <button
               id="workspace-left-build-tab"
@@ -398,10 +395,11 @@
               role="tab"
               aria-selected="false"
               aria-controls="workspace-left-build"
+              aria-label="Build"
               data-workspace-tab="build"
               tabindex="-1"
             >
-              <i data-lucide="blocks"></i><span>Build</span>
+              <i data-lucide="blocks" aria-hidden="true"></i><span>Build</span>
             </button>
             <button
               id="workspace-left-layers-tab"
@@ -410,10 +408,12 @@
               role="tab"
               aria-selected="false"
               aria-controls="workspace-left-layers"
+              aria-label="Layers"
               data-workspace-tab="layers"
               tabindex="-1"
             >
-              <i data-lucide="layers-3"></i><span>Layers</span>
+              <i data-lucide="layers-3" aria-hidden="true"></i
+              ><span>Layers</span>
             </button>
           </div>
 
@@ -542,9 +542,11 @@
               role="tab"
               aria-selected="true"
               aria-controls="workspace-right-inspect"
+              aria-label="Inspect"
               data-workspace-tab="inspect"
             >
-              <i data-lucide="sliders-horizontal"></i><span>Inspect</span>
+              <i data-lucide="sliders-horizontal" aria-hidden="true"></i
+              ><span>Inspect</span>
             </button>
             <button
               id="workspace-right-guide-tab"
@@ -553,10 +555,11 @@
               role="tab"
               aria-selected="false"
               aria-controls="workspace-right-guide"
+              aria-label="Guide"
               data-workspace-tab="guide"
               tabindex="-1"
             >
-              <i data-lucide="compass"></i><span>Guide</span>
+              <i data-lucide="compass" aria-hidden="true"></i><span>Guide</span>
             </button>
             <button
               id="workspace-right-git-tab"
@@ -565,10 +568,12 @@
               role="tab"
               aria-selected="false"
               aria-controls="workspace-right-git"
+              aria-label="Git"
               data-workspace-tab="git"
               tabindex="-1"
             >
-              <i data-lucide="git-branch"></i><span>Git</span>
+              <i data-lucide="git-branch" aria-hidden="true"></i
+              ><span>Git</span>
             </button>
             <button
               id="workspace-right-logs-tab"
@@ -577,10 +582,11 @@
               role="tab"
               aria-selected="false"
               aria-controls="workspace-right-logs"
+              aria-label="Logs"
               data-workspace-tab="logs"
               tabindex="-1"
             >
-              <i data-lucide="terminal"></i><span>Logs</span>
+              <i data-lucide="terminal" aria-hidden="true"></i><span>Logs</span>
             </button>
           </div>
 

@@ -94,7 +94,8 @@ export function createKeyboardHandler(deps: KeyboardDeps) {
       return;
     }
 
-    if ((e.key === "?" || e.key === "h" || e.key === "H") && !editing) {
+    if (e.key === "?" || e.key === "h" || e.key === "H") {
+      if (editing || mod) return;
       if (!modalController.isOpen()) {
         // Only fire from the page background or the canvas itself — a bare
         // "h" while a palette item, template card, toolbar button, block shell
@@ -105,9 +106,11 @@ export function createKeyboardHandler(deps: KeyboardDeps) {
           active.id === "canvas" ||
           active.id === "app" ||
           active.classList.contains("start-container");
-        if (isBackgroundFocus) openHelpModal();
+        if (isBackgroundFocus) {
+          openHelpModal();
+          e.preventDefault();
+        }
       }
-      e.preventDefault();
       return;
     }
 

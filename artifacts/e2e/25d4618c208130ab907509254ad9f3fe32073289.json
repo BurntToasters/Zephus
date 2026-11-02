@@ -1,0 +1,377 @@
+{
+  "sha": "25d4618c208130ab907509254ad9f3fe32073289",
+  "passed": 74,
+  "failed": 0,
+  "checks": [
+    {
+      "name": "corrupt sidecar handled",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "non-string site fields coerced",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "traversal rejected",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "delete refuses .env",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "rename missing page fails clean",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "no stray file after failed rename",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "zero-edit save byte-identical",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "find/replace mutates searchable text",
+      "ok": true,
+      "detail": "replaced=1"
+    },
+    {
+      "name": "hand-authored bytes preserved on metadata write",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "draft write",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "draft read returns hello",
+      "ok": true,
+      "detail": "hello"
+    },
+    {
+      "name": "draft clear",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "draft cleared content",
+      "ok": true,
+      "detail": "empty"
+    },
+    {
+      "name": "re-ensure after mutation",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "corrupt sidecar handled",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "non-string site fields coerced",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "traversal rejected",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "delete refuses .env",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "rename missing page fails clean",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "no stray file after failed rename",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "zero-edit save byte-identical",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "find/replace mutates searchable text",
+      "ok": true,
+      "detail": "replaced=1"
+    },
+    {
+      "name": "hand-authored bytes preserved on metadata write",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "draft write",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "draft read returns hello",
+      "ok": true,
+      "detail": "hello"
+    },
+    {
+      "name": "draft clear",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "draft cleared content",
+      "ok": true,
+      "detail": "empty"
+    },
+    {
+      "name": "re-ensure after mutation",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "corrupt sidecar handled",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "non-string site fields coerced",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "traversal rejected",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "delete refuses .env",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "rename missing page fails clean",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "no stray file after failed rename",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "zero-edit save byte-identical",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "find/replace mutates searchable text",
+      "ok": true,
+      "detail": "replaced=1"
+    },
+    {
+      "name": "hand-authored bytes preserved on metadata write",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "draft write",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "draft read returns hello",
+      "ok": true,
+      "detail": "hello"
+    },
+    {
+      "name": "draft clear",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "draft cleared content",
+      "ok": true,
+      "detail": "empty"
+    },
+    {
+      "name": "re-ensure after mutation",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "rich text replace preserves markup",
+      "ok": true,
+      "detail": "refused=false link=\"See <a href=\\\"/about\\\">visit</a>\" strong=\"<strong>visit</strong>\""
+    },
+    {
+      "name": "partial git commit respects path list",
+      "ok": true,
+      "detail": "names=file-b.txt"
+    },
+    {
+      "name": "frontmatter draft survives regen",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "design slash in managed css",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "columns block display grid",
+      "ok": true,
+      "detail": "no display:grid rule for columns in managed css or page"
+    },
+    {
+      "name": "hideOn tablet min-width query",
+      "ok": true,
+      "detail": "@media (min-width: 721px) and (max-width: 1024px){[data-zephus-id=\"block-tablet-hide\"]{display:none!important}}"
+    },
+    {
+      "name": "html block section identity",
+      "ok": true,
+      "detail": "htmlBlocks=1 goodRaw=true sectionsBefore=4 sectionsAfter=4"
+    },
+    {
+      "name": "publish proof requires html output",
+      "ok": true,
+      "detail": "The build finished but did not produce index.html in the output folder. Check your build script and astro.config outDir."
+    },
+    {
+      "name": "custom node missing path not ok",
+      "ok": true,
+      "detail": "{\"status\":\"missing\",\"binaryPath\":\"/var/folders/91/mshg9tbj7p15351llbj_06w80000gn/T/zephus-no-node-1793607071625/node\",\"usedCustomPath\":true}"
+    },
+    {
+      "name": "validateNodePath rejects node symlink",
+      "ok": true,
+      "detail": "Node.js path must not be a symbolic link."
+    },
+    {
+      "name": "widened pagesDir delete blocked",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "homepage delete refused",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "canonical matches sitemap for root-relative routes",
+      "ok": true,
+      "detail": "loc=https://example.com/about layout=https://example.com/about expected=https://example.com/about"
+    },
+    {
+      "name": "sidecar write rejects external zephus symlink",
+      "ok": true,
+      "detail": "threw=true outsideJson=false"
+    },
+    {
+      "name": "listPages rejects external pages symlink",
+      "ok": true,
+      "detail": "listed=(empty)"
+    },
+    {
+      "name": "malformed sections sidecar preserved",
+      "ok": true,
+      "detail": "sectionsType=string astroChanged=false"
+    },
+    {
+      "name": "nested index save keeps file and route",
+      "ok": true,
+      "detail": "created=true index=true flat=false route=/blog"
+    },
+    {
+      "name": "nested index dual file save refused",
+      "ok": true,
+      "detail": "dualOk=false threw=false unchanged=true"
+    },
+    {
+      "name": "hideOn desktop min-width query",
+      "ok": true,
+      "detail": "desktopMedia=true inlineHide=false"
+    },
+    {
+      "name": "safeUrl rejects C0 javascript scheme",
+      "ok": true,
+      "detail": "got=\"\""
+    },
+    {
+      "name": "custom frontmatter survives post list refresh",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "secret env page read returns null source",
+      "ok": true,
+      "detail": "ok=false"
+    },
+    {
+      "name": "secret env reattach returns null source",
+      "ok": true,
+      "detail": "ok=false"
+    },
+    {
+      "name": "managed layoutPath cannot clobber package.json",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "git commit all refuses directory npmrc",
+      "ok": true,
+      "detail": "Cannot commit sensitive files: nested-secret-dir/.npmrc"
+    },
+    {
+      "name": "commitProjectPaths refuses broad pathspecs",
+      "ok": true,
+      "detail": "dot=Cannot commit with a broad path; select individual files. star=Cannot commit with a broad path; select individual files."
+    },
+    {
+      "name": "buildSpawnEnv omits custom node dir from PATH front",
+      "ok": true,
+      "detail": "first=/usr/bin nodeDir=/usr/local/bin"
+    },
+    {
+      "name": "findAssetUsage fails without page sidecar",
+      "ok": true,
+      "detail": "One or more pages are missing editor metadata (src/pages/orphan-no-sidecar.astro)."
+    },
+    {
+      "name": "publish outDir ignores stale dist hint",
+      "ok": true,
+      "detail": "relative=build"
+    },
+    {
+      "name": "prerelease upload omits latest yml",
+      "ok": true,
+      "detail": "isPrerelease=true hasLatest=false"
+    },
+    {
+      "name": "minimal mutated build emits HTML",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "store mutated build emits HTML",
+      "ok": true,
+      "detail": "ok"
+    }
+  ]
+}

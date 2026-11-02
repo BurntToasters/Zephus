@@ -282,7 +282,9 @@ export function createCanvasActions(deps: CanvasDeps) {
         const last = state.sections[state.sections.length - 1]!;
         dropSectionId = last.id;
         dropIndex = last.children.length;
-        sectionDropIndex = state.sections.length;
+        if (sectionDropIndex < 0) {
+          sectionDropIndex = state.sections.length;
+        }
       }
     };
     canvas.ondragleave = (event) => {
@@ -989,9 +991,10 @@ export function bindCanvasHandlers(
         // templates dragged from the palette showed a block-line indicator
         // yet inserted after the section — now they use the same section
         // slot machinery.
+        const types = event.dataTransfer?.types ?? [];
         const hasSectionPayload =
           canvas.getDraggingSectionId() !== null ||
-          Boolean(event.dataTransfer?.getData("text/zephus-template"));
+          types.includes("text/zephus-template");
         if (!hasSectionPayload) return;
         event.preventDefault();
         const rect = shell.getBoundingClientRect();
@@ -1003,8 +1006,13 @@ export function bindCanvasHandlers(
       // shell: dropping there must target the rail's own position, not fall
       // through to the canvas handler (which appends at the END of the page).
       onSectionRailDragOver: (event, index) => {
-        if (!canvas.getDraggingSectionId()) return;
+        const types = event.dataTransfer?.types ?? [];
+        const hasSectionPayload =
+          canvas.getDraggingSectionId() !== null ||
+          types.includes("text/zephus-template");
+        if (!hasSectionPayload) return;
         event.preventDefault();
+        event.stopPropagation();
         canvas.setSectionDropIndex(index);
         // For block drags the rail targets the section BEFORE the rail.
         const target = state.sections[index - 1];

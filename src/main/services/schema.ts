@@ -44,6 +44,15 @@ import {
   resolveProjectRelativeDir,
   toProjectRelativePath,
 } from "./projectPaths";
+import { relativePathIsSecret } from "./files";
+import {
+  isNotFoundSlug,
+  normalizePageSlug,
+  routeFromPage,
+  slugFromPage,
+} from "../../shared/pageIdentity";
+
+export { isNotFoundSlug, normalizePageSlug, routeFromPage };
 
 const FRONTMATTER_PATTERN = /^(---\r?\n[\s\S]*?\r?\n---\r?\n?)/;
 // Quote-aware tag matcher: a `>` inside a quoted attribute value must not end
@@ -93,54 +102,6 @@ function pagesSchemaDir(projectPath: string): string {
   return path.join(zephusDir(projectPath), "pages");
 }
 
-export function normalizePageSlug(input: string): string | null {
-  const normalized = input
-    .trim()
-    .replace(/\\/g, "/")
-    .replace(/^\/+|\/+$/g, "")
-    .replace(/\.(astro|md|mdx|html)$/i, "");
-  if (!normalized) return "index";
-  const safe = normalized
-    .split("/")
-    .map((segment) =>
-      segment
-        .toLowerCase()
-        .replace(/[^a-z0-9-_]/g, "-")
-        .replace(/-+/g, "-")
-        .replace(/^[-_]+|[-_]+$/g, ""),
-    )
-    .filter(Boolean);
-  if (safe.length === 0) return null;
-  return safe.join("/");
-}
-
-export function routeFromPage(page: string, pagesDir: string): string {
-  const normalizedPage = toProjectRelativePath(page).replace(/^\/+/, "");
-  const normalizedPagesDir = toProjectRelativePath(pagesDir).replace(
-    /^\/+|\/+$/g,
-    "",
-  );
-  const prefix = normalizedPagesDir ? `${normalizedPagesDir}/` : "";
-  const rel = (
-    normalizedPage.startsWith(prefix)
-      ? normalizedPage.slice(prefix.length)
-      : normalizedPage
-  )
-    .replace(/\.(astro|md|mdx|html)$/i, "")
-    .replace(/\\/g, "/");
-  if (!rel || rel === "index") return "/";
-  // Nested index routes: Astro serves src/pages/blog/index.astro at /blog,
-  // but the raw slug "blog/index" produced nav/canonical/sitemap/RSS hrefs
-  // of /blog/index — every one a 404 on the published site.
-  const trimmed = rel.replace(/\/index$/, "");
-  return trimmed ? `/${trimmed}` : "/";
-}
-
-function slugFromPage(page: string, pagesDir: string): string {
-  const route = routeFromPage(page, pagesDir);
-  return route === "/" ? "index" : route.slice(1);
-}
-
 export function pagePathFromSlug(
   pagesDir: string,
   slug: string,
@@ -175,13 +136,12 @@ function pageSchemaFile(projectPath: string, slug: string): string {
   if (!normalized) {
     throw new Error("Invalid page schema slug.");
   }
-  const root = path.resolve(projectPath, ".zephus", "pages");
-  const relative = normalized === "index" ? "index.json" : `${normalized}.json`;
-  const resolved = path.resolve(root, relative);
-  if (resolved !== root && !resolved.startsWith(root + path.sep)) {
-    throw new Error("Page schema path escapes .zephus/pages.");
-  }
-  return resolved;
+  const relative = path.posix.join(
+    ".zephus",
+    "pages",
+    normalized === "index" ? "index.json" : `${normalized}.json`,
+  );
+  return safeResolve(projectPath, relative);
 }
 
 function splitFrontmatter(content: string): {
@@ -428,6 +388,10 @@ a {
   margin: 0 auto;
 }
 
+[data-zephus-block="columns"] {
+  display: grid;
+}
+
 @media (max-width: 820px) {
   .zephus-shell-header {
     align-items: flex-start;
@@ -479,6 +443,7 @@ export function mergePageNavItems(
         ...override,
         page: doc.page,
         children: override.children ?? existing?.children ?? [],
+        visible: isNotFoundSlug(doc.slug) ? false : override.visible,
       };
     }
     const existing = existingByPage.get(doc.page);
@@ -597,19 +562,33 @@ const footerHtml = ${JSON.stringify(site.shell.footerHtml)};
 const absolute = (value: string): string => {
   if (!value) return "";
   try {
+    const base = new URL(siteUrl);
+    if (base.protocol !== "http:" && base.protocol !== "https:") return "";
+    base.search = "";
+    base.hash = "";
+    if (!base.pathname.endsWith("/")) base.pathname += "/";
+
+    const trimmed = value.trim();
+    const hasScheme = /^[A-Za-z][A-Za-z\\d+.-]*:/.test(trimmed);
+    const isProtocolRelative = trimmed.startsWith("//");
+    const isHostShaped =
+      !hasScheme &&
+      !isProtocolRelative &&
+      !trimmed.startsWith("/") &&
+      /^[^/\\s]+\\.[a-z]{2,}([/?#]|$)/i.test(trimmed);
+    const effectiveValue = isHostShaped ? \`https://\${trimmed}\` : trimmed;
+
     const absoluteOrProtocolRelative =
-      /^[A-Za-z][A-Za-z\\d+.-]*:/.test(value) || value.startsWith("//");
-    let resolved: URL;
-    if (absoluteOrProtocolRelative) {
-      resolved = new URL(value, siteUrl || undefined);
-    } else {
-      if (!siteUrl) return "";
-      const base = new URL(siteUrl);
-      base.search = "";
-      base.hash = "";
-      if (!base.pathname.endsWith("/")) base.pathname += "/";
-      resolved = new URL(value.replace(/^\\/+/, ""), base);
-    }
+      /^[A-Za-z][A-Za-z\\d+.-]*:/.test(effectiveValue) ||
+      effectiveValue.startsWith("//");
+    const resolved = absoluteOrProtocolRelative
+      ? new URL(effectiveValue, base)
+      : new URL(
+          effectiveValue.startsWith("/")
+            ? effectiveValue
+            : effectiveValue.replace(/^\\/+/, ""),
+          effectiveValue.startsWith("/") ? base.origin : base,
+        );
     return resolved.protocol === "http:" || resolved.protocol === "https:"
       ? resolved.href
       : "";
@@ -872,6 +851,156 @@ function openingTag(segment: string): string {
   return segment;
 }
 
+/** Matches editorParse dedentHtmlRaw: stored html blocks are no longer indented. */
+function dedentHtmlRaw(raw: string): string {
+  return raw;
+}
+
+function htmlBlockRawFromStoredSegment(segment: string): string {
+  const open = segment.match(/^<([A-Za-z][\w:-]*)\b[^>]*>/);
+  if (!open?.[1]) return segment.replace(/\uE000/g, "\n");
+  const tagName = open[1];
+  const openEnd = open[0].length;
+  const closeMatch = segment.match(new RegExp(`<\\/${tagName}\\s*>\\s*$`, "i"));
+  if (!closeMatch || closeMatch.index === undefined) {
+    return segment.replace(/\uE000/g, "\n");
+  }
+  const inner = segment
+    .slice(openEnd, closeMatch.index)
+    .replace(/\uE000/g, "\n");
+  return dedentHtmlRaw(inner);
+}
+
+function extraFrontmatterLinesFromSource(frontmatterBlock: string): string[] {
+  const lines: string[] = [];
+  for (const line of frontmatterBlock.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed === "---") continue;
+    if (trimmed.startsWith("//")) continue;
+    if (/^import\s+/i.test(trimmed)) continue;
+    if (/^[A-Za-z][\w-]*\s*:/.test(trimmed)) lines.push(trimmed);
+  }
+  return lines;
+}
+
+function pinnedPagesDir(projectPath: string, pagesDir: string): string {
+  const canonical = detectAstro(projectPath).pagesDir;
+  const norm = (value: string) =>
+    toProjectRelativePath(value).replace(/^\/+|\/+$/g, "");
+  return norm(pagesDir) === norm(canonical) ? pagesDir : canonical;
+}
+
+function normalizeProjectRelative(relativePath: string): string {
+  return toProjectRelativePath(relativePath)
+    .replace(/\\/g, "/")
+    .replace(/^\/+/, "");
+}
+
+function pagePathIsSecret(projectPath: string, relativePath: string): boolean {
+  const normalized = normalizeProjectRelative(relativePath);
+  if (relativePathIsSecret(normalized)) return true;
+  try {
+    const full = safeResolveString(projectPath, normalized);
+    const real = fs.realpathSync(full);
+    const realRel = normalizeProjectRelative(
+      path.relative(path.resolve(projectPath), real),
+    );
+    return relativePathIsSecret(realRel);
+  } catch {
+    return relativePathIsSecret(normalized);
+  }
+}
+
+function canonicalPageRelForPage(page: string, pagesDir: string): string {
+  const ext = path.extname(page) || ".astro";
+  const slug = slugFromPage(page, pagesDir);
+  return pagePathFromSlug(pagesDir, slug, ext);
+}
+
+function pageRequestMatchesCanonical(page: string, pagesDir: string): boolean {
+  return (
+    normalizeProjectRelative(page) ===
+    normalizeProjectRelative(canonicalPageRelForPage(page, pagesDir))
+  );
+}
+
+function readPinnedCanonicalPageSource(
+  projectPath: string,
+  page: string,
+  pagesDir: string,
+): string | null {
+  const pinned = pinnedPagesDir(projectPath, pagesDir);
+  if (!pageRequestMatchesCanonical(page, pinned)) return null;
+  const canonical = canonicalPageRelForPage(page, pinned);
+  if (
+    pagePathIsSecret(projectPath, canonical) ||
+    pagePathIsSecret(projectPath, page)
+  ) {
+    return null;
+  }
+  const full = safeResolve(projectPath, canonical);
+  if (!fs.existsSync(full)) return null;
+  return fs.readFileSync(full, "utf8");
+}
+
+function extraFrontmatterLinesFromPageFile(
+  projectPath: string,
+  pageRel: string,
+): string[] {
+  try {
+    const full = safeResolve(projectPath, pageRel);
+    if (!fs.existsSync(full)) return [];
+    const { frontmatter } = splitFrontmatter(fs.readFileSync(full, "utf8"));
+    return extraFrontmatterLinesFromSource(frontmatter);
+  } catch {
+    return [];
+  }
+}
+
+function conflictingRoutePageFile(
+  projectPath: string,
+  pagesDir: string,
+  pageRel: string,
+): string | null {
+  const route = routeFromPage(pageRel, pagesDir);
+  if (route === "/") return null;
+  const name = route.slice(1);
+  const base = toProjectRelativePath(pagesDir).replace(/\/+$/, "");
+  const flat = path.posix.join(base, `${name}.astro`);
+  const nested = path.posix.join(base, name, "index.astro");
+  const current = normalizeProjectRelative(pageRel);
+  const flatNorm = normalizeProjectRelative(flat);
+  const nestedNorm = normalizeProjectRelative(nested);
+  if (current === nestedNorm) {
+    const flatFull = safeResolve(projectPath, flat);
+    if (fs.existsSync(flatFull)) return flat;
+  }
+  if (current === flatNorm) {
+    const nestedFull = safeResolve(projectPath, nested);
+    if (fs.existsSync(nestedFull)) return nested;
+  }
+  return null;
+}
+
+function managedLayoutTarget(
+  projectPath: string,
+  layoutPath: string,
+): string | null {
+  const rel = normalizeProjectRelative(layoutPath);
+  if (!rel.toLowerCase().endsWith(".astro")) return null;
+  const astro = detectAstro(projectPath);
+  const layoutsDir = path.posix
+    .join(toProjectRelativePath(astro.srcDir).replace(/\/+$/, ""), "layouts")
+    .replace(/\\/g, "/");
+  if (!rel.startsWith(`${layoutsDir}/`)) return null;
+  if (pagePathIsSecret(projectPath, rel)) return null;
+  try {
+    return safeResolve(projectPath, rel);
+  } catch {
+    return null;
+  }
+}
+
 function parseStoredBlock(segment: string): BlockNode | null {
   // Only inspect the outer opening tag so a wrapper element does not pick up a
   // descendant block's data-zephus-* attributes.
@@ -898,7 +1027,7 @@ function parseStoredBlock(segment: string): BlockNode | null {
       props,
       style,
       locked: dataAttrValue(tag, "data-zephus-locked") === "true",
-      raw: type === "html" ? segment : undefined,
+      raw: type === "html" ? htmlBlockRawFromStoredSegment(segment) : undefined,
     };
   } catch {
     return null;
@@ -1283,7 +1412,6 @@ function defaultSectionNode(blocks: BlockNode[]): SectionNode {
 function cssValue(value: string): string {
   return (value ?? "")
     .replace(/[;{}<>\\]/g, "")
-    .replace(/\//g, "")
     .replace(/[\r\n]+/g, " ")
     .trim()
     .slice(0, 200);
@@ -1487,12 +1615,6 @@ export function resolveAbsoluteHttpUrl(siteUrl: string, value: string): string {
   }
 }
 
-/** Astro serves `src/pages/404.astro` as the not-found response. */
-export function isNotFoundSlug(slug: string): boolean {
-  // Nested 404 routes (src/pages/404/index.astro) are reserved too.
-  return slug === "404" || slug.startsWith("404/");
-}
-
 function renderSitemap(siteUrl: string, docs: PageDocument[]): string {
   const entries = docs
     // An error page must never be advertised, even if its noindex flag was
@@ -1550,15 +1672,20 @@ function refreshPostListPages(
       if (!fs.existsSync(pageFile)) continue;
       const actual = fs.readFileSync(pageFile, "utf8");
       // Only touch files Zephus generated and the user has not edited.
-      if (!doc.generatedHash || hashText(actual) !== doc.generatedHash)
-        continue;
+      const extraFrontmatterLines = extraFrontmatterLinesFromPageFile(
+        projectPath,
+        doc.page,
+      );
       const generated = renderAstroPage(
         projectPath,
         doc.page,
         site,
         doc,
         posts,
+        extraFrontmatterLines,
       );
+      if (!doc.generatedHash || hashText(actual) !== doc.generatedHash)
+        continue;
       if (normalizeHashText(generated) === normalizeHashText(actual)) continue;
       pending.push({ file: pageFile, doc, html: generated });
     }
@@ -1833,9 +1960,13 @@ function readPageDocumentFile(
     log.warn(
       "Page sidecar for",
       slug,
-      "has a malformed sections array; defaulting to empty.",
+      "has a malformed sections array; ignoring sidecar.",
     );
-    doc.sections = [];
+    return null;
+  }
+  if (typeof doc.page !== "string" || doc.page.trim() === "") {
+    log.warn("Page sidecar for", slug, "has no page path; ignoring it.");
+    return null;
   }
   return withPageMetaDefaults({
     ...doc,
@@ -1856,6 +1987,7 @@ function renderAstroPage(
   site: SiteDocument,
   doc: PageDocument,
   posts: RenderPostEntry[] = [],
+  extraFrontmatterLines: string[] = [],
 ): string {
   const title = doc.title || defaultTitleFromSlug(doc.slug);
   const seoAttrs = [
@@ -1888,6 +2020,10 @@ function renderAstroPage(
     site.shell.layoutPath,
   );
   const schemaRel = pageSchemaRelativePath(doc.slug).split(path.sep).join("/");
+  const preservedFrontmatter =
+    extraFrontmatterLines.length > 0
+      ? `${extraFrontmatterLines.map((line) => `${line}\n`).join("")}`
+      : "";
   // The import MUST live inside the frontmatter fence (Astro component script);
   // the schema marker is a JS comment so it is ignored by the frontmatter
   // metadata parser. Page metadata lives authoritatively in the JSON sidecar.
@@ -1898,7 +2034,7 @@ function renderAstroPage(
   return `---
 import BaseLayout from ${JSON.stringify(importPath)};
 // zephus:managed schema=${schemaRel}
----
+${preservedFrontmatter}---
 
 <BaseLayout title="${escapeAstroAttr(title)}"${layoutAttrs}>
 ${body}
@@ -1979,29 +2115,31 @@ function syncSiteShellOutputs(
   site.shell.navItems = mergePageNavItems(site.shell.navItems, docs);
 
   if (site.shell.layoutMode === "managed") {
-    const layoutFile = safeResolve(projectPath, site.shell.layoutPath);
-    if (previousSite?.shell.layoutMode !== "managed") {
-      ensureLegacyLayoutBackup(layoutFile);
+    const layoutFile = managedLayoutTarget(projectPath, site.shell.layoutPath);
+    if (layoutFile) {
+      if (previousSite?.shell.layoutMode !== "managed") {
+        ensureLegacyLayoutBackup(layoutFile);
+      }
+      const customCssHref = resolveManagedInclude(
+        projectPath,
+        site.shell.customCssPath,
+      );
+      const customScriptHref = resolveManagedInclude(
+        projectPath,
+        site.shell.customScriptsPath,
+      );
+      fs.mkdirSync(path.dirname(layoutFile), { recursive: true });
+      writeFileAtomicIfChanged(
+        layoutFile,
+        renderManagedLayout(
+          site,
+          site.shell.navItems,
+          customCssHref,
+          customScriptHref,
+          hasFeed,
+        ),
+      );
     }
-    const customCssHref = resolveManagedInclude(
-      projectPath,
-      site.shell.customCssPath,
-    );
-    const customScriptHref = resolveManagedInclude(
-      projectPath,
-      site.shell.customScriptsPath,
-    );
-    fs.mkdirSync(path.dirname(layoutFile), { recursive: true });
-    writeFileAtomicIfChanged(
-      layoutFile,
-      renderManagedLayout(
-        site,
-        site.shell.navItems,
-        customCssHref,
-        customScriptHref,
-        hasFeed,
-      ),
-    );
     const styleFile = safeResolve(projectPath, MANAGED_STYLE_PATH);
     fs.mkdirSync(path.dirname(styleFile), { recursive: true });
     writeFileAtomicIfChanged(styleFile, renderManagedStyles(site));
@@ -2088,7 +2226,7 @@ function isCanonicalManagedSource(raw: string): boolean {
     return false;
   }
   if (/<style\b|<script\b/i.test(body)) return false;
-  if (/\{[^{}\n]*\}/.test(body)) return false;
+  if (body.includes("{")) return false;
   return true;
 }
 
@@ -2229,10 +2367,40 @@ export function ensureVisualSchema(
 
     const pages = listPages(projectPath, pagesDir);
     const justMigratedSlugs = new Set<string>();
-    const pageDocs = pages.map((page) => {
+    const adoptedSidecarKeys = new Map<string, string>();
+    const pageDocs = pages.flatMap((page) => {
       const slug = slugFromPage(page, pagesDir);
+      const sidecarKey = normalizePageSlug(slug);
+      if (!sidecarKey) return [];
+      const priorPage = adoptedSidecarKeys.get(sidecarKey);
+      if (priorPage && priorPage !== page) {
+        return [];
+      }
+
       let doc = readPageDocumentFile(projectPath, slug);
+      if (
+        doc &&
+        toProjectRelativePath(doc.page) !== toProjectRelativePath(page)
+      ) {
+        return [];
+      }
+      const routeConflict = conflictingRoutePageFile(
+        projectPath,
+        pagesDir,
+        page,
+      );
+      if (routeConflict) {
+        if (!doc) return [];
+        adoptedSidecarKeys.set(sidecarKey, page);
+        return [doc];
+      }
       if (!doc) {
+        // A sidecar that exists but cannot be read (missing page path, bad
+        // shape) must not be treated as "no document". Migration would
+        // replace it and rewrite the .astro file.
+        if (fs.existsSync(pageSchemaFile(projectPath, slug))) {
+          return [];
+        }
         doc = migratePageToDocument(projectPath, page, pagesDir);
         writePageDocumentFile(projectPath, doc);
         // Only losslessly-round-trippable pages may be regenerated from their
@@ -2243,7 +2411,8 @@ export function ensureVisualSchema(
           justMigratedSlugs.add(slug);
         }
       }
-      return doc;
+      adoptedSidecarKeys.set(sidecarKey, page);
+      return [doc];
     });
 
     syncSiteShellOutputs(projectPath, site, pagesDir, pageDocs, site);
@@ -2265,12 +2434,20 @@ export function ensureVisualSchema(
     const postIndex = buildPostIndex(pageDocs);
     for (const doc of pageDocs) {
       if (doc.detached) continue;
+      if (conflictingRoutePageFile(projectPath, pagesDir, doc.page)) {
+        continue;
+      }
+      const extraFrontmatterLines = extraFrontmatterLinesFromPageFile(
+        projectPath,
+        doc.page,
+      );
       const generatedSource = renderAstroPage(
         projectPath,
         doc.page,
         site,
         doc,
         postIndex,
+        extraFrontmatterLines,
       );
       const pageFile = safeResolve(projectPath, doc.page);
       const actualSource = fs.existsSync(pageFile)
@@ -2419,19 +2596,31 @@ export function writeSiteDocument(
 export function listPageDocuments(
   projectPath: string,
   pagesDir: string,
-): { ok: boolean; entries: PageDocument[]; error?: string } {
+): {
+  ok: boolean;
+  entries: PageDocument[];
+  missingPages?: string[];
+  error?: string;
+} {
   try {
     const ensured = ensureVisualSchema(projectPath, pagesDir);
     if (!ensured.ok) {
       return { ok: false, entries: [], error: ensured.error };
     }
     const pages = listPages(projectPath, pagesDir);
-    const entries = pages
-      .map((page) =>
-        readPageDocumentFile(projectPath, slugFromPage(page, pagesDir)),
-      )
-      .filter((entry): entry is PageDocument => Boolean(entry));
-    return { ok: true, entries };
+    const missingPages: string[] = [];
+    const entries = pages.flatMap((page) => {
+      const doc = readPageDocumentFile(
+        projectPath,
+        slugFromPage(page, pagesDir),
+      );
+      if (!doc) {
+        missingPages.push(page);
+        return [];
+      }
+      return [doc];
+    });
+    return { ok: true, entries, missingPages };
   } catch (error) {
     return {
       ok: false,
@@ -2470,6 +2659,7 @@ export function readPageDocument(
   pagesDir: string,
 ): PageDocumentResult {
   try {
+    pagesDir = pinnedPagesDir(projectPath, pagesDir);
     const ensured = ensureVisualSchema(projectPath, pagesDir);
     if (!ensured.ok) {
       return {
@@ -2517,16 +2707,23 @@ export function readPageDocument(
           `Please update Zephus to open this project.`,
       };
     }
-    const actualPath = safeResolve(projectPath, page);
-    const actualSource = fs.existsSync(actualPath)
-      ? fs.readFileSync(actualPath, "utf8")
-      : null;
-    const generatedSource = renderAstroPage(
+    const canonicalPage = canonicalPageRelForPage(page, pagesDir);
+    const actualSource = readPinnedCanonicalPageSource(
       projectPath,
       page,
+      pagesDir,
+    );
+    const extraFrontmatterLines = extraFrontmatterLinesFromPageFile(
+      projectPath,
+      canonicalPage,
+    );
+    const generatedSource = renderAstroPage(
+      projectPath,
+      canonicalPage,
       site,
       doc,
       buildPostIndex(listExistingPageDocuments(projectPath, pagesDir)),
+      extraFrontmatterLines,
     );
     const managedFileStatus = resolveManagedStatus(
       doc,
@@ -2543,9 +2740,11 @@ export function readPageDocument(
       site,
       pageDocument: nextDoc,
       source:
-        doc.detached || managedFileStatus === "out-of-sync"
-          ? (actualSource ?? generatedSource)
-          : generatedSource,
+        actualSource === null
+          ? null
+          : doc.detached || managedFileStatus === "out-of-sync"
+            ? actualSource
+            : generatedSource,
       generatedSource,
     };
   } catch (error) {
@@ -2567,12 +2766,52 @@ export function readPageDocument(
  * writes could interleave reads and produce inconsistent schema state. If any
  * path within this function becomes async, introduce a per-project write mutex.
  */
+type WritePageDocumentOptions = {
+  /** Reattach explicitly regenerates a detached / out-of-sync page. */
+  allowReattachFromDetached?: boolean;
+};
+
 export function writePageDocument(
   projectPath: string,
   pagesDir: string,
   doc: PageDocument,
+  options?: WritePageDocumentOptions,
 ): PageDocumentResult {
   try {
+    pagesDir = pinnedPagesDir(projectPath, pagesDir);
+    const nextSlug = slugFromPage(doc.page, pagesDir);
+    if (nextSlug.split("/").some((segment) => segment === "..")) {
+      // Path traversal: "../../layouts/BaseLayout.astro" would make
+      // pagePathFromSlug normalize OUTSIDE pagesDir and clobber any project
+      // file with generated page content. Reject, never canonicalize around.
+      return {
+        ok: false,
+        site: null,
+        pageDocument: null,
+        source: null,
+        generatedSource: null,
+        error: "Page path must stay inside the pages directory.",
+      };
+    }
+    const nextExt = path.extname(doc.page) || ".astro";
+    const nextPage = pagePathFromSlug(pagesDir, nextSlug, nextExt);
+    const routeConflict = conflictingRoutePageFile(
+      projectPath,
+      pagesDir,
+      nextPage,
+    );
+    if (routeConflict) {
+      return {
+        ok: false,
+        site: null,
+        pageDocument: null,
+        source: null,
+        generatedSource: null,
+        error:
+          `Conflicting page files for ${routeFromPage(nextPage, pagesDir)} ` +
+          `(${nextPage} and ${routeConflict}).`,
+      };
+    }
     const ensured = ensureVisualSchema(projectPath, pagesDir);
     if (!ensured.ok) {
       return {
@@ -2595,41 +2834,65 @@ export function writePageDocument(
         error: "Site schema not found.",
       };
     }
-    const nextSlug = slugFromPage(doc.page, pagesDir);
-    if (nextSlug.split("/").some((segment) => segment === "..")) {
-      // Path traversal: "../../layouts/BaseLayout.astro" would make
-      // pagePathFromSlug normalize OUTSIDE pagesDir and clobber any project
-      // file with generated page content. Reject, never canonicalize around.
-      return {
-        ok: false,
-        site: null,
-        pageDocument: null,
-        source: null,
-        generatedSource: null,
-        error: "Page path must stay inside the pages directory.",
-      };
+    const storedSidecar = readPageDocumentFile(projectPath, nextSlug);
+    const existingPagePath = safeResolve(projectPath, nextPage);
+    if (storedSidecar && !options?.allowReattachFromDetached) {
+      if (storedSidecar.detached) {
+        return {
+          ok: false,
+          site: null,
+          pageDocument: null,
+          source: null,
+          generatedSource: null,
+          error:
+            "This page is detached. Edit the source file directly or reattach " +
+            "before saving from visual mode.",
+        };
+      }
+      if (storedSidecar.managedFileStatus === "out-of-sync") {
+        const onDiskSource = fs.existsSync(existingPagePath)
+          ? fs.readFileSync(existingPagePath, "utf8")
+          : null;
+        if (onDiskSource === null || !isCanonicalManagedSource(onDiskSource)) {
+          return {
+            ok: false,
+            site: null,
+            pageDocument: null,
+            source: null,
+            generatedSource: null,
+            error:
+              "This page is out of sync with its schema. Reattach or fix the " +
+              "source before saving from visual mode.",
+          };
+        }
+      }
     }
     const nextIsNotFound = isNotFoundSlug(nextSlug);
-    // Derive the write target from the normalized slug — never trust doc.page.
-    // A stale/compromised renderer could otherwise submit page:"package.json"
-    // (or any project-relative path) and clobber that file with generated page
-    // content, bypassing the files.ts protected-target denylist. Canonicalizing
-    // to pagesDir/<slug>.astro confines every write to a real page file.
-    const nextExt = path.extname(doc.page) || ".astro";
-    const nextPage = pagePathFromSlug(pagesDir, nextSlug, nextExt);
     const nextDoc: PageDocument = {
       ...doc,
       page: nextPage,
       slug: nextSlug,
+      route: routeFromPage(nextPage, pagesDir),
       // The 404 route has a non-negotiable navigation/search policy, even if
       // a stale or compromised renderer submits conflicting metadata.
       navVisible: nextIsNotFound ? false : doc.navVisible,
       noindex: nextIsNotFound ? true : doc.noindex,
       schemaVersion: ZEPHUS_SCHEMA_VERSION,
-      detached: false,
-      detachedAt: null,
+      detached: options?.allowReattachFromDetached
+        ? false
+        : (storedSidecar?.detached ?? doc.detached ?? false),
+      detachedAt: options?.allowReattachFromDetached
+        ? null
+        : (storedSidecar?.detachedAt ?? doc.detachedAt ?? null),
       managedFileStatus: "managed",
     };
+    let extraFrontmatterLines: string[] = [];
+    if (fs.existsSync(existingPagePath)) {
+      const { frontmatter } = splitFrontmatter(
+        fs.readFileSync(existingPagePath, "utf8"),
+      );
+      extraFrontmatterLines = extraFrontmatterLinesFromSource(frontmatter);
+    }
     const generatedSource = renderAstroPage(
       projectPath,
       nextDoc.page,
@@ -2641,6 +2904,7 @@ export function writePageDocument(
           entry.page === nextDoc.page ? nextDoc : entry,
         ),
       ),
+      extraFrontmatterLines,
     );
     nextDoc.generatedHash = hashText(generatedSource);
     writePageDocumentFile(projectPath, nextDoc);
@@ -2823,14 +3087,29 @@ export function reattachPageDocument(
   pagesDir: string,
 ): PageDocumentResult {
   try {
+    pagesDir = pinnedPagesDir(projectPath, pagesDir);
     const slug = slugFromPage(page, pagesDir);
     const existing = readPageDocumentFile(projectPath, slug);
+    const canonicalPage = canonicalPageRelForPage(page, pagesDir);
+    if (path.extname(canonicalPage).toLowerCase() !== ".astro") {
+      return {
+        ok: false,
+        site: null,
+        pageDocument: null,
+        source: null,
+        generatedSource: null,
+        error:
+          "Only .astro pages can be reattached to visual mode. Markdown and " +
+          "HTML pages must stay hand-authored.",
+      };
+    }
     if (existing && !existing.detached) {
       // Already managed — nothing to reattach. Return the current state.
       const site = readJsonFile<SiteDocument>(siteDocumentFile(projectPath));
-      const actualSource = fs.readFileSync(
-        safeResolve(projectPath, page),
-        "utf8",
+      const actualSource = readPinnedCanonicalPageSource(
+        projectPath,
+        page,
+        pagesDir,
       );
       return {
         ok: true,
@@ -2841,7 +3120,19 @@ export function reattachPageDocument(
       };
     }
 
-    const source = fs.readFileSync(safeResolve(projectPath, page), "utf8");
+    const source = readPinnedCanonicalPageSource(projectPath, page, pagesDir);
+    if (source === null) {
+      return {
+        ok: false,
+        site: null,
+        pageDocument: null,
+        source: null,
+        generatedSource: null,
+        error: pagePathIsSecret(projectPath, page)
+          ? "Access to environment or credential files is not allowed."
+          : `Page file not found for ${page}.`,
+      };
+    }
     // Same lossless guard as migration: a hand-authored page (imports beyond
     // BaseLayout, Astro expressions, <style>/<script>) cannot be represented
     // by the parse tree — reattaching would silently drop those and rewrite
@@ -2851,7 +3142,7 @@ export function reattachPageDocument(
         ok: false,
         site: null,
         pageDocument: null,
-        source,
+        source: pagePathIsSecret(projectPath, canonicalPage) ? null : source,
         generatedSource: null,
         error:
           "This page contains hand-authored code that visual mode cannot " +
@@ -2861,12 +3152,14 @@ export function reattachPageDocument(
     }
     const { frontmatter } = splitFrontmatter(source);
     const nextDoc = buildPageDocumentWithSections(
-      page,
+      canonicalPage,
       pagesDir,
       parseSectionsFromSource(source),
       parseFrontmatter(frontmatter),
     );
-    return writePageDocument(projectPath, pagesDir, nextDoc);
+    return writePageDocument(projectPath, pagesDir, nextDoc, {
+      allowReattachFromDetached: true,
+    });
   } catch (error) {
     return {
       ok: false,
@@ -2885,12 +3178,13 @@ export function createSchemaPage(
   slug: string,
 ): PageDocumentResult {
   const page = pagePathFromSlug(pagesDir, slug);
+  const route = routeFromPage(page, pagesDir);
   const notFound = isNotFoundSlug(slug);
   const title = notFound ? "Page not found" : defaultTitleFromSlug(slug);
   const doc: PageDocument = {
     schemaVersion: ZEPHUS_SCHEMA_VERSION,
     page,
-    route: slug === "index" ? "/" : `/${slug}`,
+    route,
     slug,
     title,
     navLabel: notFound ? "404" : title,
@@ -2974,7 +3268,7 @@ export function renamePageSchema(
       ...doc,
       page: nextPage,
       slug: nextSlug,
-      route: nextSlug === "index" ? "/" : `/${nextSlug}`,
+      route: routeFromPage(nextPage, pagesDir),
       isHome: nextSlug === "index",
       // Entering/leaving the reserved 404 route applies the same search and
       // navigation policy as creating that page directly.
@@ -3030,7 +3324,10 @@ export function duplicatePageSchema(
         path.extname(page) || ".astro",
       ),
       slug: nextSlug,
-      route: nextSlug === "index" ? "/" : `/${nextSlug}`,
+      route: routeFromPage(
+        pagePathFromSlug(pagesDir, nextSlug, path.extname(page) || ".astro"),
+        pagesDir,
+      ),
       title: `${doc.title} Copy`,
       navLabel: `${doc.navLabel} Copy`,
       isHome: nextSlug === "index",

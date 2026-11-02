@@ -36,7 +36,11 @@ import { listThemes } from "./themes";
 import { readProjectFile } from "./services/files";
 import { licensesFilePath, readProductionLicenses } from "./services/licenses";
 import { startDevServer, stopDevServer } from "./services/devServer";
-import { resolveProjectRelativeDir } from "./services/projectPaths";
+import {
+  detectedAstroPublicDir,
+  resolveRevealOutputDir,
+} from "./services/projectPaths";
+import { assertRealpathInside } from "./services/fsSafe";
 import {
   ensureThemePreviewServer,
   stopThemePreviewServer,
@@ -518,29 +522,45 @@ export function registerIpcHandlers(
 
   ipcMain.handle(
     IPC.importAssets,
-    (_e, projectPath: string, publicDir: string) =>
+    (_e, projectPath: string, _publicDir: string) =>
       approved(projectPath, () =>
-        importAssets(getWindow(), projectPath, publicDir),
+        importAssets(
+          getWindow(),
+          projectPath,
+          detectedAstroPublicDir(projectPath),
+        ),
       ),
   );
 
   ipcMain.handle(
     IPC.importAssetPaths,
-    (_e, projectPath: string, publicDir: string, paths: string[]) =>
+    (_e, projectPath: string, _publicDir: string, paths: string[]) =>
       approved(projectPath, () =>
-        importAssetsFromPaths(projectPath, publicDir, paths),
+        importAssetsFromPaths(
+          projectPath,
+          detectedAstroPublicDir(projectPath),
+          paths,
+        ),
       ),
   );
 
-  ipcMain.handle(IPC.listAssets, (_e, projectPath: string, publicDir: string) =>
-    approved(projectPath, () => listProjectAssets(projectPath, publicDir)),
+  ipcMain.handle(
+    IPC.listAssets,
+    (_e, projectPath: string, _publicDir: string) =>
+      approved(projectPath, () =>
+        listProjectAssets(projectPath, detectedAstroPublicDir(projectPath)),
+      ),
   );
 
   ipcMain.handle(
     IPC.assetDataUrl,
-    (_e, projectPath: string, publicDir: string, webPath: string) =>
+    (_e, projectPath: string, _publicDir: string, webPath: string) =>
       approved(projectPath, () =>
-        readAssetDataUrl(projectPath, publicDir, webPath),
+        readAssetDataUrl(
+          projectPath,
+          detectedAstroPublicDir(projectPath),
+          webPath,
+        ),
       ),
   );
 
@@ -583,8 +603,10 @@ export function registerIpcHandlers(
 
   ipcMain.handle(
     IPC.assetDelete,
-    (_e, projectPath: string, publicDir: string, webPath: string) =>
-      approved(projectPath, () => deleteAsset(projectPath, publicDir, webPath)),
+    (_e, projectPath: string, _publicDir: string, webPath: string) =>
+      approved(projectPath, () =>
+        deleteAsset(projectPath, detectedAstroPublicDir(projectPath), webPath),
+      ),
   );
 
   ipcMain.handle(
@@ -592,12 +614,13 @@ export function registerIpcHandlers(
     (
       _e,
       projectPath: string,
-      publicDir: string,
+      _publicDir: string,
       pagesDir: string,
       webPath: string,
       nextName: string,
     ) =>
       approved(projectPath, () => {
+        const publicDir = detectedAstroPublicDir(projectPath);
         const renamed = renameAsset(projectPath, publicDir, webPath, nextName);
         if (!renamed.ok || !renamed.webPath) return renamed;
         // Repoint in the same call: a rename that left references behind would
@@ -767,12 +790,9 @@ export function registerIpcHandlers(
     ): Promise<OperationResult> => {
       try {
         assertApprovedProject(projectPath);
-        const output = resolveProjectRelativeDir(
-          projectPath,
-          outDir,
-          "dist",
-        ).absolute;
-        const error = await shell.openPath(output);
+        const { absolute } = resolveRevealOutputDir(projectPath, outDir);
+        assertRealpathInside(projectPath, absolute);
+        const error = await shell.openPath(absolute);
         return error ? { ok: false, error } : { ok: true };
       } catch (error) {
         return {

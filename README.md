@@ -3,9 +3,10 @@
 A WYSIWYG Local GUI web editor; edit your git-hosted sites!
 
 > [!NOTE]
-> Zephus 1.0.0 is a stable release. As with any editor that writes to your
-> Git repository, review changes before committing and keep backups of
-> important sites.
+> The 1.0.0 release cut is not published yet (no `v1.0.0` tag or release
+> artifacts on Origin). Build from source or use a published pre-release until
+> 1.0.0 ships. As with any editor that writes to your Git repository, review
+> changes before committing and keep backups of important sites.
 >
 > Zephus uses Electron since it is a web editor and Electron was the most
 > practical option for this project.

@@ -45,7 +45,9 @@ export interface EditorSaveDeps {
   zephus: Pick<
     Window["zephus"],
     "detachPageDocument" | "writePageDocument" | "clearDraft"
-  >;
+  > & {
+    writeDraft?: Window["zephus"]["writeDraft"];
+  };
 }
 
 function errorMessage(error: unknown): string {
@@ -136,7 +138,9 @@ export function createEditorSaveActions(deps: EditorSaveDeps) {
             } else {
               const state = deps.getState();
               state.pageDocument = detached.pageDocument;
-              state.siteDocument = detached.site;
+              if (!state.siteDirty) {
+                state.siteDocument = detached.site;
+              }
               state.managedStatus = detached.pageDocument.managedFileStatus;
               state.visualEditable = false;
               state.generatedCode =
@@ -174,7 +178,9 @@ export function createEditorSaveActions(deps: EditorSaveDeps) {
               const normalizedGenerated =
                 generated.generatedSource ?? generated.source ?? managedSource;
               state.pageDocument = generated.pageDocument;
-              state.siteDocument = generated.site;
+              if (!state.siteDirty) {
+                state.siteDocument = generated.site;
+              }
               state.managedStatus = generated.pageDocument.managedFileStatus;
               state.visualEditable = true;
               state.generatedCode = normalizedGenerated;
@@ -202,7 +208,9 @@ export function createEditorSaveActions(deps: EditorSaveDeps) {
           } else {
             const state = deps.getState();
             state.pageDocument = saved.pageDocument;
-            state.siteDocument = saved.site;
+            if (!state.siteDirty) {
+              state.siteDocument = saved.site;
+            }
             state.managedStatus = saved.pageDocument.managedFileStatus;
             state.visualEditable = true;
             state.generatedCode =
@@ -217,7 +225,7 @@ export function createEditorSaveActions(deps: EditorSaveDeps) {
           currentPageContent() !== content;
         deps.syncVisualModeState();
 
-        if (!pageHasNewerEdits) {
+        if (!pageHasNewerEdits && isSamePage()) {
           try {
             const cleared = await deps.zephus.clearDraft(
               projectPath,
@@ -230,14 +238,28 @@ export function createEditorSaveActions(deps: EditorSaveDeps) {
           } catch {
             pageSaveNotice = `Saved ${pagePath}, but its recovery draft could not be cleared.`;
           }
+          const afterClear = deps.getState();
           pageHasNewerEdits =
-            state.pageRevision !== pageRevisionAtStart ||
+            afterClear.pageRevision !== pageRevisionAtStart ||
             currentPageContent() !== content;
         }
 
         if (pageHasNewerEdits) {
-          if (!state.pageDirty) deps.markDirty(true);
-        } else {
+          if (isSamePage()) {
+            if (!deps.getState().pageDirty) deps.markDirty(true);
+            const writeDraft =
+              deps.zephus.writeDraft ??
+              window.zephus.writeDraft.bind(window.zephus);
+            void writeDraft(
+              projectPath,
+              "page",
+              pagePath,
+              currentPageContent(),
+            ).catch(() => undefined);
+          } else if (!state.pageDirty) {
+            deps.markDirty(true);
+          }
+        } else if (isSamePage()) {
           if (state.mode === "code" && state.visualEditable) {
             // Only refill the editor when the content actually changed.
             // setCode() recreates the EditorState and wipes undo/redo + cursor;

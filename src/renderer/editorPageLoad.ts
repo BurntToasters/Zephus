@@ -169,7 +169,6 @@ export function createPageLoader(deps: PageLoaderDeps) {
       "btn-design-system",
       "btn-preview",
       "btn-publish",
-      "btn-close",
       "btn-undo",
       "btn-redo",
       "vp-desktop",
@@ -256,9 +255,10 @@ export function createPageLoader(deps: PageLoaderDeps) {
     }
 
     const nextManagedStatus = res.pageDocument.managedFileStatus;
-    const nextVisualEditable = nextManagedStatus !== "detached";
     const initialSource = res.source ?? "";
     const generatedSource = res.generatedSource ?? initialSource;
+    const nextVisualEditable =
+      nextManagedStatus === "managed" && initialSource === generatedSource;
     let pageDraftCleanupWarning: string | undefined;
     let restoredPageContent: string | undefined;
     let restoredPageDraft: DraftData | undefined;
@@ -306,7 +306,9 @@ export function createPageLoader(deps: PageLoaderDeps) {
     const nextSections =
       restoredPageContent && nextVisualEditable
         ? parseSections(inner)
-        : sectionsFromPageDocument(res.pageDocument);
+        : nextVisualEditable
+          ? sectionsFromPageDocument(res.pageDocument)
+          : parseSections(inner);
 
     ignoredExternalChange = null;
     state.page = page;
@@ -359,7 +361,7 @@ export function createPageLoader(deps: PageLoaderDeps) {
       setStatus(pageDraftCleanupWarning);
     } else if (state.managedStatus === "out-of-sync") {
       setStatus(
-        "Managed page drift detected. Save visually to overwrite or edit in code and detach.",
+        "Managed page drift detected. Edit in code or detach in Page Settings to continue.",
       );
     } else if (state.managedStatus === "detached") {
       setStatus(

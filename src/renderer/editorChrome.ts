@@ -1,5 +1,6 @@
 /** Window chrome: startup guards (close/reload with unsaved work), toolbar button wiring, preview-window listeners… */
 
+import { notePreviewServerExitedDuringStart } from "./editorPreviewPublish";
 import { isGlobalDirty } from "./editorSession";
 import type { EditorSessionState } from "./editorSession";
 
@@ -251,6 +252,8 @@ export function createChromeActions(deps: ChromeDeps) {
       if (state.previewUrl) {
         void window.zephus.closePreviewWindow().catch(() => undefined);
         resetPreviewState("Preview server stopped.");
+      } else {
+        notePreviewServerExitedDuringStart();
       }
     });
     $("vp-desktop").onclick = () => setViewport("desktop");

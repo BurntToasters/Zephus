@@ -23,6 +23,7 @@ function makeState() {
     children: [],
   };
   return {
+    mode: "visual" as const,
     sections: [sectionA, sectionB],
     selectedId: null as string | null,
     selectedSectionId: null as string | null,
@@ -43,7 +44,7 @@ function makeDeps(overrides: Record<string, unknown> = {}) {
     showModalNode: () => undefined,
     modalController: { confirmDestructive: vi.fn(async () => true) },
     editorRules: { allowedBlocks: null },
-    appSettings: null,
+    getAppSettings: () => null,
     updateUndoRedoButtons: () => undefined,
     renderLayers: () => undefined,
     renderCanvas: () => undefined,
@@ -149,7 +150,7 @@ describe("block ops", () => {
 
   it("deletes a block and clears the selection", async () => {
     const { deps, state } = makeDeps({
-      appSettings: { confirmBlockDelete: true },
+      getAppSettings: () => ({ confirmBlockDelete: true }),
     });
     const ops = createBlockOpsActions(deps);
     state.selectedId = "b1";
@@ -215,7 +216,7 @@ describe("block ops", () => {
 
   it("cuts a block: copies it, deletes it, and skips the confirm", async () => {
     const { deps, state } = makeDeps({
-      appSettings: { confirmBlockDelete: true },
+      getAppSettings: () => ({ confirmBlockDelete: true }),
     });
     const ops = createBlockOpsActions(deps);
     state.selectedId = "b1";

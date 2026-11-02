@@ -62,6 +62,16 @@ export function createModalController(refreshIcons: () => void) {
     );
   }
 
+  function isFocusableElement(el: HTMLElement): boolean {
+    if (!document.contains(el) || el.hasAttribute("disabled")) return false;
+    const style = getComputedStyle(el);
+    if (style.visibility === "hidden" || style.display === "none") return false;
+    if (el.tabIndex >= 0) return true;
+    return el.matches(
+      "button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])",
+    );
+  }
+
   function cancelPendingFocus(): void {
     focusGeneration += 1;
     if (focusTimer !== null) {
@@ -115,11 +125,21 @@ export function createModalController(refreshIcons: () => void) {
       return;
     }
     if (e.key !== "Tab") return;
+    const shell = modalElement("modal-shell");
     const focusable = focusableInModal();
     if (focusable.length === 0) return;
     const first = focusable[0]!;
     const last = focusable[focusable.length - 1]!;
     const activeEl = document.activeElement as HTMLElement | null;
+    const insideModal =
+      !!activeEl &&
+      shell.contains(activeEl) &&
+      !activeEl.classList.contains("skip-link");
+    if (!insideModal) {
+      e.preventDefault();
+      (e.shiftKey ? last : first).focus();
+      return;
+    }
     if (e.shiftKey && activeEl === first) {
       e.preventDefault();
       last.focus();
@@ -136,6 +156,11 @@ export function createModalController(refreshIcons: () => void) {
       if (!el) continue;
       if (on) el.setAttribute("inert", "");
       else el.removeAttribute("inert");
+    }
+    const skipLink = document.querySelector<HTMLElement>(".skip-link");
+    if (skipLink) {
+      if (on) skipLink.setAttribute("tabindex", "-1");
+      else skipLink.removeAttribute("tabindex");
     }
   }
 
@@ -265,6 +290,7 @@ export function createModalController(refreshIcons: () => void) {
     }
     applyModalOptions();
     modalElement("modal-overlay").classList.add("hidden");
+    modalElement("modal-title").textContent = "";
     setBackgroundInert(false);
     if (keyHandler) {
       document.removeEventListener("keydown", keyHandler, true);
@@ -276,7 +302,7 @@ export function createModalController(refreshIcons: () => void) {
     modalElement("modal-actions").innerHTML = "";
     const returnFocus = lastFocused;
     lastFocused = null;
-    if (returnFocus && document.contains(returnFocus)) returnFocus.focus();
+    if (returnFocus && isFocusableElement(returnFocus)) returnFocus.focus();
   }
 
   function registerCleanup(cleanup: (() => void) | null): void {

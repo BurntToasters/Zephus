@@ -14,6 +14,13 @@ vi.mock("child_process", () => ({
 }));
 vi.mock("../nodeCheck", () => ({
   buildSpawnEnv: buildSpawnEnvMock,
+  checkNodeVersion: async () => ({
+    status: "ok",
+    version: "22.12.0",
+    binaryPath: "node",
+    usedCustomPath: false,
+    message: "Node.js 22.12.0 detected.",
+  }),
 }));
 
 import { startDevServer, stopDevServer, onDevServerExit } from "../devServer";
@@ -31,7 +38,12 @@ function makeProject(withDev = true, withDeps = true): void {
     }),
   );
   if (withDeps) {
-    fs.mkdirSync(path.join(projectDir, "node_modules"), { recursive: true });
+    const astroDir = path.join(projectDir, "node_modules", "astro");
+    fs.mkdirSync(astroDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(astroDir, "package.json"),
+      JSON.stringify({ name: "astro" }),
+    );
   }
 }
 
@@ -272,13 +284,26 @@ describe("startDevServer", () => {
     makeProject();
     const other = path.join(tmpDir, "other-project");
     fs.mkdirSync(other, { recursive: true });
-    fs.mkdirSync(path.join(other, "node_modules"), { recursive: true });
+    const otherAstro = path.join(other, "node_modules", "astro");
+    fs.mkdirSync(otherAstro, { recursive: true });
+    fs.writeFileSync(
+      path.join(otherAstro, "package.json"),
+      JSON.stringify({ name: "astro" }),
+    );
     fs.writeFileSync(
       path.join(other, "package.json"),
       JSON.stringify({
         scripts: { dev: "astro dev" },
         dependencies: { astro: "^6.0.0" },
       }),
+    );
+    const otherLock = path.join(other, "node_modules", ".package-lock.json");
+    fs.writeFileSync(otherLock, "{}");
+    const otherPkgMtime = fs.statSync(path.join(other, "package.json")).mtime;
+    fs.utimesSync(
+      otherLock,
+      otherPkgMtime,
+      new Date(otherPkgMtime.getTime() + 1000),
     );
     const childA = fakeChild();
     const childB = fakeChild();

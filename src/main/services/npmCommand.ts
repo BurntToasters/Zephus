@@ -8,38 +8,55 @@ export interface NpmCommand {
   windowsVerbatimArguments?: boolean;
 }
 
+/** Locates npm-cli.js for a validated absolute Node binary (never a PATH shim). */
+export function resolveNpmCliJs(
+  nodeBinary: string,
+  platform: NodeJS.Platform = process.platform,
+): string | null {
+  const dir = path.dirname(nodeBinary);
+  const candidates =
+    platform === "win32"
+      ? [path.join(dir, "node_modules", "npm", "bin", "npm-cli.js")]
+      : [
+          path.join(
+            dir,
+            "..",
+            "lib",
+            "node_modules",
+            "npm",
+            "bin",
+            "npm-cli.js",
+          ),
+          path.join(dir, "node_modules", "npm", "bin", "npm-cli.js"),
+        ];
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(candidate)) return path.normalize(candidate);
+    } catch {
+      /* unreadable candidate */
+    }
+  }
+  return null;
+}
+
 export function npmCommand(
   args: string[],
   platform: NodeJS.Platform = process.platform,
   env: NodeJS.ProcessEnv = process.env,
-  cwd?: string,
+  _cwd?: string,
+  nodeBinary?: string | null,
 ): NpmCommand {
+  const customNode = nodeBinary?.trim();
+  if (customNode && customNode !== "node" && path.isAbsolute(customNode)) {
+    const cli = resolveNpmCliJs(customNode, platform);
+    if (cli) {
+      return { command: customNode, args: [cli, ...args] };
+    }
+  }
   if (platform === "win32") {
-    const npm = resolveWindowsNpmCmd(env);
-    const invocation = [
-      quoteCmdArg(npm, true),
-      ...args.map((arg) => quoteCmdArg(arg)),
-    ].join(" ");
-    const uncPrefix =
-      cwd && /^\\\\/.test(cwd) ? `pushd ${quoteCmdArg(cwd, true)} && ` : "";
-    return {
-      command: "cmd.exe",
-      // cmd /s strips the first and last quote. Wrap the entire command so
-      // the quotes around an npm.cmd path containing spaces survive. Node
-      // must pass this command line verbatim or it escapes those quotes and
-      // cmd tries to execute a literal `\"C:\\Program` command instead.
-      args: ["/d", "/s", "/c", `"${uncPrefix}${invocation}"`],
-      windowsVerbatimArguments: true,
-    };
+    return { command: resolveWindowsNpmCmd(env), args: [...args] };
   }
   return { command: "npm", args };
-}
-
-function quoteCmdArg(value: string, forceQuote = false): string {
-  if (!forceQuote && /^[A-Za-z0-9_./:=+-]+$/.test(value)) return value;
-  // cmd.exe expands %VAR% even inside double quotes — a path containing % is
-  // corrupted before the command runs. Doubling escapes it.
-  return `"${value.replace(/"/g, '""').replace(/%/g, "%%")}"`;
 }
 
 function splitPathValue(pathValue: string): string[] {

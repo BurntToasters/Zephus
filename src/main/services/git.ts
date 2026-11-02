@@ -4,6 +4,14 @@ import * as fs from "fs";
 import * as path from "path";
 import log from "electron-log";
 import { GitStatus } from "../types";
+import { relativePathIsSecret } from "./files";
+
+const DEFAULT_GITIGNORE = `node_modules/
+dist/
+.env*
+!.env.example
+.DS_Store
+`;
 
 const execFileAsync = promisify(execFile);
 
@@ -54,7 +62,9 @@ async function readUpstreamAheadBehind(
     try {
       await git(projectPath, ["fetch", "--quiet", "--prune"]);
     } catch {
-      // Offline or no remote — still report local ahead/behind vs last fetch.
+      // Fetch failed — omit ahead/behind so the UI does not show stale counts
+      // as if the remote refresh succeeded.
+      return null;
     }
   }
   try {
@@ -68,6 +78,111 @@ async function readUpstreamAheadBehind(
   } catch {
     return null;
   }
+}
+
+export interface ParsedGitStatus {
+  modified: string[];
+  added: string[];
+  deleted: string[];
+}
+
+/** Parses `git status --porcelain` into panel lists (excludes unmerged UU and copy C). */
+export function parseStatusPorcelain(statusRaw: string): ParsedGitStatus {
+  const modified: string[] = [];
+  const added: string[] = [];
+  const deleted: string[] = [];
+
+  for (const line of statusRaw.split("\n")) {
+    if (!line.trim()) continue;
+    const code = line.slice(0, 2);
+    // Unmerged conflicts and index/worktree copies are omitted — Commit All
+    // must not stage paths the panel does not list.
+    if (code.includes("U") || code[0] === "C" || code[1] === "C") continue;
+    const arrow = line.indexOf(" -> ");
+    const file = (arrow >= 0 ? line.slice(arrow + 4) : line.slice(3)).trim();
+    if (!file) continue;
+    if (code.includes("D")) deleted.push(file);
+    else if (code.includes("A") || code.includes("?")) added.push(file);
+    else if (code.includes("M") || code.includes("R") || code.includes("T")) {
+      modified.push(file);
+    }
+  }
+
+  return { modified, added, deleted };
+}
+
+function listCommitPathsFromParsed(parsed: ParsedGitStatus): string[] {
+  return [...parsed.modified, ...parsed.added, ...parsed.deleted];
+}
+
+/** Every committable file from porcelain with `-uall` (untracked dirs expanded). */
+async function listCommitableFilePaths(projectPath: string): Promise<string[]> {
+  const statusRaw = await git(projectPath, ["status", "--porcelain", "-uall"]);
+  return listCommitPathsFromParsed(parseStatusPorcelain(statusRaw));
+}
+
+function refuseInvalidSelectedCommitPaths(
+  selected: string[],
+  allowed: ReadonlySet<string>,
+): { ok: false; error: string } | null {
+  for (const p of selected) {
+    if (p === "." || p === "*") {
+      return {
+        ok: false,
+        error: "Cannot commit with a broad path; select individual files.",
+      };
+    }
+    if (p.endsWith("/")) {
+      return {
+        ok: false,
+        error: "Cannot commit a directory; select individual files.",
+      };
+    }
+    if (!allowed.has(p)) {
+      return {
+        ok: false,
+        error: `Path is not a committable file: ${p}`,
+      };
+    }
+  }
+  return null;
+}
+
+function refuseSecretCommitPaths(
+  paths: string[],
+): { ok: false; error: string } | null {
+  const secrets = paths.filter((p) => relativePathIsSecret(p));
+  if (secrets.length === 0) return null;
+  const listed = [...new Set(secrets)].join(", ");
+  return {
+    ok: false,
+    error: `Cannot commit sensitive files: ${listed}`,
+  };
+}
+
+async function refuseCommitInDetachedHead(
+  projectPath: string,
+): Promise<{ ok: false; error: string } | null> {
+  let branchRaw: string;
+  try {
+    branchRaw = (
+      await git(projectPath, ["rev-parse", "--abbrev-ref", "HEAD"])
+    ).trim();
+  } catch {
+    // Unborn HEAD (no commits yet): same fallback as getGitStatus.
+    branchRaw = (
+      await git(projectPath, ["symbolic-ref", "--short", "HEAD"]).catch(
+        () => "HEAD",
+      )
+    ).trim();
+  }
+  if (branchRaw === "HEAD") {
+    return {
+      ok: false,
+      error: "Cannot commit while in detached HEAD. Check out a branch first.",
+    };
+  }
+  return null;
 }
 
 export interface GetGitStatusOptions {
@@ -107,26 +222,7 @@ export async function getGitStatus(
     const detachedHead = branchRaw === "HEAD";
 
     const statusRaw = await git(projectPath, ["status", "--porcelain"]);
-    const modified: string[] = [];
-    const added: string[] = [];
-    const deleted: string[] = [];
-
-    for (const line of statusRaw.split("\n")) {
-      if (!line.trim()) continue;
-      const code = line.slice(0, 2);
-      // Porcelain v1 rename/copy lines are "R  old -> new"; the working-tree
-      // path (the one the user commits and the panel shows) is the NEW one.
-      const arrow = line.indexOf(" -> ");
-      const file = (arrow >= 0 ? line.slice(arrow + 4) : line.slice(3)).trim();
-      if (!file) continue;
-      if (code.includes("D")) deleted.push(file);
-      else if (code.includes("A") || code.includes("?")) added.push(file);
-      // R (renamed) and T (typechange: the file's mode/content kind changed)
-      // belong with the modified files so per-path commits can stage them.
-      else if (code.includes("M") || code.includes("R") || code.includes("T")) {
-        modified.push(file);
-      }
-    }
+    const { modified, added, deleted } = parseStatusPorcelain(statusRaw);
 
     const upstream = !detachedHead
       ? await readUpstreamAheadBehind(projectPath, options.fetchRemote ?? false)
@@ -166,7 +262,7 @@ export async function initGitRepo(projectPath: string): Promise<void> {
   // project has none — never overwrite an existing one.
   const gitignorePath = path.join(projectPath, ".gitignore");
   if (!fs.existsSync(gitignorePath)) {
-    fs.writeFileSync(gitignorePath, "node_modules/\ndist/\n.env\n.DS_Store\n");
+    fs.writeFileSync(gitignorePath, DEFAULT_GITIGNORE);
   }
 }
 
@@ -185,9 +281,18 @@ export async function commitAllChanges(
   if (!normalized) {
     return { ok: false, error: "Commit message is required." };
   }
+  const detached = await refuseCommitInDetachedHead(projectPath);
+  if (detached) return detached;
+
   try {
-    await git(projectPath, ["add", "-A"]);
-    await git(projectPath, ["commit", "-m", normalized]);
+    const paths = await listCommitableFilePaths(projectPath);
+    if (paths.length === 0) {
+      return { ok: false, error: "Nothing to commit." };
+    }
+    const secretRefusal = refuseSecretCommitPaths(paths);
+    if (secretRefusal) return secretRefusal;
+    await git(projectPath, ["add", "--", ...paths]);
+    await git(projectPath, ["commit", "-m", normalized, "--", ...paths]);
     return { ok: true };
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
@@ -212,9 +317,17 @@ export async function commitProjectPaths(
   if (unique.length === 0) {
     return { ok: false, error: "Select at least one file to commit." };
   }
+  const detached = await refuseCommitInDetachedHead(projectPath);
+  if (detached) return detached;
+
   try {
+    const allowed = new Set(await listCommitableFilePaths(projectPath));
+    const invalid = refuseInvalidSelectedCommitPaths(unique, allowed);
+    if (invalid) return invalid;
+    const secretRefusal = refuseSecretCommitPaths(unique);
+    if (secretRefusal) return secretRefusal;
     await git(projectPath, ["add", "--", ...unique]);
-    await git(projectPath, ["commit", "-m", normalized]);
+    await git(projectPath, ["commit", "-m", normalized, "--", ...unique]);
     return { ok: true };
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);

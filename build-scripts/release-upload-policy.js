@@ -2,25 +2,52 @@
 
 const path = require("node:path");
 
-function isReleaseUploadName(name) {
-  return (
-    /\.(?:dmg|zip|exe|msi|appimage|deb|rpm|appx|msix|flatpak|blockmap|asc)$/i.test(
-      name,
-    ) ||
-    /^SHA256SUMS-[A-Za-z0-9_-]+\.txt$/.test(name) ||
-    /^(?:latest|beta|alpha|db)(?:-[A-Za-z0-9_-]+)?\.ya?ml$/i.test(name)
-  );
-}
-
-function getReleaseUploadFiles(releaseEntries, releaseDir) {
-  return releaseEntries
-    .filter(isReleaseUploadName)
-    .sort()
-    .map((name) => path.join(releaseDir, name));
+function isLatestMetadataUploadName(name) {
+  return /^latest(?:-[A-Za-z0-9_-]+)?\.ya?ml$/i.test(name);
 }
 
 function isGithubPrereleaseVersion(version) {
   return /-(beta|alpha|rc|db)(?:[.-]|$|[0-9])/i.test(String(version));
+}
+
+function resolveUploadPolicyVersion(version) {
+  if (version !== undefined && version !== null && String(version).trim()) {
+    return String(version).trim();
+  }
+  try {
+    return require("../package.json").version;
+  } catch {
+    return null;
+  }
+}
+
+function isReleaseUploadName(name, version) {
+  const matches =
+    /\.(?:dmg|zip|exe|msi|appimage|deb|rpm|appx|msix|flatpak|blockmap|asc)$/i.test(
+      name,
+    ) ||
+    /^SHA256SUMS-[A-Za-z0-9_-]+\.txt$/.test(name) ||
+    /^(?:latest|beta|alpha|db)(?:-[A-Za-z0-9_-]+)?\.ya?ml$/i.test(name);
+  if (!matches) {
+    return false;
+  }
+  const resolvedVersion = resolveUploadPolicyVersion(version);
+  if (
+    resolvedVersion &&
+    isGithubPrereleaseVersion(resolvedVersion) &&
+    isLatestMetadataUploadName(name)
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function getReleaseUploadFiles(releaseEntries, releaseDir, version) {
+  const resolvedVersion = resolveUploadPolicyVersion(version);
+  return releaseEntries
+    .filter((name) => isReleaseUploadName(name, resolvedVersion))
+    .sort()
+    .map((name) => path.join(releaseDir, name));
 }
 
 function selectMatchingDraft(releases, tagName) {
@@ -66,7 +93,9 @@ function releaseSourceFailures({
 module.exports = {
   getReleaseUploadFiles,
   isGithubPrereleaseVersion,
+  isLatestMetadataUploadName,
   isReleaseUploadName,
   releaseSourceFailures,
+  resolveUploadPolicyVersion,
   selectMatchingDraft,
 };

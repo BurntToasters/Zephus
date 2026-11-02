@@ -135,7 +135,7 @@ describe("collectResponsiveCss", () => {
         ],
       },
     ]);
-    expect(css).toContain("@media (max-width: 1024px)");
+    expect(css).toContain("@media (min-width: 721px) and (max-width: 1024px)");
     expect(css).toContain("@media (max-width: 720px)");
     expect(css).toContain("data-zephus-id=");
     expect(css).toContain("grid-template-columns:1fr!important");
@@ -220,14 +220,14 @@ describe("collectResponsiveCss", () => {
       },
     ]);
     expect(css).toContain(
-      '@media (max-width: 1024px){[data-zephus-id="block-tablet"]{display:none!important}}',
+      '@media (min-width: 721px) and (max-width: 1024px){[data-zephus-id="block-tablet"]{display:none!important}}',
     );
     expect(css).toContain(
       '@media (max-width: 720px){[data-zephus-id="block-mobile"]{display:none!important}}',
     );
     // The mobile rule must not leak into the tablet media query.
     expect(css).not.toContain(
-      'block-mobile"]{display:none!important}}@media (max-width: 1024px)',
+      'block-mobile"]{display:none!important}}@media (min-width: 721px) and (max-width: 1024px)',
     );
   });
 });

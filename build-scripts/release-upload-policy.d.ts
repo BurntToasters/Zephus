@@ -1,5 +1,9 @@
 interface ReleaseUploadPolicy {
-  getReleaseUploadFiles(releaseEntries: string[], releaseDir: string): string[];
+  getReleaseUploadFiles(
+    releaseEntries: string[],
+    releaseDir: string,
+    version?: string,
+  ): string[];
   isReleaseUploadName(name: string): boolean;
   releaseSourceFailures(input: {
     head: string;

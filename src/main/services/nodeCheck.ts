@@ -33,9 +33,15 @@ export function validateNodePath(input: unknown): NodePathValidation {
   }
   let stat: fs.Stats;
   try {
-    stat = fs.statSync(candidate);
+    stat = fs.lstatSync(candidate);
   } catch {
     return { ok: false, error: "Node.js path does not exist." };
+  }
+  if (stat.isSymbolicLink()) {
+    return {
+      ok: false,
+      error: "Node.js path must not be a symbolic link.",
+    };
   }
   if (!stat.isFile()) {
     return { ok: false, error: "Node.js path is not a regular file." };
@@ -168,6 +174,9 @@ async function resolveNodeBinaryUncached(
     if (version) {
       return { path: trimmedCustom, version, usedCustomPath: true };
     }
+    // A caller-supplied custom path must never fall through to PATH when it
+    // does not work — the UI relies on that to detect a broken setting.
+    return null;
   }
 
   const candidates = ["node", ...commonNodePaths()];
@@ -269,15 +278,21 @@ const MISSING_MESSAGE =
 export async function checkNodeVersion(
   customPath?: string | null,
 ): Promise<NodeCheckResult> {
+  const trimmedCustom = customPath?.trim() ?? "";
   try {
     const resolved = await resolveNodeBinary(customPath);
     if (!resolved) {
+      const customFailed = trimmedCustom.length > 0;
       return {
         status: "missing",
         version: null,
-        binaryPath: null,
-        usedCustomPath: false,
-        message: MISSING_MESSAGE,
+        binaryPath: customFailed ? trimmedCustom : null,
+        usedCustomPath: customFailed,
+        message: customFailed
+          ? `The custom Node.js location could not be run (${trimmedCustom}). ` +
+            `Zephus needs Node.js ${MIN_NODE_VERSION_STRING} or newer.\n\n` +
+            `Update the path in Settings or install Node.js from https://nodejs.org.`
+          : MISSING_MESSAGE,
       };
     }
 
@@ -323,32 +338,15 @@ export async function checkNodeVersion(
 }
 
 /**
- * Builds a spawn environment that guarantees the resolved Node.js (and its
- * sibling `npm`) are reachable, by prepending the resolved binary's directory
- * to PATH. When Node is already on PATH (resolved as bare "node"), the base
- * env is returned unchanged. Never throws.
+ * Returns a copy of the spawn environment. Custom Node.js is invoked by path
+ * via npmCommand; its install directory is not prepended to PATH. Never throws.
  */
 export async function buildSpawnEnv(
-  customPath?: string | null,
+  _customPath?: string | null,
   baseEnv: NodeJS.ProcessEnv = process.env,
 ): Promise<NodeJS.ProcessEnv> {
   try {
-    const resolved = await resolveNodeBinary(customPath);
-    if (
-      !resolved ||
-      resolved.path === "node" ||
-      !path.isAbsolute(resolved.path)
-    ) {
-      return { ...baseEnv };
-    }
-    const dir = path.dirname(resolved.path);
-    const key = pathEnvKey(baseEnv);
-    const sep = process.platform === "win32" ? ";" : ":";
-    const current = baseEnv[key];
-    return {
-      ...baseEnv,
-      [key]: current ? `${dir}${sep}${current}` : dir,
-    };
+    return { ...baseEnv };
   } catch (error) {
     log.warn("Failed to build spawn env for Node:", error);
     return { ...baseEnv };

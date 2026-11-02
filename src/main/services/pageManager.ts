@@ -2,6 +2,9 @@ import * as fs from "fs";
 import * as path from "path";
 import { OperationResult, PageListResult, PageMeta } from "../types";
 import { assertRealpathInside, safeResolve } from "./fsSafe";
+import { detectAstro } from "./project";
+import { toProjectRelativePath } from "./projectPaths";
+import { normalizePageSlug, routeFromPage } from "../../shared/pageIdentity";
 import {
   createSchemaPage,
   deletePageSchema,
@@ -9,11 +12,9 @@ import {
   ensureVisualSchema,
   isNotFoundSlug,
   listExistingPageDocuments,
-  normalizePageSlug,
   pagePathFromSlug,
   readPageDocument,
   renamePageSchema,
-  routeFromPage,
   writePageDocument,
   writePageDocumentFile,
   writePageMetadataPreservingSource,
@@ -25,6 +26,13 @@ function resolvePage(projectPath: string, relativePath: string): string {
   const full = safeResolve(projectPath, relativePath);
   assertRealpathInside(projectPath, full);
   return full;
+}
+
+function pinnedPagesDir(projectPath: string, pagesDir: string): string {
+  const canonical = detectAstro(projectPath).pagesDir;
+  const norm = (value: string) =>
+    toProjectRelativePath(value).replace(/^\/+|\/+$/g, "");
+  return norm(pagesDir) === norm(canonical) ? pagesDir : canonical;
 }
 
 /** A page path must live under pagesDir and carry a page extension. */
@@ -77,9 +85,22 @@ export function readPageMetadata(
       author: doc.author,
     };
   }
-  const slug =
-    normalizePageSlug(page.replace(/^.*?src[\\/]+pages[\\/]+/, "")) ?? "index";
-  const route = slug === "index" ? "/" : `/${slug}`;
+  const normalizedPage = toProjectRelativePath(page).replace(/^\/+/, "");
+  const normalizedPagesDir = toProjectRelativePath(pagesDir).replace(
+    /^\/+|\/+$/g,
+    "",
+  );
+  const dirPrefix = normalizedPagesDir ? `${normalizedPagesDir}/` : "";
+  const relSlug = (
+    normalizedPage.startsWith(dirPrefix)
+      ? normalizedPage.slice(dirPrefix.length)
+      : normalizedPage
+  )
+    .replace(/\.(astro|md|mdx|html)$/i, "")
+    .replace(/\\/g, "/");
+  const normalizedSlug = normalizePageSlug(relSlug);
+  const slug = normalizedSlug ?? "index";
+  const route = normalizedSlug === null ? "/" : routeFromPage(page, pagesDir);
   const title =
     slug === "index"
       ? "Home"
@@ -217,6 +238,7 @@ export function renamePage(
   pagesDir: string,
   nextSlugInput: string,
 ): OperationResult {
+  pagesDir = pinnedPagesDir(projectPath, pagesDir);
   const membership = assertPageInsidePagesDir(page, pagesDir);
   if (!membership.ok) return membership;
   const nextSlug = normalizePageSlug(nextSlugInput);
@@ -255,7 +277,7 @@ export function renamePage(
         ...current.pageDocument,
         page: nextRel,
         slug: nextSlug,
-        route: nextSlug === "index" ? "/" : `/${nextSlug}`,
+        route: routeFromPage(nextRel, pagesDir),
         isHome: nextSlug === "index",
         navVisible: nextIsNotFound
           ? false
@@ -357,6 +379,7 @@ export function duplicatePage(
   slugInput?: string,
 ): OperationResult {
   try {
+    pagesDir = pinnedPagesDir(projectPath, pagesDir);
     const membership = assertPageInsidePagesDir(page, pagesDir);
     if (!membership.ok) return membership;
     const from = resolvePage(projectPath, page);
@@ -413,8 +436,19 @@ export function deletePage(
   pagesDir: string,
 ): OperationResult {
   try {
+    pagesDir = pinnedPagesDir(projectPath, pagesDir);
     const membership = assertPageInsidePagesDir(page, pagesDir);
     if (!membership.ok) return membership;
+    const route = routeFromPage(page, pagesDir);
+    const slug =
+      normalizePageSlug(route.replace(/^\//, "")) ??
+      normalizePageSlug(page.replace(/^.*?pages[\\/]+/, ""));
+    if (route === "/" || slug === "index") {
+      return {
+        ok: false,
+        error: "The home page cannot be deleted.",
+      };
+    }
     const full = resolvePage(projectPath, page);
     if (!fs.existsSync(full)) {
       return { ok: false, error: "Page does not exist." };

@@ -51,7 +51,7 @@ export interface BlockOpsDeps {
   editorRules: {
     allowedBlocks: string[] | null;
   };
-  appSettings: { confirmBlockDelete: boolean } | null;
+  getAppSettings: () => { confirmBlockDelete: boolean } | null;
   updateUndoRedoButtons: () => void;
   renderLayers: () => void;
   renderCanvas: () => void;
@@ -93,7 +93,7 @@ export function createBlockOpsActions(deps: BlockOpsDeps) {
     showModalNode,
     modalController,
     editorRules,
-    appSettings,
+    getAppSettings,
     updateUndoRedoButtons,
     renderLayers,
     renderCanvas,
@@ -157,12 +157,16 @@ export function createBlockOpsActions(deps: BlockOpsDeps) {
       isInspectorTextInputFocused(document.activeElement);
     scheduleCanvasRepaint(typing);
     if (rerenderProperties) {
-      endInspectorEdit();
       renderProperties();
     }
+    endInspectorEdit();
   }
 
   function addSectionAt(index: number, template?: SectionTemplate): void {
+    if (state.mode !== "visual") {
+      setStatus("Switch to Visual mode to change page structure.");
+      return;
+    }
     pushUndo();
     let children: BlockNode[] = [];
     if (template?.blocks) {
@@ -190,6 +194,10 @@ export function createBlockOpsActions(deps: BlockOpsDeps) {
     index: number,
     sectionId?: string | null,
   ): void {
+    if (state.mode !== "visual") {
+      setStatus("Switch to Visual mode to change page structure.");
+      return;
+    }
     if (!isBlockTypeAllowed(type, editorRules.allowedBlocks)) {
       setStatus(`Block type "${type}" is not allowed on this site.`);
       return;
@@ -271,17 +279,17 @@ export function createBlockOpsActions(deps: BlockOpsDeps) {
       return;
     }
     const nextSection = state.sections[location.sectionIndex + direction];
-    if (
-      (location.blockIndex + direction < 0 ||
-        location.blockIndex + direction >= location.section.children.length) &&
-      isNodeLocked(nextSection)
-    ) {
+    const siblings = location.section.children;
+    const next = location.blockIndex + direction;
+    const crossesSection = next < 0 || next >= location.section.children.length;
+    if (crossesSection && isNodeLocked(nextSection)) {
       setStatus(lockedMutationMessage("target-section"));
       return;
     }
+    if (crossesSection && !nextSection) {
+      return;
+    }
     pushUndo();
-    const siblings = location.section.children;
-    const next = location.blockIndex + direction;
     let moved: Block | undefined;
     if (next >= 0 && next < siblings.length) {
       [moved] = siblings.splice(location.blockIndex, 1) as Block[];
@@ -322,7 +330,7 @@ export function createBlockOpsActions(deps: BlockOpsDeps) {
       setStatus(lockedMutationMessage("block"));
       return;
     }
-    if (appSettings?.confirmBlockDelete && !skipDeleteConfirm) {
+    if ((getAppSettings()?.confirmBlockDelete ?? true) && !skipDeleteConfirm) {
       const confirmed = await modalController.confirmDestructive(
         "Delete Block",
         `Delete this ${block.type} block from ${currentPageLabel()}?`,
@@ -558,7 +566,7 @@ export function createBlockOpsActions(deps: BlockOpsDeps) {
       setStatus(lockedMutationMessage("section"));
       return;
     }
-    if (appSettings?.confirmBlockDelete && !skipDeleteConfirm) {
+    if ((getAppSettings()?.confirmBlockDelete ?? true) && !skipDeleteConfirm) {
       const confirmed = await modalController.confirmDestructive(
         "Delete Section",
         `Delete section "${section.label}" from ${currentPageLabel()}?`,

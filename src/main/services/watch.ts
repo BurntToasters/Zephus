@@ -2,6 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 import log from "electron-log";
 import { assertRealpathInside } from "./fsSafe";
+import { relativePathIsSecret } from "./files";
 
 type ChangeCallback = (relativePath: string) => void;
 
@@ -82,6 +83,11 @@ export function watchFile(
   onChange: ChangeCallback,
 ): boolean {
   stopWatching();
+  const normalizedRel = relativePath.replace(/\\/g, "/");
+  if (relativePathIsSecret(normalizedRel)) {
+    log.warn("Refusing to watch secret file", normalizedRel);
+    return false;
+  }
   const root = path.resolve(projectPath);
   const full = path.resolve(root, relativePath);
   if (full !== root && !full.startsWith(root + path.sep)) {
@@ -91,7 +97,12 @@ export function watchFile(
   // Resolve symlinks: an in-project symlink must not let us watch a file
   // outside the project root.
   try {
-    assertRealpathInside(root, full);
+    const { realRoot, realTarget } = assertRealpathInside(root, full);
+    const resolvedRel = path.relative(realRoot, realTarget).replace(/\\/g, "/");
+    if (relativePathIsSecret(resolvedRel)) {
+      log.warn("Refusing to watch secret file via symlink", resolvedRel);
+      return false;
+    }
   } catch {
     log.warn("Refusing to watch symlinked path outside project", full);
     return false;

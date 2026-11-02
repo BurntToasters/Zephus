@@ -68,13 +68,13 @@ This guide explains how to create, edit, preview, and publish Astro sites with Z
 
 ## Getting Started (30 Seconds)
 
-1. **Open Zephus** and click **Explore Templates**
+1. **Open Zephus** and open the **Starter Themes** tab
 2. **Choose a theme** (Documentation, Blog, Portfolio, etc.)
 3. **Select an empty folder** for your project
 4. Zephus creates the site and opens the editor
-5. Click **+ New Page** to add your first page
+5. Click the **New page** icon button (title **New page**) to add your first page
 6. Drag blocks from the palette to build your content
-7. Click **Preview** to see your site in a browser
+7. Click **Start Preview** to open a separate browser window of saved site files
 8. Click **Publish** when ready to deploy
 
 → [Full Getting Started Guide](./GETTING_STARTED.md)
@@ -87,7 +87,7 @@ This guide explains how to create, edit, preview, and publish Astro sites with Z
 
 Three tabs:
 
-- **Pages** — your site's pages and navigation. Click a page to edit, click the eye icon to toggle visibility, use the ⋯ menu for more options. Also holds **Site Shell** and **Design System**.
+- **Pages** — your site's pages and navigation. Click a page to edit, click the eye icon to hide or show the page in site navigation (the page stays published), use the ⋯ menu for more options. Also holds **Site Shell** and **Design System**.
 - **Build** — the block palette and prebuilt section templates to drag onto the canvas.
 - **Layers** — an outline of the current page's sections and blocks.
 
@@ -107,7 +107,7 @@ Four tabs:
 ### Top Toolbar
 
 **Left:** Mode switcher (Visual ↔ Code), project info
-**Right:** Save, Preview, Publish buttons
+**Right:** Save, **Start Preview** / **Stop Preview**, Publish buttons
 
 ### Editing text
 
@@ -140,7 +140,7 @@ Zephus provides **22 content block types** organized by category:
 
 ### Create a Page
 
-1. Click **+ New Page** in left sidebar
+1. Click the **New page** icon button in the left sidebar
 2. Enter a slug (URL path, e.g., `about`)
 3. Set page title, nav label, etc.
 4. Click **Done**
@@ -221,10 +221,10 @@ Zephus then adds canonical links and social share tags to every page, and genera
 
 ### Preview Your Site
 
-1. Click **Preview** in the top toolbar
-2. Your site opens in a browser with live reload
-3. Make changes in Zephus, then see them instantly in the browser
-4. Click **Stop Preview** to close
+1. Click **Start Preview** in the top toolbar (Zephus saves unsaved work first if needed)
+2. A separate preview window opens the dev server for **saved files on disk** — not the unsaved canvas
+3. Save changes in Zephus, then refresh or rely on hot reload in the preview window
+4. Click **Stop Preview** to shut down the dev server
 
 ---
 
@@ -283,7 +283,7 @@ Save a section layout as a template, then reuse it on other pages.
 
 ### Auto-Save Drafts
 
-Enable **Auto-Save** in Settings to save work-in-progress automatically every few seconds. Recover unsaved work if Zephus crashes.
+Enable **Auto-Save** in Settings to save when you leave a page (or auto-persist during site-wide editor conflicts) instead of showing the unsaved-changes dialog. **Crash-recovery drafts** in the app’s local data folder are separate and can still be offered after a crash even when Auto-Save is off.
 
 → [Draft Management Guide](./WORKFLOWS.md#manage-draft-auto-saves)
 
@@ -308,17 +308,26 @@ If you edit a page outside Zephus (in VS Code, Git, etc.), Zephus detects it and
 
 ## Keyboard Shortcuts
 
-| Shortcut               | Action                                     |
-| ---------------------- | ------------------------------------------ |
-| **Ctrl/Cmd+S**         | Save                                       |
-| **Ctrl/Cmd+Z**         | Undo                                       |
-| **Ctrl/Cmd+Y**         | Redo                                       |
-| **Ctrl/Cmd+D**         | Duplicate selected block or section        |
-| **Ctrl/Cmd+C / X / V** | Copy, cut, paste selected block or section |
-| **Delete / Backspace** | Delete selected block or section           |
-| **Ctrl/Cmd+F**         | Find and replace across pages              |
-| **Ctrl/Cmd+B / I / K** | Bold, italic, link (while editing text)    |
-| **?** or **H**         | Open the in-app shortcut help              |
+Shortcuts below apply in **Visual mode** when focus is **not** in a text field, select, or other control (same scope as Settings).
+
+| Shortcut                                 | Action                                        |
+| ---------------------------------------- | --------------------------------------------- |
+| **Ctrl/Cmd+S**                           | Save                                          |
+| **Ctrl/Cmd+E**                           | Toggle Visual / Code mode                     |
+| **Ctrl/Cmd+1 / 2 / 3**                   | Desktop / Tablet / Mobile viewport            |
+| **Ctrl/Cmd+Z**                           | Undo                                          |
+| **Ctrl/Cmd+Y** (or **Shift+Cmd/Ctrl+Z**) | Redo                                          |
+| **Ctrl/Cmd+D**                           | Duplicate selected block or section           |
+| **Ctrl/Cmd+C / X / V**                   | Copy, cut, paste selected block or section    |
+| **Delete / Backspace**                   | Delete selected block or section (visual mode) |
+| **Ctrl/Cmd+F**                           | Find and replace across pages                 |
+| **?** or **H**                           | Open shortcut help (canvas or dashboard only) |
+
+### While editing text
+
+| Shortcut           | Action                    |
+| ------------------ | ------------------------- |
+| **Ctrl/Cmd+B / I / K** | Bold, italic, link    |
 
 ---
 

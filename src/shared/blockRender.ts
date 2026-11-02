@@ -73,6 +73,10 @@ function formatPostDate(value: string): string {
  * Selects the pages a Post List block shows: everything under the configured
  * route prefix, newest first, dated posts before undated pages.
  */
+function isNotFoundRoute(route: string): boolean {
+  return route === "/404" || route.startsWith("/404/");
+}
+
 export function selectPostEntries(
   props: Record<string, string>,
   posts: RenderPostEntry[],
@@ -83,6 +87,7 @@ export function selectPostEntries(
     Number.isFinite(limitValue) && limitValue > 0 ? Math.floor(limitValue) : 0;
 
   const matching = posts.filter((post) => {
+    if (isNotFoundRoute(post.route)) return false;
     if (!prefix || prefix === "/") return post.route !== "/";
     return post.route === prefix || post.route.startsWith(`${prefix}/`);
   });
@@ -252,7 +257,12 @@ function cssStringValue(value: string): string {
     .replace(/>/g, "\\3e ");
 }
 
+/** 1×1 transparent GIF — placeholder until project assets hydrate on canvas. */
+const CANVAS_ASSET_PLACEHOLDER_SRC =
+  "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+
 export function collectResponsiveCss(sections: SectionNode[]): string {
+  const desktopRules: string[] = [];
   const tabletRules: string[] = [];
   const mobileRules: string[] = [];
 
@@ -279,6 +289,9 @@ export function collectResponsiveCss(sections: SectionNode[]): string {
     if (style?.hideOn?.includes("mobile")) {
       mobileRules.push(`${selector}{display:none!important}`);
     }
+    if (style?.hideOn?.includes("desktop")) {
+      desktopRules.push(`${selector}{display:none!important}`);
+    }
   };
 
   for (const section of sections) {
@@ -289,8 +302,13 @@ export function collectResponsiveCss(sections: SectionNode[]): string {
   }
 
   const chunks: string[] = [];
+  if (desktopRules.length > 0) {
+    chunks.push(`@media (min-width: 1025px){${desktopRules.join("")}}`);
+  }
   if (tabletRules.length > 0) {
-    chunks.push(`@media (max-width: 1024px){${tabletRules.join("")}}`);
+    chunks.push(
+      `@media (min-width: 721px) and (max-width: 1024px){${tabletRules.join("")}}`,
+    );
   }
   if (mobileRules.length > 0) {
     chunks.push(`@media (max-width: 720px){${mobileRules.join("")}}`);
@@ -344,7 +362,7 @@ export function renderBlockHtml(
       // would fire a request for the app's own document (broken-icon flash)
       // until then, so start with a transparent placeholder instead.
       const srcAttr = isProjectAsset
-        ? ` src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-asset-src="${escapeAttr(src)}"`
+        ? ` src="${CANVAS_ASSET_PLACEHOLDER_SRC}" data-asset-src="${escapeAttr(src)}"`
         : ` src="${escapeAttr(safeUrl(src))}"`;
       return `<img${common}${srcAttr} alt="${escapeAttr(block.props["alt"] ?? "")}" />`;
     }
@@ -399,7 +417,7 @@ export function renderBlockHtml(
         .map((src, index) => {
           const isProjectAsset = forCanvas && src.startsWith("/");
           const srcAttr = isProjectAsset
-            ? ` src="" data-asset-src="${escapeAttr(src)}"`
+            ? ` src="${CANVAS_ASSET_PLACEHOLDER_SRC}" data-asset-src="${escapeAttr(src)}"`
             : ` src="${escapeAttr(safeUrl(src))}"`;
           return `<img${srcAttr} alt="${escapeAttr(
             block.props[`alt${index + 1}`] ?? "",
@@ -433,7 +451,7 @@ export function renderBlockHtml(
       }
       return `<video${common} controls preload="metadata" src="${escapeAttr(safeUrl(src))}" title="${escapeAttr(block.props["title"] ?? "Video")}"></video>`;
     }
-    case "html":
+    case "html": {
       if (forCanvas && options.sanitizeHtmlForCanvas) {
         return options.sanitizeHtmlForCanvas(block.raw ?? "");
       }
@@ -441,7 +459,9 @@ export function renderBlockHtml(
       // a multi-line raw html block grew 2 spaces per save cycle forever (and
       // reparse kept the grown bytes). Sentinel the raw's newlines so the
       // indent treats it as ONE line; the indent step restores real newlines.
-      return (block.raw ?? "").replace(/\n/g, HTML_RAW_LINE_SENTINEL);
+      const inner = (block.raw ?? "").replace(/\n/g, HTML_RAW_LINE_SENTINEL);
+      return `<div${blockCommon(block, options)}>${inner}</div>`;
+    }
     case "feature":
       return `<div${structuralCommon(block, "zephus-feature", options)}><div class="zephus-feature-icon">${plainTextToHtml(
         block.props["icon"] ?? "★",

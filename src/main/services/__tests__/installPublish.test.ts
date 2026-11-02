@@ -45,9 +45,16 @@ describe("install dependency detection", () => {
         path.join(tmp, "package.json"),
         JSON.stringify({ dependencies: { astro: "^6.0.0" } }),
       );
-      fs.mkdirSync(path.join(tmp, "node_modules", "astro"), {
-        recursive: true,
-      });
+      const astroDir = path.join(tmp, "node_modules", "astro");
+      fs.mkdirSync(astroDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(astroDir, "package.json"),
+        JSON.stringify({ name: "astro" }),
+      );
+      const lockPath = path.join(tmp, "node_modules", ".package-lock.json");
+      fs.writeFileSync(lockPath, "{}");
+      const pkgMtime = fs.statSync(path.join(tmp, "package.json")).mtime;
+      fs.utimesSync(lockPath, pkgMtime, new Date(pkgMtime.getTime() + 1000));
       expect(dependenciesInstalled(tmp)).toBe(true);
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });

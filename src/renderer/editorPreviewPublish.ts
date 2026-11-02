@@ -5,7 +5,15 @@ import { renderPublishSuccessModalBody } from "./MiscModals";
 import { isGlobalDirty } from "./editorSession";
 import type { EditorSessionState } from "./editorSession";
 
-export type InstallFlowResult = "installed" | "backgrounded" | "failed";
+export type InstallFlowResult =
+  "installed" | "backgrounded" | "failed" | "cancelled";
+
+/** Set when the dev server exits before preview URL is assigned (start in flight). */
+const previewStartGuard = { inFlight: false, exitedDuringStart: false };
+
+export function notePreviewServerExitedDuringStart(): void {
+  if (previewStartGuard.inFlight) previewStartGuard.exitedDuringStart = true;
+}
 
 export interface PreviewPublishDeps {
   getState: () => EditorSessionState;
@@ -63,6 +71,22 @@ export function createPreviewPublishActions(deps: PreviewPublishDeps) {
   } = deps;
 
   const state = getState();
+  let backgroundInstallLogUnsub: (() => void) | null = null;
+  let backgroundInstallProjectPath: string | null = null;
+
+  function stopBackgroundInstallLog(): void {
+    backgroundInstallLogUnsub?.();
+    backgroundInstallLogUnsub = null;
+    backgroundInstallProjectPath = null;
+  }
+
+  function startBackgroundInstallLog(): void {
+    stopBackgroundInstallLog();
+    const devLogEl = $("dev-log");
+    backgroundInstallLogUnsub = window.zephus.onInstallLog((chunk) => {
+      appendCappedLog(devLogEl, chunk);
+    });
+  }
 
   function setViewport(vp: "desktop" | "tablet" | "mobile"): void {
     state.currentViewport = vp;
@@ -118,36 +142,50 @@ export function createPreviewPublishActions(deps: PreviewPublishDeps) {
     }, 1000);
 
     return new Promise<InstallFlowResult>((resolve) => {
-      let done = false;
-      // `done` also covers "user sent the install to the background": the
-      // completion handler must then stay silent (no closeModal/setStatus) so
-      // it cannot disturb a modal the user opened in the meantime.
+      let dismiss: null | "background" | "cancel" = null;
       const stopHeartbeat = () => window.clearInterval(heartbeat);
+
+      const finishBackgroundInstall = (result: {
+        ok: boolean;
+        error?: string;
+      }) => {
+        const sameOpenProject =
+          getState().project?.path === backgroundInstallProjectPath;
+        if (result.ok) {
+          stopBackgroundInstallLog();
+          if (sameOpenProject) setStatus("Dependencies installed.");
+        } else if (sameOpenProject) {
+          setStatus("Dependency install failed.");
+        }
+      };
+
       showModalNode("Setting Up Your Site", wrap, [
         {
           label: "Run in Background",
           kind: "ghost",
           onClick: () => {
-            if (!done) {
-              done = true;
-              stopHeartbeat();
-              unsub();
-              closeModal();
-              resolve("backgrounded");
-            }
+            if (dismiss) return;
+            dismiss = "background";
+            stopHeartbeat();
+            unsub();
+            startBackgroundInstallLog();
+            backgroundInstallProjectPath = projectPath;
+            closeModal();
+            setStatus("Installing dependencies in background…");
+            resolve("backgrounded");
           },
         },
         {
           label: "Cancel",
           kind: "ghost",
           onClick: async () => {
-            if (done) return;
-            done = true;
+            if (dismiss) return;
+            dismiss = "cancel";
             stopHeartbeat();
             unsub();
             await window.zephus.cancelInstall().catch(() => undefined);
             closeModal();
-            resolve("failed");
+            resolve("cancelled");
           },
         },
       ]);
@@ -155,8 +193,11 @@ export function createPreviewPublishActions(deps: PreviewPublishDeps) {
       void window.zephus
         .installDependencies(projectPath)
         .then((result) => {
-          if (done) return;
-          done = true;
+          if (dismiss === "cancel") return;
+          if (dismiss === "background") {
+            finishBackgroundInstall(result);
+            return;
+          }
           stopHeartbeat();
           unsub();
           if (result.ok) {
@@ -165,8 +206,6 @@ export function createPreviewPublishActions(deps: PreviewPublishDeps) {
             closeModal();
             resolve("installed");
           } else {
-            // Failure must never leave the install modal open with a dead
-            // "Run in Background" button: close it and surface the error.
             closeModal();
             setStatus("Dependency install failed.");
             showModal("Install Failed", friendlyError(result.error), [
@@ -176,8 +215,11 @@ export function createPreviewPublishActions(deps: PreviewPublishDeps) {
           }
         })
         .catch(() => {
-          if (done) return;
-          done = true;
+          if (dismiss === "cancel") return;
+          if (dismiss === "background") {
+            finishBackgroundInstall({ ok: false });
+            return;
+          }
           stopHeartbeat();
           unsub();
           closeModal();
@@ -199,7 +241,24 @@ export function createPreviewPublishActions(deps: PreviewPublishDeps) {
       state.project.path,
     );
     if (installed) return true;
-    return (await runInstallFlow(state.project.path)) === "installed";
+    if (
+      backgroundInstallLogUnsub &&
+      backgroundInstallProjectPath === state.project.path
+    ) {
+      const result = await window.zephus.installDependencies(
+        state.project.path,
+      );
+      return result.ok;
+    }
+    const flow = await runInstallFlow(state.project.path);
+    if (flow === "installed") return true;
+    if (flow === "backgrounded") {
+      const result = await window.zephus.installDependencies(
+        state.project.path,
+      );
+      return result.ok;
+    }
+    return false;
   }
 
   function updatePreviewButton(
@@ -219,16 +278,25 @@ export function createPreviewPublishActions(deps: PreviewPublishDeps) {
         chip.classList.add("hidden");
       }
     }
+    const label =
+      state_ === "starting"
+        ? "Starting…"
+        : state_ === "running"
+          ? "Stop Preview"
+          : "Start Preview";
     if (state_ === "starting") {
       btn.innerHTML = `<i data-lucide="loader-circle"></i> Starting…`;
       btn.classList.add("disabled");
+      btn.setAttribute("disabled", "");
     } else {
       btn.innerHTML =
         state_ === "running"
           ? `<i data-lucide="square"></i> Stop Preview`
           : `<i data-lucide="play"></i> Start Preview`;
       btn.classList.remove("disabled");
+      btn.removeAttribute("disabled");
     }
+    btn.setAttribute("aria-label", label);
     refreshIcons();
   }
 
@@ -274,6 +342,8 @@ export function createPreviewPublishActions(deps: PreviewPublishDeps) {
 
     if (previewStartInFlight) return;
     previewStartInFlight = true;
+    previewStartGuard.inFlight = true;
+    previewStartGuard.exitedDuringStart = false;
     updatePreviewButton("starting");
     const projectPathAtStart = state.project.path;
     try {
@@ -304,6 +374,11 @@ export function createPreviewPublishActions(deps: PreviewPublishDeps) {
         if (state.project?.path !== projectPathAtStart) {
           // Closed mid-start: tear the started server down rather than orphaning it.
           await window.zephus.stopPreview().catch(() => {});
+          return;
+        }
+        if (previewStartGuard.exitedDuringStart) {
+          setStatus("Preview server stopped before it was ready.");
+          await window.zephus.stopPreview().catch(() => undefined);
           return;
         }
         if (!result.ok || !result.url) {
@@ -340,6 +415,8 @@ export function createPreviewPublishActions(deps: PreviewPublishDeps) {
       }
     } finally {
       previewStartInFlight = false;
+      previewStartGuard.inFlight = false;
+      previewStartGuard.exitedDuringStart = false;
       if (!state.previewUrl) updatePreviewButton("stopped");
     }
   }
@@ -417,10 +494,7 @@ export function createPreviewPublishActions(deps: PreviewPublishDeps) {
             // Reveal only: calling publish() again would run a second full build.
             if (!state.project) return;
             void window.zephus
-              .revealOutputFolder(
-                state.project.path,
-                state.project.astro.outDir,
-              )
+              .revealOutputFolder(state.project.path, outputDir)
               .then((res) => {
                 if (res && !res.ok) {
                   // The output folder is often deleted/cleaned after a rebuild

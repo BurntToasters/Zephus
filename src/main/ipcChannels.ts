@@ -81,4 +81,5 @@ export const IPC = {
   nodeStatus: "node:status",
   nodePickPath: "node:pickPath",
   nodeSetPath: "node:setPath",
+  smokeExternalWrite: "smoke:externalWrite",
 } as const;

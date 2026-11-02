@@ -25,19 +25,16 @@ describe("nodeCheck with the real Node binary", () => {
 
   it("reports missing for a nonexistent custom path", async () => {
     const result = await checkNodeVersion("/nonexistent/node");
-    // A broken custom path must never resolve to a working binary silently:
-    // the UI relies on usedCustomPath to tell the user their setting is not
-    // in effect. (Status falls back through PATH/known locations, so assert
-    // the resolution honesty contract instead of a specific status.)
-    expect(result.usedCustomPath).toBe(false);
-    expect(["ok", "outdated", "missing", "unknown"]).toContain(result.status);
+    // A broken custom path must not fall through to a PATH Node. The check
+    // reports the custom location as the one that was used, and that it failed.
+    expect(result.usedCustomPath).toBe(true);
+    expect(result.status).toBe("missing");
+    expect(result.binaryPath).toBe("/nonexistent/node");
   });
 
-  it("buildSpawnEnv prepends the custom binary directory to PATH", async () => {
+  it("buildSpawnEnv leaves PATH unchanged for a custom node path", async () => {
     const env = await buildSpawnEnv(process.execPath, { PATH: "/usr/bin" });
-    const dir = path.dirname(process.execPath);
-    const sep = process.platform === "win32" ? ";" : ":";
-    expect(env["PATH"]).toContain(`${dir}${sep}`);
+    expect(env["PATH"]).toBe("/usr/bin");
   });
 
   it("buildSpawnEnv returns the base env for bare node", async () => {

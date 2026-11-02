@@ -25,6 +25,7 @@ export interface EditorSmokeDeps {
     blockIndex: number;
   } | null;
   openProjectByPath: (folder: string) => Promise<void>;
+  loadPage: (page: string) => Promise<void>;
   performSave: () => Promise<boolean>;
   publishSite: () => Promise<void>;
   closeProject: () => Promise<void>;
@@ -43,6 +44,7 @@ export function installEditorSmokeHook(deps: EditorSmokeDeps): void {
     addBlockAt,
     findBlockLocation,
     openProjectByPath,
+    loadPage,
     performSave,
     publishSite,
     closeProject,
@@ -430,6 +432,14 @@ export function installEditorSmokeHook(deps: EditorSmokeDeps): void {
         `Editor smoke: project did not open (path=${state.project?.path} expected=${realProjectPath})`,
       );
 
+      const indexPage = state.project?.pages.find((candidate) =>
+        /(?:^|\/)index\.astro$/.test(candidate),
+      );
+      if (indexPage && state.page !== indexPage) {
+        await loadPage(indexPage);
+        await wait(400);
+      }
+
       const page = state.page;
       assert(!!page, "Editor smoke: no page loaded after project open.");
       assert(
@@ -441,7 +451,15 @@ export function installEditorSmokeHook(deps: EditorSmokeDeps): void {
       // debounce window.
       const sectionId = state.sections[0]?.id ?? null;
       const before = state.sections[0]?.children.length ?? 0;
-      if (sectionId) addBlockAt("text", 0, sectionId);
+      const smokeMarker = "ZEPHUS_SMOKE_BLOCK";
+      if (sectionId) {
+        addBlockAt("text", 0, sectionId);
+        const added = state.sections[0]?.children[0];
+        if (added && added.type === "text") {
+          added.props["text"] = smokeMarker;
+        }
+        markPageDirty(state, true);
+      }
       await wait(1300);
       const draftsAfterEdit = await zephus.listDrafts();
       const hasPageDraft =
@@ -480,8 +498,8 @@ export function installEditorSmokeHook(deps: EditorSmokeDeps): void {
       if (page) {
         const onDisk = await zephus.readFile(realProjectPath, page);
         assert(
-          onDisk.ok && (onDisk.content ?? "").length > 0,
-          "Editor smoke: saved page file is empty or unreadable.",
+          onDisk.ok && (onDisk.content ?? "").includes(smokeMarker),
+          "Editor smoke: saved page file missing ZEPHUS_SMOKE_BLOCK marker.",
         );
       }
 
@@ -504,6 +522,76 @@ export function installEditorSmokeHook(deps: EditorSmokeDeps): void {
         (state.sections[0]?.children.length ?? 0) === before + 1,
         "Editor smoke: the added block was lost across save/publish.",
       );
+
+      let distHasMarker = false;
+      for (const rel of [
+        "dist/index.html",
+        "dist/index/index.html",
+        "dist/0/index.html",
+      ]) {
+        const builtFile = await zephus.readFile(realProjectPath, rel);
+        if (builtFile.ok && (builtFile.content ?? "").includes(smokeMarker)) {
+          distHasMarker = true;
+          break;
+        }
+      }
+      assert(
+        distHasMarker,
+        "Editor smoke: built HTML under dist/ missing ZEPHUS_SMOKE_BLOCK.",
+      );
+
+      if (page) {
+        const diskOnly = "<!-- ZEPHUS_DISK_ONLY -->";
+        const currentOnDisk = await zephus.readFile(realProjectPath, page);
+        const nextContents = currentOnDisk.ok
+          ? `${currentOnDisk.content ?? ""}\n${diskOnly}\n`
+          : "";
+        const external = await zephus.smokeExternalWrite(
+          realProjectPath,
+          page,
+          nextContents,
+        );
+        assert(
+          external.ok,
+          `Editor smoke: smokeExternalWrite failed (${external.error ?? "unknown"})`,
+        );
+        let sawDiskPrompt = false;
+        for (let i = 0; i < 40; i += 1) {
+          await wait(250);
+          const title =
+            document.getElementById("modal-title")?.textContent ?? "";
+          if (/Changed on Disk/i.test(title)) {
+            sawDiskPrompt = true;
+            break;
+          }
+        }
+        assert(
+          sawDiskPrompt,
+          "Editor smoke: external disk edit did not surface Changed on Disk.",
+        );
+        const reloadBtn = Array.from(
+          document.querySelectorAll("#modal-actions button"),
+        ).find((button) => /^reload$/i.test(button.textContent?.trim() ?? ""));
+        if (reloadBtn instanceof HTMLButtonElement) {
+          reloadBtn.click();
+          for (let i = 0; i < 40; i += 1) {
+            await wait(250);
+            const overlay = document.getElementById("modal-overlay");
+            if (overlay?.classList.contains("hidden")) break;
+          }
+          setMode("code");
+          await wait(400);
+          const reloaded = getState().rawCode.includes(diskOnly);
+          assert(
+            reloaded,
+            "Editor smoke: Reload did not show ZEPHUS_DISK_ONLY in the code buffer.",
+          );
+        } else {
+          failures.push(
+            "Editor smoke: Reload button missing after external disk change.",
+          );
+        }
+      }
 
       // Git: the scaffolded project is a repo (createSite inits it) — commit
       // the saved changes and verify the commit lands.
@@ -532,9 +620,11 @@ export function installEditorSmokeHook(deps: EditorSmokeDeps): void {
           `Editor smoke: detach failed (${detached.error ?? "unknown"})`,
         );
         await wait(650);
+        const overlay = document.getElementById("modal-overlay");
+        const modalVisible = !!overlay && !overlay.classList.contains("hidden");
         const title = document.getElementById("modal-title")?.textContent ?? "";
         assert(
-          !/Changed on Disk/i.test(title),
+          !(modalVisible && /Changed on Disk/i.test(title)),
           "Editor smoke: app-owned detach surfaced a false reload prompt.",
         );
       }

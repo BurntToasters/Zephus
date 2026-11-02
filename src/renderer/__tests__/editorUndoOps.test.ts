@@ -6,6 +6,7 @@ import {
   pushEditorUndo,
   captureEditorSnapshot,
 } from "../editorUndo";
+import { SITE_DRAFT_TARGET } from "../editorDraft";
 import type { EditorSessionState } from "../editorSession";
 
 interface FakeSection {
@@ -48,6 +49,7 @@ function makeDeps(state: EditorSessionState) {
     restoreSnapshot: vi.fn(() => calls.push("restore")),
     syncSelectionAfterRestore: () => calls.push("sync-selection"),
     serializeBlocks: () => JSON.stringify(state.sections),
+    savedPageRendererSource: () => state.rawCode,
     trackChange: () => calls.push("track"),
     markDirty: (dirty: boolean) => {
       calls.push("markDirty:" + dirty);
@@ -148,6 +150,243 @@ describe("undo ops", () => {
     void saved;
     ops.doUndo();
     expect(calls).toContain("markDirty:false");
+  });
+
+  it("ignores redo while the inspector latch is active", () => {
+    const state = makeState();
+    const { deps, calls, setLatch } = makeDeps(state);
+    const ops = createUndoOps(deps);
+    setLatch(true);
+    ops.doRedo();
+    expect(calls).toHaveLength(0);
+  });
+
+  it("does nothing when the redo stack is empty", () => {
+    const state = makeState();
+    const { deps, calls } = makeDeps(state);
+    createUndoOps(deps).doRedo();
+    expect(calls).not.toContain("restore");
+  });
+
+  it("marks the session dirty when redoing away from the saved source", () => {
+    const state = makeState([
+      { id: "b1", type: "heading", props: { text: "v1" } },
+    ]);
+    state.rawCode = "saved-v1";
+    (state.sections as unknown as FakeSection[])[0]!.children = [
+      { id: "b1", type: "heading", props: { text: "v2" } },
+    ];
+    const redoTarget = captureEditorSnapshot(state);
+    (state.sections as unknown as FakeSection[])[0]!.children = [
+      { id: "b1", type: "heading", props: { text: "v1" } },
+    ];
+    state.redo.push(redoTarget);
+    const { deps, calls } = makeDeps(state);
+    createUndoOps(deps).doRedo();
+    expect(calls).toContain("markDirty:true");
+  });
+
+  it("clears stale site and page drafts after undo returns to the saved source", async () => {
+    const state = makeState([
+      { id: "b1", type: "heading", props: { text: "v1" } },
+    ]);
+    state.project = { path: "/proj" } as EditorSessionState["project"];
+    state.page = "src/pages/index.astro";
+    state.pageRevision = 4;
+    state.rawCode = JSON.stringify(state.sections);
+    const clearDraft = vi.fn(async () => ({ ok: true as const }));
+    (
+      window as unknown as { zephus: { clearDraft: typeof clearDraft } }
+    ).zephus = { clearDraft };
+    const saved = captureEditorSnapshot(state);
+    (state.sections as unknown as FakeSection[])[0]!.children = [
+      { id: "b1", type: "heading", props: { text: "v2" } },
+    ];
+    pushEditorSnapshot(state, saved);
+    const { deps } = makeDeps(state);
+    (deps.restoreSnapshot as ReturnType<typeof vi.fn>).mockImplementation(
+      () => {
+        (state.sections as unknown as FakeSection[]) = [
+          {
+            id: "s1",
+            type: "section",
+            label: "S",
+            props: {},
+            children: [{ id: "b1", type: "heading", props: { text: "v1" } }],
+          },
+        ];
+      },
+    );
+    createUndoOps(deps).doUndo();
+    await Promise.resolve();
+    expect(clearDraft).toHaveBeenCalledWith("/proj", "site", SITE_DRAFT_TARGET);
+    expect(clearDraft).toHaveBeenCalledWith(
+      "/proj",
+      "page",
+      "src/pages/index.astro",
+    );
+  });
+
+  it("leaves the page draft when undo does not match the saved source", async () => {
+    const state = makeState([
+      { id: "b1", type: "heading", props: { text: "v1" } },
+    ]);
+    state.project = { path: "/proj" } as EditorSessionState["project"];
+    state.page = "src/pages/index.astro";
+    state.pageDirty = true;
+    state.siteDirty = true;
+    const clearDraft = vi.fn(async () => ({ ok: true as const }));
+    (
+      window as unknown as { zephus: { clearDraft: typeof clearDraft } }
+    ).zephus = { clearDraft };
+    pushEditorUndo(state);
+    const { deps } = makeDeps(state);
+    createUndoOps(deps).doUndo();
+    await Promise.resolve();
+    expect(clearDraft).not.toHaveBeenCalled();
+  });
+
+  it("rewrites the page draft when edits land during a post-undo clear", async () => {
+    const state = makeState([
+      { id: "b1", type: "heading", props: { text: "v1" } },
+    ]);
+    state.project = { path: "/proj" } as EditorSessionState["project"];
+    state.page = "src/pages/index.astro";
+    state.rawCode = JSON.stringify(state.sections);
+    let resolveClear: (value: { ok: true }) => void = () => undefined;
+    const clearDraft = vi.fn(
+      () =>
+        new Promise<{ ok: true }>((resolve) => {
+          resolveClear = resolve;
+        }),
+    );
+    const writeDraft = vi.fn(async () => ({ ok: true as const }));
+    (
+      window as unknown as {
+        zephus: {
+          clearDraft: typeof clearDraft;
+          writeDraft: typeof writeDraft;
+        };
+      }
+    ).zephus = { clearDraft, writeDraft };
+    const saved = captureEditorSnapshot(state);
+    (state.sections as unknown as FakeSection[])[0]!.children = [
+      { id: "b1", type: "heading", props: { text: "v2" } },
+    ];
+    pushEditorSnapshot(state, saved);
+    const { deps } = makeDeps(state);
+    (deps.restoreSnapshot as ReturnType<typeof vi.fn>).mockImplementation(
+      () => {
+        (state.sections as unknown as FakeSection[]) = [
+          {
+            id: "s1",
+            type: "section",
+            label: "S",
+            props: {},
+            children: [{ id: "b1", type: "heading", props: { text: "v1" } }],
+          },
+        ];
+      },
+    );
+    createUndoOps(deps).doUndo();
+    state.pageDirty = true;
+    (state.sections as unknown as FakeSection[])[0]!.children = [
+      { id: "b1", type: "heading", props: { text: "v3" } },
+    ];
+    resolveClear({ ok: true });
+    await Promise.resolve();
+    expect(writeDraft).toHaveBeenCalledWith(
+      "/proj",
+      "page",
+      "src/pages/index.astro",
+      JSON.stringify(state.sections),
+    );
+  });
+
+  it("ignores a page-draft clear that finishes after the page changes", async () => {
+    const state = makeState([
+      { id: "b1", type: "heading", props: { text: "v1" } },
+    ]);
+    state.project = { path: "/proj" } as EditorSessionState["project"];
+    state.page = "src/pages/index.astro";
+    state.pageRevision = 1;
+    state.rawCode = JSON.stringify(state.sections);
+    let resolveClear: (value: { ok: true }) => void = () => undefined;
+    const clearDraft = vi.fn(
+      () =>
+        new Promise<{ ok: true }>((resolve) => {
+          resolveClear = resolve;
+        }),
+    );
+    (
+      window as unknown as { zephus: { clearDraft: typeof clearDraft } }
+    ).zephus = { clearDraft };
+    const saved = captureEditorSnapshot(state);
+    (state.sections as unknown as FakeSection[])[0]!.children = [
+      { id: "b1", type: "heading", props: { text: "v2" } },
+    ];
+    pushEditorSnapshot(state, saved);
+    const { deps } = makeDeps(state);
+    (deps.restoreSnapshot as ReturnType<typeof vi.fn>).mockImplementation(
+      () => {
+        (state.sections as unknown as FakeSection[]) = [
+          {
+            id: "s1",
+            type: "section",
+            label: "S",
+            props: {},
+            children: [{ id: "b1", type: "heading", props: { text: "v1" } }],
+          },
+        ];
+      },
+    );
+    createUndoOps(deps).doUndo();
+    state.pageRevision = 2;
+    resolveClear({ ok: true });
+    await Promise.resolve();
+    expect(clearDraft).toHaveBeenCalledWith(
+      "/proj",
+      "page",
+      "src/pages/index.astro",
+    );
+  });
+
+  it("swallows a draft-clear failure after undo", async () => {
+    const state = makeState([
+      { id: "b1", type: "heading", props: { text: "v1" } },
+    ]);
+    state.project = { path: "/proj" } as EditorSessionState["project"];
+    state.page = "src/pages/index.astro";
+    state.rawCode = JSON.stringify(state.sections);
+    const clearDraft = vi.fn(async () => {
+      throw new Error("draft store down");
+    });
+    (
+      window as unknown as { zephus: { clearDraft: typeof clearDraft } }
+    ).zephus = { clearDraft };
+    const saved = captureEditorSnapshot(state);
+    (state.sections as unknown as FakeSection[])[0]!.children = [
+      { id: "b1", type: "heading", props: { text: "v2" } },
+    ];
+    pushEditorSnapshot(state, saved);
+    const { deps } = makeDeps(state);
+    (deps.restoreSnapshot as ReturnType<typeof vi.fn>).mockImplementation(
+      () => {
+        (state.sections as unknown as FakeSection[]) = [
+          {
+            id: "s1",
+            type: "section",
+            label: "S",
+            props: {},
+            children: [{ id: "b1", type: "heading", props: { text: "v1" } }],
+          },
+        ];
+      },
+    );
+    createUndoOps(deps).doUndo();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(clearDraft).toHaveBeenCalled();
   });
 
   it("redoes after an undo", () => {

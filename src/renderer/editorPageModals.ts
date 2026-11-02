@@ -7,6 +7,7 @@ import {
 import { renderPageSettingsModal } from "./PageModals";
 import { effectiveSiteDocument, isGlobalDirty } from "./editorSession";
 import type { AssetEntry } from "../main/types";
+import { routeForSlug } from "../shared/pageIdentity";
 
 interface AssetBrowserOptions {
   filter?: AssetEntry["category"] | "all";
@@ -69,6 +70,10 @@ export interface PageModalDeps {
     }>,
     options?: { size?: "default" | "wide" },
   ) => void;
+  editorSaveWaitForIdle: () => Promise<void>;
+  editorSaveIsSaving: () => boolean;
+  patchOpenPageLayoutTitle: (title: string) => void;
+  pageDraftContent: () => string;
 }
 
 export function createPageModalActions(deps: PageModalDeps) {
@@ -91,6 +96,10 @@ export function createPageModalActions(deps: PageModalDeps) {
     fetchAssetDataUrl,
     reloadSiteDocumentFromDisk,
     showModalNode,
+    editorSaveWaitForIdle,
+    editorSaveIsSaving,
+    patchOpenPageLayoutTitle,
+    pageDraftContent,
   } = deps;
 
   const state = getState();
@@ -217,6 +226,10 @@ export function createPageModalActions(deps: PageModalDeps) {
         label: "Delete",
         kind: "danger",
         onClick: async () => {
+          if (editorSaveIsSaving()) {
+            setStatus("Finish the current save before deleting a page.");
+            return;
+          }
           if (entry.isHome) {
             setStatus("Home page cannot be deleted.");
             return;
@@ -292,6 +305,14 @@ export function createPageModalActions(deps: PageModalDeps) {
         kind: "ghost",
         onClick: async () => {
           if (!state.project) return;
+          if (
+            state.page === entry.page &&
+            isGlobalDirty(state) &&
+            !(await maybeResolveUnsavedWork())
+          ) {
+            return;
+          }
+          if (!state.project) return;
           if (doc.ok && doc.pageDocument?.detached) {
             const reattached = await window.zephus.reattachPageDocument(
               state.project.path,
@@ -307,14 +328,17 @@ export function createPageModalActions(deps: PageModalDeps) {
             setStatus(`Reattached ${entry.navLabel} to visual mode.`);
             return;
           }
-          const currentSource = getCode() ?? state.rawCode;
+          const openSource =
+            state.page === entry.page
+              ? state.mode === "code"
+                ? (getCode() ?? state.rawCode)
+                : state.rawCode
+              : (doc.source ?? state.rawCode);
           const detached = await window.zephus.detachPageDocument(
             state.project.path,
             entry.page,
             state.project.astro.pagesDir,
-            state.page === entry.page
-              ? currentSource
-              : (doc.source ?? currentSource),
+            openSource,
           );
           if (!detached.ok) {
             setStatus("Detach failed: " + (detached.error ?? "unknown"));
@@ -333,6 +357,7 @@ export function createPageModalActions(deps: PageModalDeps) {
         kind: "primary",
         onClick: async () => {
           if (!state.project) return;
+          await editorSaveWaitForIdle();
           const nextSlug = normalizePageSlugInput(formState.slug) ?? entry.slug;
           let nextPage = entry.page;
           if (!entry.isHome && nextSlug !== entry.slug) {
@@ -370,6 +395,20 @@ export function createPageModalActions(deps: PageModalDeps) {
             const name =
               nextSlug === "index" ? `index${ext}` : `${nextSlug}${ext}`;
             nextPage = pagesDir ? `${pagesDir}/${name}` : name;
+            if (renameIsOpenPage && isGlobalDirty(state)) {
+              const migrated = await window.zephus.writeDraft(
+                state.project.path,
+                "page",
+                nextPage,
+                pageDraftContent(),
+              );
+              if (!migrated.ok) {
+                setStatus(
+                  "Rename succeeded but the recovery draft could not move: " +
+                    (migrated.error ?? "unknown"),
+                );
+              }
+            }
           }
           const meta = {
             title: formState.title.trim() || entry.title,
@@ -413,12 +452,15 @@ export function createPageModalActions(deps: PageModalDeps) {
           // The session document must reflect the metadata write, or the NEXT
           // page save regenerates from the stale doc and silently reverts the
           // title/label/SEO edits just made.
-          if (state.page === entry.page && state.pageDocument) {
+          if (
+            (state.page === entry.page || state.page === nextPage) &&
+            state.pageDocument
+          ) {
             state.pageDocument = {
               ...state.pageDocument,
               page: nextPage,
               slug: nextSlug,
-              route: nextSlug === "index" ? "/" : `/${nextSlug}`,
+              route: routeForSlug(nextSlug),
               isHome: nextSlug === "index",
               ...meta,
             };
@@ -441,14 +483,12 @@ export function createPageModalActions(deps: PageModalDeps) {
               );
             }
           }
-          if (state.page === entry.page) {
-            // Exact match only: two pages sharing a trailing slug segment must
-            // not switch the editor to the wrong page.
+          const openPageMatches =
+            state.page === entry.page || state.page === nextPage;
+          if (openPageMatches) {
             state.page = nextPage;
             syncCurrentMeta();
             if (state.project) {
-              // Re-register the watcher on the renamed file so external edits
-              // to it keep being detected.
               await window.zephus
                 .watchFile(state.project.path, nextPage)
                 .catch(() => {
@@ -456,6 +496,15 @@ export function createPageModalActions(deps: PageModalDeps) {
                     "Warning: could not watch the page for external edits.",
                   );
                 });
+            }
+            if (!isGlobalDirty(state)) {
+              await loadPage(nextPage, {
+                forceReload: true,
+                skipDraftRestore: true,
+                skipUnsavedGuard: true,
+              });
+            } else {
+              patchOpenPageLayoutTitle(meta.title);
             }
           }
           setStatus(`Saved page settings for ${entry.navLabel}.`);
@@ -501,22 +550,36 @@ export function createPageModalActions(deps: PageModalDeps) {
       });
     };
 
+    type AssetUsageScan = {
+      usedBy: string;
+      usageGap?: string;
+      scanFailed?: string;
+    };
+
     /** Summarizes where an asset is used, for the confirm prompts. */
-    const describeUsage = async (webPath: string): Promise<string> => {
+    const describeUsage = async (webPath: string): Promise<AssetUsageScan> => {
       const usage = await window.zephus.findAssetUsage(
         project.path,
         project.astro.pagesDir,
         webPath,
       );
-      if (!usage.ok) return "";
+      if (!usage.ok) {
+        return {
+          usedBy: "",
+          scanFailed: usage.error ?? "Could not scan project pages.",
+        };
+      }
+      const usageGap = (usage as { usageGap?: string }).usageGap;
       const places = [
         ...usage.pages.map((entry) => entry.label),
         ...usage.siteReferences,
       ];
-      if (places.length === 0) return "";
+      if (places.length === 0) {
+        return { usedBy: "", usageGap };
+      }
       const shown = places.slice(0, 6).join(", ");
       const extra = places.length > 6 ? ` and ${places.length - 6} more` : "";
-      return `${shown}${extra}`;
+      return { usedBy: `${shown}${extra}`, usageGap };
     };
 
     const renameAssetFlow = async (
@@ -526,14 +589,20 @@ export function createPageModalActions(deps: PageModalDeps) {
       const dotIndex = currentName.lastIndexOf(".");
       const stem = dotIndex > 0 ? currentName.slice(0, dotIndex) : currentName;
       const extension = dotIndex > 0 ? currentName.slice(dotIndex) : "";
-      const usedBy = await describeUsage(asset.webPath);
+      const usageSummary = await describeUsage(asset.webPath);
       const nextName = await modalController.promptText("Rename Asset", {
         label: `New name (keeps ${extension || "the same type"})`,
         value: stem,
         confirmLabel: "Rename",
-        description: usedBy
-          ? `Used by: ${usedBy}. Renaming updates those references too.`
-          : undefined,
+        description: usageSummary.scanFailed
+          ? `Usage scan failed (${usageSummary.scanFailed}). Renaming may miss references in unscanned pages.`
+          : usageSummary.usedBy
+            ? `Used by: ${usageSummary.usedBy}. Renaming updates those references too.${
+                usageSummary.usageGap ? ` Note: ${usageSummary.usageGap}.` : ""
+              }`
+            : usageSummary.usageGap
+              ? `No saved references found, but ${usageSummary.usageGap}.`
+              : undefined,
       });
       if (!nextName || nextName.trim() === stem) return;
 
@@ -584,12 +653,17 @@ export function createPageModalActions(deps: PageModalDeps) {
       asset: AssetBrowserModalEntry,
     ): Promise<void> => {
       const displayName = asset.fileName.split("/").pop() ?? asset.fileName;
-      const usedBy = await describeUsage(asset.webPath);
+      const usageSummary = await describeUsage(asset.webPath);
+      const deletePrompt = usageSummary.scanFailed
+        ? `Could not verify whether "${displayName}" is still in use (${usageSummary.scanFailed}). Delete anyway?`
+        : usageSummary.usedBy
+          ? `"${displayName}" is still used by: ${usageSummary.usedBy}. Deleting it will leave those places pointing at a missing file. Delete anyway?`
+          : usageSummary.usageGap
+            ? `No saved references were found for "${displayName}", but ${usageSummary.usageGap}. Delete anyway?`
+            : `Delete "${displayName}" from this project? This removes the file from disk.`;
       const confirmed = await modalController.confirmDestructive(
         "Delete Asset",
-        usedBy
-          ? `"${displayName}" is still used by: ${usedBy}. Deleting it will leave those places pointing at a missing file. Delete anyway?`
-          : `Delete "${displayName}" from this project? This removes the file from disk.`,
+        deletePrompt,
         "Delete Asset",
       );
       if (!confirmed) return;
@@ -651,12 +725,14 @@ export function createPageModalActions(deps: PageModalDeps) {
       renderModal();
     };
 
-    const handleDropPaths = async (paths: string[]): Promise<void> => {
-      if (paths.length === 0) return;
+    const handleDroppedFiles = async (files: File[]): Promise<void> => {
+      if (files.length === 0) return;
+      modalState.dragActive = false;
+      renderModal();
       const res = await window.zephus.importAssetPaths(
         project.path,
         project.astro.publicDir,
-        paths,
+        files,
       );
       if (res.errors.length > 0) {
         setStatus(`Some files failed to import: ${res.errors.join("; ")}`);
@@ -664,21 +740,6 @@ export function createPageModalActions(deps: PageModalDeps) {
         setStatus(`Imported ${res.imported.length} file(s).`);
       }
       await refresh();
-    };
-
-    const handleDroppedFiles = async (files: File[]): Promise<void> => {
-      modalState.dragActive = false;
-      renderModal();
-      const paths = files
-        .map((file) => {
-          try {
-            return window.zephus.getDroppedFilePath(file);
-          } catch {
-            return "";
-          }
-        })
-        .filter(Boolean);
-      await handleDropPaths(paths);
     };
 
     renderModal();

@@ -1,13 +1,7 @@
 > [!NOTE]
-> 🎉 This is a stable 1.0.0 release.
-
-# ⬇️ Downloads
-
-| <img height="20" src="https://raw.githubusercontent.com/BurntToasters/bcls/main/media/windows.png" /> Windows                                                                                                | <img height="20" src="https://raw.githubusercontent.com/BurntToasters/bcls/main/media/mac.png" /> macOS          | <img height="20" src="https://raw.githubusercontent.com/BurntToasters/bcls/main/media/linux.png" /> Linux                                                                                                                  |
-| :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **EXE:** [x64](https://github.com/BurntToasters/zephus/releases/download/v1.0.0/Zephus-Windows-x64.exe) / [arm64](https://github.com/BurntToasters/zephus/releases/download/v1.0.0/Zephus-Windows-arm64.exe) | **[Universal DMG](https://github.com/BurntToasters/zephus/releases/download/v1.0.0/Zephus-MacOS-universal.dmg)** | **AppImage:** [x64](https://github.com/BurntToasters/zephus/releases/download/v1.0.0/Zephus-Linux-x86_64.AppImage) / [arm64](https://github.com/BurntToasters/zephus/releases/download/v1.0.0/Zephus-Linux-arm64.AppImage) |
-|                                                                                                                                                                                                              | **[Universal ZIP](https://github.com/BurntToasters/zephus/releases/download/v1.0.0/Zephus-MacOS-universal.zip)** | **DEB:** [x64](https://github.com/BurntToasters/zephus/releases/download/v1.0.0/Zephus-Linux-amd64.deb) / [arm64](https://github.com/BurntToasters/zephus/releases/download/v1.0.0/Zephus-Linux-arm64.deb)                 |
-|                                                                                                                                                                                                              |                                                                                                                  | **RPM:** [x64](https://github.com/BurntToasters/zephus/releases/download/v1.0.0/Zephus-Linux-x86_64.rpm) / [arm64](https://github.com/BurntToasters/zephus/releases/download/v1.0.0/Zephus-Linux-aarch64.rpm)              |
+> The 1.0.0 release cut described below is **not published** yet — there is
+> no `v1.0.0` tag and no live download links for stable 1.0.0 installers. Use
+> published pre-releases or build from source until that release ships.
 
 > [!IMPORTANT]
 > Update integrity: updates are downloaded over HTTPS and their SHA-512 checksum (from the release feed) is verified by the updater before install. The `.asc` files are GPG signatures you can verify manually with my GPG Public Key: https://tuxedo.rosie.run/GPG/BurntToasters_0xF2FBC20F_public.asc
@@ -24,21 +18,30 @@
 
 ## 1.0.0 — Stable
 
-Stable 1.0.0 release. Consolidates all branches into main (beta, 0.1.0-b1,
-dependabot updates) and ships the 0.1.0-beta.6 release candidate as stable.
+Stable **1.0.0** has **not shipped** yet — there is no `v1.0.0` tag and no
+stable installer set (see the banner above). Work below tracks the planned cut
+on `main`.
 
-**Branch consolidation:**
+**Consolidation on `main` (in progress):**
 
 - Merged `origin/beta` and `origin/0.1.0-b1` (AGENTS.md alignment).
 - Merged dependabot updates: GitHub Actions (checkout/setup-node), Electron
   42 → 44, entities 6 → 8, js-yaml 4 → 5, jsdom 29 → 30, @types/node 25 → 26.
 - Full gate green after merges: 969 unit tests, typecheck, lint, compile.
 
-**Stability:**
+**Stability work carried from the beta cycle:**
 
-- All rounds 15-36 from the beta cycle included; runtime smoke (save, drafts,
-  publish, git, external-change), IPC bridge drift guard, packaged boot check.
-- Version references updated (package 1.0.0, splash, metainfo, docs).
+- Rounds 15–36 included; runtime smoke (save, drafts, publish, git,
+  external-change), IPC bridge drift guard, packaged boot check.
+
+**Still open before a stable 1.0.0 cut:**
+
+- Out-of-sync pages load from disk in code mode. Delete confirmation, section rails, slug segments, draft order, undo, and link routes follow the open document.
+- Columns grid and tablet `hideOn` ship in managed CSS. HTML blocks keep an identity wrapper. Design values may contain `/`. Frontmatter keys survive a save. The home page cannot be deleted.
+- Partial git commits use a path list. Detached HEAD and a failed fetch do not invent ahead/behind. Find/replace changes visible text only.
+- Custom Node does not fall through to PATH, and a symlink named `node` is rejected. Publish succeeds only when `index.html` is in the output folder. Windows npm spawns `npm.cmd` with `shell: false`.
+- Secret reads, watches, and git adds refuse `.env` (except `.env.example`), `.npmrc`, `.netrc`, and `.envrc`. The preload bridge is main-frame only.
+- Stable release scripts target `main`. A changelog heading `1.0.0-beta.1` does not satisfy a `1.0.0` gate. Updater code-signature verification stays off until Authenticode and notarization are real.
 
 ## 0.1.0-beta.6 — Release Candidate for 0.1.0
 
@@ -322,7 +325,7 @@ Zephus is a **local-first visual editor for Astro sites** — no coding required
 - Google Fonts load in the preview and the built site, but not in the editor canvas (CSP).
 - Linux arm64 builds ship, but are the least-tested platform.
 
-**Release checklist (this beta):** the pipeline now publishes drafts automatically and fails loudly when credentials are missing — build with `npm run release:beta:win/mac/linux`, verify the draft is published + tagged, and confirm the download links below match the released `v1.0.0` artifacts.
+**Release checklist (this beta; historical):** the pipeline now publishes drafts automatically and fails loudly when credentials are missing — build with `npm run release:beta:win/mac/linux`, verify the draft is published + tagged, and confirm the download links below match the released `v1.0.0` artifacts. _(The `release:beta:*` scripts were removed; stable 1.0.0 has not shipped.)_
 
 ---
 

@@ -302,25 +302,11 @@ function runConfigChecks() {
       "electron-builder.msstore.yml: appx.publisher must come from ZEPHUS_MSSTORE_PUBLISHER",
     );
 
-    // Verify beta and db channel configs exist and have correct publish settings
-    const betaConfigPath = path.join(
-      process.cwd(),
-      "electron-builder.github.beta.yml",
-    );
     const dbConfigPath = path.join(
       process.cwd(),
       "electron-builder.github.db.yml",
     );
-    const betaConfig = loadYaml(betaConfigPath);
     const dbConfig = loadYaml(dbConfigPath);
-    assertConfig(
-      betaConfig.extends === "./electron-builder.github.yml",
-      "electron-builder.github.beta.yml: must extend electron-builder.github.yml",
-    );
-    assertConfig(
-      betaConfig.publish?.channel === "beta",
-      "electron-builder.github.beta.yml: publish.channel must be 'beta'",
-    );
     assertConfig(
       dbConfig.extends === "./electron-builder.github.yml",
       "electron-builder.github.db.yml: must extend electron-builder.github.yml",

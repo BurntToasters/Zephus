@@ -147,6 +147,9 @@ function runRuntimeSmoke(skipCompile = false) {
     delete env.ELECTRON_RUN_AS_NODE;
   }
 
+  // Proof artifacts from a smoke run land under artifacts/smoke/<repo-sha>/ in
+  // the Zephus repo (copied in main.ts before the temp scaffold is deleted).
+
   // The IPC completion message lets the launcher terminate the tree while the
   // root PID is still alive (required for reliable taskkill /t on Windows).
   // A detached POSIX process group provides equivalent whole-tree ownership.

@@ -82,20 +82,21 @@ describe("install failure paths", () => {
     }
   }, 60000);
 
-  it("rejects a second concurrent install", async () => {
+  it("joins a second caller onto the in-flight install", async () => {
     if (process.platform === "win32") return;
     const dir = writeProject({
-      scripts: { postinstall: "sleep 10" },
+      scripts: { postinstall: "sleep 30" },
     });
     try {
       const first = installDependencies(dir, () => undefined);
       await new Promise((r) => setTimeout(r, 500));
-      const second = await installDependencies(dir, () => undefined);
-      expect(second.ok).toBe(false);
-      expect(second.error).toContain("already running");
+      const second = installDependencies(dir, () => undefined);
       cancelInstall();
-      await first;
+      const [firstResult, secondResult] = await Promise.all([first, second]);
+      expect(secondResult.ok).toBe(false);
+      expect(secondResult).toEqual(firstResult);
     } finally {
+      cancelInstall();
       fs.rmSync(dir, { recursive: true, force: true });
     }
   }, 60000);

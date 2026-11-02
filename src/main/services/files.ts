@@ -3,6 +3,21 @@ import * as path from "path";
 import { OperationResult } from "../types";
 import { assertRealpathInside, safeResolve, writeFileAtomic } from "./fsSafe";
 
+const SECRET_BASENAMES = new Set([".npmrc", ".netrc", ".envrc"]);
+
+/** True when any path segment names a secret or credential file (shared by read, watch, git). */
+export function relativePathIsSecret(relativePath: string): boolean {
+  const normalized = relativePath.replace(/\\/g, "/");
+  for (const segment of normalized.split("/").filter(Boolean)) {
+    const lower = segment.toLowerCase();
+    // .env.example is the committed template (gitignore un-ignores it).
+    if (lower === ".env.example") continue;
+    if (lower === ".env" || lower.startsWith(".env.")) return true;
+    if (SECRET_BASENAMES.has(lower)) return true;
+  }
+  return false;
+}
+
 /** Rejects reads/writes of sensitive project files that the visual editor never needs but that a compromised renderer… */
 function assertEditablePath(relativePath: string): void {
   const normalized = relativePath.replace(/\\/g, "/");
@@ -12,8 +27,10 @@ function assertEditablePath(relativePath: string): void {
     if (lower === ".git") {
       throw new Error("Access to git internals is not allowed.");
     }
-    if (lower === ".env" || lower.startsWith(".env.")) {
-      throw new Error("Access to environment files is not allowed.");
+    if (relativePathIsSecret(segment)) {
+      throw new Error(
+        "Access to environment or credential files is not allowed.",
+      );
     }
   }
 }

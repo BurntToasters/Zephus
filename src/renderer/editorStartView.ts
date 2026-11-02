@@ -9,6 +9,9 @@ import {
 } from "./SettingsTab";
 import { updateThemesTab } from "./ThemesTab";
 import type { InstallFlowResult } from "./editorPreviewPublish";
+
+/** Includes future `cancelled` from runInstallFlow without editing editorPreviewPublish. */
+type CreateSiteInstallOutcome = InstallFlowResult | "cancelled";
 import type { GlobalSettings } from "../main/types";
 import type { EditorSessionState } from "./editorSession";
 
@@ -73,6 +76,7 @@ export function createStartViewActions(deps: StartViewDeps) {
   let selectedTabTheme: string | null = null;
   let themePreviewBaseUrl: string | null = null;
   let startThemes: ThemeMeta[] | null = null;
+  let settingsTabNodeStatusRequest = 0;
   function initStartTabs(): void {
     const tabs = ["recent", "create", "settings", "about"] as const;
     const tabBtns = tabs.map((t) => $("tab-" + t));
@@ -286,6 +290,7 @@ export function createStartViewActions(deps: StartViewDeps) {
   }
 
   async function renderSettingsInTab(): Promise<void> {
+    const nodeStatusRequest = ++settingsTabNodeStatusRequest;
     let settings: GlobalSettings;
     try {
       settings = await window.zephus.readGlobalSettings();
@@ -293,6 +298,7 @@ export function createStartViewActions(deps: StartViewDeps) {
       setStatus("Could not load settings.");
       return;
     }
+    if (nodeStatusRequest !== settingsTabNodeStatusRequest) return;
     initializeSettingsTab(settings);
     updateSettingsTabUpdater(updaterStatusMessage(), currentUpdaterActions());
     updateSettingsTabNode("Checking Node.js…", !settings.customNodePath);
@@ -301,19 +307,12 @@ export function createStartViewActions(deps: StartViewDeps) {
       res: NodeCheckResult,
       currentSettings: GlobalSettings,
     ): void => {
-      const label =
-        res.status === "ok"
-          ? `Node.js ${res.version} detected ✓`
-          : res.status === "outdated"
-            ? `Node.js ${res.version ?? "?"} — version 22.12+ required`
-            : res.status === "missing"
-              ? "Node.js not found — set a custom location below"
-              : "Node.js status could not be determined";
+      if (nodeStatusRequest !== settingsTabNodeStatusRequest) return;
       const source = currentSettings.customNodePath
         ? `Custom: ${currentSettings.customNodePath}`
         : "Auto-detect (system PATH)";
       updateSettingsTabNode(
-        `${label} · ${source}`,
+        `${nodeStatusMessage(res)} · ${source}`,
         !currentSettings.customNodePath,
       );
     };
@@ -322,6 +321,7 @@ export function createStartViewActions(deps: StartViewDeps) {
       .getNodeStatus()
       .then((res) => applyNodeStatus(res, settings))
       .catch(() => {
+        if (nodeStatusRequest !== settingsTabNodeStatusRequest) return;
         updateSettingsTabNode(
           "Could not check Node.js.",
           !settings.customNodePath,
@@ -443,12 +443,16 @@ export function createStartViewActions(deps: StartViewDeps) {
     // First-run convenience: install deps now so preview/publish just work.
     // A FAILED install must not strand the user: the site exists on disk and
     // should open anyway (preview/publish will re-offer the install).
-    const installResult = await runInstallFlow(folder);
+    const installResult = (await runInstallFlow(
+      folder,
+    )) as CreateSiteInstallOutcome;
     await openProjectByPath(folder);
     if (!state.project) {
       setStatus(
         "Site created, but Zephus could not open it. Check the project folder and try again.",
       );
+    } else if (installResult === "cancelled") {
+      // Install was cancelled — site is open; do not show the failed-install line.
     } else if (installResult === "backgrounded") {
       setStatus(
         "Site opened; dependency installation continues in background.",

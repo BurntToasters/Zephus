@@ -4,8 +4,9 @@ import * as path from "path";
 import log from "electron-log";
 import { DevServerStartResult } from "../types";
 import { readGlobalSettings } from "./settings";
-import { buildSpawnEnv } from "./nodeCheck";
+import { buildSpawnEnv, checkNodeVersion } from "./nodeCheck";
 import { npmCommand } from "./npmCommand";
+import { dependenciesInstalled } from "./install";
 
 // Matches a server URL line like "Local: http://localhost:4321/". The URL is
 // anchored so trailing punctuation (")", ",", ";") is not swallowed, and the
@@ -72,10 +73,6 @@ let stopEpoch = 0;
 
 export type DevServerLogListener = (chunk: string) => void;
 
-function depsInstalled(projectPath: string): boolean {
-  return fs.existsSync(path.join(projectPath, "node_modules"));
-}
-
 function hasDevScript(projectPath: string): boolean {
   try {
     const pkg = JSON.parse(
@@ -132,7 +129,7 @@ export function startDevServer(
       error: 'The project has no "dev" script in package.json.',
     });
   }
-  if (!depsInstalled(projectPath)) {
+  if (!dependenciesInstalled(projectPath)) {
     return Promise.resolve({
       ok: false,
       url: null,
@@ -154,10 +151,25 @@ async function startDevServerProcess(
 ): Promise<DevServerStartResult> {
   const epoch = stopEpoch;
   try {
+    const nodeStatus = await checkNodeVersion(
+      readGlobalSettings().customNodePath,
+    );
+    if (nodeStatus.status !== "ok") {
+      starting = false;
+      return {
+        ok: false,
+        url: null,
+        alreadyRunning: false,
+        error: nodeStatus.message,
+      };
+    }
+    const nodeBinaryPath = nodeStatus.binaryPath;
+
     const spawnEnv = await buildSpawnEnv(readGlobalSettings().customNodePath);
 
     return new Promise<DevServerStartResult>((resolve) => {
       let settled = false;
+      let childExited = false;
       // Declared up front: finish() can run before the timeout is assigned
       // (synchronous spawn failure below) — the TDZ crash would otherwise
       // reject the promise with the wrong shape.
@@ -184,11 +196,13 @@ async function startDevServerProcess(
         process.platform,
         spawnEnv,
         projectPath,
+        nodeBinaryPath,
       );
       let child: ChildProcess;
       try {
         child = spawn(npm.command, npm.args, {
           cwd: projectPath,
+          shell: false,
           windowsHide: true,
           windowsVerbatimArguments: npm.windowsVerbatimArguments,
           // POSIX: detached makes the child its own process-group leader so we
@@ -239,7 +253,13 @@ async function startDevServerProcess(
         // Guard the child: a stopped server's stdout can still drain while a
         // NEW server starts — its URL must not settle the new promise, or the
         // new server gets killed by the timeout with the wrong URL reported.
-        if (url && current && current.child === child && !current.url) {
+        if (
+          url &&
+          !childExited &&
+          current &&
+          current.child === child &&
+          !current.url
+        ) {
           current.url = url;
           finish({ ok: true, url, alreadyRunning: false });
         }
@@ -260,6 +280,7 @@ async function startDevServerProcess(
       });
 
       child.on("exit", (code) => {
+        childExited = true;
         onLog(`\n[dev server exited with code ${code ?? "null"}]\n`);
         if (current?.child === child) current = null;
         finish({

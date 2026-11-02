@@ -6,6 +6,7 @@ import type {
   EditorBlockType,
   SectionNode,
 } from "../main/types";
+import { HTML_RAW_LINE_SENTINEL } from "../shared/blockRender";
 
 type Block = EditorBlock;
 type BlockType = EditorBlockType;
@@ -89,20 +90,9 @@ function elementText(el: Element): string {
   return elementTextRaw(el).trim();
 }
 
-/** The serializer indents every interior line of a raw html block by 2 spaces (indentManagedBody). */
-function dedentHtmlRaw(raw: string): string {
-  const lines = raw.split("\n");
-  if (lines.length <= 1) return raw;
-  let indent = Infinity;
-  for (const line of lines.slice(1)) {
-    if (!line.trim()) continue;
-    const leading = line.match(/^[ \t]*/)?.[0].length ?? 0;
-    if (leading < indent) indent = leading;
-  }
-  if (!Number.isFinite(indent) || indent === 0) return raw;
-  return lines
-    .map((line, index) => (index === 0 ? line : line.slice(indent)))
-    .join("\n");
+/** Inner markup of a managed html block (wrapper div is re-emitted on save). */
+function htmlBlockInnerRaw(el: HTMLElement): string {
+  return el.innerHTML.replace(new RegExp(HTML_RAW_LINE_SENTINEL, "g"), "\n");
 }
 
 export function createEditorPageParser(deps: EditorParseDeps) {
@@ -166,7 +156,7 @@ export function createEditorPageParser(deps: EditorParseDeps) {
           props: sanitizeStringRecord(storedProps),
           style: storedStyle,
           locked: el.dataset["zephusLocked"] === "true",
-          raw: storedType === "html" ? dedentHtmlRaw(el.outerHTML) : undefined,
+          raw: storedType === "html" ? htmlBlockInnerRaw(el) : undefined,
         });
         continue;
       }

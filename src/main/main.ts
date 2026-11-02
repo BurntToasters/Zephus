@@ -13,6 +13,7 @@ import { checkNodeVersion, validateNodePath } from "./services/nodeCheck";
 import { createSite } from "./services/wizard";
 import { execFileSync } from "child_process";
 import { IPC } from "./ipcChannels";
+import { assertRealpathInside, safeResolve } from "./services/fsSafe";
 
 // Dev mode ONLY when not packaged: a shipped binary launched with --dev (or
 // NODE_ENV=development) previously got devTools AND silently disabled the
@@ -293,6 +294,74 @@ function finishSmokeProcess(exitCode: number): void {
 
 let smokeCompletionStarted = false;
 
+function zephusRepoRoot(): string {
+  return path.resolve(__dirname, "..", "..");
+}
+
+function zephusRepoHeadSha(): string {
+  try {
+    return execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: zephusRepoRoot(),
+      encoding: "utf8",
+    }).trim();
+  } catch {
+    return "unknown";
+  }
+}
+
+/** Copies smoke scaffold proof into the repo before the temp dir is deleted. */
+function copySmokeRunArtifacts(smokeProjectPath: string): void {
+  const sha = zephusRepoHeadSha();
+  const dest = path.join(zephusRepoRoot(), "artifacts", "smoke", sha);
+  try {
+    fs.mkdirSync(dest, { recursive: true });
+    const pagesDir = path.join(smokeProjectPath, "src", "pages");
+    const indexAstro = path.join(pagesDir, "index.astro");
+    if (fs.existsSync(indexAstro)) {
+      fs.copyFileSync(indexAstro, path.join(dest, "index.astro"));
+    } else if (fs.existsSync(pagesDir)) {
+      for (const name of fs.readdirSync(pagesDir)) {
+        if (name.endsWith(".astro")) {
+          fs.copyFileSync(path.join(pagesDir, name), path.join(dest, name));
+          break;
+        }
+      }
+    }
+    const indexHtml = path.join(smokeProjectPath, "dist", "index.html");
+    if (fs.existsSync(indexHtml)) {
+      fs.copyFileSync(indexHtml, path.join(dest, "index.html"));
+    } else {
+      const distDir = path.join(smokeProjectPath, "dist");
+      if (fs.existsSync(distDir)) {
+        const stack = [distDir];
+        while (stack.length > 0) {
+          const dir = stack.pop()!;
+          for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+            const full = path.join(dir, entry.name);
+            if (entry.isDirectory()) stack.push(full);
+            else if (entry.name.endsWith(".html")) {
+              fs.copyFileSync(full, path.join(dest, entry.name));
+              stack.length = 0;
+              break;
+            }
+          }
+        }
+      }
+    }
+    try {
+      const logText = execFileSync("git", ["log", "-1"], {
+        cwd: smokeProjectPath,
+        encoding: "utf8",
+      });
+      fs.writeFileSync(path.join(dest, "git-log-1.txt"), logText, "utf8");
+    } catch (error) {
+      log.warn("Smoke artifact: could not copy temp git log:", error);
+    }
+  } catch (error) {
+    log.warn("Smoke artifact copy failed:", error);
+  }
+}
+
 async function completeSmokeRun(windowRef: BrowserWindow): Promise<void> {
   if (smokeCompletionStarted) return;
   smokeCompletionStarted = true;
@@ -324,6 +393,7 @@ async function completeSmokeRun(windowRef: BrowserWindow): Promise<void> {
     log.error("Smoke run failed:", error);
   } finally {
     if (smokeProjectPath) {
+      copySmokeRunArtifacts(smokeProjectPath);
       try {
         fs.rmSync(smokeProjectPath, { recursive: true, force: true });
       } catch {
@@ -598,7 +668,6 @@ function closePreviewWindow(): void {
   if (previewWindow && !previewWindow.isDestroyed()) {
     previewWindow.close();
   }
-  previewWindow = null;
 }
 
 const WINDOW_STATE_FILE = "window-state.json";
@@ -1018,9 +1087,44 @@ if (!isPrimaryInstance) {
       if (!isMainSender(event.sender.id)) {
         return { ok: false, error: "Unauthorized sender." };
       }
+      // Stop must run even when beforeunload cancels the window close; the
+      // closed handler clears previewWindow and notifies the editor.
+      stopDevServer();
       closePreviewWindow();
       return { ok: true };
     });
+    if (isSmoke) {
+      ipcMain.handle(
+        IPC.smokeExternalWrite,
+        (
+          _event,
+          projectPath: string,
+          relativePath: string,
+          contents: string,
+        ) => {
+          try {
+            if (typeof projectPath !== "string" || !projectPath.trim()) {
+              return { ok: false, error: "Invalid project path." };
+            }
+            if (typeof relativePath !== "string" || !relativePath.trim()) {
+              return { ok: false, error: "Invalid relative path." };
+            }
+            if (typeof contents !== "string") {
+              return { ok: false, error: "Invalid contents." };
+            }
+            const full = safeResolve(projectPath, relativePath);
+            assertRealpathInside(projectPath, full);
+            fs.writeFileSync(full, contents, "utf8");
+            return { ok: true };
+          } catch (error) {
+            return {
+              ok: false,
+              error: error instanceof Error ? error.message : String(error),
+            };
+          }
+        },
+      );
+    }
     createSplash();
     createMainWindow();
     initAutoUpdater();

@@ -104,7 +104,6 @@ function makeDeps() {
     findAssetUsage: async () => ({ ok: true, pages: [], siteReferences: [] }),
     renameAsset: async () => ({ ok: true, webPath: "x" }),
     deleteAsset: async () => ({ ok: true }),
-    getDroppedFilePath: () => "",
   };
 
   const deps = {
@@ -139,6 +138,10 @@ function makeDeps() {
     ) => {
       lastActions = actions;
     },
+    editorSaveWaitForIdle: async () => undefined,
+    editorSaveIsSaving: () => false,
+    patchOpenPageLayoutTitle: () => undefined,
+    pageDraftContent: () => "<h1>x</h1>",
   } as unknown as Parameters<typeof createPageModalActions>[0];
 
   return {
@@ -246,7 +249,6 @@ describe("asset browser modal", () => {
       findAssetUsage,
       renameAsset,
       deleteAsset,
-      getDroppedFilePath,
       ...rest
     } = (window as unknown as { zephus: Record<string, unknown> })
       .zephus as Record<string, unknown>;
@@ -276,7 +278,6 @@ describe("asset browser modal", () => {
         updatedReferences: 0,
       }),
       deleteAsset: async () => ({ ok: true }),
-      getDroppedFilePath: () => "",
     };
     void listAssets;
     void importAssets;
@@ -284,7 +285,6 @@ describe("asset browser modal", () => {
     void findAssetUsage;
     void renameAsset;
     void deleteAsset;
-    void getDroppedFilePath;
     await actions.openAssetBrowser({
       filter: "images",
       title: "Asset Browser",
@@ -346,25 +346,25 @@ describe("asset browser modal", () => {
 
   it("imports dropped files and reports the result", async () => {
     const { deps, statuses } = makeDeps();
-    const imported: string[][] = [];
+    const imported: Array<{ name: string }>[] = [];
     await openBrowser(deps);
     (
       window as unknown as { zephus: { importAssetPaths: unknown } }
     ).zephus.importAssetPaths = async (
       _p: string,
       _d: string,
-      paths: string[],
+      files: Array<{ name: string }>,
     ) => {
-      imported.push(paths);
+      imported.push(files);
       return {
         ok: true,
-        imported: paths.map((p) => ({ webPath: p, category: "images" })),
+        imported: files.map((f) => ({
+          webPath: `/drop/${f.name}`,
+          category: "images",
+        })),
         errors: [],
       };
     };
-    (
-      window as unknown as { zephus: { getDroppedFilePath: unknown } }
-    ).zephus.getDroppedFilePath = (f: { name: string }) => `/drop/${f.name}`;
     await (
       assetBodyProps!.onDropFiles as (
         files: Array<{ name: string }>,

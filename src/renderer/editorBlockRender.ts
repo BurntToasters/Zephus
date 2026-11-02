@@ -5,7 +5,7 @@ import {
   type RenderPostEntry,
 } from "../shared/blockRender";
 import { BUILD_MAX_HEADING_LEVEL } from "../shared/blockRenderFixtures";
-import type { StyleViewport } from "../shared/renderHelpers";
+import { safeUrl, type StyleViewport } from "../shared/renderHelpers";
 
 export interface EditorBlockRenderOptions {
   viewport: StyleViewport;
@@ -67,20 +67,19 @@ export function sanitizeHtmlForCanvas(html: string): string {
           const safe = sanitizeSrcset(attr.value);
           if (safe === null) node.removeAttribute(attr.name);
           else node.setAttribute(attr.name, safe);
+        } else if (name === "srcdoc") {
+          node.removeAttribute(attr.name);
         } else if (
-          name === "srcdoc" ||
           name === "formaction" ||
           name === "action" ||
-          (name === "poster" &&
-            /^\s*(javascript|vbscript|data):/i.test(
-              attr.value.replace(/[\t\n\r]/g, ""),
-            )) ||
-          ((name === "href" || name === "src" || name === "xlink:href") &&
-            /^\s*(javascript|vbscript|data):/i.test(
-              attr.value.replace(/[\t\n\r]/g, ""),
-            ))
+          name === "poster" ||
+          name === "href" ||
+          name === "src" ||
+          name === "xlink:href"
         ) {
-          node.removeAttribute(attr.name);
+          const sanitized = safeUrl(attr.value);
+          if (!sanitized) node.removeAttribute(attr.name);
+          else node.setAttribute(attr.name, sanitized);
         }
       }
     }
@@ -97,10 +96,9 @@ function sanitizeSrcset(value: string): string | null {
     .map((entry) => entry.trim())
     .filter(Boolean);
   if (entries.length === 0) return null;
-  const safe = entries.filter(
-    (entry) =>
-      !/^\s*(javascript|vbscript|data):/i.test(entry.replace(/[\t\n\r]/g, "")),
-  );
+  const safe = entries
+    .map((entry) => safeUrl(entry))
+    .filter((entry) => entry.length > 0);
   return safe.length > 0 ? safe.join(", ") : null;
 }
 

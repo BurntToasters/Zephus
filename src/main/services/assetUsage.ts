@@ -1,12 +1,51 @@
 /** Finds where an asset is referenced, so the editor can warn before a delete or rename silently breaks a page. */
 
+import * as fs from "fs";
+import * as path from "path";
 import { AssetUsageResult, PageDocument, SiteDocument } from "../types";
+import { safeResolve } from "./fsSafe";
+import { slugFromPage } from "../../shared/pageIdentity";
 import {
   listPageDocuments,
   readSiteDocument,
   writePageDocument,
   writeSiteDocument,
 } from "./schema";
+import { detectAstro, listPages } from "./project";
+
+function pageSidecarRel(slug: string): string {
+  const normalized = slug.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+  if (!normalized) {
+    throw new Error("Invalid page schema slug.");
+  }
+  return path.posix.join(
+    ".zephus",
+    "pages",
+    normalized === "index" ? "index.json" : `${normalized}.json`,
+  );
+}
+
+/** Pages on disk with no sidecar yet — checked before ensureVisualSchema can migrate them. */
+function pagesMissingSidecar(projectPath: string, pagesDir: string): string[] {
+  return listPages(projectPath, pagesDir).filter((page) => {
+    try {
+      const sidecar = safeResolve(
+        projectPath,
+        pageSidecarRel(slugFromPage(page, pagesDir)),
+      );
+      return !fs.existsSync(sidecar);
+    } catch {
+      return true;
+    }
+  });
+}
+
+function formatMissingPagesError(missingPages: string[]): string {
+  const shown = missingPages.slice(0, 4).join(", ");
+  const extra =
+    missingPages.length > 4 ? ` and ${missingPages.length - 4} more` : "";
+  return `One or more pages are missing editor metadata (${shown}${extra}).`;
+}
 
 /** A match boundary: neither side may continue a filename/path token. */
 function isTokenBoundary(char: string): boolean {
@@ -233,7 +272,7 @@ function siteReferences(site: SiteDocument, webPath: string): string[] {
  */
 export function findAssetUsage(
   projectPath: string,
-  pagesDir: string,
+  _pagesDir: string,
   webPath: string,
 ): AssetUsageResult {
   try {
@@ -249,6 +288,17 @@ export function findAssetUsage(
       };
     }
 
+    const pagesDir = detectAstro(projectPath).pagesDir;
+    const missingSidecars = pagesMissingSidecar(projectPath, pagesDir);
+    if (missingSidecars.length > 0) {
+      return {
+        ok: false,
+        pages: [],
+        siteReferences: [],
+        error: formatMissingPagesError(missingSidecars),
+      };
+    }
+
     const listed = listPageDocuments(projectPath, pagesDir);
     if (!listed.ok) {
       return {
@@ -259,20 +309,55 @@ export function findAssetUsage(
       };
     }
 
-    const pages = listed.entries
-      .map((doc) => ({
-        page: doc.page,
-        label: doc.navLabel || doc.title || doc.slug,
-        count: pageReferenceCount(doc, normalized),
-      }))
-      .filter((entry) => entry.count > 0);
+    const missingPages = listed.missingPages ?? [];
+    if (missingPages.length > 0) {
+      return {
+        ok: false,
+        pages: [],
+        siteReferences: [],
+        error: formatMissingPagesError(missingPages),
+      };
+    }
+
+    const unscanned: string[] = [];
+    const pages = listed.entries.flatMap((doc) => {
+      if (doc.detached || doc.managedFileStatus === "out-of-sync") {
+        unscanned.push(doc.navLabel || doc.title || doc.slug);
+        return [];
+      }
+      const count = pageReferenceCount(doc, normalized);
+      if (count <= 0) return [];
+      return [
+        {
+          page: doc.page,
+          label: doc.navLabel || doc.title || doc.slug,
+          count,
+        },
+      ];
+    });
 
     const site = readSiteDocument(projectPath);
+    let usageGap: string | undefined;
+    if (unscanned.length > 0) {
+      const shown = unscanned.slice(0, 4).join(", ");
+      const extra =
+        unscanned.length > 4 ? ` and ${unscanned.length - 4} more` : "";
+      usageGap = `hand-written or out-of-sync pages were not scanned (${shown}${extra})`;
+    }
+    if (!site.ok) {
+      return {
+        ok: false,
+        pages,
+        siteReferences: [],
+        error: site.error ?? "Could not read site settings.",
+        ...(usageGap ? { usageGap } : {}),
+      };
+    }
     return {
       ok: true,
       pages,
-      siteReferences:
-        site.ok && site.site ? siteReferences(site.site, normalized) : [],
+      siteReferences: site.site ? siteReferences(site.site, normalized) : [],
+      ...(usageGap ? { usageGap } : {}),
     };
   } catch (error) {
     return {

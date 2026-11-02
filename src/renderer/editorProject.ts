@@ -43,6 +43,7 @@ export interface ProjectOpenDeps {
     skipPrompt?: boolean;
   }) => Promise<string | null>;
   bumpSessionGeneration: () => void;
+  getEditorSessionGeneration: () => number;
   updateWindowTitle: () => void;
 }
 
@@ -78,6 +79,7 @@ export function createProjectOpenActions(deps: ProjectOpenDeps) {
     editorGitRefresh,
     editorDraftRestoreRestoreSiteDraft,
     bumpSessionGeneration,
+    getEditorSessionGeneration,
     updateWindowTitle,
   } = deps;
 
@@ -223,6 +225,11 @@ export function createProjectOpenActions(deps: ProjectOpenDeps) {
     result: import("../main/types").ProjectOpenResult,
   ): Promise<void> {
     bumpSessionGeneration();
+    const projectPath = result.path;
+    const sessionGeneration = getEditorSessionGeneration();
+    const sessionStale = (): boolean =>
+      state.project?.path !== projectPath ||
+      getEditorSessionGeneration() !== sessionGeneration;
     $("view-start").classList.add("hidden");
     const editorView = $("view-editor");
     editorView.classList.remove("hidden");
@@ -241,22 +248,27 @@ export function createProjectOpenActions(deps: ProjectOpenDeps) {
         result.path,
         result.astro.pagesDir,
       );
+      if (sessionStale()) return;
       if (!ensured.ok) {
         throw new Error(
           ensured.error ?? "Could not initialize Zephus schema sidecars.",
         );
       }
       const siteResult = await window.zephus.readSiteDocument(result.path);
+      if (sessionStale()) return;
       state.siteDocument = siteResult.ok ? siteResult.site : null;
       state.pendingSiteDocument = null;
       state.pendingSiteEditorKind = null;
       markSiteDirty(state, false);
       ensureCodeEditor();
       const siteDraftCleanupWarning = await maybeRestoreSiteDraft();
+      if (sessionStale()) return;
       void editorGitRefresh();
       await applyRepoRules();
+      if (sessionStale()) return;
       void applyMergedTheme();
       await reloadPages();
+      if (sessionStale()) return;
       renderPageList(result);
       renderNavEditor(result);
       setMode("visual");
@@ -286,6 +298,7 @@ export function createProjectOpenActions(deps: ProjectOpenDeps) {
         const warning = await editorDraftRestoreRestoreSiteDraft({
           skipPrompt: true,
         });
+        if (sessionStale()) return;
         if (warning) setStatus(warning);
       }
       if (
@@ -299,6 +312,7 @@ export function createProjectOpenActions(deps: ProjectOpenDeps) {
         await loadPage(pendingDraft.target, {
           restoreDraftSilently: true,
         });
+        if (sessionStale()) return;
         // The cleared draft's home card would otherwise linger for the whole
         // session (stale timestamp, phantom).
         await refreshHomeDraftSummaries();
@@ -312,6 +326,7 @@ export function createProjectOpenActions(deps: ProjectOpenDeps) {
           "page",
           pendingDraft.target,
         );
+        if (sessionStale()) return;
         if (!cleared.ok) {
           setStatus(
             "Could not clear the recovery draft: " +
@@ -319,11 +334,14 @@ export function createProjectOpenActions(deps: ProjectOpenDeps) {
           );
         }
         await refreshHomeDraftSummaries();
+        if (sessionStale()) return;
       }
       if (!state.page && state.project?.pages[0]) {
         await loadPage(state.project.pages[0]);
+        if (sessionStale()) return;
       }
     } catch (error) {
+      if (sessionStale()) return;
       // Never leave a half-open project: reset the editor session and return
       // to the start screen so the UI cannot act on a phantom project.
       pendingHomeDraftResume = null;

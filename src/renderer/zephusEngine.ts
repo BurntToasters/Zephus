@@ -5,6 +5,11 @@
 // the start view (theme picker, settings, onboarding), page structure
 // helpers, and the section-shell drag callbacks still bound in init().
 
+import {
+  isNotFoundSlug,
+  normalizePageSlug,
+  routeFromPage,
+} from "../shared/pageIdentity";
 import { createCodeEditor, type CodeEditor } from "./codeEditor";
 import {
   activateWorkspaceTab,
@@ -57,6 +62,7 @@ import {
 } from "./editorUndo";
 import { blockToHtmlForEditor } from "./editorBlockRender";
 import { assembleManagedPage, splitManagedPageSource } from "./editorSerialize";
+import { escapeAttr } from "../shared/renderHelpers";
 import {
   formatPanelMountFailureStatus,
   handlePlainTextPaste,
@@ -273,6 +279,41 @@ let appSettings: GlobalSettings | null = null;
 const modalController = createModalController(refreshIcons);
 const { closeModal, showModal, showModalNode, registerCleanup } =
   modalController;
+
+const editorSaveGate = {
+  waitForIdle: (): Promise<boolean> => Promise.resolve(true),
+  isSaving: (): boolean => false,
+};
+
+function patchLayoutTitleInPrefix(prefix: string, title: string): string {
+  const escaped = escapeAttr(title);
+  if (/\btitle\s*=/i.test(prefix)) {
+    return prefix.replace(
+      /(\btitle\s*=)(["'])([\s\S]*?)\2/i,
+      `$1$2${escaped}$2`,
+    );
+  }
+  return prefix;
+}
+
+function patchOpenPageLayoutTitle(title: string): void {
+  state.prefix = patchLayoutTitleInPrefix(state.prefix, title);
+  const full = serializeBlocks();
+  state.rawCode = full;
+  if (state.mode === "code") setCode(full);
+  else renderCanvas();
+}
+
+function retargetUndoSiteSnapshots(site: SiteDocument): void {
+  const baseline = cloneSiteDocument(site);
+  for (const entry of state.undo) {
+    entry.site = cloneSiteDocument(baseline);
+  }
+  for (const entry of state.redo) {
+    entry.site = cloneSiteDocument(baseline);
+  }
+}
+
 const pageModals = createPageModalActions({
   getState: () => state,
   setStatus,
@@ -286,12 +327,18 @@ const pageModals = createPageModalActions({
   getCode,
   syncCurrentMeta,
   resetOpenPageState,
-  normalizePageSlugInput,
-  isReservedNotFoundSlug,
+  normalizePageSlugInput: normalizePageSlug,
+  isReservedNotFoundSlug: isNotFoundSlug,
   invalidateAssetCache,
   fetchAssetDataUrl,
   reloadSiteDocumentFromDisk,
   showModalNode,
+  editorSaveWaitForIdle: async () => {
+    await editorSaveGate.waitForIdle();
+  },
+  editorSaveIsSaving: () => editorSaveGate.isSaving(),
+  patchOpenPageLayoutTitle,
+  pageDraftContent: () => draftContentForCurrentState(),
 });
 
 const { openPageMetaModal, openAssetBrowser } = pageModals;
@@ -361,6 +408,7 @@ const undoOps = createUndoOps({
   restoreSnapshot,
   syncSelectionAfterRestore,
   serializeBlocks,
+  savedPageRendererSource,
   trackChange,
   markDirty,
   renderLayers,
@@ -373,7 +421,8 @@ const { doUndo, doRedo } = undoOps;
 
 const keyboard = createKeyboardHandler({
   getState: () => state,
-  isBusy: () => loadingPage !== null || closingProject,
+  isBusy: () =>
+    loadingPage !== null || closingProject || editorSaveGate.isSaving(),
   modalController,
   openHelpModal,
   performSave: () => performSave(),
@@ -427,7 +476,7 @@ const blockOps = createBlockOpsActions({
   showModalNode,
   modalController,
   editorRules,
-  appSettings,
+  getAppSettings: () => appSettings,
   updateUndoRedoButtons,
   renderLayers,
   renderCanvas: () => renderCanvas(),
@@ -591,10 +640,10 @@ function friendlyError(raw: string | undefined): string {
     return "Node.js was not found. Install it from nodejs.org, or set a custom Node.js location in Settings.";
   if (/ENOENT/.test(e) && /node|npm/i.test(e))
     return "Node.js was not found. Install it from nodejs.org, or set a custom Node.js location in Settings.";
+  if (/EADDRINUSE|address already in use|port is already in use/i.test(e))
+    return "The preview port is already in use. Close any other running dev servers and try again.";
   if (/did not report a URL|timeout/i.test(e))
     return "The preview took too long to start. Check the Dev Server Log panel for details.";
-  if (/EADDRINUSE|address already in use|port/i.test(e))
-    return "The preview port is already in use. Close any other running dev servers and try again.";
   if (/EACCES|permission denied/i.test(e))
     return "Permission denied writing to the project folder. Check the folder's permissions.";
   if (/ENOSPC|no space/i.test(e))
@@ -944,16 +993,7 @@ function activeSectionId(): string | null {
 
 /** Re-anchors selection after an undo/redo restored a different tree. */
 function syncSelectionAfterRestore(): void {
-  if (state.selectedId) {
-    const location = findBlockLocation(state.selectedId);
-    if (location) {
-      state.selectedSectionId = location.section.id;
-      return;
-    }
-    state.selectedId = null;
-  }
-  if (state.selectedSectionId && findSection(state.selectedSectionId)) return;
-  state.selectedSectionId = state.sections[0]?.id ?? null;
+  syncSelectionState();
 }
 
 function ensureFallbackSection(): SectionNode {
@@ -973,8 +1013,13 @@ const { parseSections } = createEditorPageParser({
 });
 
 function syncSelectionState(): void {
-  if (state.selectedId && !findBlockLocation(state.selectedId)) {
-    state.selectedId = null;
+  if (state.selectedId) {
+    const location = findBlockLocation(state.selectedId);
+    if (location) {
+      state.selectedSectionId = location.section.id;
+    } else {
+      state.selectedId = null;
+    }
   }
   if (state.selectedSectionId && !findSection(state.selectedSectionId)) {
     state.selectedSectionId = null;
@@ -1174,6 +1219,7 @@ const projectOpen = createProjectOpenActions({
   bumpSessionGeneration: () => {
     editorSessionGeneration += 1;
   },
+  getEditorSessionGeneration: () => editorSessionGeneration,
   updateWindowTitle,
 });
 
@@ -1226,36 +1272,8 @@ async function renderTemplates(): Promise<void> {
 /* ---------- Multi-page nav editor ---------- */
 
 function pageToRoute(page: string): string {
-  // src/pages/about.astro → /about, src/pages/index.astro → /
-  const route = page
-    .replace(/^src\/pages\/?/, "")
-    .replace(/\.(astro|md|mdx|html)$/i, "");
-  if (route === "index" || route === "") return "/";
-  return "/" + route;
-}
-
-function normalizePageSlugInput(input: string): string | null {
-  const normalized = input
-    .trim()
-    .replace(/\\/g, "/")
-    .replace(/^\/+|\/+$/g, "")
-    .replace(/\.(astro|md|mdx|html)$/i, "");
-  if (!normalized) return "index";
-  const safe = normalized
-    .split("/")
-    .map((segment) =>
-      segment
-        .toLowerCase()
-        .replace(/[^a-z0-9-_]/g, "-")
-        .replace(/-+/g, "-")
-        .replace(/^[-_]+|[-_]+$/g, ""),
-    )
-    .filter(Boolean);
-  return safe.length > 0 ? safe.join("/") : null;
-}
-
-function isReservedNotFoundSlug(slug: string): boolean {
-  return slug === "404" || slug.startsWith("404/");
+  const pagesDir = state.project?.astro.pagesDir ?? "src/pages";
+  return routeFromPage(page, pagesDir);
 }
 
 function findPageMeta(page: string): PageMeta | null {
@@ -1662,9 +1680,17 @@ async function applyRepoRules(): Promise<void> {
 }
 
 async function applyMergedTheme(): Promise<void> {
-  if (!state.project) return;
+  const projectPath = state.project?.path ?? null;
+  const sessionGeneration = editorSessionGeneration;
+  if (!projectPath) return;
   try {
-    const merged = await window.zephus.getMergedSettings(state.project.path);
+    const merged = await window.zephus.getMergedSettings(projectPath);
+    if (
+      state.project?.path !== projectPath ||
+      editorSessionGeneration !== sessionGeneration
+    ) {
+      return;
+    }
     const theme = merged.theme;
     document.documentElement.setAttribute("data-theme", theme);
   } catch {
@@ -1777,16 +1803,12 @@ async function newPageFlow(): Promise<void> {
         // still holds the original — the page would be created but never
         // opened and the editor would stay on the old page. Mirrors the
         // main-process slug normalization (schema.ts).
-        const normalizedName = name
-          .toLowerCase()
-          .replace(/[^a-z0-9-_]+/g, "-")
-          .replace(/-+/g, "-")
-          .replace(/^[-_]+|[-_]+$/g, "");
+        const normalizedSlug = normalizePageSlug(name);
         const created = state.pageMeta.find(
           (entry) =>
-            entry.slug === name ||
-            entry.slug === normalizedName ||
-            entry.route === "/" + name,
+            (normalizedSlug !== null && entry.slug === normalizedSlug) ||
+            entry.route ===
+              (normalizedSlug === "index" ? "/" : `/${normalizedSlug}`),
         );
         if (created) await loadPage(created.page);
         setStatus("Created page " + name);
@@ -1805,12 +1827,6 @@ async function togglePageNavVisibility(page: string): Promise<void> {
     return;
   }
   const nextVisible = !entry.navVisible;
-  // Push an undo snapshot BEFORE mutating: the eye toggle is a user mutation
-  // and must be undoable (Ctrl+Z restores the nav visibility + the site
-  // baseline). Without this, a fresh-session toggle was undo-less, and an
-  // unrelated later undo would pop a snapshot holding the pre-toggle site
-  // and "revert the toggle" as a side effect.
-  pushUndo();
   const result = await window.zephus.writePageMeta(
     state.project.path,
     page,
@@ -1841,6 +1857,7 @@ async function togglePageNavVisibility(page: string): Promise<void> {
     // written to disk (reverting this toggle).
     if (fresh.ok && fresh.site && !state.siteDirty) {
       state.siteDocument = fresh.site;
+      retargetUndoSiteSnapshots(fresh.site);
     }
     renderNavEditor(state.project);
     renderPageList(state.project);
@@ -1927,13 +1944,46 @@ async function maybeResolveUnsavedWork(options?: {
   const page = state.page;
   const pageRevision = state.pageRevision;
   const siteRevision = state.siteRevision;
+  if (state.project && state.siteDirty) {
+    await discardPendingSiteChanges();
+  }
   if (projectPath && state.pageDirty && page) {
+    if (
+      state.project?.path !== projectPath ||
+      state.page !== page ||
+      state.pageRevision !== pageRevision ||
+      state.siteRevision !== siteRevision
+    ) {
+      setStatus("New edits were made while discarding; they were kept.");
+      scheduleDraftWrite();
+      return false;
+    }
+    if (options?.reloadCurrentPageOnDiscard && state.project && state.page) {
+      await loadPage(state.page, {
+        skipUnsavedGuard: true,
+        skipDraftRestore: true,
+        forceReload: true,
+      });
+      if (
+        state.project?.path !== projectPath ||
+        state.page !== page ||
+        state.pageRevision !== pageRevision ||
+        state.siteRevision !== siteRevision ||
+        state.pageDirty
+      ) {
+        markDirty(true);
+        scheduleDraftWrite();
+        return false;
+      }
+    }
     const cleared = await window.zephus.clearDraft(projectPath, "page", page);
     if (!cleared.ok) {
       setStatus(
         "Could not discard page changes: " +
           (cleared.error ?? "recovery draft cleanup failed"),
       );
+      markDirty(true);
+      scheduleDraftWrite();
       return false;
     }
     if (
@@ -1949,9 +1999,6 @@ async function maybeResolveUnsavedWork(options?: {
     clearChanges();
     markDirty(false);
   }
-  if (state.project && state.siteDirty) {
-    await discardPendingSiteChanges();
-  }
   if (
     state.project?.path !== projectPath ||
     state.page !== page ||
@@ -1962,20 +2009,6 @@ async function maybeResolveUnsavedWork(options?: {
     setStatus("New edits were made while discarding; they were kept.");
     scheduleDraftWrite();
     return false;
-  }
-  if (options?.reloadCurrentPageOnDiscard && state.project && state.page) {
-    await loadPage(state.page, {
-      skipUnsavedGuard: true,
-      skipDraftRestore: true,
-      forceReload: true,
-    });
-    if (
-      state.project?.path !== projectPath ||
-      state.page !== page ||
-      isGlobalDirty(state)
-    ) {
-      return false;
-    }
   }
   return true;
 }
@@ -2108,6 +2141,19 @@ function serializeBlocks(): string {
       suffix: state.suffix,
     },
     state.sections,
+    (block) => blockToHtml(block as Block, "desktop", false),
+  );
+}
+
+function savedPageRendererSource(): string | null {
+  if (!state.visualEditable || !state.pageDocument) {
+    return state.rawCode ?? state.generatedCode ?? null;
+  }
+  const generatedSource = state.generatedCode ?? state.rawCode ?? "";
+  const savedFrame = splitManagedPageSource(generatedSource);
+  return assembleManagedPage(
+    savedFrame.frame,
+    sectionsFromPageDocument(state.pageDocument),
     (block) => blockToHtml(block as Block, "desktop", false),
   );
 }
@@ -2281,6 +2327,7 @@ function detectLinkKind(value: string): LinkPickerKind {
   if (t.startsWith("tel:")) return "phone";
   if (t.startsWith("#")) return "anchor";
   if (/^(https?:)?\/\//i.test(t)) return "url";
+  if (t.startsWith("/")) return "page";
   if (state.pageMeta.some((p) => p.route === t)) return "page";
   return t ? "url" : "page";
 }
@@ -2293,10 +2340,10 @@ function openLinkPicker(current: string, onPick: (href: string) => void): void {
   const wrap = document.createElement("div");
   const prefillFor = (kind: LinkPickerKind, value: string): string => {
     const t = value.trim();
-    if (kind === "email") return t.startsWith("mailto:") ? t.slice(7) : "";
-    if (kind === "phone") return t.startsWith("tel:") ? t.slice(4) : "";
-    if (kind === "anchor") return t.startsWith("#") ? t.slice(1) : "";
-    if (kind === "url") return /^(https?:)?\/\//i.test(t) ? t : "";
+    if (kind === "email") return t.startsWith("mailto:") ? t.slice(7) : t;
+    if (kind === "phone") return t.startsWith("tel:") ? t.slice(4) : t;
+    if (kind === "anchor") return t.startsWith("#") ? t.slice(1) : t;
+    if (kind === "url") return t;
     return "";
   };
 
@@ -2313,7 +2360,8 @@ function openLinkPicker(current: string, onPick: (href: string) => void): void {
       current.startsWith("/") &&
       !state.pageMeta.some((meta) => meta.route === current),
     pageValue:
-      state.pageMeta.find((meta) => meta.route === current)?.route ?? "",
+      state.pageMeta.find((meta) => meta.route === current)?.route ??
+      (current.startsWith("/") ? current : ""),
     rawValue: "",
     rawEdited: false,
   };
@@ -2360,12 +2408,27 @@ function openLinkPicker(current: string, onPick: (href: string) => void): void {
       kind: "primary",
       onClick: () => {
         const raw = modalState.rawValue.trim();
-        let href = modalState.pageValue || "/";
+        let href = modalState.pageValue;
         if (modalState.kind === "email") href = raw ? `mailto:${raw}` : "";
         else if (modalState.kind === "phone") href = raw ? `tel:${raw}` : "";
         else if (modalState.kind === "anchor")
           href = raw ? `#${raw.replace(/^#/, "")}` : "";
-        else if (modalState.kind === "url") href = raw;
+        else if (modalState.kind === "url") {
+          href = raw || (!modalState.rawEdited ? current.trim() : "");
+        } else if (
+          modalState.kind === "page" &&
+          !href &&
+          current.startsWith("/")
+        )
+          href = current;
+        else if (
+          !href &&
+          !modalState.rawEdited &&
+          current.trim() &&
+          modalState.kind !== "page"
+        ) {
+          href = current.trim();
+        }
         closeModal();
         onPick(href);
       },
@@ -2577,6 +2640,7 @@ const editorDraftRestore = createEditorDraftRestoreActions({
     scheduleDraftWrite();
     if (state.project) renderNavEditor(state.project);
   },
+  getEditorSessionGeneration: () => editorSessionGeneration,
   zephus: window.zephus,
 });
 
@@ -2656,6 +2720,8 @@ const editorSave = createEditorSaveActions({
   afterSave: () => void editorGit.refreshGit(),
   zephus: window.zephus,
 });
+editorSaveGate.waitForIdle = () => editorSave.waitForIdle();
+editorSaveGate.isSaving = () => editorSave.isSaving();
 const performSave = async (): Promise<boolean> => {
   const saveButton = $("btn-save") as HTMLButtonElement;
   const saveLabel = $("save-label");
@@ -2769,6 +2835,7 @@ async function closeProject(): Promise<void> {
   try {
     editorSessionGeneration += 1;
     pageLoader.resetLoadPipeline();
+    await window.zephus.cancelInstall().catch(() => undefined);
     if (state.previewUrl) {
       await window.zephus.closePreviewWindow();
       resetPreviewState();
@@ -2842,7 +2909,7 @@ function updateUndoRedoButtons(): void {
     undoButton,
     redoButton,
   });
-  if (loadingPage || closingProject) {
+  if (loadingPage || closingProject || editorSaveGate.isSaving()) {
     undoButton.disabled = true;
     redoButton.disabled = true;
   }
@@ -2930,6 +2997,7 @@ const chrome = createChromeActions({
       addBlockAt,
       findBlockLocation,
       openProjectByPath,
+      loadPage,
       performSave,
       publishSite,
       closeProject,
@@ -3088,27 +3156,15 @@ function init(): void {
           try {
             const res = await window.zephus.pickNodePath();
             const nextSettings = { ...settings };
-            if (
-              (res.status === "ok" || res.status === "outdated") &&
-              res.usedCustomPath &&
-              res.binaryPath
-            ) {
+            if (res.status === "ok" && res.usedCustomPath && res.binaryPath) {
               nextSettings.customNodePath = res.binaryPath;
             }
             updateSettingsTabSettings(nextSettings);
-            const label =
-              res.status === "ok"
-                ? `Node.js ${res.version} detected ✓`
-                : res.status === "outdated"
-                  ? `Node.js ${res.version ?? "?"} — version 22.12+ required`
-                  : res.status === "missing"
-                    ? "Node.js not found — set a custom location below"
-                    : "Node.js status could not be determined";
             const source = nextSettings.customNodePath
               ? `Custom: ${nextSettings.customNodePath}`
               : "Auto-detect (system PATH)";
             updateSettingsTabNode(
-              `${label} · ${source}`,
+              `${nodeStatusMessage(res)} · ${source}`,
               !nextSettings.customNodePath,
             );
           } catch {
@@ -3123,15 +3179,10 @@ function init(): void {
             const res = await window.zephus.setNodePath(null);
             const nextSettings = { ...settings, customNodePath: null };
             updateSettingsTabSettings(nextSettings);
-            const label =
-              res.status === "ok"
-                ? `Node.js ${res.version} detected ✓`
-                : res.status === "outdated"
-                  ? `Node.js ${res.version ?? "?"} — version 22.12+ required`
-                  : res.status === "missing"
-                    ? "Node.js not found — set a custom location below"
-                    : "Node.js status could not be determined";
-            updateSettingsTabNode(`${label} · Auto-detect (system PATH)`, true);
+            updateSettingsTabNode(
+              `${nodeStatusMessage(res)} · Auto-detect (system PATH)`,
+              true,
+            );
           } catch {
             updateSettingsTabNode(
               "Could not reset Node.js location.",

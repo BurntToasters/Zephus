@@ -91,6 +91,71 @@ describe("editorDraft", () => {
     expect(writeDraft).not.toHaveBeenCalled();
   });
 
+  it("reschedules when the page revision advances before the write finishes", async () => {
+    const state = createEditorSession();
+    state.project = { path: "/proj", name: "P" } as ProjectOpenResult;
+    state.page = "index.astro";
+    state.pageDirty = true;
+
+    let resolveWrite: (value: { ok: true }) => void = () => undefined;
+    const writeDraft = vi.fn(
+      () =>
+        new Promise<{ ok: true }>((resolve) => {
+          resolveWrite = resolve;
+        }),
+    );
+    const deps = {
+      writeDraft,
+      pageDraftContent: () => "<p>v1</p>",
+      siteDraftContent: () => "{}",
+    };
+
+    scheduleEditorDraftWrite(state, deps);
+    await vi.advanceTimersByTimeAsync(DRAFT_WRITE_DEBOUNCE_MS);
+    state.pageRevision += 1;
+    state.pageDirty = true;
+    resolveWrite({ ok: true });
+    await Promise.resolve();
+
+    expect(writeDraft).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(DRAFT_WRITE_DEBOUNCE_MS);
+    expect(writeDraft).toHaveBeenCalledTimes(2);
+    expect(writeDraft).toHaveBeenLastCalledWith(
+      "/proj",
+      "page",
+      "index.astro",
+      "<p>v1</p>",
+    );
+  });
+
+  it("does not reschedule a stale write onto a different open page", async () => {
+    const state = createEditorSession();
+    state.project = { path: "/proj", name: "P" } as ProjectOpenResult;
+    state.page = "index.astro";
+    state.pageDirty = true;
+
+    let resolveWrite: (value: { ok: true }) => void = () => undefined;
+    const writeDraft = vi.fn(
+      () =>
+        new Promise<{ ok: true }>((resolve) => {
+          resolveWrite = resolve;
+        }),
+    );
+    scheduleEditorDraftWrite(state, {
+      writeDraft,
+      pageDraftContent: () => "<p>old</p>",
+      siteDraftContent: () => "{}",
+    });
+    await vi.advanceTimersByTimeAsync(DRAFT_WRITE_DEBOUNCE_MS);
+    state.page = "about.astro";
+    state.pageRevision += 1;
+    resolveWrite({ ok: true });
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(DRAFT_WRITE_DEBOUNCE_MS);
+
+    expect(writeDraft).toHaveBeenCalledTimes(1);
+  });
+
   it("swallows rejected draft writes (fire-and-forget)", async () => {
     // Regression: a rejected IPC draft write must not become an unhandled
     // rejection — the timer fires and forgets by design.

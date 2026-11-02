@@ -25,6 +25,15 @@ export function createEditorSiteSaveActions(deps: EditorSiteSaveDeps) {
     const projectPath = state.project?.path;
     if (!projectPath) return;
     const revisionAtStart = state.siteRevision;
+    const beforeClear = deps.getState();
+    if (
+      beforeClear.project?.path !== projectPath ||
+      beforeClear.siteRevision !== revisionAtStart
+    ) {
+      deps.onSiteStateChanged();
+      return;
+    }
+
     let cleanupWarning: string | null = null;
     try {
       const cleared = await deps.zephus.clearDraft(
@@ -35,12 +44,24 @@ export function createEditorSiteSaveActions(deps: EditorSiteSaveDeps) {
       if (!cleared.ok) {
         cleanupWarning =
           cleared.error ?? "the recovery draft could not be cleared";
+        deps.onSiteStateChanged();
+        if (cleanupWarning) {
+          deps.setStatus(
+            `Site changes were not discarded because ${cleanupWarning}.`,
+          );
+        }
+        return;
       }
     } catch (error) {
       cleanupWarning =
         error instanceof Error
           ? error.message
           : "recovery draft cleanup failed";
+      deps.onSiteStateChanged();
+      deps.setStatus(
+        `Site changes were not discarded because ${cleanupWarning}.`,
+      );
+      return;
     }
 
     const current = deps.getState();
@@ -49,6 +70,9 @@ export function createEditorSiteSaveActions(deps: EditorSiteSaveDeps) {
       current.siteRevision !== revisionAtStart
     ) {
       deps.onSiteStateChanged();
+      deps.setStatus(
+        "New site edits were made while discarding; they were kept.",
+      );
       return;
     }
     clearSiteChanges(current);

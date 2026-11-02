@@ -26,15 +26,6 @@ export function TemplatePalette() {
     runIconRefresh();
   });
 
-  const handleKeyDown = (e: KeyboardEvent, tpl: SectionTemplate) => {
-    // Let the inner Delete button handle its own keys.
-    if (e.target !== e.currentTarget) return;
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      onInsertTemplateCallback?.(tpl);
-    }
-  };
-
   const handleDragStart = (e: DragEvent, tpl: SectionTemplate) => {
     e.dataTransfer?.setData("text/zephus-template", tpl.id);
   };
@@ -44,17 +35,20 @@ export function TemplatePalette() {
       {(tpl) => (
         <li
           draggable={true}
-          tabIndex={0}
-          role="button"
-          aria-label={`Insert ${tpl.label} section`}
           title={`Insert ${tpl.label} (or drag onto the canvas)`}
-          onClick={() => onInsertTemplateCallback?.(tpl)}
-          onKeyDown={(e) => handleKeyDown(e, tpl)}
           onDragStart={(e) => handleDragStart(e, tpl)}
         >
-          <i data-lucide="layout-template"></i> <span>{tpl.label}</span>
+          <button
+            type="button"
+            class="palette-insert-btn"
+            title={`Insert ${tpl.label}`}
+            onClick={() => onInsertTemplateCallback?.(tpl)}
+          >
+            <i data-lucide="layout-template"></i> <span>{tpl.label}</span>
+          </button>
           <Show when={tpl.deletable}>
             <button
+              type="button"
               class="mini-btn"
               onClick={(event) => {
                 event.stopPropagation();

@@ -178,45 +178,42 @@ Control which blocks are allowed and editing behavior for this project:
 
 ## Keyboard Shortcuts
 
-### General (visual editor)
+The in-app **Help** modal (press **?** or **H** on the dashboard or editor canvas background) lists the same shortcuts as this section.
 
-| Shortcut                                 | Action                                     |
-| ---------------------------------------- | ------------------------------------------ |
-| **Ctrl/Cmd+S**                           | Save current page                          |
-| **Ctrl/Cmd+Z**                           | Undo                                       |
-| **Ctrl/Cmd+Y** (or **Shift+Cmd/Ctrl+Z**) | Redo                                       |
-| **Ctrl/Cmd+D**                           | Duplicate selected block or section        |
-| **Ctrl/Cmd+C / X / V**                   | Copy, cut, paste selected block or section |
-| **Delete / Backspace**                   | Delete selected block or section           |
-| **Ctrl/Cmd+F**                           | Find and replace across pages              |
-| **?** or **H**                           | Open the in-app shortcut help              |
+### Visual Mode Keyboard Shortcuts
 
-### While Editing Text on the Canvas
+| Shortcut                                 | Action                                                                  |
+| ---------------------------------------- | ----------------------------------------------------------------------- |
+| **Ctrl/Cmd+S**                           | Save page to disk                                                       |
+| **Ctrl/Cmd+E**                           | Toggle Visual / Code mode                                               |
+| **Ctrl/Cmd+1 / 2 / 3**                   | Desktop / Tablet / Mobile viewport                                      |
+| **Ctrl/Cmd+Z**                           | Undo last visual change                                                 |
+| **Ctrl/Cmd+Y** (or **Shift+Cmd/Ctrl+Z**) | Redo last visual change                                                 |
+| **Ctrl/Cmd+D**                           | Duplicate selected block or section                                     |
+| **Ctrl/Cmd+C / X / V**                   | Copy, cut, paste selected block or section                              |
+| **Delete / Backspace**                   | Delete selected block or section                                        |
+| **Ctrl/Cmd+F**                           | Find and replace across pages                                           |
+| **?** or **H**                           | Open shortcut help (canvas or dashboard background only; not in fields) |
 
-| Shortcut       | Action                |
-| -------------- | --------------------- |
-| **Ctrl/Cmd+B** | Bold                  |
-| **Ctrl/Cmd+I** | Italic                |
-| **Ctrl/Cmd+K** | Add link to selection |
-| **Esc**        | Cancel the edit       |
+### While Editing Text
 
-### Code Mode
+| Shortcut           | Action                                                          |
+| ------------------ | --------------------------------------------------------------- |
+| **Ctrl/Cmd+B**     | Bold                                                            |
+| **Ctrl/Cmd+I**     | Italic                                                          |
+| **Ctrl/Cmd+K**     | Add link to selection                                           |
+| **Enter**          | Confirm single-line edit                                        |
+| **Ctrl/Cmd+Enter** | Confirm multi-line text edit (plain Enter inserts a line break) |
+| **Esc**            | Cancel the edit                                                 |
 
-| Shortcut       | Action                  |
-| -------------- | ----------------------- |
-| **Ctrl+F**     | Find                    |
-| **Ctrl/Cmd+F** | In-editor search (CodeMirror) — the cross-page Find & Replace modal is a visual-mode shortcut |
-| **Ctrl+Enter** | Insert a blank line (multi-line edits save with Ctrl/Cmd+S) |
-| **Tab**        | Indent                  |
-| **Shift+Tab**  | Unindent                |
+### Code Mode Shortcuts
 
-### Visual Mode
-
-| Shortcut       | Action                                                          |
-| -------------- | --------------------------------------------------------------- |
-| **Enter**      | Confirm single-line edit (headings, buttons, one-line fields)   |
-| **Ctrl+Enter** | Confirm multi-line text edit (plain Enter inserts a line break) |
-| **Esc**        | Cancel the inline edit                                          |
+| Shortcut                                 | Action                  |
+| ---------------------------------------- | ----------------------- |
+| **Ctrl/Cmd+Z**                           | Undo in the code editor |
+| **Ctrl/Cmd+Y** (or **Shift+Cmd/Ctrl+Z**) | Redo in the code editor |
+| **Ctrl/Cmd+S**                           | Save page to disk       |
+| **Tab / Shift+Tab**                      | Indent / unindent       |
 
 > Reorder blocks and sections by dragging their grip handles, or use the up/down arrows in the block toolbar.
 

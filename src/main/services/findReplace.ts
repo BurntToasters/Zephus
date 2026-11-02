@@ -59,7 +59,7 @@ function validatePayload(query: string, replacement?: string): string | null {
   return null;
 }
 
-function occurrences(
+function occurrencesInPlainText(
   haystack: string,
   needle: string,
   options: SearchOptions,
@@ -77,6 +77,57 @@ function occurrences(
   return matches ? matches.length : 0;
 }
 
+function looksLikeMarkup(value: string): boolean {
+  return /<[a-zA-Z!/]/.test(value);
+}
+
+function forEachMarkupRun(
+  value: string,
+  visit: (run: string, isTag: boolean) => void,
+): void {
+  let i = 0;
+  while (i < value.length) {
+    if (value[i] === "<") {
+      let j = i + 1;
+      let quote: "'" | '"' | null = null;
+      while (j < value.length) {
+        const ch = value[j]!;
+        if (quote) {
+          if (ch === quote) quote = null;
+        } else if (ch === '"' || ch === "'") {
+          quote = ch;
+        } else if (ch === ">") {
+          j++;
+          break;
+        }
+        j++;
+      }
+      visit(value.slice(i, j), true);
+      i = j;
+    } else {
+      let j = i;
+      while (j < value.length && value[j] !== "<") j++;
+      visit(value.slice(i, j), false);
+      i = j;
+    }
+  }
+}
+
+function occurrences(
+  haystack: string,
+  needle: string,
+  options: SearchOptions,
+): number {
+  if (!looksLikeMarkup(haystack)) {
+    return occurrencesInPlainText(haystack, needle, options);
+  }
+  let count = 0;
+  forEachMarkupRun(haystack, (run, isTag) => {
+    if (!isTag) count += occurrencesInPlainText(run, needle, options);
+  });
+  return count;
+}
+
 /** Counts occurrences across every searchable prop of one document. */
 function countOnDoc(
   doc: PageDocument,
@@ -90,7 +141,7 @@ function countOnDoc(
   return count;
 }
 
-function replaceOccurrences(
+function replaceOccurrencesInPlainText(
   haystack: string,
   needle: string,
   replacement: string,
@@ -107,6 +158,29 @@ function replaceOccurrences(
     new RegExp(pattern, flags),
     replacement.replace(/\$/g, "$$$$"),
   );
+}
+
+function replaceOccurrences(
+  haystack: string,
+  needle: string,
+  replacement: string,
+  options: SearchOptions,
+): string {
+  if (!looksLikeMarkup(haystack)) {
+    return replaceOccurrencesInPlainText(
+      haystack,
+      needle,
+      replacement,
+      options,
+    );
+  }
+  let out = "";
+  forEachMarkupRun(haystack, (run, isTag) => {
+    out += isTag
+      ? run
+      : replaceOccurrencesInPlainText(run, needle, replacement, options);
+  });
+  return out;
 }
 
 /** Walks every searchable prop of a page, calling back with each value. */
@@ -265,6 +339,7 @@ export function replaceAllInPages(
     const limit = onlyPages && onlyPages.length > 0 ? new Set(onlyPages) : null;
     let replaced = 0;
     let pagesChanged = 0;
+    const pagesWritten: string[] = [];
 
     for (const doc of listed.entries) {
       if (limit && !limit.has(doc.page)) continue;
@@ -290,15 +365,20 @@ export function replaceAllInPages(
         sections,
       });
       if (!written.ok) {
+        const prior =
+          pagesWritten.length > 0
+            ? ` Pages already updated: ${pagesWritten.join(", ")}.`
+            : "";
         return {
           ok: false,
           replaced,
           pagesChanged,
-          error: written.error ?? `Could not update ${doc.page}.`,
+          error: (written.error ?? `Could not update ${doc.page}.`) + prior,
         };
       }
       replaced += pageReplacements;
       pagesChanged += 1;
+      pagesWritten.push(doc.page);
     }
 
     return { ok: true, replaced, pagesChanged };

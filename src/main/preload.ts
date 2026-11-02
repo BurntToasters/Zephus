@@ -218,15 +218,28 @@ const api = {
   importAssetPaths: (
     projectPath: string,
     publicDir: string,
-    paths: string[],
+    files: File[],
   ): Promise<{
     ok: boolean;
     imported: { webPath: string; category: string }[];
     errors: string[];
-  }> => ipcRenderer.invoke(IPC.importAssetPaths, projectPath, publicDir, paths),
-
-  /** Resolves the absolute filesystem path of a drag-and-dropped File. */
-  getDroppedFilePath: (file: File): string => webUtils.getPathForFile(file),
+  }> => {
+    const paths = files
+      .map((file) => {
+        try {
+          return webUtils.getPathForFile(file);
+        } catch {
+          return "";
+        }
+      })
+      .filter((p): p is string => typeof p === "string" && p.length > 0);
+    return ipcRenderer.invoke(
+      IPC.importAssetPaths,
+      projectPath,
+      publicDir,
+      paths,
+    );
+  },
 
   searchPages: (
     projectPath: string,
@@ -447,6 +460,18 @@ const api = {
   setNodePath: (customPath: string | null): Promise<unknown> =>
     ipcRenderer.invoke(IPC.nodeSetPath, customPath),
 
+  smokeExternalWrite: (
+    projectPath: string,
+    relativePath: string,
+    contents: string,
+  ): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke(
+      IPC.smokeExternalWrite,
+      projectPath,
+      relativePath,
+      contents,
+    ),
+
   onUpdaterStatus: (
     callback: (data: {
       status: string;
@@ -471,4 +496,6 @@ const api = {
 
 export type ZephusApi = typeof api;
 
-contextBridge.exposeInMainWorld("zephus", api);
+if (process.isMainFrame === true) {
+  contextBridge.exposeInMainWorld("zephus", api);
+}

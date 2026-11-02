@@ -13,6 +13,47 @@ import {
   undoDepth,
 } from "@codemirror/commands";
 
+const editorTheme = new Compartment();
+
+function prefersDarkEditorTheme(): boolean {
+  const theme = document.documentElement.dataset.theme ?? "system";
+  if (theme === "dark") return true;
+  if (theme === "light") return false;
+  return window.matchMedia("(prefers-color-scheme: dark)").matches;
+}
+
+function editorThemeExtensions(): Extension[] {
+  return prefersDarkEditorTheme() ? [oneDark] : [];
+}
+
+let activeCodeEditorView: EditorView | null = null;
+let themeSyncInstalled = false;
+
+/** Re-applies CodeMirror light/dark theme when document theme changes. */
+export function syncCodeEditorTheme(): void {
+  if (!activeCodeEditorView) return;
+  activeCodeEditorView.dispatch({
+    effects: editorTheme.reconfigure(editorThemeExtensions()),
+  });
+}
+
+function installCodeEditorThemeSync(): void {
+  if (themeSyncInstalled) return;
+  themeSyncInstalled = true;
+  const root = document.documentElement;
+  const observer = new MutationObserver(() => syncCodeEditorTheme());
+  observer.observe(root, {
+    attributes: true,
+    attributeFilter: ["data-theme"],
+  });
+  const media = window.matchMedia("(prefers-color-scheme: dark)");
+  media.addEventListener("change", () => {
+    if ((root.dataset.theme ?? "system") === "system") {
+      syncCodeEditorTheme();
+    }
+  });
+}
+
 export interface CodeEditor {
   getValue(): string;
   setValue(value: string): void;
@@ -37,7 +78,7 @@ export function createCodeEditor(
     // not include it by default).
     keymap.of([indentWithTab]),
     language.of(html()),
-    oneDark,
+    editorTheme.of(editorThemeExtensions()),
     EditorView.updateListener.of((update) => {
       if (update.docChanged) onChange();
       if (
@@ -64,6 +105,10 @@ export function createCodeEditor(
       extensions,
     }),
   });
+
+  activeCodeEditorView = view;
+  installCodeEditorThemeSync();
+  syncCodeEditorTheme();
 
   return {
     getValue: () => view.state.doc.toString(),

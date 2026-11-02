@@ -4,9 +4,11 @@ import * as os from "os";
 import * as path from "path";
 import {
   createSchemaPage,
+  detachPageDocument,
   ensureVisualSchema,
   pagePathFromSlug,
   readPageDocument,
+  reattachPageDocument,
   renamePageSchema,
   writePageDocument,
 } from "../schema";
@@ -170,6 +172,115 @@ import BaseLayout from '../layouts/BaseLayout.astro';
     expect(onDisk).toBe(handEdit);
     const status = readPageDocument(tmpDir, rel, pagesDir);
     expect(status.pageDocument?.managedFileStatus).toBe("out-of-sync");
+  });
+
+  it("does not empty a sidecar whose sections value is not an array", () => {
+    ensureVisualSchema(tmpDir, pagesDir);
+    createSchemaPage(tmpDir, pagesDir, "story");
+    const rel = pagePathFromSlug(pagesDir, "story");
+    const sidecar = path.join(tmpDir, ".zephus", "pages", "story.json");
+    const astroBefore = fs.readFileSync(path.join(tmpDir, rel), "utf8");
+    const raw = JSON.parse(fs.readFileSync(sidecar, "utf8"));
+    raw.sections = { broken: true };
+    fs.writeFileSync(sidecar, JSON.stringify(raw), "utf8");
+
+    ensureVisualSchema(tmpDir, pagesDir);
+    const sidecarAfter = JSON.parse(fs.readFileSync(sidecar, "utf8"));
+    expect(sidecarAfter.sections).toEqual({ broken: true });
+    expect(fs.readFileSync(path.join(tmpDir, rel), "utf8")).toBe(astroBefore);
+  });
+
+  it("does not treat multiline Astro expressions as canonical managed source", () => {
+    const rel = path.join(pagesDir, "conditional.astro");
+    const handAuthored = `---
+import BaseLayout from '../layouts/BaseLayout.astro';
+---
+<BaseLayout title="Conditional">
+{condition && (
+  <p>Shown when true</p>
+)}
+</BaseLayout>
+`;
+    fs.writeFileSync(path.join(tmpDir, rel), handAuthored, "utf8");
+    ensureVisualSchema(tmpDir, pagesDir);
+    expect(fs.readFileSync(path.join(tmpDir, rel), "utf8")).toBe(handAuthored);
+  });
+
+  it("refuses reattach for non-.astro pages", () => {
+    const mdRel = path.join(pagesDir, "notes.md");
+    fs.writeFileSync(
+      path.join(tmpDir, mdRel),
+      "# Notes\n\nPlain markdown.\n",
+      "utf8",
+    );
+    ensureVisualSchema(tmpDir, pagesDir);
+    const reattached = reattachPageDocument(tmpDir, mdRel, pagesDir);
+    expect(reattached.ok).toBe(false);
+    expect(fs.readFileSync(path.join(tmpDir, mdRel), "utf8")).toBe(
+      "# Notes\n\nPlain markdown.\n",
+    );
+  });
+
+  it("refuses writePageDocument for detached pages", () => {
+    ensureVisualSchema(tmpDir, pagesDir);
+    createSchemaPage(tmpDir, pagesDir, "story");
+    const rel = pagePathFromSlug(pagesDir, "story");
+    const detached = detachPageDocument(
+      tmpDir,
+      rel,
+      pagesDir,
+      "<p>hand code</p>",
+    );
+    expect(detached.ok).toBe(true);
+    const current = readPageDocument(tmpDir, rel, pagesDir);
+    const refused = writePageDocument(tmpDir, pagesDir, {
+      ...current.pageDocument!,
+      sections: sectionsWithText("visual save attempt"),
+    });
+    expect(refused.ok).toBe(false);
+  });
+
+  it("refuses writePageDocument when out-of-sync and source is not canonical", () => {
+    ensureVisualSchema(tmpDir, pagesDir);
+    createSchemaPage(tmpDir, pagesDir, "story");
+    const rel = pagePathFromSlug(pagesDir, "story");
+    const handEdit = `---
+import BaseLayout from '../layouts/BaseLayout.astro';
+const title = 'Story';
+---
+<BaseLayout title={title}><p>Hand written content that must survive</p></BaseLayout>
+`;
+    fs.writeFileSync(path.join(tmpDir, rel), handEdit, "utf8");
+    ensureVisualSchema(tmpDir, pagesDir);
+    const current = readPageDocument(tmpDir, rel, pagesDir);
+    expect(current.pageDocument?.managedFileStatus).toBe("out-of-sync");
+    const refused = writePageDocument(tmpDir, pagesDir, {
+      ...current.pageDocument!,
+      sections: sectionsWithText("visual overwrite attempt"),
+    });
+    expect(refused.ok).toBe(false);
+    expect(fs.readFileSync(path.join(tmpDir, rel), "utf8")).toBe(handEdit);
+  });
+
+  it("writePageDocument regenerates canonical pages with extra frontmatter drift", () => {
+    ensureVisualSchema(tmpDir, pagesDir);
+    createSchemaPage(tmpDir, pagesDir, "story");
+    const rel = pagePathFromSlug(pagesDir, "story");
+    const raw = fs.readFileSync(path.join(tmpDir, rel), "utf8");
+    const withDraft = raw.replace(/^---\n/m, "---\ndraft: true\n");
+    fs.writeFileSync(path.join(tmpDir, rel), withDraft, "utf8");
+    ensureVisualSchema(tmpDir, pagesDir);
+    const current = readPageDocument(tmpDir, rel, pagesDir);
+    expect(current.pageDocument?.managedFileStatus).toBe("out-of-sync");
+    const saved = writePageDocument(tmpDir, pagesDir, {
+      ...current.pageDocument!,
+      sections: sectionsWithText("Updated from visual mode"),
+    });
+    expect(saved.ok).toBe(true);
+    const after = fs.readFileSync(path.join(tmpDir, rel), "utf8");
+    expect(after).toContain("draft: true");
+    expect(after).toContain("data-zephus-block");
+    expect(after).toContain("Updated from visual mode");
   });
 
   it("migrated legacy pages are still regenerated on first open", () => {

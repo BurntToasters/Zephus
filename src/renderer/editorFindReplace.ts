@@ -179,9 +179,14 @@ export async function openFindReplaceModal(
         label: "Replace All",
         kind: "primary",
         onClick: async () => {
-          // Always search the current text first: the visible match list is
-          // what the user is agreeing to replace, and editing the query after
-          // a search invalidates the old results.
+          // Replacement rewrites saved page sidecars, so pending edits must be
+          // settled or saving afterwards would undo the replacement.
+          if (isGlobalDirty(state) && !(await maybeResolveUnsavedWork())) {
+            setStatus("Replace canceled: save or discard your changes first.");
+            return;
+          }
+
+          // Search after the dirty-save gate so counts match on-disk content.
           if (!(await runSearch())) {
             if (formState.matches && formState.matches.length === 0) {
               setStatus("Nothing to replace.");
@@ -191,13 +196,6 @@ export async function openFindReplaceModal(
           const matches = formState.matches ?? [];
           if (matches.length === 0) {
             setStatus("Nothing to replace.");
-            return;
-          }
-
-          // Replacement rewrites saved page sidecars, so pending edits must be
-          // settled or saving afterwards would undo the replacement.
-          if (isGlobalDirty(state) && !(await maybeResolveUnsavedWork())) {
-            setStatus("Replace canceled: save or discard your changes first.");
             return;
           }
 

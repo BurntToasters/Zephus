@@ -4,6 +4,7 @@
 // pages, managed layout, and design CSS from them — so a brand-new site is
 // fully visually editable from the first open, with perfect round-trip.
 
+import { routeForSlug } from "../shared/pageIdentity";
 import {
   BlockNode,
   DesignTokenSet,
@@ -116,6 +117,7 @@ a { color: var(--accent); }
 .button.secondary { background: transparent; color: var(--accent); border: 1.5px solid var(--border); }
 .zephus-column { padding: 0.5rem; }
 .zephus-column h3 { margin-top: 0; }
+[data-zephus-block="columns"] { display: grid; }
 .zephus-feature { padding: 1rem 0; }
 .zephus-feature-icon { font-size: 2rem; line-height: 1; margin-bottom: 0.5rem; }
 .zephus-testimonial { margin: 1.5rem 0; padding: 1.5rem; background: var(--surface); border-radius: var(--zephus-radius, 12px); }
@@ -160,6 +162,11 @@ section:has(> .zephus-pricing) > :is(h1, h2, h3, h4, p, .lead) {
 }
 @media (max-width: 640px) {
   .zephus-shell-nav { flex-wrap: wrap; }
+}
+iframe[data-zephus-block="embed"] {
+  width: 100%;
+  min-height: 360px;
+  border: 0;
 }
 `;
 
@@ -434,10 +441,6 @@ function makeDesign(overrides: Partial<DesignTokenSet>): DesignTokenSet {
     containerWidth: "1080px",
     ...overrides,
   };
-}
-
-function routeForSlug(slug: string): string {
-  return slug === "index" ? "/" : `/${slug}`;
 }
 
 /**

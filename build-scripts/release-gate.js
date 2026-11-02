@@ -8,6 +8,7 @@ const { assertGitHubCliAuthenticated, githubApi } = require("./github-cli");
 const { releaseSourceFailures } = require("./release-upload-policy");
 
 const failures = [];
+const passedChecks = [];
 
 // The draft release notes are the CHANGELOG.md — fail fast when the current
 // version's section is missing, so a release never ships without notes.
@@ -16,7 +17,7 @@ const VERSION = packageJson.version;
 const RELEASE_CHANNEL = (process.env.RELEASE_CHANNEL || "")
   .trim()
   .toLowerCase();
-const RELEASE_BRANCH = process.env.RELEASE_BRANCH || "beta";
+const RELEASE_BRANCH = process.env.RELEASE_BRANCH || "main";
 if (RELEASE_CHANNEL === "db" && !/-db(?:[.-]|$|[0-9])/i.test(VERSION)) {
   failures.push(
     `RELEASE_CHANNEL=db requires a -db version, but package.json is ${VERSION}.`,
@@ -27,7 +28,7 @@ try {
   const changelog = fs.readFileSync(CHANGELOG_PATH, "utf8");
   const escapedVersion = VERSION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const sectionHeader = new RegExp(
-    `^#{1,3}\\s+.*${escapedVersion}(?![0-9.]).*$`,
+    `^#{1,3}\\s+.*${escapedVersion}(?![0-9.-]).*$`,
     "m",
   );
   if (!changelog.trim()) {
@@ -38,6 +39,8 @@ try {
     failures.push(
       `CHANGELOG.md has no section for the current version (${VERSION}) — the draft release notes would miss it.`,
     );
+  } else {
+    passedChecks.push(`CHANGELOG section for ${VERSION}`);
   }
 } catch (error) {
   failures.push(
@@ -48,6 +51,7 @@ try {
 
 try {
   assertGitHubCliAuthenticated();
+  passedChecks.push("GitHub CLI authentication");
 } catch (error) {
   failures.push(
     "GitHub CLI authentication is required to upload release assets: " +
@@ -76,14 +80,18 @@ try {
     ["ls-remote", "--tags", "origin", `refs/tags/v${VERSION}`],
     { encoding: "utf8" },
   ).trim();
-  failures.push(
-    ...releaseSourceFailures({
-      head,
-      targetCommit,
-      worktreeStatus,
-      existingTagCommit,
-    }),
-  );
+  const sourceFailures = releaseSourceFailures({
+    head,
+    targetCommit,
+    worktreeStatus,
+    existingTagCommit,
+  });
+  failures.push(...sourceFailures);
+  if (sourceFailures.length === 0) {
+    passedChecks.push(
+      `release source (${RELEASE_BRANCH} HEAD, clean tree, no duplicate tag)`,
+    );
+  }
 } catch (error) {
   failures.push(
     "Release source verification failed: " +
@@ -96,6 +104,7 @@ if (!process.env.GPG_KEY_ID) {
     "GPG_KEY_ID is required — .asc signatures must come from the documented key, not a random default key.",
   );
 } else {
+  passedChecks.push("GPG_KEY_ID");
   // gpg accepts emails, short ids, full fingerprints and 0x-prefixed hex as
   // key selectors — any of those is fine as long as it is set. A hex
   // fingerprint that does NOT match the documented key gets a hard warning
@@ -128,6 +137,4 @@ if (failures.length > 0) {
   for (const f of failures) console.error(`   - ${f}`);
   process.exit(1);
 }
-console.log(
-  "✓ Release gate passed (GitHub CLI, GPG key, signing config present).",
-);
+console.log(`✓ Release gate passed (${passedChecks.join(", ")}).`);

@@ -57,7 +57,7 @@ describe("buildAndReveal (real npm build)", () => {
     const pkgPath = path.join(project, "package.json");
     const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
     pkg.scripts.build =
-      "node -e \"process.stdout.write('first-chunk'); setTimeout(() => { process.stdout.write('second-chunk'); process.exit(0); }, 400)\"";
+      "node -e \"require('fs').mkdirSync('dist',{recursive:true}); require('fs').writeFileSync('dist/index.html','<html></html>'); process.stdout.write('first-chunk'); setTimeout(() => { process.stdout.write('second-chunk'); process.exit(0); }, 400)\"";
     fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2));
 
     const chunks: string[] = [];

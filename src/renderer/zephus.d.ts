@@ -581,13 +581,12 @@ interface ZephusApi {
   importAssetPaths(
     projectPath: string,
     publicDir: string,
-    paths: string[],
+    files: File[],
   ): Promise<{
     ok: boolean;
     imported: { webPath: string; category: string }[];
     errors: string[];
   }>;
-  getDroppedFilePath(file: File): string;
   listAssets(projectPath: string, publicDir: string): Promise<AssetListResult>;
   searchPages(
     projectPath: string,
@@ -701,6 +700,11 @@ interface ZephusApi {
   getNodeStatus(): Promise<NodeCheckResult>;
   pickNodePath(): Promise<NodeCheckResult>;
   setNodePath(customPath: string | null): Promise<NodeCheckResult>;
+  smokeExternalWrite(
+    projectPath: string,
+    relativePath: string,
+    contents: string,
+  ): Promise<{ ok: boolean; error?: string }>;
   onUpdaterStatus(callback: (data: UpdaterStatusPayload) => void): () => void;
 }
 

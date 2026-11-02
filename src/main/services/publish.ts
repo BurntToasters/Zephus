@@ -3,9 +3,13 @@ import { shell } from "electron";
 import log from "electron-log";
 import { OperationResult } from "../types";
 import { readGlobalSettings } from "./settings";
-import { buildSpawnEnv } from "./nodeCheck";
+import { buildSpawnEnv, checkNodeVersion } from "./nodeCheck";
 import { npmCommand } from "./npmCommand";
-import { resolveProjectRelativeDir } from "./projectPaths";
+import {
+  buildOutputHasIndexHtml,
+  resolveValidatedBuildOutputDir,
+} from "./projectPaths";
+import { assertRealpathInside } from "./fsSafe";
 import { detectAstro } from "./project";
 import { ensureVisualSchema } from "./schema";
 
@@ -91,12 +95,26 @@ async function runBuild(
       return { ok: false, error: refreshed.error ?? "Schema refresh failed." };
     }
 
+    const outputResolved = resolveValidatedBuildOutputDir(projectPath, outDir);
+    if (!outputResolved.ok) {
+      return { ok: false, error: outputResolved.error };
+    }
+    const outputAbsolute = outputResolved.absolute;
+
+    const nodeStatus = await checkNodeVersion(
+      readGlobalSettings().customNodePath,
+    );
+    if (nodeStatus.status !== "ok") {
+      return { ok: false, error: nodeStatus.message };
+    }
+
     const env = await buildSpawnEnv(readGlobalSettings().customNodePath);
     const npm = npmCommand(
       ["run", "build"],
       process.platform,
       env,
       projectPath,
+      nodeStatus.binaryPath,
     );
     // Stream output chunk-by-chunk so a long first build never reads as a
     // hang (the renderer pipes these chunks into the log panel as they
@@ -105,6 +123,7 @@ async function runBuild(
       const exitCode = await new Promise<number | null>((resolve, reject) => {
         const child = spawn(npm.command, npm.args, {
           cwd: projectPath,
+          shell: false,
           windowsHide: true,
           windowsVerbatimArguments: npm.windowsVerbatimArguments,
           detached: process.platform !== "win32",
@@ -184,19 +203,41 @@ async function runBuild(
       }
       throw error;
     }
-    const output = resolveProjectRelativeDir(
-      projectPath,
-      outDir,
-      "dist",
-    ).absolute;
+    try {
+      assertRealpathInside(projectPath, outputAbsolute);
+    } catch (error) {
+      return {
+        ok: false,
+        error:
+          error instanceof Error ? error.message : "Invalid build output path.",
+      };
+    }
+    if (!buildOutputHasIndexHtml(outputAbsolute)) {
+      return {
+        ok: false,
+        error:
+          "The build finished but did not produce index.html in the output folder. Check your build script and astro.config outDir.",
+      };
+    }
     let revealed = false;
     if (options.reveal !== false) {
-      const openError = await shell.openPath(output);
+      try {
+        assertRealpathInside(projectPath, outputAbsolute);
+      } catch (error) {
+        return {
+          ok: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Invalid build output path.",
+        };
+      }
+      const openError = await shell.openPath(outputAbsolute);
       revealed = !openError;
     }
     return {
       ok: true,
-      outputDir: output,
+      outputDir: outputAbsolute,
       revealed,
     };
   } catch (error) {

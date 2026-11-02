@@ -39,27 +39,45 @@ export function scheduleEditorDraftWrite(
     const project = state.project;
     if (!project || !isGlobalDirty(state)) return;
     if (state.pageDirty && state.page) {
+      const projectPath = project.path;
+      const page = state.page;
+      const pageRevisionAtWrite = state.pageRevision;
+      const content = deps.pageDraftContent();
       // Fire-and-forget: an IPC rejection (e.g. project path no longer
       // approved) must not become an unhandled rejection. A failed WRITE
       // (ok:false) is surfaced once via onDraftWriteFailure — a silently
       // dead recovery net is worse than a warning.
       void deps
-        .writeDraft(project.path, "page", state.page, deps.pageDraftContent())
+        .writeDraft(projectPath, "page", page, content)
         .then((res) => {
           if (res && !res.ok) deps.onDraftWriteFailure?.();
+          if (
+            !state.project ||
+            state.project.path !== projectPath ||
+            state.page !== page
+          ) {
+            return;
+          }
+          if (state.pageRevision !== pageRevisionAtWrite) {
+            scheduleEditorDraftWrite(state, deps);
+          }
         })
         .catch(() => deps.onDraftWriteFailure?.());
     }
     if (state.siteDirty && effectiveSiteDocument(state)) {
+      const projectPath = project.path;
+      const siteRevisionAtWrite = state.siteRevision;
+      const siteContent = deps.siteDraftContent();
       void deps
-        .writeDraft(
-          project.path,
-          "site",
-          SITE_DRAFT_TARGET,
-          deps.siteDraftContent(),
-        )
+        .writeDraft(projectPath, "site", SITE_DRAFT_TARGET, siteContent)
         .then((res) => {
           if (res && !res.ok) deps.onDraftWriteFailure?.();
+          if (!state.project || state.project.path !== projectPath) {
+            return;
+          }
+          if (state.siteRevision !== siteRevisionAtWrite) {
+            scheduleEditorDraftWrite(state, deps);
+          }
         })
         .catch(() => deps.onDraftWriteFailure?.());
     }

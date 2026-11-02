@@ -4,13 +4,26 @@ import * as path from "path";
 import log from "electron-log";
 import { OperationResult } from "../types";
 import { readGlobalSettings } from "./settings";
-import { buildSpawnEnv } from "./nodeCheck";
+import { buildSpawnEnv, checkNodeVersion } from "./nodeCheck";
 import { npmCommand } from "./npmCommand";
 
 export type InstallLogListener = (chunk: string) => void;
 
 let installing = false;
 let activeChild: ChildProcess | null = null;
+let activeInstallPromise: Promise<OperationResult> | null = null;
+let activeInstallProjectPath: string | null = null;
+const installLogListeners = new Set<InstallLogListener>();
+
+function emitInstallLog(chunk: string): void {
+  for (const listener of installLogListeners) {
+    try {
+      listener(chunk);
+    } catch {
+      /* listener threw — keep other subscribers alive */
+    }
+  }
+}
 
 // A hung `npm install` (network stall, blocked postinstall script) must not
 // lock the install path forever: after this the child is killed and the lock
@@ -27,9 +40,24 @@ export function cancelInstall(): OperationResult {
   return { ok: true };
 }
 
+function installLockFresh(projectPath: string, modules: string): boolean {
+  const pkgPath = path.join(projectPath, "package.json");
+  const lockPath = path.join(modules, ".package-lock.json");
+  try {
+    if (!fs.existsSync(lockPath)) return false;
+    const pkgMtime = fs.statSync(pkgPath).mtimeMs;
+    const lockMtime = fs.statSync(lockPath).mtimeMs;
+    return lockMtime >= pkgMtime;
+  } catch {
+    return false;
+  }
+}
+
 export function dependenciesInstalled(projectPath: string): boolean {
   const modules = path.join(projectPath, "node_modules");
   if (!fs.existsSync(modules)) return false;
+  const astroManifest = path.join(modules, "astro", "package.json");
+  if (!fs.existsSync(astroManifest)) return false;
   try {
     const packageJson = JSON.parse(
       fs.readFileSync(path.join(projectPath, "package.json"), "utf8"),
@@ -41,11 +69,32 @@ export function dependenciesInstalled(projectPath: string): boolean {
       ...(packageJson.dependencies ?? {}),
       ...(packageJson.devDependencies ?? {}),
     });
+    if (declared.length > 0 && !installLockFresh(projectPath, modules)) {
+      return false;
+    }
     return declared.every((name) =>
       fs.existsSync(path.join(modules, ...name.split("/"))),
     );
   } catch {
     return false;
+  }
+}
+
+function writeInstallLockMarker(projectPath: string): void {
+  const modules = path.join(projectPath, "node_modules");
+  const lockPath = path.join(modules, ".package-lock.json");
+  const rootLock = path.join(projectPath, "package-lock.json");
+  try {
+    fs.mkdirSync(modules, { recursive: true });
+    if (fs.existsSync(rootLock)) {
+      fs.copyFileSync(rootLock, lockPath);
+    } else {
+      fs.writeFileSync(lockPath, "{}\n");
+    }
+    const now = Date.now();
+    fs.utimesSync(lockPath, now / 1000, now / 1000);
+  } catch (error) {
+    log.warn("Could not write install lock marker:", error);
   }
 }
 
@@ -95,20 +144,40 @@ export async function installDependencies(
   if (typeof projectPath !== "string" || !projectPath) {
     return { ok: false, error: "Invalid project path." };
   }
-  if (installing) {
-    return { ok: false, error: "An install is already running." };
+  if (installing && activeInstallPromise) {
+    if (activeInstallProjectPath === projectPath) {
+      installLogListeners.add(onLog);
+      try {
+        return await activeInstallPromise;
+      } finally {
+        installLogListeners.delete(onLog);
+      }
+    }
+    return {
+      ok: false,
+      error: "An install is already running for another project.",
+    };
   }
   if (!fs.existsSync(path.join(projectPath, "package.json"))) {
     return { ok: false, error: "No package.json found in this project." };
   }
 
+  const nodeStatus = await checkNodeVersion(
+    readGlobalSettings().customNodePath,
+  );
+  if (nodeStatus.status !== "ok") {
+    return { ok: false, error: nodeStatus.message };
+  }
+
+  installLogListeners.add(onLog);
   installing = true;
+  activeInstallProjectPath = projectPath;
   const env = await buildSpawnEnv(readGlobalSettings().customNodePath);
   // Surface activity immediately: without a TTY npm is silent for most of the
   // install, which left the progress box blank on first run.
-  onLog("Running npm install…\n");
+  emitInstallLog("Running npm install…\n");
 
-  return new Promise<OperationResult>((resolve) => {
+  activeInstallPromise = new Promise<OperationResult>((resolve) => {
     let child: ChildProcess | null = null;
     activeChild = null;
     let timeout: NodeJS.Timeout | null = null;
@@ -120,6 +189,8 @@ export async function installDependencies(
       settled = true;
       installing = false;
       activeChild = null;
+      activeInstallPromise = null;
+      activeInstallProjectPath = null;
       if (timeout) clearTimeout(timeout);
       resolve(result);
     };
@@ -129,11 +200,13 @@ export async function installDependencies(
         process.platform,
         env,
         projectPath,
+        nodeStatus.binaryPath,
       );
       // detached: true keeps npm's process group separate so the timeout can
       // terminate the whole install tree, not just the npm parent.
       child = spawn(npm.command, npm.args, {
         cwd: projectPath,
+        shell: false,
         windowsHide: true,
         windowsVerbatimArguments: npm.windowsVerbatimArguments,
         detached: process.platform !== "win32",
@@ -150,7 +223,7 @@ export async function installDependencies(
 
     timeout = setTimeout(() => {
       timedOut = true;
-      onLog(
+      emitInstallLog(
         `\n[npm install timed out after ${INSTALL_TIMEOUT_MS / 60000} minutes; terminating.]\n`,
       );
       if (child) {
@@ -179,7 +252,7 @@ export async function installDependencies(
       }
     }, INSTALL_TIMEOUT_MS);
 
-    const handle = (data: Buffer) => onLog(data.toString());
+    const handle = (data: Buffer) => emitInstallLog(data.toString());
     child.stdout?.on("data", handle);
     child.stderr?.on("data", handle);
 
@@ -205,18 +278,25 @@ export async function installDependencies(
 
     child.on("exit", (code) => {
       if (escalationTimer) clearTimeout(escalationTimer);
-      onLog(`\n[npm install exited with code ${code ?? "null"}]\n`);
+      emitInstallLog(`\n[npm install exited with code ${code ?? "null"}]\n`);
       if (timedOut) {
         finish({
           ok: false,
           error: `npm install timed out after ${INSTALL_TIMEOUT_MS / 60000} minutes.`,
         });
-      } else if (code === 0) finish({ ok: true });
-      else
+      } else if (code === 0) {
+        writeInstallLockMarker(projectPath);
+        finish({ ok: true });
+      } else
         finish({
           ok: false,
           error: `npm install failed (exit code ${code ?? "null"}). See the log for details.`,
         });
     });
   });
+  try {
+    return await activeInstallPromise;
+  } finally {
+    installLogListeners.delete(onLog);
+  }
 }

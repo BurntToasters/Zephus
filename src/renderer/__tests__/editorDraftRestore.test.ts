@@ -52,6 +52,7 @@ describe("editorDraftRestore", () => {
         setStatus: vi.fn(),
         confirmRestoreDraft: vi.fn(),
         onSiteDraftRestored: vi.fn(),
+        getEditorSessionGeneration: () => 0,
         zephus: {
           readDraft: vi.fn(async () => ({ ok: false as const, draft: null })),
           clearDraft: vi.fn(),
@@ -59,6 +60,69 @@ describe("editorDraftRestore", () => {
       });
 
       expect(await actions.maybeRestoreSiteDraft()).toBeNull();
+    });
+
+    it("ignores a site draft when the session changes during the read", async () => {
+      const state = makeState();
+      let generation = 1;
+      const confirmRestoreDraft = vi.fn();
+      const actions = createEditorDraftRestoreActions({
+        getState: () => state,
+        setStatus: vi.fn(),
+        confirmRestoreDraft,
+        onSiteDraftRestored: vi.fn(),
+        getEditorSessionGeneration: () => generation,
+        zephus: {
+          readDraft: vi.fn(async () => {
+            generation = 2;
+            return {
+              ok: true as const,
+              draft: {
+                projectPath: "/proj",
+                scope: "site" as const,
+                target: SITE_DRAFT_TARGET,
+                content: '{"design":{"accent":"#111"}}',
+                savedAt: "2026-01-15T12:00:00.000Z",
+              },
+            };
+          }),
+          clearDraft: vi.fn(),
+        },
+      });
+
+      expect(await actions.maybeRestoreSiteDraft()).toBeNull();
+      expect(confirmRestoreDraft).not.toHaveBeenCalled();
+    });
+
+    it("ignores a site draft when the session changes during the prompt", async () => {
+      const state = makeState();
+      let generation = 1;
+      const actions = createEditorDraftRestoreActions({
+        getState: () => state,
+        setStatus: vi.fn(),
+        confirmRestoreDraft: vi.fn(async () => {
+          generation = 2;
+          return "restore" as const;
+        }),
+        onSiteDraftRestored: vi.fn(),
+        getEditorSessionGeneration: () => generation,
+        zephus: {
+          readDraft: vi.fn(async () => ({
+            ok: true as const,
+            draft: {
+              projectPath: "/proj",
+              scope: "site" as const,
+              target: SITE_DRAFT_TARGET,
+              content: '{"design":{"accent":"#111"}}',
+              savedAt: "2026-01-15T12:00:00.000Z",
+            },
+          })),
+          clearDraft: vi.fn(),
+        },
+      });
+
+      expect(await actions.maybeRestoreSiteDraft()).toBeNull();
+      expect(state.pendingSiteDocument).toBeNull();
     });
 
     it("returns null when the draft matches the saved document", async () => {
@@ -70,6 +134,7 @@ describe("editorDraftRestore", () => {
         setStatus: vi.fn(),
         confirmRestoreDraft,
         onSiteDraftRestored: vi.fn(),
+        getEditorSessionGeneration: () => 0,
         zephus: {
           readDraft: vi.fn(async () => ({
             ok: true as const,
@@ -105,6 +170,7 @@ describe("editorDraftRestore", () => {
         setStatus: vi.fn(),
         confirmRestoreDraft: vi.fn(async () => "discard" as const),
         onSiteDraftRestored: vi.fn(),
+        getEditorSessionGeneration: () => 0,
         zephus: {
           readDraft: vi.fn(async () => ({
             ok: true as const,
@@ -137,6 +203,7 @@ describe("editorDraftRestore", () => {
         setStatus,
         confirmRestoreDraft: vi.fn(async () => "discard" as const),
         onSiteDraftRestored: vi.fn(),
+        getEditorSessionGeneration: () => 0,
         zephus: {
           readDraft: vi.fn(async () => ({
             ok: true as const,
@@ -168,6 +235,7 @@ describe("editorDraftRestore", () => {
         setStatus,
         confirmRestoreDraft: vi.fn(async () => "restore" as const),
         onSiteDraftRestored: vi.fn(),
+        getEditorSessionGeneration: () => 0,
         zephus: {
           readDraft: vi.fn(async () => ({
             ok: true as const,
@@ -199,6 +267,7 @@ describe("editorDraftRestore", () => {
         setStatus: vi.fn(),
         confirmRestoreDraft: vi.fn(async () => "restore" as const),
         onSiteDraftRestored,
+        getEditorSessionGeneration: () => 0,
         zephus: {
           readDraft: vi.fn(async () => ({
             ok: true as const,
@@ -228,6 +297,7 @@ describe("editorDraftRestore", () => {
         setStatus: vi.fn(),
         confirmRestoreDraft,
         onSiteDraftRestored: vi.fn(),
+        getEditorSessionGeneration: () => 0,
         zephus: {
           readDraft: vi.fn(async () => ({
             ok: true as const,
@@ -258,6 +328,7 @@ describe("editorDraftRestore", () => {
         setStatus,
         confirmRestoreDraft: vi.fn(),
         onSiteDraftRestored: vi.fn(),
+        getEditorSessionGeneration: () => 0,
         zephus: {
           readDraft: vi.fn(async () => ({
             ok: true as const,
@@ -290,6 +361,7 @@ describe("editorDraftRestore", () => {
         setStatus: vi.fn(),
         confirmRestoreDraft: vi.fn(async () => "restore" as const),
         onSiteDraftRestored: vi.fn(),
+        getEditorSessionGeneration: () => 0,
         zephus: {
           readDraft: vi.fn(async () => ({
             ok: true as const,
@@ -319,6 +391,7 @@ describe("editorDraftRestore", () => {
         setStatus: vi.fn(),
         confirmRestoreDraft: vi.fn(),
         onSiteDraftRestored: vi.fn(),
+        getEditorSessionGeneration: () => 0,
         zephus: {
           readDraft: vi.fn(async () => ({ ok: false as const, draft: null })),
           clearDraft: vi.fn(),
@@ -339,6 +412,7 @@ describe("editorDraftRestore", () => {
         setStatus: vi.fn(),
         confirmRestoreDraft,
         onSiteDraftRestored: vi.fn(),
+        getEditorSessionGeneration: () => 0,
         zephus: {
           readDraft: vi.fn(async () => ({
             ok: true as const,
@@ -374,6 +448,7 @@ describe("editorDraftRestore", () => {
         setStatus: vi.fn(),
         confirmRestoreDraft: vi.fn(async () => "restore" as const),
         onSiteDraftRestored: vi.fn(),
+        getEditorSessionGeneration: () => 0,
         zephus: {
           readDraft: vi.fn(async () => ({
             ok: true as const,
@@ -407,6 +482,7 @@ describe("editorDraftRestore", () => {
         setStatus: vi.fn(),
         confirmRestoreDraft: vi.fn(async () => "discard" as const),
         onSiteDraftRestored: vi.fn(),
+        getEditorSessionGeneration: () => 0,
         zephus: {
           readDraft: vi.fn(async () => ({
             ok: true as const,
@@ -438,6 +514,7 @@ describe("editorDraftRestore", () => {
         setStatus: vi.fn(),
         confirmRestoreDraft: vi.fn(async () => "discard" as const),
         onSiteDraftRestored: vi.fn(),
+        getEditorSessionGeneration: () => 0,
         zephus: {
           readDraft: vi.fn(async () => ({
             ok: true as const,

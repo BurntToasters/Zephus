@@ -135,12 +135,29 @@ function ensureRealPublicRoot(projectPath: string, publicRoot: string): string {
  * Copies a single source file into the categorized assets directory
  * (public/assets/<category>/) and returns its web-root-relative path.
  */
+/** Ensures the import reads the file the user picked, not a symlink target elsewhere. */
+function assertImportSourceRealpath(sourcePath: string): string {
+  const resolved = path.resolve(sourcePath);
+  const lstat = fs.lstatSync(resolved);
+  if (!lstat.isFile() && !lstat.isSymbolicLink()) {
+    throw new Error("Source is not a file.");
+  }
+  const realSource = fs.realpathSync.native(resolved);
+  if (lstat.isSymbolicLink()) {
+    throw new Error(
+      "Symlinked source files are not allowed; pick the real file instead.",
+    );
+  }
+  return realSource;
+}
+
 function copyIntoAssets(
   projectPath: string,
   publicDir: string,
   sourcePath: string,
 ): { webPath: string; category: AssetCategory } {
-  const ext = path.extname(sourcePath).slice(1);
+  const realSource = assertImportSourceRealpath(sourcePath);
+  const ext = path.extname(realSource).slice(1);
   const category = categoryForExtension(ext);
   const publicRoot = resolveProjectRelativeDir(
     projectPath,
@@ -156,8 +173,8 @@ function copyIntoAssets(
     realTargetDir,
     "Asset directory escapes the public directory.",
   );
-  const name = uniqueName(targetDir, path.basename(sourcePath));
-  fs.copyFileSync(sourcePath, path.join(targetDir, name));
+  const name = uniqueName(targetDir, path.basename(realSource));
+  fs.copyFileSync(realSource, path.join(targetDir, name));
   return { webPath: `/${ASSETS_ROOT}/${category}/${name}`, category };
 }
 
@@ -284,8 +301,21 @@ function collectAssets(
   webPrefix: string,
   forcedCategory: AssetCategory | null,
   out: AssetEntry[],
+  realPublicRoot: string,
 ): void {
   function walk(dir: string, rel: string): void {
+    let realDir: string;
+    try {
+      realDir = fs.realpathSync.native(dir);
+    } catch {
+      return;
+    }
+    if (
+      realDir !== realPublicRoot &&
+      !realDir.startsWith(realPublicRoot + path.sep)
+    ) {
+      return;
+    }
     let entries: fs.Dirent[];
     try {
       entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -534,16 +564,22 @@ export function listProjectAssets(
     if (!fs.existsSync(publicRoot)) {
       return { ok: true, assets };
     }
-    resolveRealPublicRoot(projectPath, publicRoot);
+    const realPublicRoot = resolveRealPublicRoot(projectPath, publicRoot);
     const assetsRoot = path.join(publicRoot, ASSETS_ROOT);
     if (fs.existsSync(assetsRoot)) {
-      collectAssets(assetsRoot, `/${ASSETS_ROOT}`, null, assets);
+      collectAssets(
+        assetsRoot,
+        `/${ASSETS_ROOT}`,
+        null,
+        assets,
+        realPublicRoot,
+      );
     }
 
     // Legacy location from earlier Zephus versions.
     const legacyImages = path.join(publicRoot, "images");
     if (fs.existsSync(legacyImages)) {
-      collectAssets(legacyImages, "/images", "images", assets);
+      collectAssets(legacyImages, "/images", "images", assets, realPublicRoot);
     }
 
     assets.sort((a, b) => a.fileName.localeCompare(b.fileName));

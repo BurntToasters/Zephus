@@ -227,7 +227,8 @@ describe("editorSiteSave", () => {
     expect(setStatus).toHaveBeenCalledWith(
       expect.stringContaining("disk unwritable"),
     );
-    expect(state.siteDirty).toBe(false);
+    expect(state.siteDirty).toBe(true);
+    expect(state.pendingSiteDocument).not.toBeNull();
   });
 
   it("warns when clearDraft throws during discard", async () => {

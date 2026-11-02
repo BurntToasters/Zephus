@@ -82,13 +82,25 @@ describe("next actions guidance", () => {
     expect(cards).toHaveLength(0);
   });
 
-  it("offers save-all when the session is dirty", () => {
+  it("offers save-all when the session is dirty", async () => {
     const state = makeState({ pageDirty: true });
     const { deps, cards } = makeDeps(state);
     createNextActionsRenderer(deps).renderNextActions();
     const saveAll = cards.find((c) => c.title === "Unsaved work pending");
     expect(saveAll).toBeDefined();
     expect(saveAll!.actions.some((a) => a.label === "Save All")).toBe(true);
+    const discard = saveAll!.actions.find((a) => a.label === "Discard Page");
+    expect(discard).toBeDefined();
+    (
+      window as unknown as {
+        zephus: { clearDraft: Window["zephus"]["clearDraft"] };
+      }
+    ).zephus = {
+      clearDraft: vi.fn(async () => ({ ok: true })),
+    };
+    discard!.onClick();
+    await vi.waitFor(() => expect(deps.markDirty).toHaveBeenCalledWith(false));
+    expect(deps.loadPage).toHaveBeenCalled();
   });
 
   it("recommends a site URL when none is set", () => {

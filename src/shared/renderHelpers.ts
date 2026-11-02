@@ -23,9 +23,13 @@ export function escapeAttr(value: string): string {
 /** Blocks dangerous URL schemes for href/src values. */
 export function safeUrl(value: string): string {
   const trimmed = (value ?? "").trim();
-  const normalized = trimmed.replace(/[\t\n\r]/g, "");
-  if (/^(javascript|vbscript|data|file):/i.test(normalized)) return "";
-  return trimmed;
+  let stripped = "";
+  for (let i = 0; i < trimmed.length; i += 1) {
+    const code = trimmed.charCodeAt(i);
+    if (code > 0x1f) stripped += trimmed[i];
+  }
+  if (/^(javascript|vbscript|data|file):/i.test(stripped)) return "";
+  return stripped;
 }
 
 /** Encodes a value as a URI-encoded JSON payload for a data-* attribute. */
@@ -337,7 +341,6 @@ export function styleAttr(
   options: StyleAttrOptions = {},
 ): string {
   const viewport = options.viewport ?? "desktop";
-  const forCanvas = options.forCanvas ?? false;
   const style = mergeViewportStyle(block.style, viewport);
   const css: string[] = [];
   if (["left", "center", "right"].includes(String(style.align))) {
@@ -370,12 +373,9 @@ export function styleAttr(
   ) {
     css.push(`grid-template-columns:1fr`);
   }
-  if (style.hideOn?.includes(viewport) && !forCanvas) {
-    // Build: hide inline for the desktop viewport (tablet/mobile hiding comes
-    // from collectResponsiveCss media queries). The canvas keeps hidden
-    // elements visible with a dashed outline so they stay selectable.
-    css.push("display:none");
-  }
+  // hideOn visibility on the built site is handled only in collectResponsiveCss
+  // (media queries). The canvas keeps hidden elements visible with a dashed
+  // outline so they stay selectable — never inline display:none here.
   if (block.type === "spacer" && !style.height) {
     addCssValue(css, "height", block.props["height"] || "48px");
   }

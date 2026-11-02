@@ -7,6 +7,7 @@ import {
   resolveProjectRelativeDir,
   toProjectRelativePath,
 } from "./projectPaths";
+import { assertRealpathInside } from "./fsSafe";
 import { getVisualSchemaStatus } from "./schema";
 import { isZephusProject } from "./settings";
 
@@ -171,6 +172,15 @@ export function listPages(projectPath: string, pagesDir: string): string[] {
     pagesDir,
     path.join("src", "pages"),
   );
+  if (!fs.existsSync(root)) {
+    return [];
+  }
+  try {
+    assertRealpathInside(projectPath, root);
+  } catch {
+    return [];
+  }
+
   const out: string[] = [];
   const PAGE_EXT = /\.(astro|md|mdx|html)$/i;
 

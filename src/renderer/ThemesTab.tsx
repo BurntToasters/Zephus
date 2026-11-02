@@ -71,20 +71,7 @@ function ThemeCard(props: { theme: ThemeCardEntry }) {
     <article
       classList={{ "theme-card": true, selected: props.theme.selected }}
       data-theme-id={props.theme.id}
-      tabindex={0}
-      role="button"
-      aria-label={`Select ${props.theme.name} theme`}
-      aria-pressed={props.theme.selected ? "true" : "false"}
-      onClick={() => handlers?.onSelect(props.theme.id)}
       onDblClick={() => handlers?.onCreateFromTheme(props.theme.id)}
-      onKeyDown={(event) => {
-        // Let the inner Preview/Select buttons handle their own keys.
-        if (event.target !== event.currentTarget) return;
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          handlers?.onSelect(props.theme.id);
-        }
-      }}
     >
       <div
         ref={(element) => {
@@ -166,7 +153,7 @@ export function ThemesTabPanel() {
           <div class="theme-card-body">
             <span class="t-name">Bundled starter themes</span>
             <span class="t-desc">
-              Open Get Started to lazy-load live previews for each bundled
+              Load Theme Previews to lazy-load live previews for each bundled
               Zephus theme.
             </span>
           </div>

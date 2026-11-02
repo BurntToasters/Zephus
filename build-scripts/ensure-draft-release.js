@@ -20,7 +20,7 @@ const REPO_NAME = "zephus";
 const CHANGELOG_PATH = path.join(__dirname, "..", "CHANGELOG.md");
 // The draft targets the latest commit of this branch (the most recent merged
 // PR), not the release VM's checked-out HEAD — the VMs may be on any commit.
-const RELEASE_BRANCH = process.env.RELEASE_BRANCH || "beta";
+const RELEASE_BRANCH = process.env.RELEASE_BRANCH || "main";
 const GH_REQUEST_RETRIES = Number.parseInt(
   process.env.GH_REQUEST_RETRIES || "3",
   10,
