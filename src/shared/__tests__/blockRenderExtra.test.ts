@@ -62,6 +62,24 @@ describe("selectPostEntries", () => {
     );
     expect(entries).toHaveLength(3);
   });
+
+  it("excludes the current page route when requested", () => {
+    const posts = [
+      ...POSTS,
+      {
+        route: "/blog",
+        title: "Blog",
+        description: "",
+        date: "",
+        author: "",
+        image: "",
+      },
+    ];
+    const without = selectPostEntries({ folder: "/blog" }, posts, "/blog");
+    expect(without.map((e) => e.route)).not.toContain("/blog");
+    const withDefault = selectPostEntries({ folder: "/blog" }, posts);
+    expect(withDefault.map((e) => e.route)).toContain("/blog");
+  });
 });
 
 describe("renderBlockHtml postlist", () => {

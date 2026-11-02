@@ -18,74 +18,74 @@ export interface EditorBlockRenderOptions {
   posts?: RenderPostEntry[];
 }
 
-/** Defense-in-depth sanitizer for raw `html` blocks on the live editor canvas. */
-export function sanitizeHtmlForCanvas(html: string): string {
-  const tpl = document.createElement("template");
-  tpl.innerHTML = html;
+const CANVAS_FORBIDDEN_TAGS = new Set([
+  "script",
+  "object",
+  "embed",
+  "iframe",
+  "form",
+  "base",
+  "style",
+  "link",
+  "meta",
+  "animate",
+  "animatetransform",
+  "set",
+  "foreignobject",
+]);
+
+function sanitizeElementAttributes(node: Element): void {
+  for (const attr of Array.from(node.attributes)) {
+    const name = attr.name.toLowerCase();
+    if (name.startsWith("on")) {
+      node.removeAttribute(attr.name);
+    } else if (name === "srcset") {
+      const safe = sanitizeSrcset(attr.value);
+      if (safe === null) node.removeAttribute(attr.name);
+      else node.setAttribute(attr.name, safe);
+    } else if (name === "srcdoc") {
+      node.removeAttribute(attr.name);
+    } else if (
+      name === "formaction" ||
+      name === "action" ||
+      name === "poster" ||
+      name === "href" ||
+      name === "src" ||
+      name === "background" ||
+      name === "xlink:href"
+    ) {
+      const sanitized = safeUrl(attr.value);
+      if (!sanitized) node.removeAttribute(attr.name);
+      else node.setAttribute(attr.name, sanitized);
+    }
+  }
+}
+
+/** Walks element nodes under `root`, including nested `<template>` contents. */
+function sanitizeElementSubtree(root: ParentNode): void {
   const toRemove: Element[] = [];
-  const walker = document.createTreeWalker(
-    tpl.content,
-    NodeFilter.SHOW_ELEMENT,
-  );
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
   let node = walker.nextNode() as Element | null;
   while (node) {
     const tag = node.tagName.toLowerCase();
-    if (
-      tag === "script" ||
-      tag === "object" ||
-      tag === "embed" ||
-      tag === "iframe" ||
-      // Forms can submit or navigate the editor document even when their
-      // action is same-origin; the live canvas is a preview, never a form
-      // runtime. The built site still preserves authored HTML.
-      tag === "form" ||
-      // <base> rewrites every relative URL on the canvas (images, links, css)
-      // to an attacker-chosen origin — remove it outright.
-      tag === "base" ||
-      // <style>/<link> can exfiltrate data via CSS or visually hijack the
-      // editor chrome. <meta http-equiv="refresh"> can redirect the canvas.
-      // The built site preserves these; only the live canvas strips them.
-      tag === "style" ||
-      tag === "link" ||
-      tag === "meta" ||
-      // SVG animation elements can trigger script execution via timing/event
-      // attributes that bypass on* stripping. <foreignobject> can host HTML
-      // content that escapes the SVG sandbox. Defense-in-depth (CSP primary).
-      tag === "animate" ||
-      tag === "animatetransform" ||
-      tag === "set" ||
-      tag === "foreignobject"
-    ) {
+    if (CANVAS_FORBIDDEN_TAGS.has(tag)) {
       toRemove.push(node);
     } else {
-      for (const attr of Array.from(node.attributes)) {
-        const name = attr.name.toLowerCase();
-        if (name.startsWith("on")) {
-          node.removeAttribute(attr.name);
-        } else if (name === "srcset") {
-          // Filter dangerous entries; drop the attribute if none survive.
-          const safe = sanitizeSrcset(attr.value);
-          if (safe === null) node.removeAttribute(attr.name);
-          else node.setAttribute(attr.name, safe);
-        } else if (name === "srcdoc") {
-          node.removeAttribute(attr.name);
-        } else if (
-          name === "formaction" ||
-          name === "action" ||
-          name === "poster" ||
-          name === "href" ||
-          name === "src" ||
-          name === "xlink:href"
-        ) {
-          const sanitized = safeUrl(attr.value);
-          if (!sanitized) node.removeAttribute(attr.name);
-          else node.setAttribute(attr.name, sanitized);
-        }
+      sanitizeElementAttributes(node);
+      if (node instanceof HTMLTemplateElement) {
+        sanitizeElementSubtree(node.content);
       }
     }
     node = walker.nextNode() as Element | null;
   }
   for (const el of toRemove) el.remove();
+}
+
+/** Defense-in-depth sanitizer for raw `html` blocks on the live editor canvas. */
+export function sanitizeHtmlForCanvas(html: string): string {
+  const tpl = document.createElement("template");
+  tpl.innerHTML = html;
+  sanitizeElementSubtree(tpl.content);
   return tpl.innerHTML;
 }
 

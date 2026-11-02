@@ -15,7 +15,11 @@ dist/
 
 const execFileAsync = promisify(execFile);
 
-async function git(projectPath: string, args: string[]): Promise<string> {
+async function git(
+  projectPath: string,
+  args: string[],
+  options: { literalPathspecs?: boolean } = {},
+): Promise<string> {
   // Timeout so a stalled network (or a hung credential prompt) cannot leave
   // the Git panel spinning forever or accumulate zombie git processes.
   // LC_ALL=C pins git's OUTPUT to English (localized git would otherwise
@@ -23,9 +27,10 @@ async function git(projectPath: string, args: string[]): Promise<string> {
   // makes porcelain emit raw UTF-8 paths instead of C-escaped ones — the
   // parser never unquoted "M \"\303\274ber.md\"" and per-file commits of
   // non-ASCII filenames failed with "did not match any file(s)".
+  const literal = options.literalPathspecs ? ["--literal-pathspecs"] : [];
   const { stdout } = await execFileAsync(
     "git",
-    ["-c", "core.quotePath=false", ...args],
+    ["-c", "core.quotePath=false", ...literal, ...args],
     {
       cwd: projectPath,
       windowsHide: true,
@@ -98,7 +103,8 @@ export function parseStatusPorcelain(statusRaw: string): ParsedGitStatus {
     // Unmerged conflicts and index/worktree copies are omitted — Commit All
     // must not stage paths the panel does not list.
     if (code.includes("U") || code[0] === "C" || code[1] === "C") continue;
-    const arrow = line.indexOf(" -> ");
+    const isRename = code.includes("R");
+    const arrow = isRename ? line.indexOf(" -> ") : -1;
     const file = (arrow >= 0 ? line.slice(arrow + 4) : line.slice(3)).trim();
     if (!file) continue;
     if (code.includes("D")) deleted.push(file);
@@ -121,11 +127,10 @@ async function listCommitableFilePaths(projectPath: string): Promise<string[]> {
   return listCommitPathsFromParsed(parseStatusPorcelain(statusRaw));
 }
 
-function refuseInvalidSelectedCommitPaths(
-  selected: string[],
-  allowed: ReadonlySet<string>,
+function refuseBroadCommitPaths(
+  paths: string[],
 ): { ok: false; error: string } | null {
-  for (const p of selected) {
+  for (const p of paths) {
     if (p === "." || p === "*") {
       return {
         ok: false,
@@ -138,6 +143,17 @@ function refuseInvalidSelectedCommitPaths(
         error: "Cannot commit a directory; select individual files.",
       };
     }
+  }
+  return null;
+}
+
+function refuseInvalidSelectedCommitPaths(
+  selected: string[],
+  allowed: ReadonlySet<string>,
+): { ok: false; error: string } | null {
+  const broad = refuseBroadCommitPaths(selected);
+  if (broad) return broad;
+  for (const p of selected) {
     if (!allowed.has(p)) {
       return {
         ok: false,
@@ -289,10 +305,14 @@ export async function commitAllChanges(
     if (paths.length === 0) {
       return { ok: false, error: "Nothing to commit." };
     }
+    const broad = refuseBroadCommitPaths(paths);
+    if (broad) return broad;
     const secretRefusal = refuseSecretCommitPaths(paths);
     if (secretRefusal) return secretRefusal;
-    await git(projectPath, ["add", "--", ...paths]);
-    await git(projectPath, ["commit", "-m", normalized, "--", ...paths]);
+    await git(projectPath, ["add", "--", ...paths], { literalPathspecs: true });
+    await git(projectPath, ["commit", "-m", normalized, "--", ...paths], {
+      literalPathspecs: true,
+    });
     return { ok: true };
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
@@ -326,8 +346,12 @@ export async function commitProjectPaths(
     if (invalid) return invalid;
     const secretRefusal = refuseSecretCommitPaths(unique);
     if (secretRefusal) return secretRefusal;
-    await git(projectPath, ["add", "--", ...unique]);
-    await git(projectPath, ["commit", "-m", normalized, "--", ...unique]);
+    await git(projectPath, ["add", "--", ...unique], {
+      literalPathspecs: true,
+    });
+    await git(projectPath, ["commit", "-m", normalized, "--", ...unique], {
+      literalPathspecs: true,
+    });
     return { ok: true };
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);

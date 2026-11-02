@@ -1,8 +1,13 @@
 import { describe, it, expect } from "vitest";
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
+import { execFileSync } from "child_process";
 import {
   normalizeCommitMessage,
   gitErrorLooksLikeMissingRepo,
   parseRevListAheadBehind,
+  parseStatusPorcelain,
 } from "../git";
 
 describe("git helpers", () => {
@@ -20,6 +25,32 @@ describe("git helpers", () => {
       ),
     ).toBe(true);
     expect(gitErrorLooksLikeMissingRepo("git: command not found")).toBe(false);
+  });
+
+  it("parses porcelain without splitting arrows on non-renames", () => {
+    const parsed = parseStatusPorcelain(" M notes -> draft.md\n");
+    expect(parsed.modified).toEqual(["notes -> draft.md"]);
+  });
+
+  it("parses porcelain rename lines to the new path", () => {
+    const parsed = parseStatusPorcelain("R  old.txt -> new.txt\n");
+    expect(parsed.modified).toEqual(["new.txt"]);
+  });
+
+  it("refuses a literal asterisk as a selected commit path", async () => {
+    const { commitProjectPaths } = await import("../git");
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "zephus-git-"));
+    try {
+      execFileSync("git", ["init", "-q", "-b", "main"], { cwd: tmp });
+      execFileSync("git", ["config", "user.email", "t@e.c"], { cwd: tmp });
+      execFileSync("git", ["config", "user.name", "T"], { cwd: tmp });
+      fs.writeFileSync(path.join(tmp, "a.txt"), "x");
+      const result = await commitProjectPaths(tmp, "msg", ["*"]);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toContain("broad path");
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
   });
 
   it("parses rev-list ahead/behind counts", () => {

@@ -4,17 +4,18 @@ import * as fs from "fs";
 import * as path from "path";
 import { AssetUsageResult, PageDocument, SiteDocument } from "../types";
 import { safeResolve } from "./fsSafe";
-import { slugFromPage } from "../../shared/pageIdentity";
+import { normalizePageSlug, slugFromPage } from "../../shared/pageIdentity";
 import {
   listPageDocuments,
   readSiteDocument,
+  sameCanonicalPageFile,
   writePageDocument,
   writeSiteDocument,
 } from "./schema";
 import { detectAstro, listPages } from "./project";
 
 function pageSidecarRel(slug: string): string {
-  const normalized = slug.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+  const normalized = normalizePageSlug(slug);
   if (!normalized) {
     throw new Error("Invalid page schema slug.");
   }
@@ -25,19 +26,32 @@ function pageSidecarRel(slug: string): string {
   );
 }
 
+function sidecarMatchesPageFile(
+  projectPath: string,
+  page: string,
+  pagesDir: string,
+): boolean {
+  try {
+    const sidecar = safeResolve(
+      projectPath,
+      pageSidecarRel(slugFromPage(page, pagesDir)),
+    );
+    if (!fs.existsSync(sidecar)) return false;
+    const raw = JSON.parse(fs.readFileSync(sidecar, "utf8")) as {
+      page?: unknown;
+    };
+    if (typeof raw.page !== "string" || raw.page.trim() === "") return false;
+    return sameCanonicalPageFile(raw.page, page, pagesDir);
+  } catch {
+    return false;
+  }
+}
+
 /** Pages on disk with no sidecar yet — checked before ensureVisualSchema can migrate them. */
 function pagesMissingSidecar(projectPath: string, pagesDir: string): string[] {
-  return listPages(projectPath, pagesDir).filter((page) => {
-    try {
-      const sidecar = safeResolve(
-        projectPath,
-        pageSidecarRel(slugFromPage(page, pagesDir)),
-      );
-      return !fs.existsSync(sidecar);
-    } catch {
-      return true;
-    }
-  });
+  return listPages(projectPath, pagesDir).filter(
+    (page) => !sidecarMatchesPageFile(projectPath, page, pagesDir),
+  );
 }
 
 function formatMissingPagesError(missingPages: string[]): string {

@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { createNextActionsRenderer } from "../editorNextActions";
+import {
+  createNextActionsRenderer,
+  type NextActionsDeps,
+} from "../editorNextActions";
 
 interface Card {
   title: string;
@@ -37,6 +40,9 @@ function makeDeps(state: ReturnType<typeof makeState>) {
   const cards: Card[] = [];
   let visible = false;
   const statuses: string[] = [];
+  const chooseAssetForImage = vi.fn<NextActionsDeps["chooseAssetForImage"]>(
+    async () => undefined,
+  );
   const deps = {
     getState: () => state,
     setStatus: (m: string) => statuses.push(m),
@@ -50,7 +56,7 @@ function makeDeps(state: ReturnType<typeof makeState>) {
     newPageFlow: vi.fn(async () => undefined),
     addImageBlockWithAssetFlow: vi.fn(async () => undefined),
     addSectionAt: vi.fn(),
-    chooseAssetForImage: vi.fn(async () => undefined),
+    chooseAssetForImage,
     regenerateNav: vi.fn(async () => undefined),
     performSave: vi.fn(async () => true),
     discardPendingSiteChanges: vi.fn(async () => undefined),
@@ -66,7 +72,13 @@ function makeDeps(state: ReturnType<typeof makeState>) {
     visibleNavCount: () => 0,
     templateAllowed: () => true,
   } as unknown as Parameters<typeof createNextActionsRenderer>[0];
-  return { deps, cards, getVisible: () => visible, statuses };
+  return {
+    deps,
+    cards,
+    getVisible: () => visible,
+    statuses,
+    chooseAssetForImage,
+  };
 }
 
 beforeEach(() => {
@@ -182,6 +194,53 @@ describe("next actions guidance", () => {
     const card = cards.find((c) => c.title === "Unsaved work pending")!;
     card.actions.find((a) => a.label === "Discard Site")!.onClick();
     expect(deps.discardPendingSiteChanges).toHaveBeenCalled();
+  });
+
+  it("passes the live section-tree image block to chooseAssetForImage", () => {
+    const liveImage = {
+      id: "img-live",
+      type: "image" as const,
+      props: { src: "", alt: "", cls: "" },
+    };
+    const blocksCopy = {
+      id: "img-live",
+      type: "image" as const,
+      props: { src: "", alt: "", cls: "" },
+    };
+    const state = makeState({
+      sections: [{ id: "s1", props: {}, children: [liveImage] }],
+      blocks: [blocksCopy],
+    });
+    const { deps, cards, chooseAssetForImage } = makeDeps(state);
+    (deps.findBlockLocation as ReturnType<typeof vi.fn>).mockImplementation(
+      (id: string | null) =>
+        id === "img-live"
+          ? { section: { id: "s1" }, block: liveImage, blockIndex: 0 }
+          : null,
+    );
+    createNextActionsRenderer(deps).renderNextActions();
+    const card = cards.find((c) => c.title === "Finish the image block")!;
+    card.actions.find((a) => a.label === "Choose Asset")!.onClick();
+    expect(chooseAssetForImage).toHaveBeenCalledTimes(1);
+    expect(chooseAssetForImage.mock.calls[0]![0]).toBe(liveImage);
+    expect(chooseAssetForImage.mock.calls[0]![0]).not.toBe(blocksCopy);
+  });
+
+  it("skips chooseAssetForImage when the live image block is gone", () => {
+    const blocksCopy = {
+      id: "img-missing",
+      type: "image" as const,
+      props: { src: "", alt: "", cls: "" },
+    };
+    const state = makeState({
+      sections: [],
+      blocks: [blocksCopy],
+    });
+    const { deps, cards, chooseAssetForImage } = makeDeps(state);
+    createNextActionsRenderer(deps).renderNextActions();
+    const card = cards.find((c) => c.title === "Finish the image block")!;
+    card.actions.find((a) => a.label === "Choose Asset")!.onClick();
+    expect(chooseAssetForImage).not.toHaveBeenCalled();
   });
 
   it("does not flag a valid publish date", () => {

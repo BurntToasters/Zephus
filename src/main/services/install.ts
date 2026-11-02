@@ -40,6 +40,47 @@ export function cancelInstall(): OperationResult {
   return { ok: true };
 }
 
+type ProjectNodeModules =
+  | { kind: "absent" }
+  | { kind: "valid"; modulesDir: string }
+  | { kind: "invalid" };
+
+/** node_modules must be missing or a real in-project directory (never a symlink). */
+function projectNodeModulesLayout(projectPath: string): ProjectNodeModules {
+  const modules = path.join(projectPath, "node_modules");
+  let realRoot: string;
+  try {
+    realRoot = fs.realpathSync.native(path.resolve(projectPath));
+  } catch {
+    return { kind: "invalid" };
+  }
+  let stat: fs.Stats;
+  try {
+    stat = fs.lstatSync(modules);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return { kind: "absent" };
+    }
+    return { kind: "invalid" };
+  }
+  if (stat.isSymbolicLink() || !stat.isDirectory()) {
+    return { kind: "invalid" };
+  }
+  let realModules: string;
+  try {
+    realModules = fs.realpathSync.native(modules);
+  } catch {
+    return { kind: "invalid" };
+  }
+  if (
+    realModules !== realRoot &&
+    !realModules.startsWith(realRoot + path.sep)
+  ) {
+    return { kind: "invalid" };
+  }
+  return { kind: "valid", modulesDir: modules };
+}
+
 function installLockFresh(projectPath: string, modules: string): boolean {
   const pkgPath = path.join(projectPath, "package.json");
   const lockPath = path.join(modules, ".package-lock.json");
@@ -54,8 +95,9 @@ function installLockFresh(projectPath: string, modules: string): boolean {
 }
 
 export function dependenciesInstalled(projectPath: string): boolean {
-  const modules = path.join(projectPath, "node_modules");
-  if (!fs.existsSync(modules)) return false;
+  const layout = projectNodeModulesLayout(projectPath);
+  if (layout.kind !== "valid") return false;
+  const modules = layout.modulesDir;
   const astroManifest = path.join(modules, "astro", "package.json");
   if (!fs.existsSync(astroManifest)) return false;
   try {
@@ -81,7 +123,12 @@ export function dependenciesInstalled(projectPath: string): boolean {
 }
 
 function writeInstallLockMarker(projectPath: string): void {
-  const modules = path.join(projectPath, "node_modules");
+  const layout = projectNodeModulesLayout(projectPath);
+  if (layout.kind === "invalid") return;
+  const modules =
+    layout.kind === "absent"
+      ? path.join(projectPath, "node_modules")
+      : layout.modulesDir;
   const lockPath = path.join(modules, ".package-lock.json");
   const rootLock = path.join(projectPath, "package-lock.json");
   try {
@@ -160,6 +207,13 @@ export async function installDependencies(
   }
   if (!fs.existsSync(path.join(projectPath, "package.json"))) {
     return { ok: false, error: "No package.json found in this project." };
+  }
+  if (projectNodeModulesLayout(projectPath).kind === "invalid") {
+    return {
+      ok: false,
+      error:
+        "node_modules must be a directory inside this project (symlinks to other locations are not allowed). Remove or replace it before installing.",
+    };
   }
 
   const nodeStatus = await checkNodeVersion(

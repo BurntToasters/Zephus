@@ -31,12 +31,54 @@ export function resolveNpmCliJs(
         ];
   for (const candidate of candidates) {
     try {
-      if (fs.existsSync(candidate)) return path.normalize(candidate);
+      const stat = fs.lstatSync(candidate);
+      if (stat.isSymbolicLink() || !stat.isFile()) continue;
+      const realCli = fs.realpathSync.native(candidate);
+      if (!npmCliRealpathInsideNodeInstall(realCli, nodeBinary, platform)) {
+        continue;
+      }
+      return path.normalize(candidate);
     } catch {
       /* unreadable candidate */
     }
   }
   return null;
+}
+
+function nodeInstallRealpathRoots(
+  nodeBinary: string,
+  platform: NodeJS.Platform,
+): string[] {
+  const binDir = path.dirname(nodeBinary);
+  const dirCandidates =
+    platform === "win32" ? [binDir] : [binDir, path.join(binDir, "..")];
+  const seen = new Set<string>();
+  const roots: string[] = [];
+  for (const dir of dirCandidates) {
+    try {
+      const real = fs.realpathSync.native(dir);
+      const key = platform === "win32" ? real.toLowerCase() : real;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      roots.push(real);
+    } catch {
+      /* skip */
+    }
+  }
+  return roots;
+}
+
+function npmCliRealpathInsideNodeInstall(
+  realCli: string,
+  nodeBinary: string,
+  platform: NodeJS.Platform,
+): boolean {
+  const roots = nodeInstallRealpathRoots(nodeBinary, platform);
+  return roots.some((root) => {
+    if (realCli === root) return true;
+    const prefix = root.endsWith(path.sep) ? root : root + path.sep;
+    return realCli.startsWith(prefix);
+  });
 }
 
 export function npmCommand(
@@ -49,9 +91,12 @@ export function npmCommand(
   const customNode = nodeBinary?.trim();
   if (customNode && customNode !== "node" && path.isAbsolute(customNode)) {
     const cli = resolveNpmCliJs(customNode, platform);
-    if (cli) {
-      return { command: customNode, args: [cli, ...args] };
+    if (!cli) {
+      throw new Error(
+        "npm-cli.js was not found for the custom Node.js install, or it is not a regular file inside that install.",
+      );
     }
+    return { command: customNode, args: [cli, ...args] };
   }
   if (platform === "win32") {
     return { command: resolveWindowsNpmCmd(env), args: [...args] };

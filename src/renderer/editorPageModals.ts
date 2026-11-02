@@ -395,6 +395,10 @@ export function createPageModalActions(deps: PageModalDeps) {
             const name =
               nextSlug === "index" ? `index${ext}` : `${nextSlug}${ext}`;
             nextPage = pagesDir ? `${pagesDir}/${name}` : name;
+            if (renameIsOpenPage) {
+              state.page = nextPage;
+              syncCurrentMeta();
+            }
             if (renameIsOpenPage && isGlobalDirty(state)) {
               const migrated = await window.zephus.writeDraft(
                 state.project.path,
@@ -481,6 +485,19 @@ export function createPageModalActions(deps: PageModalDeps) {
                 "Saved page settings, but the old page's recovery draft could not be cleared: " +
                   (clearedOld.error ?? "unknown"),
               );
+            } else if (state.page === nextPage && isGlobalDirty(state)) {
+              const rewrote = await window.zephus.writeDraft(
+                state.project.path,
+                "page",
+                nextPage,
+                pageDraftContent(),
+              );
+              if (!rewrote.ok) {
+                setStatus(
+                  "Saved page settings, but the recovery draft could not be updated: " +
+                    (rewrote.error ?? "unknown"),
+                );
+              }
             }
           }
           const openPageMatches =

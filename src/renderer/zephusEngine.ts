@@ -590,6 +590,7 @@ const inlineEdit = createInlineEditController({
   commitBlockChange,
   renderCanvas,
   renderProperties,
+  findLiveBlock: (id: string) => findBlockLocation(id)?.block ?? null,
 });
 
 let statusTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1230,16 +1231,23 @@ function renderPalette(): void {
 }
 
 async function renderTemplates(): Promise<void> {
+  const sessionGeneration = editorSessionGeneration;
+  const project = state.project;
   const allowed = editorRules.allowedBlocks;
   const htmlAllowed = !allowed || allowed.includes("html");
-  const projectPath = state.project?.path;
+  const projectPath = project?.path;
   const saved = projectPath
     ? await window.zephus.listReusableSections(projectPath).catch(() => null)
     : null;
   // A stale write must not land: an unawaited renderTemplates from a previous
   // project could resolve after the user already opened another project and
   // overwrite its saved-sections cache with the old project's list.
-  if (state.project?.path !== projectPath) return;
+  if (
+    editorSessionGeneration !== sessionGeneration ||
+    state.project !== project
+  ) {
+    return;
+  }
   // Built-in templates insert editable schema blocks; saved sections are
   // preserved HTML and only shown when HTML blocks are permitted.
   const savedSections = htmlAllowed && saved?.ok ? saved.sections : [];
@@ -1735,6 +1743,7 @@ function openHelpModal(): void {
 }
 
 async function reloadPages(): Promise<void> {
+  const sessionGeneration = editorSessionGeneration;
   const project = state.project;
   if (!project) return;
   const projectPath = project.path;
@@ -1744,7 +1753,12 @@ async function reloadPages(): Promise<void> {
     window.zephus.listPageMeta(projectPath, pagesDir),
     window.zephus.readSiteDocument(projectPath),
   ]);
-  if (state.project?.path !== projectPath) return;
+  if (
+    editorSessionGeneration !== sessionGeneration ||
+    state.project !== project
+  ) {
+    return;
+  }
   project.pages = pages;
   state.pageMeta = meta.ok ? meta.entries : [];
   if (site.ok && site.site && !state.siteDirty) {
@@ -2313,7 +2327,7 @@ function makeCanvasLinksInert(root: HTMLElement): void {
     (event) => {
       const target = event.target;
       if (!(target instanceof Element)) return;
-      if (target.closest("a[href]")) event.preventDefault();
+      if (target.closest("a[href], area[href]")) event.preventDefault();
     },
     true,
   );
@@ -2511,8 +2525,16 @@ async function openFindReplaceModal(): Promise<void> {
 
 /** Re-reads site.json after main mutated it, so the editor is not left stale. */
 async function reloadSiteDocumentFromDisk(): Promise<void> {
-  if (!state.project) return;
-  const site = await window.zephus.readSiteDocument(state.project.path);
+  const sessionGeneration = editorSessionGeneration;
+  const project = state.project;
+  if (!project) return;
+  const site = await window.zephus.readSiteDocument(project.path);
+  if (
+    editorSessionGeneration !== sessionGeneration ||
+    state.project !== project
+  ) {
+    return;
+  }
   if (!site.ok || !site.site) return;
   state.siteDocument = site.site;
   state.pendingSiteDocument = null;

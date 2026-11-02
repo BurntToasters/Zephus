@@ -96,6 +96,33 @@ describe("git service (real repository)", () => {
     expect(await isZephusIgnored(repoDir)).toBe(true);
   });
 
+  it("commit-all stages files inside a new untracked directory", async () => {
+    git(["init", "-q", "-b", "main"]);
+    git(["config", "user.email", "test@example.com"]);
+    git(["config", "user.name", "Tester"]);
+    fs.mkdirSync(path.join(repoDir, "nested"), { recursive: true });
+    fs.writeFileSync(path.join(repoDir, "nested", "inside.txt"), "x");
+
+    const result = await commitAllChanges(repoDir, "all nested");
+    expect(result.ok).toBe(true);
+
+    const status = await getGitStatus(repoDir);
+    expect(status.added).not.toContain("nested/inside.txt");
+    expect(status.modified).toEqual([]);
+  });
+
+  it("refuses selected commit with a broad path", async () => {
+    git(["init", "-q", "-b", "main"]);
+    git(["config", "user.email", "test@example.com"]);
+    git(["config", "user.name", "Tester"]);
+    fs.writeFileSync(path.join(repoDir, "a.txt"), "x");
+
+    const dot = await commitProjectPaths(repoDir, "msg", ["."]);
+    expect(dot.ok).toBe(false);
+    expectFailure(dot);
+    expect(dot.error).toContain("broad path");
+  });
+
   it("commits selected paths only", async () => {
     git(["init", "-q", "-b", "main"]);
     git(["config", "user.email", "test@example.com"]);

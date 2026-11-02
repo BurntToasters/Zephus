@@ -184,6 +184,13 @@ export function listPages(projectPath: string, pagesDir: string): string[] {
   const out: string[] = [];
   const PAGE_EXT = /\.(astro|md|mdx|html)$/i;
 
+  /** Astro ignores segments starting with `_` and treats `[`/`]` as dynamic routes. */
+  function isNonRoutableSegment(segment: string): boolean {
+    return (
+      segment.startsWith("_") || segment.includes("[") || segment.includes("]")
+    );
+  }
+
   function walk(dir: string) {
     let entries: fs.Dirent[];
     try {
@@ -192,6 +199,9 @@ export function listPages(projectPath: string, pagesDir: string): string[] {
       return;
     }
     for (const entry of entries) {
+      if (isNonRoutableSegment(entry.name)) {
+        continue;
+      }
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) {
         walk(full);

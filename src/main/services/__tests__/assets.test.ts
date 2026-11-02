@@ -151,6 +151,39 @@ describe("importAssetsFromPaths", () => {
     ]);
     expect(result.imported[0]?.webPath).toBe("/assets/images/a-1.png");
   });
+
+  it("rejects sources whose real path is inside the project", () => {
+    const inside = path.join(projectDir, "public/assets/images/hidden.png");
+    fs.mkdirSync(path.dirname(inside), { recursive: true });
+    fs.writeFileSync(inside, "secret");
+    const outsideLink = path.join(sourceDir, "via-link.png");
+    fs.symlinkSync(inside, outsideLink);
+
+    const result = importAssetsFromPaths(projectDir, "public", [outsideLink]);
+    expect(result.ok).toBe(false);
+    expect(result.imported).toHaveLength(0);
+    expect(result.errors[0]).toContain("already inside the project");
+  });
+
+  it("refuses to copy over a dangling symlink destination", () => {
+    const imagesDir = path.join(projectDir, "public/assets/images");
+    fs.mkdirSync(imagesDir, { recursive: true });
+    fs.writeFileSync(path.join(imagesDir, "photo.png"), "existing");
+    fs.symlinkSync(
+      path.join(sourceDir, "nowhere.png"),
+      path.join(imagesDir, "photo-1.png"),
+    );
+
+    const result = importAssetsFromPaths(projectDir, "public", [
+      makeSource("photo.png"),
+    ]);
+    expect(result.ok).toBe(false);
+    expect(result.imported).toHaveLength(0);
+    expect(result.errors[0]).toContain("symlink");
+    expect(fs.readFileSync(path.join(imagesDir, "photo.png"), "utf8")).toBe(
+      "existing",
+    );
+  });
 });
 
 describe("importImage dialog flow", () => {

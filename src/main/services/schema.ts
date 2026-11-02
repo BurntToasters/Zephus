@@ -480,7 +480,12 @@ export function listExistingPageDocuments(
 ): PageDocument[] {
   return listPages(projectPath, pagesDir)
     .map((page) =>
-      readPageDocumentFile(projectPath, slugFromPage(page, pagesDir)),
+      readPageDocumentFile(
+        projectPath,
+        slugFromPage(page, pagesDir),
+        page,
+        pagesDir,
+      ),
     )
     .filter((entry): entry is PageDocument => Boolean(entry));
 }
@@ -924,6 +929,18 @@ function pageRequestMatchesCanonical(page: string, pagesDir: string): boolean {
   );
 }
 
+/** True when two page paths refer to the same file under `pagesDir` (slug + extension). */
+export function sameCanonicalPageFile(
+  left: string,
+  right: string,
+  pagesDir: string,
+): boolean {
+  return (
+    normalizeProjectRelative(canonicalPageRelForPage(left, pagesDir)) ===
+    normalizeProjectRelative(canonicalPageRelForPage(right, pagesDir))
+  );
+}
+
 function readPinnedCanonicalPageSource(
   projectPath: string,
   page: string,
@@ -947,6 +964,7 @@ function extraFrontmatterLinesFromPageFile(
   projectPath: string,
   pageRel: string,
 ): string[] {
+  if (pagePathIsSecret(projectPath, pageRel)) return [];
   try {
     const full = safeResolve(projectPath, pageRel);
     if (!fs.existsSync(full)) return [];
@@ -982,22 +1000,58 @@ function conflictingRoutePageFile(
   return null;
 }
 
+function layoutsDirRelative(projectPath: string): string {
+  const astro = detectAstro(projectPath);
+  return path.posix
+    .join(toProjectRelativePath(astro.srcDir).replace(/\/+$/, ""), "layouts")
+    .replace(/\\/g, "/");
+}
+
 function managedLayoutTarget(
   projectPath: string,
   layoutPath: string,
 ): string | null {
   const rel = normalizeProjectRelative(layoutPath);
   if (!rel.toLowerCase().endsWith(".astro")) return null;
-  const astro = detectAstro(projectPath);
-  const layoutsDir = path.posix
-    .join(toProjectRelativePath(astro.srcDir).replace(/\/+$/, ""), "layouts")
-    .replace(/\\/g, "/");
+  const layoutsDir = layoutsDirRelative(projectPath);
   if (!rel.startsWith(`${layoutsDir}/`)) return null;
   if (pagePathIsSecret(projectPath, rel)) return null;
   try {
     return safeResolve(projectPath, rel);
   } catch {
     return null;
+  }
+}
+
+/** Layout file must stay inside the project and under src/layouts after realpath. */
+function resolveManagedLayoutFile(
+  projectPath: string,
+  layoutPath: string,
+): string | null {
+  const layoutFile = managedLayoutTarget(projectPath, layoutPath);
+  if (!layoutFile) return null;
+  try {
+    assertRealpathInside(projectPath, layoutFile);
+    const layoutsRoot = safeResolve(
+      projectPath,
+      layoutsDirRelative(projectPath),
+    );
+    assertRealpathInside(layoutsRoot, layoutFile);
+    return layoutFile;
+  } catch {
+    return null;
+  }
+}
+
+function publicRootInsideProject(
+  projectPath: string,
+  publicRoot: string,
+): boolean {
+  try {
+    assertRealpathInside(projectPath, publicRoot);
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -1420,9 +1474,11 @@ function cssValue(value: string): string {
 export function renderBlockNode(
   block: BlockNode,
   posts: RenderPostEntry[] = [],
+  excludePostListPageRoute?: string,
 ): string {
   return renderBlockHtml(block, {
     posts,
+    excludePostListPageRoute,
     onUnknownBlockType: (unknownType) => {
       log.warn(
         `renderBlockNode: unknown block type "${unknownType}", preserving as HTML`,
@@ -1434,9 +1490,10 @@ export function renderBlockNode(
 function renderSections(
   sections: SectionNode[],
   posts: RenderPostEntry[] = [],
+  excludePostListPageRoute?: string,
 ): string {
   return renderSectionsMarkup(sections, (block) =>
-    renderBlockNode(block, posts),
+    renderBlockNode(block, posts, excludePostListPageRoute),
   );
 }
 
@@ -1477,10 +1534,13 @@ function pageImportPath(
   pageRel: string,
   layoutRel: string,
 ): string {
-  const layoutAbs = path.join(projectPath, layoutRel);
-  const pageAbs = path.join(projectPath, pageRel);
+  const layoutFile = resolveManagedLayoutFile(projectPath, layoutRel);
+  if (!layoutFile) {
+    throw new Error("Layout path must stay inside the project layouts folder.");
+  }
+  const pageAbs = safeResolve(projectPath, pageRel);
   let importPath = path
-    .relative(path.dirname(pageAbs), layoutAbs)
+    .relative(path.dirname(pageAbs), layoutFile)
     .split(path.sep)
     .join("/");
   if (!importPath.startsWith(".")) importPath = "./" + importPath;
@@ -1816,6 +1876,9 @@ function writeDiscoveryFiles(
       publicDir,
       "public",
     ).absolute;
+    if (!publicRootInsideProject(projectPath, publicRoot)) {
+      return false;
+    }
     const siteUrl = resolveAbsoluteHttpUrl(site.siteUrl.trim(), "/");
     if (!siteUrl) {
       removeManagedPublicFile(publicRoot, "sitemap.xml");
@@ -1949,6 +2012,8 @@ function withPageMetaDefaults<T extends PageMeta>(doc: T): T {
 function readPageDocumentFile(
   projectPath: string,
   slug: string,
+  pageRel?: string,
+  pagesDir?: string,
 ): PageDocument | null {
   const doc = readJsonFile<PageDocument>(pageSchemaFile(projectPath, slug));
   if (!doc) return null;
@@ -1968,9 +2033,24 @@ function readPageDocumentFile(
     log.warn("Page sidecar for", slug, "has no page path; ignoring it.");
     return null;
   }
+  const normalizedPage = toProjectRelativePath(doc.page);
+  if (pageRel) {
+    if (!pagesDir) {
+      log.warn(
+        "Page sidecar read missing pagesDir; cannot match",
+        slug,
+        "to",
+        pageRel,
+      );
+      return null;
+    }
+    if (!sameCanonicalPageFile(normalizedPage, pageRel, pagesDir)) {
+      return null;
+    }
+  }
   return withPageMetaDefaults({
     ...doc,
-    page: toProjectRelativePath(doc.page),
+    page: normalizedPage,
   });
 }
 
@@ -2007,7 +2087,7 @@ function renderAstroPage(
     .filter(Boolean)
     .join(" ");
   const layoutAttrs = seoAttrs ? ` ${seoAttrs}` : "";
-  const body = renderSections(doc.sections, posts)
+  const body = renderSections(doc.sections, posts, doc.route)
     .split("\n")
     .map((line) => (line ? `  ${line}` : line))
     .join("\n")
@@ -2051,7 +2131,12 @@ function syncLegacyLayoutNav(
   if (!fs.existsSync(layoutFile)) return;
   const pageDocs = listPages(projectPath, pagesDir)
     .map((page) =>
-      readPageDocumentFile(projectPath, slugFromPage(page, pagesDir)),
+      readPageDocumentFile(
+        projectPath,
+        slugFromPage(page, pagesDir),
+        page,
+        pagesDir,
+      ),
     )
     .filter((entry): entry is PageDocument => Boolean(entry));
   const navItems =
@@ -2115,7 +2200,10 @@ function syncSiteShellOutputs(
   site.shell.navItems = mergePageNavItems(site.shell.navItems, docs);
 
   if (site.shell.layoutMode === "managed") {
-    const layoutFile = managedLayoutTarget(projectPath, site.shell.layoutPath);
+    const layoutFile = resolveManagedLayoutFile(
+      projectPath,
+      site.shell.layoutPath,
+    );
     if (layoutFile) {
       if (previousSite?.shell.layoutMode !== "managed") {
         ensureLegacyLayoutBackup(layoutFile);
@@ -2202,6 +2290,41 @@ function migratePageToDocument(
   return doc;
 }
 
+function isResponsiveOnlyStyleContent(css: string): boolean {
+  let remaining = css.trim();
+  while (remaining.length > 0) {
+    if (!/^@media\b/i.test(remaining)) return false;
+    const openBrace = remaining.indexOf("{");
+    if (openBrace < 0) return false;
+    let depth = 0;
+    let index = openBrace;
+    for (; index < remaining.length; index += 1) {
+      const char = remaining[index] as string;
+      if (char === "{") depth += 1;
+      else if (char === "}") {
+        depth -= 1;
+        if (depth === 0) {
+          index += 1;
+          break;
+        }
+      }
+    }
+    if (depth !== 0) return false;
+    remaining = remaining.slice(index).trim();
+  }
+  return true;
+}
+
+/** Strips the single Zephus-generated responsive `<style>` block, if present. */
+function bodyWithoutGeneratedResponsiveStyle(body: string): string {
+  const match = body.match(/^(\s*)<style\b[^>]*>([\s\S]*?)<\/style>\s*/i);
+  if (!match) return body;
+  if (!isResponsiveOnlyStyleContent(match[2] ?? "")) return body;
+  const rest = body.slice(match[0].length);
+  if (/<style\b|<script\b/i.test(rest)) return body;
+  return rest;
+}
+
 /**
  * True when the page source looks like canonical Zephus output that can be
  * regenerated losslessly: frontmatter limited to the BaseLayout import,
@@ -2225,8 +2348,9 @@ function isCanonicalManagedSource(raw: string): boolean {
     }
     return false;
   }
-  if (/<style\b|<script\b/i.test(body)) return false;
-  if (body.includes("{")) return false;
+  const withoutResponsiveStyle = bodyWithoutGeneratedResponsiveStyle(body);
+  if (/<style\b|<script\b/i.test(withoutResponsiveStyle)) return false;
+  if (withoutResponsiveStyle.includes("{")) return false;
   return true;
 }
 
@@ -2257,7 +2381,7 @@ export function getVisualSchemaStatus(
   let pageDocumentCount = 0;
   for (const page of pages) {
     const slug = slugFromPage(page, pagesDir);
-    const doc = readPageDocumentFile(projectPath, slug);
+    const doc = readPageDocumentFile(projectPath, slug, page, pagesDir);
     if (!doc) {
       return {
         exists: true,
@@ -2377,13 +2501,7 @@ export function ensureVisualSchema(
         return [];
       }
 
-      let doc = readPageDocumentFile(projectPath, slug);
-      if (
-        doc &&
-        toProjectRelativePath(doc.page) !== toProjectRelativePath(page)
-      ) {
-        return [];
-      }
+      let doc = readPageDocumentFile(projectPath, slug, page, pagesDir);
       const routeConflict = conflictingRoutePageFile(
         projectPath,
         pagesDir,
@@ -2576,6 +2694,16 @@ export function writeSiteDocument(
       ...site,
       generatedAt: currentSite?.generatedAt ?? new Date().toISOString(),
     });
+    if (
+      nextSite.shell?.layoutPath &&
+      !resolveManagedLayoutFile(projectPath, nextSite.shell.layoutPath)
+    ) {
+      return {
+        ok: false,
+        error:
+          "Layout path must point to an .astro file inside the project layouts folder.",
+      };
+    }
     syncSiteShellOutputs(
       projectPath,
       nextSite,
@@ -2613,6 +2741,8 @@ export function listPageDocuments(
       const doc = readPageDocumentFile(
         projectPath,
         slugFromPage(page, pagesDir),
+        page,
+        pagesDir,
       );
       if (!doc) {
         missingPages.push(page);
@@ -2683,7 +2813,7 @@ export function readPageDocument(
       };
     }
     const slug = slugFromPage(page, pagesDir);
-    const doc = readPageDocumentFile(projectPath, slug);
+    const doc = readPageDocumentFile(projectPath, slug, page, pagesDir);
     if (!doc) {
       return {
         ok: false,
@@ -2834,7 +2964,12 @@ export function writePageDocument(
         error: "Site schema not found.",
       };
     }
-    const storedSidecar = readPageDocumentFile(projectPath, nextSlug);
+    const storedSidecar = readPageDocumentFile(
+      projectPath,
+      nextSlug,
+      nextPage,
+      pagesDir,
+    );
     const existingPagePath = safeResolve(projectPath, nextPage);
     if (storedSidecar && !options?.allowReattachFromDetached) {
       if (storedSidecar.detached) {
@@ -2887,7 +3022,10 @@ export function writePageDocument(
       managedFileStatus: "managed",
     };
     let extraFrontmatterLines: string[] = [];
-    if (fs.existsSync(existingPagePath)) {
+    if (
+      fs.existsSync(existingPagePath) &&
+      !pagePathIsSecret(projectPath, nextDoc.page)
+    ) {
       const { frontmatter } = splitFrontmatter(
         fs.readFileSync(existingPagePath, "utf8"),
       );
@@ -3089,7 +3227,7 @@ export function reattachPageDocument(
   try {
     pagesDir = pinnedPagesDir(projectPath, pagesDir);
     const slug = slugFromPage(page, pagesDir);
-    const existing = readPageDocumentFile(projectPath, slug);
+    const existing = readPageDocumentFile(projectPath, slug, page, pagesDir);
     const canonicalPage = canonicalPageRelForPage(page, pagesDir);
     if (path.extname(canonicalPage).toLowerCase() !== ".astro") {
       return {
@@ -3255,7 +3393,12 @@ export function renamePageSchema(
 ): OperationResult {
   try {
     const prevSlug = slugFromPage(previousPage, pagesDir);
-    const doc = readPageDocumentFile(projectPath, prevSlug);
+    const doc = readPageDocumentFile(
+      projectPath,
+      prevSlug,
+      previousPage,
+      pagesDir,
+    );
     if (!doc) return { ok: true };
     const nextPage = pagePathFromSlug(
       pagesDir,
@@ -3314,7 +3457,7 @@ export function duplicatePageSchema(
 ): OperationResult {
   try {
     const prevSlug = slugFromPage(page, pagesDir);
-    const doc = readPageDocumentFile(projectPath, prevSlug);
+    const doc = readPageDocumentFile(projectPath, prevSlug, page, pagesDir);
     if (!doc) return { ok: true };
     const nextDoc: PageDocument = {
       ...doc,
@@ -3370,6 +3513,8 @@ export function deletePageSchema(
 ): OperationResult {
   try {
     const slug = slugFromPage(page, pagesDir);
+    const doc = readPageDocumentFile(projectPath, slug, page, pagesDir);
+    if (!doc) return { ok: true };
     const file = pageSchemaFile(projectPath, slug);
     if (fs.existsSync(file)) fs.rmSync(file, { force: true });
     // A deleted post must disappear from other pages' Post List blocks.

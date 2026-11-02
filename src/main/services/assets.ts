@@ -136,6 +136,42 @@ function ensureRealPublicRoot(projectPath: string, publicRoot: string): string {
  * (public/assets/<category>/) and returns its web-root-relative path.
  */
 /** Ensures the import reads the file the user picked, not a symlink target elsewhere. */
+function isResolvedPathInsideProject(
+  resolvedSource: string,
+  resolvedRoot: string,
+): boolean {
+  if (
+    resolvedSource === resolvedRoot ||
+    resolvedSource.startsWith(resolvedRoot + path.sep)
+  ) {
+    return true;
+  }
+  try {
+    const realSource = fs.realpathSync.native(resolvedSource);
+    const realRoot = fs.realpathSync.native(resolvedRoot);
+    return (
+      realSource === realRoot || realSource.startsWith(realRoot + path.sep)
+    );
+  } catch {
+    return false;
+  }
+}
+
+function assertImportDestinationNotSymlink(destPath: string): void {
+  try {
+    if (fs.lstatSync(destPath).isSymbolicLink()) {
+      throw new Error(
+        "Refusing to overwrite a symlink in the asset directory.",
+      );
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return;
+    }
+    throw error;
+  }
+}
+
 function assertImportSourceRealpath(sourcePath: string): string {
   const resolved = path.resolve(sourcePath);
   const lstat = fs.lstatSync(resolved);
@@ -174,7 +210,9 @@ function copyIntoAssets(
     "Asset directory escapes the public directory.",
   );
   const name = uniqueName(targetDir, path.basename(realSource));
-  fs.copyFileSync(realSource, path.join(targetDir, name));
+  const destPath = path.join(targetDir, name);
+  assertImportDestinationNotSymlink(destPath);
+  fs.copyFileSync(realSource, destPath);
   return { webPath: `/${ASSETS_ROOT}/${category}/${name}`, category };
 }
 
@@ -273,10 +311,7 @@ export function importAssetsFromPaths(
       // happen to sit in the tree (e.g. .env snapshots renamed .png).
       const resolvedSource = path.resolve(source);
       const resolvedRoot = path.resolve(projectPath);
-      if (
-        resolvedSource === resolvedRoot ||
-        resolvedSource.startsWith(resolvedRoot + path.sep)
-      ) {
+      if (isResolvedPathInsideProject(resolvedSource, resolvedRoot)) {
         errors.push(`${path.basename(source)}: already inside the project`);
         continue;
       }

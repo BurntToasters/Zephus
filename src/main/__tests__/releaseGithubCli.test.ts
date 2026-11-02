@@ -56,6 +56,23 @@ describe("GitHub CLI release transport", () => {
     ]);
     expect(
       getReleaseUploadFiles(
+        [
+          "latest.yml",
+          "latest-mac.yml",
+          "latest-linux.yml",
+          "latest-linux-arm64.yml",
+          "beta.yml",
+          "Zephus.exe",
+        ],
+        "/release",
+        "1.0.0-beta.1",
+      ),
+    ).toEqual([
+      path.join("/release", "Zephus.exe"),
+      path.join("/release", "beta.yml"),
+    ]);
+    expect(
+      getReleaseUploadFiles(
         ["latest.yml", "beta.yml", "Zephus.exe"],
         "/release",
         "1.0.0",

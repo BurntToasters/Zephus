@@ -169,6 +169,31 @@ describe("listPages", () => {
     expect(pages).not.toContain("src/pages/style.css");
   });
 
+  it("skips Astro non-routable segments and dynamic routes", () => {
+    const dir = path.join(tmpDir, "src", "pages");
+    fs.mkdirSync(path.join(dir, "blog"), { recursive: true });
+    fs.mkdirSync(path.join(dir, "_components"), { recursive: true });
+    fs.mkdirSync(path.join(dir, "[slug]"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "about.astro"), "");
+    fs.writeFileSync(path.join(dir, "blog", "index.astro"), "");
+    fs.writeFileSync(path.join(dir, "[id].astro"), "");
+    fs.writeFileSync(path.join(dir, "blog", "[slug].astro"), "");
+    fs.writeFileSync(path.join(dir, "_components", "Card.astro"), "");
+    fs.writeFileSync(path.join(dir, "[slug]", "index.astro"), "");
+
+    const pages = listPages(tmpDir, "src/pages");
+    expect(pages).toEqual(
+      expect.arrayContaining([
+        "src/pages/about.astro",
+        "src/pages/blog/index.astro",
+      ]),
+    );
+    expect(pages).not.toContain("src/pages/[id].astro");
+    expect(pages).not.toContain("src/pages/blog/[slug].astro");
+    expect(pages).not.toContain("src/pages/_components/Card.astro");
+    expect(pages).not.toContain("src/pages/[slug]/index.astro");
+  });
+
   it("does not walk pages directories outside the project", () => {
     const outside = fs.mkdtempSync(path.join(os.tmpdir(), "zephus-outside-"));
     try {

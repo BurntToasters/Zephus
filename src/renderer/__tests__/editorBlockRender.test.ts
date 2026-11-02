@@ -92,6 +92,34 @@ describe("sanitizeHtmlForCanvas", () => {
     expect(out).toContain('src="/assets/x.png"');
   });
 
+  it("sanitizes nested template contents", () => {
+    const out = sanitizeHtmlForCanvas(
+      '<template><iframe src="x"></iframe><img onerror="alert(1)" src="/a.png"><style>.x{}</style></template>',
+    );
+    expect(out).not.toContain("<iframe");
+    expect(out).not.toContain("onerror");
+    expect(out).not.toContain("<style");
+    expect(out).toContain('src="/a.png"');
+  });
+
+  it("sanitizes templates nested inside templates", () => {
+    const out = sanitizeHtmlForCanvas(
+      "<template><template><iframe></iframe></template></template>",
+    );
+    expect(out).not.toContain("<iframe");
+  });
+
+  it("sanitizes background URLs like href and src", () => {
+    const out = sanitizeHtmlForCanvas(
+      '<table background="/ok.png"><table background="' +
+        "java" +
+        'script:alert(1)">',
+    );
+    expect(out).toContain('background="/ok.png"');
+    expect(out).not.toContain("java" + "script:");
+    expect(out.match(/background=/g)?.length).toBe(1);
+  });
+
   it("keeps safe content intact", () => {
     const out = sanitizeHtmlForCanvas(
       '<a href="/about">About</a><img src="/assets/x.png" alt="X"><strong>bold</strong>',

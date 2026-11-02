@@ -148,6 +148,75 @@ describe("editorSiteSave", () => {
     );
   });
 
+  it("restores baseline on disk when discard races an in-flight site write", async () => {
+    const state = createEditorSession();
+    state.project = {
+      path: "/proj",
+      name: "P",
+      astro: { pagesDir: "src/pages" },
+    } as ProjectOpenResult;
+    const baseline = { design: { accent: "#000" } } as SiteDocument;
+    const pending = { design: { accent: "#f00" } } as SiteDocument;
+    state.siteDocument = baseline;
+    state.pendingSiteDocument = pending;
+    state.siteDirty = true;
+
+    let releasePendingWrite: (() => void) | null = null;
+    const writeSiteDocument = vi.fn(
+      (_path: string, doc: SiteDocument, _pagesDir: string) => {
+        if (doc.design?.accent === "#f00") {
+          return new Promise<{ ok: true }>((resolve) => {
+            releasePendingWrite = () => resolve({ ok: true as const });
+          });
+        }
+        return Promise.resolve({ ok: true as const });
+      },
+    );
+    let releaseRead: (() => void) | null = null;
+    const readSiteDocument = vi.fn(
+      () =>
+        new Promise<{ ok: true; site: SiteDocument }>((resolve) => {
+          releaseRead = () =>
+            resolve({ ok: true as const, site: { ...baseline } });
+        }),
+    );
+    const clearDraft = vi.fn(async () => ({ ok: true as const }));
+
+    const actions = createEditorSiteSaveActions({
+      getState: () => state,
+      setStatus: vi.fn(),
+      onSiteStateChanged: vi.fn(),
+      zephus: { clearDraft, writeSiteDocument, readSiteDocument },
+    });
+
+    const persistPromise = actions.persistPendingSiteDocument();
+    releaseRead!();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(writeSiteDocument).toHaveBeenCalledTimes(1);
+    expect(writeSiteDocument).toHaveBeenCalledWith(
+      "/proj",
+      pending,
+      "src/pages",
+    );
+
+    const discardPromise = actions.discardPendingSiteChanges();
+    releasePendingWrite!();
+    await persistPromise;
+    await discardPromise;
+
+    expect(writeSiteDocument).toHaveBeenCalledTimes(2);
+    expect(writeSiteDocument).toHaveBeenLastCalledWith(
+      "/proj",
+      baseline,
+      "src/pages",
+    );
+    expect(state.siteDocument?.design?.accent).toBe("#000");
+    expect(state.siteDirty).toBe(false);
+    expect(state.pendingSiteDocument).toBeNull();
+    expect(clearDraft).toHaveBeenCalledWith("/proj", "site", SITE_DRAFT_TARGET);
+  });
+
   it("keeps newer edits dirty when they arrive mid-persist", async () => {
     const state = createEditorSession();
     state.project = {
@@ -161,17 +230,25 @@ describe("editorSiteSave", () => {
     state.pendingSiteDocument = pending;
     state.siteDirty = true;
 
-    const writeSiteDocument = vi.fn(async () => ({ ok: true as const }));
-    // First read = drift check (disk matches baseline); later reads = the
-    // post-write refresh, which may fail — the code keeps the written
-    // snapshot in that case.
-    const readSiteDocument = vi
-      .fn()
-      .mockImplementationOnce(async () => ({
-        ok: true as const,
-        site: { ...baseline },
-      }))
-      .mockResolvedValue({ ok: false as const, site: null });
+    let releasePendingWrite: (() => void) | null = null;
+    const writeSiteDocument = vi.fn(
+      (_path: string, doc: SiteDocument, _pagesDir: string) => {
+        if (doc.design?.accent === "#f00") {
+          return new Promise<{ ok: true }>((resolve) => {
+            releasePendingWrite = () => resolve({ ok: true as const });
+          });
+        }
+        return Promise.resolve({ ok: true as const });
+      },
+    );
+    let releaseRead: (() => void) | null = null;
+    const readSiteDocument = vi.fn(
+      () =>
+        new Promise<{ ok: true; site: SiteDocument }>((resolve) => {
+          releaseRead = () =>
+            resolve({ ok: true as const, site: { ...baseline } });
+        }),
+    );
     const clearDraft = vi.fn(async () => ({ ok: true as const }));
     const onSiteStateChanged = vi.fn();
 
@@ -187,13 +264,25 @@ describe("editorSiteSave", () => {
     });
 
     const pendingPromise = actions.persistPendingSiteDocument();
+    releaseRead!();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(writeSiteDocument).toHaveBeenCalledTimes(1);
     // Newer edits arrive while the write is in flight.
     state.siteRevision += 1;
     state.pendingSiteDocument = { design: { accent: "#0f0" } } as SiteDocument;
+    releasePendingWrite!();
 
     expect(await pendingPromise).toBe(true);
     expect(state.siteDirty).toBe(true);
     expect(onSiteStateChanged).toHaveBeenCalled();
+    expect(writeSiteDocument).toHaveBeenCalledTimes(2);
+    expect(writeSiteDocument).toHaveBeenLastCalledWith(
+      "/proj",
+      baseline,
+      "src/pages",
+    );
+    expect(state.siteDocument?.design?.accent).toBe("#000");
     // The draft must NOT be cleared for the newer edits.
     expect(clearDraft).not.toHaveBeenCalled();
   });

@@ -169,7 +169,11 @@ export function createNextActionsRenderer(deps: NextActionsDeps) {
         actions: [
           {
             label: "Choose Asset",
-            onClick: () => void chooseAssetForImage(imageBlock),
+            onClick: () => {
+              const live = findBlockLocation(imageBlock.id)?.block;
+              if (!live) return;
+              void chooseAssetForImage(live);
+            },
           },
         ],
       });

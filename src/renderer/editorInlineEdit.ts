@@ -25,6 +25,8 @@ export interface InlineEditDeps {
   commitBlockChange: (summary: string) => void;
   renderCanvas: () => void;
   renderProperties: () => void;
+  /** When set, commits write the live section-tree block (e.g. after undo). */
+  findLiveBlock?: (id: string) => Block | null;
 }
 
 export function updateLineValue(
@@ -376,8 +378,16 @@ export function createInlineEditController(deps: InlineEditDeps) {
       const newText = readValue();
       cleanup();
       if (newText !== original) {
+        const targetBlock = deps.findLiveBlock
+          ? deps.findLiveBlock(block.id)
+          : block;
+        if (deps.findLiveBlock && !targetBlock) {
+          deps.renderCanvas();
+          deps.renderProperties();
+          return;
+        }
         deps.pushUndo();
-        applyInlineValue(block, target, newText);
+        applyInlineValue(targetBlock!, target, newText);
         deps.commitBlockChange(`Edited ${block.type} content`);
       } else {
         deps.renderCanvas();

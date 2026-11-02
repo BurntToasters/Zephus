@@ -44,6 +44,8 @@ export interface RenderBlockOptions extends StyleAttrOptions {
   onUnknownBlockType?: (type: string) => void;
   /** Candidate pages for Post List blocks. */
   posts?: RenderPostEntry[];
+  /** Omit this route from Post List blocks on the page being rendered. */
+  excludePostListPageRoute?: string;
 }
 
 /** Formats an ISO date for display without pulling in a date library. */
@@ -80,14 +82,17 @@ function isNotFoundRoute(route: string): boolean {
 export function selectPostEntries(
   props: Record<string, string>,
   posts: RenderPostEntry[],
+  excludePageRoute?: string,
 ): RenderPostEntry[] {
   const prefix = (props["folder"] ?? "/posts").trim().replace(/\/+$/, "");
   const limitValue = Number(props["limit"] ?? "5");
   const limit =
     Number.isFinite(limitValue) && limitValue > 0 ? Math.floor(limitValue) : 0;
+  const excludeRoute = excludePageRoute?.trim();
 
   const matching = posts.filter((post) => {
     if (isNotFoundRoute(post.route)) return false;
+    if (excludeRoute && post.route === excludeRoute) return false;
     if (!prefix || prefix === "/") return post.route !== "/";
     return post.route === prefix || post.route.startsWith(`${prefix}/`);
   });
@@ -530,7 +535,11 @@ export function renderBlockHtml(
     }
     case "postlist": {
       const listCommon = structuralCommon(block, "zephus-postlist", options);
-      const entries = selectPostEntries(block.props, options.posts ?? []);
+      const entries = selectPostEntries(
+        block.props,
+        options.posts ?? [],
+        options.excludePostListPageRoute,
+      );
       if (entries.length === 0) {
         const empty =
           block.props["emptyText"] ??

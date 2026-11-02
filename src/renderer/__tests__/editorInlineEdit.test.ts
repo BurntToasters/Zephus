@@ -3,7 +3,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createInlineEditController } from "../editorInlineEdit";
 import type { EditorBlock } from "../../main/types";
 
-function makeController() {
+function makeController(
+  extra: Partial<Parameters<typeof createInlineEditController>[0]> = {},
+) {
   const deps = {
     setStatus: vi.fn(),
     refreshIcons: vi.fn(),
@@ -12,6 +14,7 @@ function makeController() {
     commitBlockChange: vi.fn(),
     renderCanvas: vi.fn(),
     renderProperties: vi.fn(),
+    ...extra,
   };
   const controller = createInlineEditController(deps);
   return { controller, deps };
@@ -473,6 +476,57 @@ describe("startInlineEdit", () => {
     const linkRow = document.querySelector<HTMLElement>(".inline-format-link");
     expect(linkRow?.hidden).toBe(true);
     expect(controller.isInlineEditing()).toBe(true);
+  });
+
+  it("commits through findLiveBlock when the captured block is stale", () => {
+    const stale = block({ id: "live-1", props: { text: "Hello", cls: "" } });
+    const live = block({ id: "live-1", props: { text: "Hello", cls: "" } });
+    const { controller, deps } = makeController({
+      findLiveBlock: (id) => (id === "live-1" ? live : null),
+    });
+    const root = document.createElement("div");
+    root.innerHTML = "<span>Hello</span>";
+    const [target] = controller.attachInlineEditors(root, stale);
+
+    target!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    target!.textContent = "Updated";
+    target!.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Enter",
+        ctrlKey: true,
+        bubbles: true,
+      }),
+    );
+
+    expect(live.props["text"]).toBe("Updated");
+    expect(stale.props["text"]).toBe("Hello");
+    expect(deps.pushUndo).toHaveBeenCalled();
+    expect(deps.commitBlockChange).toHaveBeenCalled();
+  });
+
+  it("does not commit when findLiveBlock returns null", () => {
+    const stale = block({ id: "gone", props: { text: "Hello", cls: "" } });
+    const { controller, deps } = makeController({
+      findLiveBlock: () => null,
+    });
+    const root = document.createElement("div");
+    root.innerHTML = "<span>Hello</span>";
+    const [target] = controller.attachInlineEditors(root, stale);
+
+    target!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    target!.textContent = "Updated";
+    target!.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Enter",
+        ctrlKey: true,
+        bubbles: true,
+      }),
+    );
+
+    expect(stale.props["text"]).toBe("Hello");
+    expect(deps.pushUndo).not.toHaveBeenCalled();
+    expect(deps.commitBlockChange).not.toHaveBeenCalled();
+    expect(deps.renderCanvas).toHaveBeenCalled();
   });
 
   it("creates a format toolbar for rich targets and destroys it on finish", () => {

@@ -24,23 +24,64 @@ if (RELEASE_CHANNEL === "db" && !/-db(?:[.-]|$|[0-9])/i.test(VERSION)) {
   );
 }
 const CHANGELOG_PATH = path.join(__dirname, "..", "CHANGELOG.md");
+
+function versionSectionHeaderPattern(version) {
+  const escapedVersion = version.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`^#{1,3}\\s+.*${escapedVersion}(?![0-9.-]).*$`, "m");
+}
+
+function changelogSectionBody(changelog, headerPattern) {
+  const match = headerPattern.exec(changelog);
+  if (!match) {
+    return "";
+  }
+  const start = match.index + match[0].length;
+  const rest = changelog.slice(start);
+  const nextSection = rest.search(/^#{1,3}\s+/m);
+  return nextSection === -1 ? rest : rest.slice(0, nextSection);
+}
+
+function changelogVersionSectionOk(changelog, version) {
+  const directHeader = versionSectionHeaderPattern(version);
+  if (directHeader.test(changelog)) {
+    return { ok: true, label: `CHANGELOG section for ${version}` };
+  }
+  const betaBridge = /^(\d+\.\d+\.\d+)-beta(?:[.-]|$)/i.exec(version);
+  if (betaBridge) {
+    const stableVersion = betaBridge[1];
+    const stableHeader = versionSectionHeaderPattern(stableVersion);
+    if (stableHeader.test(changelog)) {
+      const body = changelogSectionBody(changelog, stableHeader);
+      const notShipped = `stable ${stableVersion} has not shipped`;
+      if (body.includes(notShipped)) {
+        return {
+          ok: true,
+          label: `CHANGELOG section for ${stableVersion} (pre-release ${version})`,
+        };
+      }
+      failures.push(
+        `CHANGELOG.md section for ${stableVersion} must note that stable ${stableVersion} has not shipped while package.json is ${version}.`,
+      );
+      return { ok: false };
+    }
+  }
+  failures.push(
+    `CHANGELOG.md has no section for the current version (${version}) — the draft release notes would miss it.`,
+  );
+  return { ok: false };
+}
+
 try {
   const changelog = fs.readFileSync(CHANGELOG_PATH, "utf8");
-  const escapedVersion = VERSION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const sectionHeader = new RegExp(
-    `^#{1,3}\\s+.*${escapedVersion}(?![0-9.-]).*$`,
-    "m",
-  );
   if (!changelog.trim()) {
     failures.push(
       "CHANGELOG.md is empty — the draft release notes would be blank.",
     );
-  } else if (!sectionHeader.test(changelog)) {
-    failures.push(
-      `CHANGELOG.md has no section for the current version (${VERSION}) — the draft release notes would miss it.`,
-    );
   } else {
-    passedChecks.push(`CHANGELOG section for ${VERSION}`);
+    const sectionOk = changelogVersionSectionOk(changelog, VERSION);
+    if (sectionOk.ok) {
+      passedChecks.push(sectionOk.label);
+    }
   }
 } catch (error) {
   failures.push(

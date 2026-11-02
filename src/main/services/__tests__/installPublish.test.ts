@@ -4,6 +4,7 @@ import * as os from "os";
 import * as path from "path";
 import { dependenciesInstalled, cancelInstall } from "../install";
 import { buildAndReveal } from "../publish";
+import { npmCommand, resolveNpmCliJs } from "../npmCommand";
 
 describe("install dependency detection", () => {
   it("returns false without node_modules", () => {
@@ -38,6 +39,28 @@ describe("install dependency detection", () => {
     }
   });
 
+  it("returns false when node_modules is a symlink outside the project", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "zephus-dep-"));
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "zephus-dep-out-"));
+    try {
+      fs.writeFileSync(
+        path.join(tmp, "package.json"),
+        JSON.stringify({ dependencies: { astro: "^6.0.0" } }),
+      );
+      const astroDir = path.join(outside, "astro");
+      fs.mkdirSync(astroDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(astroDir, "package.json"),
+        JSON.stringify({ name: "astro" }),
+      );
+      fs.symlinkSync(outside, path.join(tmp, "node_modules"), "dir");
+      expect(dependenciesInstalled(tmp)).toBe(false);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
   it("returns true when every dependency exists", () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "zephus-dep-"));
     try {
@@ -66,6 +89,28 @@ describe("install dependency detection", () => {
     expect(result.ok).toBe(false);
   });
 
+  it("refuses install when node_modules symlinks outside the project", async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "zephus-dep-"));
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "zephus-dep-out-"));
+    try {
+      fs.writeFileSync(
+        path.join(tmp, "package.json"),
+        JSON.stringify({ name: "t", private: true }),
+      );
+      fs.symlinkSync(outside, path.join(tmp, "node_modules"), "dir");
+      const { installDependencies } = await import("../install");
+      const result = await installDependencies(tmp, () => undefined);
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/node_modules/i);
+      expect(fs.existsSync(path.join(outside, ".package-lock.json"))).toBe(
+        false,
+      );
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
   it("fails cleanly on a project without package.json", async () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "zephus-dep-"));
     try {
@@ -85,6 +130,71 @@ describe("install dependency detection", () => {
       expect(result.ok).toBe(false);
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("npmCommand custom Node.js", () => {
+  it("throws instead of falling back when npm-cli.js is missing", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "zephus-node-"));
+    const bin = path.join(root, "bin");
+    fs.mkdirSync(bin, { recursive: true });
+    const nodeBin = path.join(bin, "node");
+    fs.writeFileSync(nodeBin, "");
+    try {
+      expect(resolveNpmCliJs(nodeBin, "darwin")).toBeNull();
+      expect(() =>
+        npmCommand(["install"], "darwin", process.env, undefined, nodeBin),
+      ).toThrow(/npm-cli\.js/i);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a symlinked npm-cli.js", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "zephus-node-"));
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "zephus-node-out-"));
+    const bin = path.join(root, "bin");
+    const lib = path.join(root, "lib", "node_modules", "npm", "bin");
+    fs.mkdirSync(bin, { recursive: true });
+    fs.mkdirSync(lib, { recursive: true });
+    const nodeBin = path.join(bin, "node");
+    fs.writeFileSync(nodeBin, "");
+    fs.writeFileSync(path.join(outside, "npm-cli.js"), "// evil");
+    fs.symlinkSync(
+      path.join(outside, "npm-cli.js"),
+      path.join(lib, "npm-cli.js"),
+    );
+    try {
+      expect(resolveNpmCliJs(nodeBin, "darwin")).toBeNull();
+      expect(() =>
+        npmCommand(["install"], "darwin", process.env, undefined, nodeBin),
+      ).toThrow(/npm-cli\.js/i);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("accepts a regular npm-cli.js inside the Node install", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "zephus-node-"));
+    const bin = path.join(root, "bin");
+    const lib = path.join(root, "lib", "node_modules", "npm", "bin");
+    fs.mkdirSync(bin, { recursive: true });
+    fs.mkdirSync(lib, { recursive: true });
+    const nodeBin = path.join(bin, "node");
+    fs.writeFileSync(nodeBin, "");
+    const cli = path.join(lib, "npm-cli.js");
+    fs.writeFileSync(cli, "// npm");
+    try {
+      expect(
+        npmCommand(["install"], "darwin", process.env, undefined, nodeBin),
+      ).toEqual({
+        command: nodeBin,
+        args: [path.normalize(cli), "install"],
+      });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
     }
   });
 });
