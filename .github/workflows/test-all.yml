@@ -95,8 +95,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run full test suite (smoke runs in its own job)
-        run: npm run test:all -- --skip-smoke
+      - name: Run full test suite (smoke and coverage run in their own jobs)
+        run: npm run test:all -- --skip-smoke --skip-coverage
 
   smoke:
     name: Runtime smoke

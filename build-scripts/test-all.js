@@ -381,9 +381,12 @@ function run() {
   // End-to-end gates that used to live OUTSIDE test:all — the renderer could
   // fail to boot, coverage could regress, and generated pages could break the
   // Astro build while this script exited 0 green.
-  // CI runs the packaged-app smoke in its own job (see test-all.yml); the
-  // matrix test job passes --skip-smoke so it does not duplicate the run.
-  // Local test:all keeps the smoke. Headless Linux still needs xvfb.
+  // CI runs the packaged-app smoke and the coverage thresholds in their own
+  // jobs (see test-all.yml). The matrix test job passes --skip-smoke and
+  // --skip-coverage so it does not duplicate either run; the dedicated Ubuntu
+  // coverage job owns coverage because Windows-specific skipIf tests would
+  // otherwise lower the matrix's measured coverage. Local test:all keeps both.
+  // Headless Linux still needs xvfb.
   if (!process.argv.includes("--skip-smoke")) {
     const smokeCommand =
       process.platform === "linux" && !process.env.DISPLAY
@@ -408,11 +411,15 @@ function run() {
   );
   results.astroBuild = { status: astroResult.ok ? "passed" : "failed" };
 
-  const covResult = runCommand("coverage", "npm run test:cov", (out) => ({
-    ok: /Coverage thresholds passed/.test(out),
-    passed: /Coverage thresholds passed/.test(out) ? 1 : 0,
-  }));
-  results.coverage = { status: covResult.ok ? "passed" : "failed" };
+  if (!process.argv.includes("--skip-coverage")) {
+    const covResult = runCommand("coverage", "npm run test:cov", (out) => ({
+      ok: /Coverage thresholds passed/.test(out),
+      passed: /Coverage thresholds passed/.test(out) ? 1 : 0,
+    }));
+    results.coverage = { status: covResult.ok ? "passed" : "failed" };
+  } else {
+    results.coverage = { status: "skipped" };
+  }
 
   const e2eResult = runCommand("e2e-failures", "npm run test:e2e", (out) => ({
     ok: /E2E: \d+ passed, 0 failed/.test(out),
@@ -432,7 +439,7 @@ function run() {
     `${colors.bold}Config:${colors.reset}    ${results.config.status === "passed" ? colors.green + "✓ PASS" : colors.red + "✗ FAIL"}${colors.reset} (${results.config.checks} checks${results.config.failed > 0 ? `, ${results.config.failed} failed` : ""})`,
     `${colors.bold}Smoke:${colors.reset}     ${results.smoke.status === "passed" ? colors.green + "✓ PASS" : results.smoke.status === "skipped" ? colors.yellow + "⏭ SKIPPED" : colors.red + "✗ FAIL"}${colors.reset}`,
     `${colors.bold}Astro build:${colors.reset} ${results.astroBuild.status === "passed" ? colors.green + "✓ PASS" : colors.red + "✗ FAIL"}${colors.reset}`,
-    `${colors.bold}Coverage:${colors.reset}  ${results.coverage.status === "passed" ? colors.green + "✓ PASS" : colors.red + "✗ FAIL"}${colors.reset}`,
+    `${colors.bold}Coverage:${colors.reset}  ${results.coverage.status === "passed" ? colors.green + "✓ PASS" : results.coverage.status === "skipped" ? colors.yellow + "⏭ SKIPPED" : colors.red + "✗ FAIL"}${colors.reset}`,
     `${colors.bold}E2E failures:${colors.reset} ${results.e2e.status === "passed" ? colors.green + "✓ PASS" : colors.red + "✗ FAIL"}${colors.reset}`,
   ];
   for (const line of summaryLines) {
