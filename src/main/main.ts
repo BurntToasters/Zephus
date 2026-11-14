@@ -454,21 +454,33 @@ function scaffoldSmokeProject(): string | null {
       stdio: "ignore",
     });
     // Give the scaffolded site the repo's toolchain (mirrors the real build
-    // tests) so `npm run build` resolves astro from the symlink.
+    // tests) so `npm run build` resolves Astro without a network install. The
+    // install guard rejects a symlinked node_modules, so keep node_modules a
+    // real in-project directory and link only the packages the build needs.
     const rootModules = path.resolve(__dirname, "..", "..", "node_modules");
     if (fs.existsSync(rootModules)) {
       const target = path.join(project, "node_modules");
       try {
+        fs.mkdirSync(target);
         // Windows: directory symlinks need admin/Developer Mode; junctions
         // work without either. macOS/Linux: plain dir symlink.
-        fs.symlinkSync(
-          rootModules,
-          target,
-          process.platform === "win32" ? "junction" : "dir",
-        );
-      } catch {
-        // Best-effort: the real-project flows degrade to renderer-only
-        // checks when the toolchain link cannot be created.
+        const linkType = process.platform === "win32" ? "junction" : "dir";
+        for (const name of ["astro", ".bin"]) {
+          const source = path.join(rootModules, name);
+          if (fs.existsSync(source)) {
+            fs.symlinkSync(source, path.join(target, name), linkType);
+          }
+        }
+        // npm install normally writes this freshness marker after installing;
+        // the linked toolchain must satisfy the same check.
+        fs.writeFileSync(path.join(target, ".package-lock.json"), "{}\n");
+      } catch (error) {
+        log.warn("Smoke toolchain link failed", error);
+        try {
+          fs.rmSync(target, { recursive: true, force: true });
+        } catch {
+          /* best-effort cleanup */
+        }
       }
     }
     return project;

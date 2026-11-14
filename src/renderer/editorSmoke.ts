@@ -508,15 +508,20 @@ export function installEditorSmokeHook(deps: EditorSmokeDeps): void {
       await publishSite();
 
       let built = false;
+      let publishModalTitle = "";
       for (let i = 0; i < 90; i += 1) {
         await wait(500);
         const title = document.getElementById("modal-title");
+        publishModalTitle = title?.textContent ?? "";
         if (title && /Built/i.test(title.textContent || "")) {
           built = true;
           break;
         }
       }
-      assert(built, "Editor smoke: publish build did not complete.");
+      assert(
+        built,
+        `Editor smoke: publish build did not complete (modal="${publishModalTitle}" log="${($("dev-log").textContent ?? "").slice(-1200)}").`,
+      );
       await closeAnyModal();
       assert(
         (state.sections[0]?.children.length ?? 0) === before + 1,

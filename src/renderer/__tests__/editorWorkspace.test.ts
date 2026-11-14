@@ -54,6 +54,9 @@ describe("activateWorkspaceTab", () => {
     mountPanels();
     initEditorWorkspaceTabs();
 
+    // The assets panel starts hidden; show it before focusing its input so the
+    // test models a real user leaving focus in a panel that then gets hidden.
+    activateWorkspaceTab("left", "assets");
     const assetInput = document.getElementById("asset-input")!;
     assetInput.focus();
     // Activating the pages tab while focus sits in the (soon hidden) assets
