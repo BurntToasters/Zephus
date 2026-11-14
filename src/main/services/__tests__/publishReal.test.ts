@@ -25,7 +25,7 @@ describe("buildAndReveal (real npm build)", () => {
     fs.symlinkSync(
       path.join(ROOT, "node_modules"),
       path.join(project, "node_modules"),
-      "dir",
+      process.platform === "win32" ? "junction" : "dir",
     );
     const logs: string[] = [];
     const result = await buildAndReveal(project, "dist", (c) => logs.push(c));
@@ -54,10 +54,23 @@ describe("buildAndReveal (real npm build)", () => {
     expect(created.ok).toBe(true);
     // A build script that emits two chunks with a delay in between, so a
     // chunk arriving before the promise resolves proves streaming.
+    fs.writeFileSync(
+      path.join(project, "build.cjs"),
+      [
+        'const fs = require("fs");',
+        'fs.mkdirSync("dist", { recursive: true });',
+        'fs.writeFileSync("dist/index.html", "<html></html>");',
+        'process.stdout.write("first-chunk");',
+        "setTimeout(() => {",
+        '  process.stdout.write("second-chunk");',
+        "  process.exit(0);",
+        "}, 400);",
+        "",
+      ].join("\n"),
+    );
     const pkgPath = path.join(project, "package.json");
     const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
-    pkg.scripts.build =
-      "node -e \"require('fs').mkdirSync('dist',{recursive:true}); require('fs').writeFileSync('dist/index.html','<html></html>'); process.stdout.write('first-chunk'); setTimeout(() => { process.stdout.write('second-chunk'); process.exit(0); }, 400)\"";
+    pkg.scripts.build = "node build.cjs";
     fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2));
 
     const chunks: string[] = [];

@@ -329,6 +329,109 @@ describe("editorGit", () => {
     expect(setStatus).toHaveBeenCalledWith("Git init failed: not allowed");
   });
 
+  it("explains how to configure identity when commit fails for missing user", async () => {
+    const setStatus = vi.fn();
+    const actions = createEditorGitActions({
+      getProjectPath: () => "/proj",
+      setStatus,
+      setGitStatus: vi.fn(),
+      zephus: {
+        getGitStatus: vi.fn(),
+        commitGitChanges: vi.fn(async () => ({
+          ok: false as const,
+          error: "Please tell me who you are",
+        })),
+        pushGitChanges: vi.fn(),
+        pullGitChanges: vi.fn(),
+        initGitRepo: vi.fn(),
+      },
+    });
+
+    await actions.commitGitChanges("save");
+
+    expect(setStatus).toHaveBeenCalledWith(
+      'Git needs your identity first: run `git config --global user.name "Your Name"` and `git config --global user.email you@example.com`, then commit again.',
+    );
+  });
+
+  it("does not refresh after a returned push error", async () => {
+    const setStatus = vi.fn();
+    const setGitStatus = vi.fn();
+    const actions = createEditorGitActions({
+      getProjectPath: () => "/proj",
+      setStatus,
+      setGitStatus,
+      zephus: {
+        getGitStatus: vi.fn(),
+        commitGitChanges: vi.fn(),
+        pushGitChanges: vi.fn(async () => ({
+          ok: false as const,
+          error: "nope",
+        })),
+        pullGitChanges: vi.fn(),
+        initGitRepo: vi.fn(),
+      },
+    });
+
+    await actions.pushGitChanges();
+
+    expect(setStatus).toHaveBeenCalledWith("Git push failed: nope");
+    expect(setGitStatus).not.toHaveBeenCalled();
+  });
+
+  it("does not refresh or complete pull after a returned pull error", async () => {
+    const setStatus = vi.fn();
+    const setGitStatus = vi.fn();
+    const onPullComplete = vi.fn();
+    const actions = createEditorGitActions({
+      getProjectPath: () => "/proj",
+      setStatus,
+      setGitStatus,
+      onPullComplete,
+      zephus: {
+        getGitStatus: vi.fn(),
+        commitGitChanges: vi.fn(),
+        pushGitChanges: vi.fn(),
+        pullGitChanges: vi.fn(async () => ({
+          ok: false as const,
+          error: "nope",
+        })),
+        initGitRepo: vi.fn(),
+      },
+    });
+
+    await actions.pullGitChanges();
+
+    expect(setStatus).toHaveBeenCalledWith("Git pull failed: nope");
+    expect(onPullComplete).not.toHaveBeenCalled();
+    expect(setGitStatus).not.toHaveBeenCalled();
+  });
+
+  it("does not refresh after a returned init error", async () => {
+    const setStatus = vi.fn();
+    const setGitStatus = vi.fn();
+    const actions = createEditorGitActions({
+      getProjectPath: () => "/proj",
+      setStatus,
+      setGitStatus,
+      zephus: {
+        getGitStatus: vi.fn(),
+        commitGitChanges: vi.fn(),
+        pushGitChanges: vi.fn(),
+        pullGitChanges: vi.fn(),
+        initGitRepo: vi.fn(async () => ({
+          ok: false as const,
+          error: "nope",
+        })),
+      },
+    });
+
+    await actions.initGitFromPanel();
+
+    expect(setStatus).toHaveBeenCalledWith("Git init failed: nope");
+    expect(setGitStatus).not.toHaveBeenCalled();
+  });
+
   it("handles a missing project for every action", async () => {
     const setStatus = vi.fn();
     const zephus = {

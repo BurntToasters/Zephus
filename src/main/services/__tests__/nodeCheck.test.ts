@@ -142,7 +142,7 @@ describe("npmCommand", () => {
     });
   });
 
-  it("runs npm.cmd directly on Windows", () => {
+  it("runs npm.cmd through the Windows command processor", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "zephus-npm-"));
     const npm = path.join(dir, "npm.cmd");
     fs.writeFileSync(npm, "@echo npm");
@@ -153,8 +153,9 @@ describe("npmCommand", () => {
           ProgramFiles: "C:\\Missing",
         }),
       ).toEqual({
-        command: npm,
-        args: ["run", "dev"],
+        command: "cmd.exe",
+        args: ["/d", "/s", "/c", `""${npm}" run dev"`],
+        windowsVerbatimArguments: true,
       });
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -180,15 +181,22 @@ describe("npmCommand", () => {
     }
   });
 
-  it("falls back to an absolute Program Files npm.cmd path", () => {
+  it("falls back to Program Files and quotes the npm.cmd path", () => {
     expect(
       npmCommand(["run", "dev"], "win32", {
         PATH: "",
         ProgramFiles: "C:\\Program Files",
+        ComSpec: "C:\\Windows\\System32\\cmd.exe",
       }),
     ).toEqual({
-      command: "C:\\Program Files\\nodejs\\npm.cmd",
-      args: ["run", "dev"],
+      command: "C:\\Windows\\System32\\cmd.exe",
+      args: [
+        "/d",
+        "/s",
+        "/c",
+        `""C:\\Program Files\\nodejs\\npm.cmd" run dev"`,
+      ],
+      windowsVerbatimArguments: true,
     });
   });
 
@@ -205,8 +213,9 @@ describe("npmCommand", () => {
           APPDATA: dir,
         }),
       ).toEqual({
-        command: npm,
-        args: ["install"],
+        command: "cmd.exe",
+        args: ["/d", "/s", "/c", `""${npm}" install"`],
+        windowsVerbatimArguments: true,
       });
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });

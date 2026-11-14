@@ -99,9 +99,28 @@ export function npmCommand(
     return { command: customNode, args: [cli, ...args] };
   }
   if (platform === "win32") {
-    return { command: resolveWindowsNpmCmd(env), args: [...args] };
+    const npmCmd = resolveWindowsNpmCmd(env);
+    // Node cannot spawn a .cmd directly with shell:false. Run it through the
+    // command processor instead: quote the npm.cmd path, then wrap the whole
+    // /c payload in outer quotes so cmd.exe strips only those.
+    const commandLine =
+      `"${npmCmd.replace(/"/g, '""')}"` +
+      (args.length > 0 ? " " + args.map(quoteWindowsCmdArg).join(" ") : "");
+    return {
+      command: env.ComSpec || "cmd.exe",
+      args: ["/d", "/s", "/c", `"${commandLine}"`],
+      windowsVerbatimArguments: true,
+    };
   }
   return { command: "npm", args };
+}
+
+/** Quotes one token for cmd.exe's /c payload; fixed npm arguments stay as-is. */
+function quoteWindowsCmdArg(value: string): string {
+  if (value.length > 0 && !/[\s"&|<>^()%!]/.test(value)) return value;
+  // cmd.exe has no backslash escape for quotes; doubling keeps the token in
+  // one quoted segment.
+  return `"${value.replace(/"/g, '""')}"`;
 }
 
 function splitPathValue(pathValue: string): string[] {
