@@ -1257,7 +1257,7 @@ async function runFreshQualityPassChecks(svc, blockRender) {
     const releaseDir = path.join(os.tmpdir(), "zephus-e2e-release-upload");
     fs.mkdirSync(releaseDir, { recursive: true });
     const entries = ["latest.yml", "Zephus-1.0.0-beta.1.dmg"];
-    const uploads = policy.getReleaseUploadFiles(entries, releaseDir);
+    const uploads = policy.getReleaseUploadFiles(entries, releaseDir, version);
     const isPrerelease = policy.isGithubPrereleaseVersion(version);
     const hasLatest = uploads.some((p) =>
       /^latest\.ya?ml$/i.test(path.basename(p)),

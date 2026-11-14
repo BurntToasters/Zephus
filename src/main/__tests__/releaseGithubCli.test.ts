@@ -45,6 +45,7 @@ describe("GitHub CLI release transport", () => {
           "builder-debug.yml",
         ],
         "/release",
+        "1.0.0-beta.1",
       ),
     ).toEqual([
       path.join("/release", "SHA256SUMS-Windows.txt"),

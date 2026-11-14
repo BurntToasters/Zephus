@@ -1,7 +1,8 @@
 > [!NOTE]
-> The 1.0.0 release cut described below is **not published** yet — there is
-> no `v1.0.0` tag and no live download links for stable 1.0.0 installers. Use
-> published pre-releases or build from source until that release ships.
+> The **1.0.0 release candidate** is prepared in this tree — there is no
+> `v1.0.0` tag and no published installer set yet. Use published
+> pre-releases or build from source until the draft release is approved and
+> installers publish.
 
 > [!IMPORTANT]
 > Update integrity: updates are downloaded over HTTPS and their SHA-512 checksum (from the release feed) is verified by the updater before install. The `.asc` files are GPG signatures you can verify manually with my GPG Public Key: https://tuxedo.rosie.run/GPG/BurntToasters_0xF2FBC20F_public.asc
@@ -18,9 +19,10 @@
 
 ## 1.0.0 — Stable
 
-Stable **1.0.0** has **not shipped** yet — there is no `v1.0.0` tag and no
-stable installer set (see the banner above). Work below tracks the planned cut
-on `main`.
+Stable **1.0.0** is prepared as a release candidate — there is no `v1.0.0`
+tag and no published installer set yet (see the banner above). Work below
+tracks the cut on `main`; installers publish after the draft release is
+approved.
 
 **Consolidation on `main` (in progress):**
 
