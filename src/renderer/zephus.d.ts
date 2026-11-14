@@ -712,6 +712,9 @@ interface Window {
   zephus: ZephusApi;
   __zephusRunEditorSmoke?: () => string[] | Promise<string[]>;
   refreshIcons?: () => void;
-  /** Set by the engine so programmatic quits (update install) bypass the unsaved-work close guard. */
-  zephusMarkForceCloseAllowed?: () => void;
+  /**
+   * Set by the engine so programmatic quits (update install) bypass the
+   * unsaved-work close guard. Passing false restores it after a failed install.
+   */
+  zephusMarkForceCloseAllowed?: (allowed?: boolean) => void;
 }

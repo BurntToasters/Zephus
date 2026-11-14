@@ -29,6 +29,7 @@ import { createPageLoader } from "./editorPageLoad";
 import { createSiteEditorActions } from "./editorSiteEditor";
 import { createChromeActions } from "./editorChrome";
 import { createProjectOpenActions } from "./editorProject";
+import { syncRadioGroupTabIndex } from "./radioGroup";
 import * as editorFindReplace from "./editorFindReplace";
 import { createPreviewPublishActions } from "./editorPreviewPublish";
 import { collectUnsavedWorkSummaryLines } from "./editorUnsavedWork";
@@ -1106,7 +1107,16 @@ function markDirty(d: boolean): void {
 /* ---------- Start view ---------- */
 
 async function chooseFolder(): Promise<void> {
-  const folder = await window.zephus.openFolderDialog();
+  let folder: string | null;
+  try {
+    folder = await window.zephus.openFolderDialog();
+  } catch (error) {
+    setStatus(
+      "Could not open folder picker: " +
+        (error instanceof Error ? error.message : String(error)),
+    );
+    return;
+  }
   if (!folder) return;
   await openProjectByPath(folder);
 }
@@ -2555,6 +2565,7 @@ function syncModeToggle(mode: Mode): void {
   code.classList.toggle("active", mode === "code");
   visual.setAttribute("aria-checked", String(mode === "visual"));
   code.setAttribute("aria-checked", String(mode === "code"));
+  syncRadioGroupTabIndex(document.querySelector<HTMLElement>(".mode-toggle"));
 }
 
 function setMode(mode: Mode): void {
@@ -3145,11 +3156,19 @@ function init(): void {
             codeFontSize: 13,
             customNodePath: null,
           };
-          const reset = await window.zephus.writeGlobalSettings(defaults);
-          if (!reset.ok) {
+          try {
+            const reset = await window.zephus.writeGlobalSettings(defaults);
+            if (!reset.ok) {
+              setStatus(
+                "Settings could not be reset: " +
+                  (reset.error ?? "unknown error"),
+              );
+              return;
+            }
+          } catch (error) {
             setStatus(
               "Settings could not be reset: " +
-                (reset.error ?? "unknown error"),
+                (error instanceof Error ? error.message : String(error)),
             );
             return;
           }
@@ -3160,11 +3179,19 @@ function init(): void {
           await renderSettingsInTab();
         },
         onSave: async (settings) => {
-          const saved = await window.zephus.writeGlobalSettings(settings);
-          if (!saved.ok) {
+          try {
+            const saved = await window.zephus.writeGlobalSettings(settings);
+            if (!saved.ok) {
+              setStatus(
+                "Settings could not be saved: " +
+                  (saved.error ?? "unknown error"),
+              );
+              return;
+            }
+          } catch (error) {
             setStatus(
               "Settings could not be saved: " +
-                (saved.error ?? "unknown error"),
+                (error instanceof Error ? error.message : String(error)),
             );
             return;
           }
@@ -3222,15 +3249,25 @@ function init(): void {
             return;
           }
           if (actionId === "download") {
-            const result = (await window.zephus.downloadUpdate()) as {
-              status?: string;
-              error?: string;
-            };
-            if (result?.status === "error") {
-              showModal("Update Download Failed", friendlyError(result.error), [
-                { label: "OK", kind: "primary", onClick: closeModal },
-              ]);
+            try {
+              const result = (await window.zephus.downloadUpdate()) as {
+                status?: string;
+                error?: string;
+              };
+              if (result?.status === "error") {
+                showModal(
+                  "Update Download Failed",
+                  friendlyError(result.error),
+                  [{ label: "OK", kind: "primary", onClick: closeModal }],
+                );
+              }
+            } catch (error) {
+              setStatus(
+                "Update download failed: " +
+                  (error instanceof Error ? error.message : String(error)),
+              );
             }
+            refreshUpdaterControls();
             return;
           }
           if (actionId === "restart") {
@@ -3238,7 +3275,15 @@ function init(): void {
             return;
           }
           if (actionId === "cancel") {
-            await window.zephus.cancelUpdateDownload();
+            try {
+              await window.zephus.cancelUpdateDownload();
+            } catch (error) {
+              setStatus(
+                "Could not cancel update download: " +
+                  (error instanceof Error ? error.message : String(error)),
+              );
+            }
+            refreshUpdaterControls();
           }
         },
       });

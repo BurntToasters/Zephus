@@ -141,16 +141,32 @@ export function createHomeActions(deps: HomeDeps) {
     }
     setStatus("Restarting to apply update...");
     window.zephusMarkForceCloseAllowed?.();
-    const result = (await window.zephus.installUpdate()) as
-      { ok?: boolean; error?: string } | undefined;
-    if (result && result.ok === false) {
-      setStatus("Update install could not start.");
-      showModal(
-        "Could Not Restart",
-        friendlyError(result.error ?? "The downloaded update was not ready."),
-        [{ label: "OK", kind: "primary", onClick: closeModal }],
+    try {
+      const result = (await window.zephus.installUpdate()) as
+        { ok?: boolean; error?: string } | undefined;
+      // A missing result is ambiguous: keep the guard active unless the
+      // install explicitly succeeded and the app is relaunching.
+      if (result?.ok !== true) {
+        reportUpdateInstallFailure(
+          result?.error ?? "The downloaded update was not ready.",
+        );
+      }
+    } catch (error) {
+      // The IPC call can reject (main process gone, updater crashed): report it
+      // instead of leaving an unhandled rejection and a stale "Restarting…".
+      reportUpdateInstallFailure(
+        error instanceof Error ? error.message : String(error),
       );
     }
+  }
+
+  function reportUpdateInstallFailure(raw: string | undefined): void {
+    // The app is not relaunching, so restore the unsaved-work close guard.
+    window.zephusMarkForceCloseAllowed?.(false);
+    setStatus("Update install could not start.");
+    showModal("Could Not Restart", friendlyError(raw), [
+      { label: "OK", kind: "primary", onClick: closeModal },
+    ]);
   }
 
   function currentUpdaterActions(): Array<{
@@ -267,7 +283,18 @@ export function createHomeActions(deps: HomeDeps) {
   }
 
   async function renderRecent(): Promise<void> {
-    const settings = await window.zephus.readGlobalSettings();
+    let settings: GlobalSettings;
+    try {
+      settings = await window.zephus.readGlobalSettings();
+    } catch (error) {
+      // Keep the list already on screen instead of replacing it with an empty
+      // one, and do not hand partial data to setAppSettings.
+      setStatus(
+        "Could not load recent projects: " +
+          (error instanceof Error ? error.message : String(error)),
+      );
+      return;
+    }
     setAppSettings(settings);
     updateRecentProjects({
       entries: settings.recentProjects.map((p, index) => ({

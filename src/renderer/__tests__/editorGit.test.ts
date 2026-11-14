@@ -60,6 +60,33 @@ describe("editorGit", () => {
     expect(getGitStatus).toHaveBeenCalledWith("/proj", { fetchRemote: true });
   });
 
+  it("clears git status when the status IPC rejects", async () => {
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    const setGitStatus = vi.fn();
+    const actions = createEditorGitActions({
+      getProjectPath: () => "/proj",
+      setStatus: vi.fn(),
+      setGitStatus,
+      zephus: {
+        getGitStatus: vi.fn(async () => {
+          throw new Error("ipc down");
+        }),
+        commitGitChanges: vi.fn(),
+        pushGitChanges: vi.fn(),
+        pullGitChanges: vi.fn(),
+        initGitRepo: vi.fn(),
+      },
+    });
+
+    await expect(actions.refreshGit()).resolves.toBeUndefined();
+
+    expect(setGitStatus).toHaveBeenCalledWith(null);
+    expect(errorSpy).toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
   it("commits selected paths and refreshes", async () => {
     const setGitStatus = vi.fn();
     const commitGitChanges = vi.fn(async () => ({ ok: true as const }));
@@ -117,6 +144,28 @@ describe("editorGit", () => {
     expect(setStatus).toHaveBeenCalledWith(
       "Git commit failed: nothing to commit",
     );
+  });
+
+  it("surfaces commit IPC rejections", async () => {
+    const setStatus = vi.fn();
+    const actions = createEditorGitActions({
+      getProjectPath: () => "/proj",
+      setStatus,
+      setGitStatus: vi.fn(),
+      zephus: {
+        getGitStatus: vi.fn(),
+        commitGitChanges: vi.fn(async () => {
+          throw new Error("ipc down");
+        }),
+        pushGitChanges: vi.fn(),
+        pullGitChanges: vi.fn(),
+        initGitRepo: vi.fn(),
+      },
+    });
+
+    await expect(actions.commitGitChanges("boom")).resolves.toBeUndefined();
+
+    expect(setStatus).toHaveBeenCalledWith("Git commit failed: ipc down");
   });
 
   it("pushes and refreshes on success", async () => {

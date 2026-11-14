@@ -2,6 +2,7 @@
 
 import { appendCappedLog } from "./editorLog";
 import { renderPublishSuccessModalBody } from "./MiscModals";
+import { syncRadioGroupTabIndex } from "./radioGroup";
 import { isGlobalDirty } from "./editorSession";
 import type { EditorSessionState } from "./editorSession";
 
@@ -104,6 +105,7 @@ export function createPreviewPublishActions(deps: PreviewPublishDeps) {
       button.classList.toggle("active", vp === value);
       button.setAttribute("aria-checked", String(vp === value));
     }
+    syncRadioGroupTabIndex(document.querySelector<HTMLElement>(".vp-toggle"));
     // Always repaint in visual mode: while the preview window is open the wrap
     // classes shrink the canvas container immediately, but the block HTML and
     // effectiveStyle were rendered for the previous viewport. Repainting here is
@@ -151,8 +153,10 @@ export function createPreviewPublishActions(deps: PreviewPublishDeps) {
       }) => {
         const sameOpenProject =
           getState().project?.path === backgroundInstallProjectPath;
+        // The install is over either way: leaving the log listener attached
+        // would keep appending to a dead run and leak the subscription.
+        stopBackgroundInstallLog();
         if (result.ok) {
-          stopBackgroundInstallLog();
           if (sameOpenProject) setStatus("Dependencies installed.");
         } else if (sameOpenProject) {
           setStatus("Dependency install failed.");
@@ -237,26 +241,49 @@ export function createPreviewPublishActions(deps: PreviewPublishDeps) {
   /** Ensures deps are installed; offers to install if not. Returns true if ready. */
   async function ensureDependencies(): Promise<boolean> {
     if (!state.project) return false;
-    const installed = await window.zephus.dependenciesInstalled(
-      state.project.path,
-    );
+    let installed: boolean;
+    try {
+      installed = await window.zephus.dependenciesInstalled(state.project.path);
+    } catch (error) {
+      setStatus(
+        "Could not check dependencies: " +
+          (error instanceof Error ? error.message : String(error)),
+      );
+      return false;
+    }
     if (installed) return true;
     if (
       backgroundInstallLogUnsub &&
       backgroundInstallProjectPath === state.project.path
     ) {
-      const result = await window.zephus.installDependencies(
-        state.project.path,
-      );
-      return result.ok;
+      try {
+        const result = await window.zephus.installDependencies(
+          state.project.path,
+        );
+        return result.ok;
+      } catch (error) {
+        setStatus(
+          "Dependency install failed: " +
+            (error instanceof Error ? error.message : String(error)),
+        );
+        return false;
+      }
     }
     const flow = await runInstallFlow(state.project.path);
     if (flow === "installed") return true;
     if (flow === "backgrounded") {
-      const result = await window.zephus.installDependencies(
-        state.project.path,
-      );
-      return result.ok;
+      try {
+        const result = await window.zephus.installDependencies(
+          state.project.path,
+        );
+        return result.ok;
+      } catch (error) {
+        setStatus(
+          "Dependency install failed: " +
+            (error instanceof Error ? error.message : String(error)),
+        );
+        return false;
+      }
     }
     return false;
   }
@@ -512,6 +539,14 @@ export function createPreviewPublishActions(deps: PreviewPublishDeps) {
           },
         },
         { label: "Done", kind: "primary", onClick: closeModal },
+      ]);
+    } catch (error) {
+      // A rejected IPC call must surface as a failed publish instead of an
+      // unhandled rejection that leaves the UI looking like the build ran.
+      const message = error instanceof Error ? error.message : String(error);
+      setStatus("Publish failed: " + message);
+      showModal("Build Failed", friendlyError(message), [
+        { label: "OK", kind: "primary", onClick: closeModal },
       ]);
     } finally {
       publishInFlight = false;

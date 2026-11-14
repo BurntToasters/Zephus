@@ -38,6 +38,7 @@ export interface SettingsModalDeps {
       message: string,
       confirmLabel: string,
     ) => Promise<boolean>;
+    isOpen: () => boolean;
   };
   applyCodeFontSize: (size: number) => void;
   nodeStatusMessage: (res: NodeCheckResult) => string;
@@ -134,14 +135,23 @@ export function createSettingsModalActions(deps: SettingsModalDeps) {
             return;
           }
           if (actionId === "download") {
-            const result = (await window.zephus.downloadUpdate()) as {
-              status?: string;
-              error?: string;
-            };
-            if (result?.status === "error") {
-              showModal("Update Download Failed", friendlyError(result.error), [
-                { label: "OK", kind: "primary", onClick: closeModal },
-              ]);
+            try {
+              const result = (await window.zephus.downloadUpdate()) as {
+                status?: string;
+                error?: string;
+              };
+              if (result?.status === "error") {
+                showModal(
+                  "Update Download Failed",
+                  friendlyError(result.error),
+                  [{ label: "OK", kind: "primary", onClick: closeModal }],
+                );
+              }
+            } catch (error) {
+              setStatus(
+                "Update download failed: " +
+                  (error instanceof Error ? error.message : String(error)),
+              );
             }
             modalState.updaterStatusText = updaterStatusMessage();
             modalState.updaterActions = currentUpdaterActions();
@@ -153,7 +163,14 @@ export function createSettingsModalActions(deps: SettingsModalDeps) {
             return;
           }
           if (actionId === "cancel") {
-            await window.zephus.cancelUpdateDownload();
+            try {
+              await window.zephus.cancelUpdateDownload();
+            } catch (error) {
+              setStatus(
+                "Could not cancel update download: " +
+                  (error instanceof Error ? error.message : String(error)),
+              );
+            }
             modalState.updaterStatusText = updaterStatusMessage();
             modalState.updaterActions = currentUpdaterActions();
             renderModal();
@@ -207,11 +224,18 @@ export function createSettingsModalActions(deps: SettingsModalDeps) {
         },
         onOpenProductionLicenses: () => void openProductionLicensesModal(),
         onOpenConfigFolder: async () => {
-          const result = await window.zephus.openConfigFolder();
-          if (!result.ok) {
+          try {
+            const result = await window.zephus.openConfigFolder();
+            if (!result.ok) {
+              setStatus(
+                "Could not open config folder: " +
+                  (result.error ?? "unknown error"),
+              );
+            }
+          } catch (error) {
             setStatus(
               "Could not open config folder: " +
-                (result.error ?? "unknown error"),
+                (error instanceof Error ? error.message : String(error)),
             );
           }
         },
@@ -243,7 +267,16 @@ export function createSettingsModalActions(deps: SettingsModalDeps) {
             codeFontSize: 13,
             customNodePath: null,
           };
-          const reset = await window.zephus.writeGlobalSettings(defaults);
+          let reset: OperationResult;
+          try {
+            reset = await window.zephus.writeGlobalSettings(defaults);
+          } catch (error) {
+            setStatus(
+              "Could not reset settings: " +
+                (error instanceof Error ? error.message : String(error)),
+            );
+            return;
+          }
           if (!reset.ok) {
             setStatus(
               "Could not reset settings: " + (reset.error ?? "unknown error"),
@@ -278,9 +311,18 @@ export function createSettingsModalActions(deps: SettingsModalDeps) {
         label: "Save",
         kind: "primary",
         onClick: async () => {
-          const saved = await window.zephus.writeGlobalSettings(
-            modalState.settings,
-          );
+          let saved: OperationResult;
+          try {
+            saved = await window.zephus.writeGlobalSettings(
+              modalState.settings,
+            );
+          } catch (error) {
+            setStatus(
+              "Settings could not be saved: " +
+                (error instanceof Error ? error.message : String(error)),
+            );
+            return;
+          }
           if (!saved.ok) {
             // Never claim "Settings saved." when the write failed (read-only
             // config dir, invalid custom node path, etc.).
@@ -338,6 +380,25 @@ export function createSettingsModalActions(deps: SettingsModalDeps) {
       });
   }
 
+  function backToSettingsFromLicenses(): void {
+    closeModal();
+    if (!modalController.isOpen()) void openSettingsModal();
+  }
+
+  async function openRawProductionLicenses(): Promise<void> {
+    try {
+      const opened = await window.zephus.openProductionLicensesFile();
+      if (!opened.ok) {
+        setStatus(opened.error ?? "Could not open licenses.json.");
+      }
+    } catch (error) {
+      setStatus(
+        "Could not open licenses.json: " +
+          (error instanceof Error ? error.message : String(error)),
+      );
+    }
+  }
+
   function showProductionLicensesModal(result: ProductionLicensesResult): void {
     if (!result.ok) {
       showModal(
@@ -347,17 +408,12 @@ export function createSettingsModalActions(deps: SettingsModalDeps) {
           {
             label: "Back to Settings",
             kind: "ghost",
-            onClick: () => void openSettingsModal(),
+            onClick: backToSettingsFromLicenses,
           },
           {
             label: "Open Raw JSON",
             kind: "primary",
-            onClick: async () => {
-              const opened = await window.zephus.openProductionLicensesFile();
-              if (!opened.ok) {
-                setStatus(opened.error ?? "Could not open licenses.json.");
-              }
-            },
+            onClick: openRawProductionLicenses,
           },
         ],
       );
@@ -385,17 +441,12 @@ export function createSettingsModalActions(deps: SettingsModalDeps) {
         {
           label: "Back to Settings",
           kind: "ghost",
-          onClick: () => void openSettingsModal(),
+          onClick: backToSettingsFromLicenses,
         },
         {
           label: "Open Raw JSON",
           kind: "ghost",
-          onClick: async () => {
-            const opened = await window.zephus.openProductionLicensesFile();
-            if (!opened.ok) {
-              setStatus(opened.error ?? "Could not open licenses.json.");
-            }
-          },
+          onClick: openRawProductionLicenses,
         },
         { label: "Close", kind: "primary", onClick: closeModal },
       ],
@@ -404,13 +455,35 @@ export function createSettingsModalActions(deps: SettingsModalDeps) {
   }
 
   async function openProductionLicensesModal(): Promise<void> {
+    let loadingDismissed = false;
     showModal(
       "Production Licenses",
       "Loading bundled production license data…",
-      [{ label: "Close", kind: "ghost", onClick: closeModal }],
+      [
+        {
+          label: "Close",
+          kind: "ghost",
+          onClick: () => {
+            loadingDismissed = true;
+            closeModal();
+          },
+        },
+      ],
     );
-    const result = await window.zephus.readProductionLicenses();
-    showProductionLicensesModal(result);
+    try {
+      const result = await window.zephus.readProductionLicenses();
+      if (loadingDismissed) return;
+      closeModal();
+      showProductionLicensesModal(result);
+    } catch (error) {
+      if (loadingDismissed) return;
+      closeModal();
+      showModal(
+        "Production Licenses Unavailable",
+        friendlyError(error instanceof Error ? error.message : String(error)),
+        [{ label: "Close", kind: "primary", onClick: closeModal }],
+      );
+    }
   }
 
   return {

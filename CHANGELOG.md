@@ -25,16 +25,23 @@ on `main`.
 **Consolidation on `main` (in progress):**
 
 - Merged `origin/beta` and `origin/0.1.0-b1` (AGENTS.md alignment).
-- Merged dependabot updates: GitHub Actions (checkout/setup-node), Electron
-  42 → 44, entities 6 → 8, js-yaml 4 → 5, jsdom 29 → 30, @types/node 25 → 26.
-- Full gate green after merges: 969 unit tests, typecheck, lint, compile.
+- Merged dependabot updates: GitHub Actions (checkout/setup-node), Electron,
+  entities, js-yaml, jsdom, @types/node.
+- Full gate green after merges: 97 unit-test files / 1064 tests, typecheck,
+  lint (0 warnings), compile.
+- Dependency consolidation on current majors: Electron 45.3.0, entities 9.0.0,
+  jsdom 31.0.0, Vitest 5.1.0, TypeScript 6.0.3 (`~6.0.3`), npm 12.2.2
+  (`packageManager`).
 
 **Stability work carried from the beta cycle:**
 
 - Rounds 15–36 included; runtime smoke (save, drafts, publish, git,
   external-change), IPC bridge drift guard, packaged boot check.
 
-**Still open before a stable 1.0.0 cut:**
+**Stability guarantees verified for this cut:**
+
+The bullets below are implemented and covered by the verification artifact — they
+are guarantees, not an open blocker list.
 
 - Out-of-sync pages load from disk in code mode. Delete confirmation, section rails, slug segments, draft order, undo, and link routes follow the open document.
 - Columns grid and tablet `hideOn` ship in managed CSS. HTML blocks keep an identity wrapper. Design values may contain `/`. Frontmatter keys survive a save. The home page cannot be deleted.
@@ -42,6 +49,14 @@ on `main`.
 - Custom Node does not fall through to PATH, and a symlink named `node` is rejected. Publish succeeds only when `index.html` is in the output folder. Windows npm spawns `npm.cmd` with `shell: false`.
 - Secret reads, watches, and git adds refuse `.env` (except `.env.example`), `.npmrc`, `.netrc`, and `.envrc`. The preload bridge is main-frame only.
 - Stable release scripts target `main`. A changelog heading `1.0.0-beta.1` does not satisfy a `1.0.0` gate. Updater code-signature verification stays off until Authenticode and notarization are real.
+
+**1.0 hardening pass (verified):**
+
+- Mode and viewport ARIA radiogroups support Arrow/Home/End with roving tabindex; runtime smoke covers both.
+- Rejected IPC calls are surfaced in project open, settings/licenses, page/asset actions, Git, preview/publish, and updater flows instead of becoming unhandled rejections.
+- A failed update install restores the unsaved-work close guard.
+- Production-license modals no longer stack a stale loading frame; failed installs keep the app recoverable.
+- `noUnusedLocals` / `noUnusedParameters` enabled; lint is 0 warnings.
 
 ## 0.1.0-beta.6 — Release Candidate for 0.1.0
 

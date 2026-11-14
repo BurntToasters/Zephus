@@ -342,8 +342,21 @@ export function createStartViewActions(deps: StartViewDeps) {
 
     const configBtn = $maybe("btn-about-config");
     if (configBtn) {
-      configBtn.onclick = () => {
-        void window.zephus.openConfigFolder().catch(() => undefined);
+      configBtn.onclick = async () => {
+        try {
+          const result = await window.zephus.openConfigFolder();
+          if (!result.ok) {
+            setStatus(
+              "Could not open config folder: " +
+                (result.error ?? "unknown error"),
+            );
+          }
+        } catch (error) {
+          setStatus(
+            "Could not open config folder: " +
+              (error instanceof Error ? error.message : String(error)),
+          );
+        }
       };
     }
 
@@ -353,9 +366,16 @@ export function createStartViewActions(deps: StartViewDeps) {
 
     if (openRawLicensesBtn) {
       openRawLicensesBtn.onclick = async () => {
-        const opened = await window.zephus.openProductionLicensesFile();
-        if (!opened.ok) {
-          setStatus(opened.error ?? "Could not open licenses.json.");
+        try {
+          const opened = await window.zephus.openProductionLicensesFile();
+          if (!opened.ok) {
+            setStatus(opened.error ?? "Could not open licenses.json.");
+          }
+        } catch (error) {
+          setStatus(
+            "Could not open licenses.json: " +
+              (error instanceof Error ? error.message : String(error)),
+          );
         }
       };
     }
@@ -372,33 +392,43 @@ export function createStartViewActions(deps: StartViewDeps) {
           entries: [],
         });
 
-        const result = await window.zephus.readProductionLicenses();
-        loadLicensesBtn.disabled = false;
-        loadLicensesBtn.textContent = "Reload Dependency Licenses";
+        try {
+          const result = await window.zephus.readProductionLicenses();
 
-        if (!result.ok) {
+          if (!result.ok) {
+            updateAboutLicenses({
+              visible: true,
+              loading: false,
+              error: result.error ?? "Could not load production license data.",
+              entries: [],
+            });
+            return;
+          }
+
           updateAboutLicenses({
             visible: true,
             loading: false,
-            error: result.error ?? "Could not load production license data.",
+            error: null,
+            entries: result.entries.map((entry) => ({
+              packageId: entry.packageId,
+              licenses: entry.licenses,
+              repository: entry.repository,
+              licenseUrl: entry.licenseUrl,
+              parentsLabel:
+                entry.parents.slice(0, 4).join(" > ") || "Direct dependency",
+            })),
+          });
+        } catch (error) {
+          updateAboutLicenses({
+            visible: true,
+            loading: false,
+            error: error instanceof Error ? error.message : String(error),
             entries: [],
           });
-          return;
+        } finally {
+          loadLicensesBtn.disabled = false;
+          loadLicensesBtn.textContent = "Reload Dependency Licenses";
         }
-
-        updateAboutLicenses({
-          visible: true,
-          loading: false,
-          error: null,
-          entries: result.entries.map((entry) => ({
-            packageId: entry.packageId,
-            licenses: entry.licenses,
-            repository: entry.repository,
-            licenseUrl: entry.licenseUrl,
-            parentsLabel:
-              entry.parents.slice(0, 4).join(" > ") || "Direct dependency",
-          })),
-        });
       };
     }
   }
@@ -412,6 +442,14 @@ export function createStartViewActions(deps: StartViewDeps) {
     siteCreateInFlight = true;
     try {
       await createSiteFromTabFlowInner();
+    } catch (error) {
+      const message = friendlyError(
+        error instanceof Error ? error.message : String(error),
+      );
+      setStatus("Could not create site: " + message);
+      showModal("Could Not Create Site", message, [
+        { label: "OK", kind: "primary", onClick: closeModal },
+      ]);
     } finally {
       siteCreateInFlight = false;
     }

@@ -119,7 +119,14 @@ export function createProjectOpenActions(deps: ProjectOpenDeps) {
       // A thrown open must not leave a stale queued path: the next open would
       // silently open a project the user never clicked.
       queuedProjectOpen = null;
-      throw error;
+      // Callers fire-and-forget (`void openProjectByPath(...)`) and bootstrap
+      // awaits this, so a rejected IPC open must be reported here instead of
+      // surfacing as an unhandled rejection or aborting startup.
+      const message = error instanceof Error ? error.message : String(error);
+      setStatus("Could not open project: " + message);
+      showModal("Could Not Open Project", message, [
+        { label: "OK", kind: "primary", onClick: closeModal },
+      ]);
     } finally {
       projectOpenInFlight = false;
     }

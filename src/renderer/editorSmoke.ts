@@ -447,6 +447,110 @@ export function installEditorSmokeHook(deps: EditorSmokeDeps): void {
         `Editor smoke: window title did not pick up the project context (title="${document.title}")`,
       );
 
+      // ARIA radiogroups: Arrow/Home/End must move selection and keep exactly
+      // one roving tab stop. Run these before edit/save/publish so a broken
+      // keyboard path cannot hide behind later smoke steps.
+      const pressRadioKey = (element: HTMLElement, key: string): void => {
+        element.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            bubbles: true,
+            cancelable: true,
+            key,
+          }),
+        );
+      };
+      const ariaChecked = (id: string): string =>
+        $(id).getAttribute("aria-checked") ?? "";
+      const radioTabIndex = (id: string): number => $(id).tabIndex;
+      // Read through a call so TypeScript does not keep the earlier
+      // `state.currentViewport = "desktop"` assignment's literal narrowing.
+      const currentViewport = (): string => state.currentViewport;
+
+      $("vp-desktop").focus();
+      pressRadioKey($("vp-desktop"), "ArrowRight");
+      const canvasWrap = document.querySelector<HTMLElement>(".canvas-wrap");
+      assert(
+        currentViewport() === "tablet",
+        `Editor smoke: viewport ArrowRight did not select tablet (viewport=${currentViewport()}).`,
+      );
+      assert(
+        ariaChecked("vp-tablet") === "true" &&
+          ariaChecked("vp-desktop") === "false",
+        `Editor smoke: viewport ArrowRight aria-checked wrong (desktop=${ariaChecked("vp-desktop")} tablet=${ariaChecked("vp-tablet")}).`,
+      );
+      assert(
+        radioTabIndex("vp-tablet") === 0 &&
+          radioTabIndex("vp-desktop") === -1 &&
+          radioTabIndex("vp-mobile") === -1,
+        `Editor smoke: viewport ArrowRight roving tabindex wrong (desktop=${radioTabIndex("vp-desktop")} tablet=${radioTabIndex("vp-tablet")} mobile=${radioTabIndex("vp-mobile")}).`,
+      );
+      assert(
+        !!canvasWrap?.classList.contains("vp-tablet"),
+        `Editor smoke: canvas wrap missing vp-tablet after ArrowRight (class="${canvasWrap?.className ?? "missing"}").`,
+      );
+
+      pressRadioKey($("vp-tablet"), "End");
+      assert(
+        currentViewport() === "mobile" &&
+          ariaChecked("vp-mobile") === "true" &&
+          radioTabIndex("vp-mobile") === 0,
+        `Editor smoke: viewport End did not select mobile (viewport=${currentViewport()} checked=${ariaChecked("vp-mobile")} tabindex=${radioTabIndex("vp-mobile")}).`,
+      );
+
+      pressRadioKey($("vp-mobile"), "Home");
+      assert(
+        currentViewport() === "desktop" &&
+          ariaChecked("vp-desktop") === "true" &&
+          radioTabIndex("vp-desktop") === 0 &&
+          radioTabIndex("vp-mobile") === -1,
+        `Editor smoke: viewport Home did not select desktop (viewport=${currentViewport()} checked=${ariaChecked("vp-desktop")} tabindex=${radioTabIndex("vp-desktop")} mobileTabindex=${radioTabIndex("vp-mobile")}).`,
+      );
+
+      $("mode-visual").focus();
+      pressRadioKey($("mode-visual"), "ArrowRight");
+      const codeEditor = $("code-editor");
+      const visualCanvas = $("canvas");
+      assert(
+        state.mode === "code",
+        `Editor smoke: mode ArrowRight did not switch to code (mode=${state.mode}).`,
+      );
+      assert(
+        ariaChecked("mode-code") === "true" &&
+          ariaChecked("mode-visual") === "false",
+        `Editor smoke: mode ArrowRight aria-checked wrong (visual=${ariaChecked("mode-visual")} code=${ariaChecked("mode-code")}).`,
+      );
+      assert(
+        !codeEditor.classList.contains("hidden") &&
+          codeEditor.getClientRects().length > 0,
+        `Editor smoke: code editor not visible after mode ArrowRight (hidden=${codeEditor.classList.contains("hidden")} rects=${codeEditor.getClientRects().length}).`,
+      );
+      assert(
+        radioTabIndex("mode-code") === 0 && radioTabIndex("mode-visual") === -1,
+        `Editor smoke: mode ArrowRight roving tabindex wrong (visual=${radioTabIndex("mode-visual")} code=${radioTabIndex("mode-code")}).`,
+      );
+
+      pressRadioKey($("mode-code"), "ArrowLeft");
+      assert(
+        state.mode === "visual",
+        `Editor smoke: mode ArrowLeft did not switch back to visual (mode=${state.mode}).`,
+      );
+      assert(
+        !visualCanvas.classList.contains("hidden") &&
+          visualCanvas.getClientRects().length > 0,
+        `Editor smoke: visual canvas not visible after mode ArrowLeft (hidden=${visualCanvas.classList.contains("hidden")} rects=${visualCanvas.getClientRects().length}).`,
+      );
+      assert(
+        ariaChecked("mode-visual") === "true" &&
+          ariaChecked("mode-code") === "false" &&
+          radioTabIndex("mode-visual") === 0 &&
+          radioTabIndex("mode-code") === -1,
+        `Editor smoke: mode ArrowLeft did not sync radios (visual=${ariaChecked("mode-visual")}/${radioTabIndex("mode-visual")} code=${ariaChecked("mode-code")}/${radioTabIndex("mode-code")}).`,
+      );
+      assert(
+        state.mode === "visual" && currentViewport() === "desktop",
+        `Editor smoke: keyboard checks did not leave visual/desktop state (mode=${state.mode} viewport=${currentViewport()}).`,
+      );
+
       // Recovery draft: an unsaved edit must surface a page draft after the
       // debounce window.
       const sectionId = state.sections[0]?.id ?? null;

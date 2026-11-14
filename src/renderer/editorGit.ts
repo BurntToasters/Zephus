@@ -46,6 +46,23 @@ export function createEditorGitActions(deps: EditorGitDeps) {
     return next;
   }
 
+  async function runGitAction<T>(
+    label: string,
+    run: () => Promise<T>,
+    handle: (result: T) => Promise<void> | void,
+  ): Promise<void> {
+    let result: T;
+    try {
+      result = await enqueue(run);
+    } catch (error) {
+      deps.setStatus(
+        `${label}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return;
+    }
+    await handle(result);
+  }
+
   async function refreshGit(options?: {
     fetchRemote?: boolean;
   }): Promise<void> {
@@ -76,28 +93,31 @@ export function createEditorGitActions(deps: EditorGitDeps) {
       deps.setStatus("No project open to commit.");
       return;
     }
-    const result = await enqueue(() =>
-      deps.zephus.commitGitChanges(projectPath, message, paths),
-    );
-    if (!result.ok) {
-      const error = result.error ?? "unknown";
-      // Fresh git installs have no user.name/email — raw "Please tell me who
-      // you are" reads as the app being broken on a first commit.
-      if (/Please tell me who you are|user\.(name|email)/i.test(error)) {
+    await runGitAction(
+      "Git commit failed",
+      () => deps.zephus.commitGitChanges(projectPath, message, paths),
+      async (result) => {
+        if (!result.ok) {
+          const error = result.error ?? "unknown";
+          // Fresh git installs have no user.name/email — raw "Please tell me who
+          // you are" reads as the app being broken on a first commit.
+          if (/Please tell me who you are|user\.(name|email)/i.test(error)) {
+            deps.setStatus(
+              'Git needs your identity first: run `git config --global user.name "Your Name"` and `git config --global user.email you@example.com`, then commit again.',
+            );
+            return;
+          }
+          deps.setStatus("Git commit failed: " + error);
+          return;
+        }
         deps.setStatus(
-          'Git needs your identity first: run `git config --global user.name "Your Name"` and `git config --global user.email you@example.com`, then commit again.',
+          paths?.length
+            ? `Committed ${paths.length} file(s).`
+            : "Committed changes.",
         );
-        return;
-      }
-      deps.setStatus("Git commit failed: " + error);
-      return;
-    }
-    deps.setStatus(
-      paths?.length
-        ? `Committed ${paths.length} file(s).`
-        : "Committed changes.",
+        await refreshGit({ fetchRemote: true });
+      },
     );
-    await refreshGit({ fetchRemote: true });
   }
 
   async function pushGitChanges(): Promise<void> {
@@ -106,13 +126,18 @@ export function createEditorGitActions(deps: EditorGitDeps) {
       deps.setStatus("No project open to push.");
       return;
     }
-    const result = await enqueue(() => deps.zephus.pushGitChanges(projectPath));
-    if (!result.ok) {
-      deps.setStatus("Git push failed: " + (result.error ?? "unknown"));
-      return;
-    }
-    deps.setStatus("Pushed to remote.");
-    await refreshGit({ fetchRemote: true });
+    await runGitAction(
+      "Git push failed",
+      () => deps.zephus.pushGitChanges(projectPath),
+      async (result) => {
+        if (!result.ok) {
+          deps.setStatus("Git push failed: " + (result.error ?? "unknown"));
+          return;
+        }
+        deps.setStatus("Pushed to remote.");
+        await refreshGit({ fetchRemote: true });
+      },
+    );
   }
 
   async function pullGitChanges(): Promise<void> {
@@ -121,16 +146,21 @@ export function createEditorGitActions(deps: EditorGitDeps) {
       deps.setStatus("No project open to pull.");
       return;
     }
-    const result = await enqueue(() => deps.zephus.pullGitChanges(projectPath));
-    if (!result.ok) {
-      deps.setStatus("Git pull failed: " + (result.error ?? "unknown"));
-      return;
-    }
-    deps.setStatus(
-      "Pulled from remote (fast-forward). Reload from disk if page sources changed outside Zephus.",
+    await runGitAction(
+      "Git pull failed",
+      () => deps.zephus.pullGitChanges(projectPath),
+      async (result) => {
+        if (!result.ok) {
+          deps.setStatus("Git pull failed: " + (result.error ?? "unknown"));
+          return;
+        }
+        deps.setStatus(
+          "Pulled from remote (fast-forward). Reload from disk if page sources changed outside Zephus.",
+        );
+        await deps.onPullComplete?.();
+        await refreshGit({ fetchRemote: true });
+      },
     );
-    await deps.onPullComplete?.();
-    await refreshGit({ fetchRemote: true });
   }
 
   async function initGitFromPanel(): Promise<void> {
@@ -139,13 +169,18 @@ export function createEditorGitActions(deps: EditorGitDeps) {
       deps.setStatus("No project open to initialize Git.");
       return;
     }
-    const result = await enqueue(() => deps.zephus.initGitRepo(projectPath));
-    if (!result.ok) {
-      deps.setStatus("Git init failed: " + (result.error ?? "unknown"));
-      return;
-    }
-    deps.setStatus("Git repository initialized.");
-    await refreshGit({ fetchRemote: false });
+    await runGitAction(
+      "Git init failed",
+      () => deps.zephus.initGitRepo(projectPath),
+      async (result) => {
+        if (!result.ok) {
+          deps.setStatus("Git init failed: " + (result.error ?? "unknown"));
+          return;
+        }
+        deps.setStatus("Git repository initialized.");
+        await refreshGit({ fetchRemote: false });
+      },
+    );
   }
 
   return {

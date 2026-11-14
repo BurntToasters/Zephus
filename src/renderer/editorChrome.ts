@@ -3,6 +3,7 @@
 import { notePreviewServerExitedDuringStart } from "./editorPreviewPublish";
 import { isGlobalDirty } from "./editorSession";
 import type { EditorSessionState } from "./editorSession";
+import { bindRadioGroupKeyboard } from "./radioGroup";
 
 export interface ChromeDeps {
   getState: () => EditorSessionState;
@@ -170,9 +171,9 @@ export function createChromeActions(deps: ChromeDeps) {
     });
     // Update installs quit the app programmatically; the dirty guard must not
     // strand the update. restartToApplyUpdate resolves unsaved work first and
-    // then calls this.
-    window.zephusMarkForceCloseAllowed = () => {
-      forceCloseAllowed = true;
+    // then calls this; a failed install passes false to restore the guard.
+    window.zephusMarkForceCloseAllowed = (allowed?: boolean) => {
+      forceCloseAllowed = allowed !== false;
     };
 
     // Populate sidebar version label.
@@ -259,6 +260,8 @@ export function createChromeActions(deps: ChromeDeps) {
     $("vp-desktop").onclick = () => setViewport("desktop");
     $("vp-tablet").onclick = () => setViewport("tablet");
     $("vp-mobile").onclick = () => setViewport("mobile");
+    bindRadioGroupKeyboard(document.querySelector<HTMLElement>(".mode-toggle"));
+    bindRadioGroupKeyboard(document.querySelector<HTMLElement>(".vp-toggle"));
     document.addEventListener("keydown", onKeydown);
     renderLayers();
     renderThemePlaceholder();
@@ -315,8 +318,13 @@ export function createChromeActions(deps: ChromeDeps) {
   }
 
   async function showOnboardingIfNew(): Promise<void> {
-    const settings = await window.zephus.readGlobalSettings();
-    if (settings.recentProjects.length > 0) return;
+    try {
+      const settings = await window.zephus.readGlobalSettings();
+      if (settings.recentProjects.length > 0) return;
+    } catch {
+      // A failed settings read must not abort startup; skip onboarding.
+      return;
+    }
     try {
       if (localStorage.getItem("zephus.onboarding.dismissed") === "1") return;
     } catch {
