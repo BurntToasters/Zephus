@@ -287,6 +287,9 @@ function renderManagedStyles(site: SiteDocument): string {
   --zephus-container-width: ${c(site.design.containerWidth)};
   --zephus-font-family: ${c(site.design.fontFamily)};
   --zephus-heading-font: ${c(site.design.headingFontFamily)};
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
 }
 
 html, body {
@@ -390,6 +393,219 @@ a {
 
 [data-zephus-block="columns"] {
   display: grid;
+}
+
+.section-box,
+section[data-zephus-block="section"] {
+  margin-block: 1.5rem;
+}
+
+.lead {
+  font-size: 1.2rem;
+  color: color-mix(in srgb, var(--zephus-foreground) 68%, transparent);
+}
+
+.button {
+  display: inline-block;
+  padding: 0.8rem 1.6rem;
+  background: var(--zephus-accent);
+  color: #ffffff;
+  border-radius: 999px;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.button:hover {
+  opacity: 0.92;
+}
+
+.button.secondary {
+  background: transparent;
+  color: var(--zephus-accent);
+  border: 1.5px solid color-mix(in srgb, var(--zephus-foreground) 16%, transparent);
+}
+
+.zephus-column {
+  padding: 0.5rem;
+}
+
+.zephus-column h3 {
+  margin-top: 0;
+}
+
+.zephus-feature {
+  padding: 1rem 0;
+}
+
+.zephus-feature-icon {
+  font-size: 2rem;
+  line-height: 1;
+  margin-bottom: 0.5rem;
+}
+
+.zephus-testimonial {
+  margin: 1.5rem 0;
+  padding: 1.5rem;
+  background: var(--zephus-surface);
+  border-radius: var(--zephus-radius, 12px);
+}
+
+.zephus-testimonial blockquote {
+  margin: 0 0 0.75rem;
+  font-size: 1.15rem;
+}
+
+.zephus-testimonial figcaption {
+  color: color-mix(in srgb, var(--zephus-foreground) 65%, transparent);
+}
+
+.zephus-accordion details {
+  border-bottom: 1px solid color-mix(in srgb, var(--zephus-foreground) 14%, transparent);
+  padding: 0.75rem 0;
+}
+
+.zephus-accordion summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.zephus-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2rem;
+}
+
+.zephus-stat {
+  display: flex;
+  flex-direction: column;
+}
+
+.zephus-stat-num {
+  font-size: 2rem;
+  font-weight: 800;
+  color: var(--zephus-accent);
+}
+
+.zephus-stat-label {
+  color: color-mix(in srgb, var(--zephus-foreground) 65%, transparent);
+  font-size: 0.9rem;
+}
+
+.zephus-pricing {
+  border: 1px solid color-mix(in srgb, var(--zephus-foreground) 14%, transparent);
+  border-radius: var(--zephus-radius, 12px);
+  padding: 1.5rem;
+}
+
+.zephus-pricing ul {
+  padding-left: 1.1rem;
+}
+
+.zephus-price {
+  margin: 0.5rem 0 1rem;
+}
+
+.zephus-price-amount {
+  font-size: 2rem;
+  font-weight: 800;
+}
+
+.zephus-price-period {
+  color: color-mix(in srgb, var(--zephus-foreground) 65%, transparent);
+}
+
+.zephus-cta {
+  text-align: center;
+  padding: 2.5rem 1.5rem;
+  background: var(--zephus-surface);
+  border-radius: var(--zephus-radius, 12px);
+}
+
+.zephus-postlist {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.zephus-postlist-item {
+  display: grid;
+  gap: 0.4rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--zephus-foreground) 12%, transparent);
+}
+
+.zephus-postlist-item:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.zephus-postlist-title {
+  margin: 0;
+  font-size: 1.35rem;
+}
+
+.zephus-postlist-title a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.zephus-postlist-title a:hover {
+  color: var(--zephus-accent);
+}
+
+.zephus-postlist-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+  opacity: 0.72;
+}
+
+.zephus-postlist-excerpt {
+  margin: 0;
+}
+
+.zephus-postlist-image {
+  width: 100%;
+  max-height: 220px;
+  object-fit: cover;
+  border-radius: var(--zephus-radius, 12px);
+}
+
+.zephus-postlist-empty {
+  opacity: 0.72;
+  font-style: italic;
+}
+
+.zephus-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 0.75rem;
+}
+
+.zephus-gallery img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: var(--zephus-radius, 12px);
+}
+
+iframe[data-zephus-block="embed"] {
+  width: 100%;
+  min-height: 360px;
+  border: 0;
+}
+
+section:has(> .zephus-feature),
+section:has(> .zephus-pricing) {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.75rem;
+  align-items: start;
+}
+
+section:has(> .zephus-feature) > :is(h1, h2, h3, h4, p, .lead),
+section:has(> .zephus-pricing) > :is(h1, h2, h3, h4, p, .lead) {
+  grid-column: 1 / -1;
 }
 
 @media (max-width: 820px) {
@@ -1275,6 +1491,31 @@ function parseBlockSegment(segment: string): BlockNode {
       props: { items, ordered: tag === "ol" ? "true" : "false", cls },
       style,
     };
+  }
+  if (tag === "video") {
+    const open = openingTag(segment);
+    const openStyle = parseInlineStyle(attrValue(open, "style"));
+    const openCls = attrValue(open, "class");
+    const directSrc = attrValue(open, "src").trim();
+    const sourceTag =
+      segment.match(new RegExp(`<source\\b${TAG_PATTERN_SOURCE}`, "i"))?.[0] ??
+      "";
+    const sourceSrc = sourceTag ? attrValue(sourceTag, "src").trim() : "";
+    const candidateSrc = directSrc || sourceSrc;
+    const validSrc = candidateSrc ? safeUrl(candidateSrc) : "";
+    if (validSrc) {
+      return {
+        id,
+        type: "video",
+        props: {
+          src: validSrc,
+          title: attrValue(open, "title") || "Video",
+          cls: openCls,
+        },
+        style: openStyle,
+      };
+    }
+    return { id, type: "html", props: {}, raw: segment };
   }
   if (tag === "iframe") {
     return {

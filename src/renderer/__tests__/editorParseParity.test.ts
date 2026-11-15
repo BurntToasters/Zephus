@@ -265,4 +265,47 @@ describe("parser parity (schema regex parser vs renderer DOM parser)", () => {
       }));
     expect(shape(renderer)).toEqual(shape(main));
   });
+
+  it("extracts legacy inline text-align into style.align in both parsers", () => {
+    expectParity(
+      WRAP(`<p style="color:red; text-align: center">Centered</p>
+<h2 style="text-align: right">Right</h2>
+<blockquote style="text-align: left">Quote</blockquote>`),
+    );
+    const { renderer } = parseBoth(
+      WRAP(`<p style="text-align: center">Centered</p>`),
+    );
+    const blocks = (
+      renderer as Array<{ children: Array<{ style?: { align?: string } }> }>
+    )[0]?.children;
+    expect(blocks?.[0]?.style?.align).toBe("center");
+  });
+
+  it("migrates un-annotated <video> tags (and safe <source>) identically while leaving unsafe schemes as raw html", () => {
+    const xssUrl = "java" + "script:alert(1)";
+    const src =
+      WRAP(`<video controls src="/assets/clip.mp4" title="Demo"></video>
+<video controls style="width: 100%; border-radius: 8px" title="SourceClip"><source src="/assets/alt.webm" type="video/webm" /></video>
+<video src="${xssUrl}"></video>`);
+    expectParity(src);
+    const { renderer } = parseBoth(src);
+    const blocks = (
+      renderer as Array<{
+        children: Array<{
+          type: string;
+          props: Record<string, string>;
+          style?: { radius?: string };
+        }>;
+      }>
+    )[0]?.children;
+    expect(blocks).toHaveLength(3);
+    expect(blocks?.[0]?.type).toBe("video");
+    expect(blocks?.[0]?.props["src"]).toBe("/assets/clip.mp4");
+    expect(blocks?.[0]?.props["title"]).toBe("Demo");
+    expect(blocks?.[1]?.type).toBe("video");
+    expect(blocks?.[1]?.props["src"]).toBe("/assets/alt.webm");
+    expect(blocks?.[1]?.props["title"]).toBe("SourceClip");
+    expect(blocks?.[1]?.style?.radius).toBe("8px");
+    expect(blocks?.[2]?.type).toBe("html");
+  });
 });

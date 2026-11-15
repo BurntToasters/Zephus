@@ -7,6 +7,7 @@ import type {
   SectionNode,
 } from "../main/types";
 import { HTML_RAW_LINE_SENTINEL } from "../shared/blockRender";
+import { safeUrl } from "../shared/renderHelpers";
 
 type Block = EditorBlock;
 type BlockType = EditorBlockType;
@@ -47,18 +48,21 @@ export function parseZephusJsonAttr<T>(value: string | null): T | undefined {
 }
 
 function styleFromLegacyProps(el: HTMLElement): BlockStyle | undefined {
-  const style = {
-    color: el.style.color || undefined,
-    background: el.style.background || undefined,
-    padding: el.style.padding || undefined,
-    margin: el.style.margin || undefined,
-    width: el.style.width || undefined,
-    height: el.style.height || undefined,
-    maxWidth: el.style.maxWidth || undefined,
-    radius: el.style.borderRadius || undefined,
-    gap: el.style.gap || undefined,
-  } satisfies BlockStyle;
-  return Object.values(style).some(Boolean) ? style : undefined;
+  const style: BlockStyle = {};
+  if (el.style.color) style.color = el.style.color;
+  if (el.style.background) style.background = el.style.background;
+  if (el.style.padding) style.padding = el.style.padding;
+  if (el.style.margin) style.margin = el.style.margin;
+  if (el.style.width) style.width = el.style.width;
+  if (el.style.height) style.height = el.style.height;
+  if (el.style.maxWidth) style.maxWidth = el.style.maxWidth;
+  if (el.style.borderRadius) style.radius = el.style.borderRadius;
+  if (el.style.gap) style.gap = el.style.gap;
+  const rawAlign = el.style.textAlign.trim().toLowerCase();
+  if (rawAlign === "left" || rawAlign === "center" || rawAlign === "right") {
+    style.align = rawAlign;
+  }
+  return Object.keys(style).length > 0 ? style : undefined;
 }
 
 export interface EditorParseDeps {
@@ -244,6 +248,31 @@ export function createEditorPageParser(deps: EditorParseDeps) {
           },
           style: styleFromLegacyProps(el),
         });
+      } else if (tag === "video") {
+        const directSrc = el.getAttribute("src")?.trim() ?? "";
+        const sourceSrc =
+          el.querySelector("source[src]")?.getAttribute("src")?.trim() ?? "";
+        const candidateSrc = directSrc || sourceSrc;
+        const validSrc = candidateSrc ? safeUrl(candidateSrc) : "";
+        if (validSrc) {
+          blocks.push({
+            id: deps.uid(),
+            type: "video",
+            props: {
+              src: validSrc,
+              title: el.getAttribute("title") ?? "Video",
+              cls,
+            },
+            style: styleFromLegacyProps(el),
+          });
+        } else {
+          blocks.push({
+            id: deps.uid(),
+            type: "html",
+            props: {},
+            raw: el.outerHTML,
+          });
+        }
       } else if (tag === "iframe") {
         blocks.push({
           id: deps.uid(),

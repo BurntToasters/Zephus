@@ -6,16 +6,46 @@ import {
   ReusableSection,
   ReusableSectionsResult,
 } from "../types";
-import { readJsonSafe, writeFileAtomic } from "./fsSafe";
+import {
+  assertRealpathInside,
+  readJsonSafe,
+  safeResolve,
+  writeFileAtomic,
+} from "./fsSafe";
 
-/** Reusable sections are stored inside the project (`.zephus/templates/ reusable-sections.json`) so they travel with the… */
+function assertContainedTarget(
+  projectPath: string,
+  relParts: string[],
+): string {
+  const root = path.resolve(projectPath);
+  const realRoot = fs.realpathSync.native(root);
+  let current = root;
+  for (const part of relParts) {
+    current = safeResolve(current, part);
+    let st: fs.Stats | null;
+    try {
+      st = fs.lstatSync(current);
+    } catch {
+      st = null;
+    }
+    if (st) {
+      if (st.isSymbolicLink() && !fs.existsSync(current)) {
+        throw new Error("Path escapes the project directory.");
+      }
+      assertRealpathInside(realRoot, current);
+    }
+  }
+  assertRealpathInside(realRoot, current);
+  return current;
+}
+
+/** Reusable sections are stored inside the project (`.zephus/templates/reusable-sections.json`) so they travel with the project. */
 function sectionsPath(projectPath: string): string {
-  return path.join(
-    projectPath,
+  return assertContainedTarget(projectPath, [
     ".zephus",
     "templates",
     "reusable-sections.json",
-  );
+  ]);
 }
 
 function legacySectionsPath(): string {
@@ -36,9 +66,17 @@ function readSectionsFile(file: string): ReusableSection[] {
   );
 }
 
-function writeSectionsFile(file: string, sections: ReusableSection[]): void {
+function writeSectionsFile(
+  projectPath: string,
+  file: string,
+  sections: ReusableSection[],
+): void {
+  const realRoot = fs.realpathSync.native(path.resolve(projectPath));
+  assertRealpathInside(realRoot, path.dirname(file));
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  writeFileAtomic(file, JSON.stringify(sections, null, 2) + "\n");
+  assertRealpathInside(realRoot, path.dirname(file));
+  const verifiedFile = sectionsPath(projectPath);
+  writeFileAtomic(verifiedFile, JSON.stringify(sections, null, 2) + "\n");
 }
 
 function readStoredSections(projectPath: string): ReusableSection[] {
@@ -52,19 +90,43 @@ function readStoredSections(projectPath: string): ReusableSection[] {
   if (fs.existsSync(file)) return sections;
   const legacy = readSectionsFile(legacySectionsPath());
   if (legacy.length === 0) return [];
-  writeSectionsFile(file, legacy);
+  writeSectionsFile(projectPath, file, legacy);
   return legacy;
+}
+
+export function writeStoredReusableSections(
+  projectPath: string,
+  sections: ReusableSection[],
+): OperationResult {
+  try {
+    const file = sectionsPath(projectPath);
+    writeSectionsFile(projectPath, file, sections);
+    return { ok: true };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 export function listReusableSections(
   projectPath: string,
 ): ReusableSectionsResult {
-  return {
-    ok: true,
-    sections: readStoredSections(projectPath).sort((a, b) =>
-      a.label.localeCompare(b.label),
-    ),
-  };
+  try {
+    return {
+      ok: true,
+      sections: readStoredSections(projectPath).sort((a, b) =>
+        a.label.localeCompare(b.label),
+      ),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      sections: [],
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 export function saveReusableSection(
@@ -77,30 +139,45 @@ export function saveReusableSection(
   if (!trimmedLabel || !trimmedHtml) {
     return { ok: false, sections: [], error: "Label and HTML are required." };
   }
-  const sections = readStoredSections(projectPath);
-  const now = new Date().toISOString();
-  const existing = sections.find((section) => section.label === trimmedLabel);
-  if (existing) {
-    existing.html = trimmedHtml;
-    existing.updatedAt = now;
-  } else {
-    sections.push({
-      id: "section-" + Math.random().toString(36).slice(2, 10),
-      label: trimmedLabel,
-      html: trimmedHtml,
-      updatedAt: now,
-    });
+  try {
+    const sections = readStoredSections(projectPath);
+    const now = new Date().toISOString();
+    const existing = sections.find((section) => section.label === trimmedLabel);
+    if (existing) {
+      existing.html = trimmedHtml;
+      existing.updatedAt = now;
+    } else {
+      sections.push({
+        id: "section-" + Math.random().toString(36).slice(2, 10),
+        label: trimmedLabel,
+        html: trimmedHtml,
+        updatedAt: now,
+      });
+    }
+    writeSectionsFile(projectPath, sectionsPath(projectPath), sections);
+    return { ok: true, sections };
+  } catch (error) {
+    return {
+      ok: false,
+      sections: [],
+      error: error instanceof Error ? error.message : String(error),
+    };
   }
-  writeSectionsFile(sectionsPath(projectPath), sections);
-  return { ok: true, sections };
 }
 
 export function deleteReusableSection(
   projectPath: string,
   id: string,
 ): OperationResult {
-  const sections = readStoredSections(projectPath);
-  const next = sections.filter((section) => section.id !== id);
-  writeSectionsFile(sectionsPath(projectPath), next);
-  return { ok: true };
+  try {
+    const sections = readStoredSections(projectPath);
+    const next = sections.filter((section) => section.id !== id);
+    writeSectionsFile(projectPath, sectionsPath(projectPath), next);
+    return { ok: true };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
 }

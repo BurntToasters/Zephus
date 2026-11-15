@@ -331,10 +331,39 @@ export function LinkField(props: {
 }
 
 export function Group(props: { title: string; children: JSX.Element }) {
+  const [open, setOpen] = createSignal(true);
   return (
-    <section class="prop-group">
-      <h4>{props.title}</h4>
-      {props.children}
+    <section class={`prop-group${open() ? "" : " is-collapsed"}`}>
+      <header
+        class="prop-group-header"
+        role="button"
+        tabIndex={0}
+        aria-expanded={open()}
+        onClick={() => setOpen((prev) => !prev)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setOpen((prev) => !prev);
+          }
+        }}
+      >
+        <h4>{props.title}</h4>
+        <span class="prop-group-chevron" aria-hidden="true">
+          <svg viewBox="0 0 16 16" width="12" height="12">
+            <path
+              d="M4 6l4 4 4-4"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+        </span>
+      </header>
+      <div class="prop-group-body" hidden={!open()}>
+        {props.children}
+      </div>
     </section>
   );
 }

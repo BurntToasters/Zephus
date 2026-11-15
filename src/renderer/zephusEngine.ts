@@ -109,7 +109,7 @@ import { default as Save } from "lucide/dist/esm/icons/save.mjs";
 import { default as LogOut } from "lucide/dist/esm/icons/log-out.mjs";
 import { default as RefreshCw } from "lucide/dist/esm/icons/refresh-cw.mjs";
 import { default as Square } from "lucide/dist/esm/icons/square.mjs";
-import { default as Heading } from "lucide/dist/esm/icons/letter-h.mjs";
+import { default as Heading } from "lucide/dist/esm/icons/heading.mjs";
 import { default as AlignLeft } from "lucide/dist/esm/icons/text-align-start.mjs";
 import { default as ImageIcon } from "lucide/dist/esm/icons/image.mjs";
 import { default as Layout } from "lucide/dist/esm/icons/panels-top-left.mjs";
@@ -117,7 +117,7 @@ import { default as LayoutTemplate } from "lucide/dist/esm/icons/layout-template
 import { default as FileCode } from "lucide/dist/esm/icons/file-code.mjs";
 import { default as Link } from "lucide/dist/esm/icons/link.mjs";
 import { default as GitBranch } from "lucide/dist/esm/icons/git-branch.mjs";
-import { default as AlertTriangle } from "lucide/dist/esm/icons/triangle-exclamation-point.mjs";
+import { default as AlertTriangle } from "lucide/dist/esm/icons/triangle-alert.mjs";
 import { default as Star } from "lucide/dist/esm/icons/star.mjs";
 import { default as Quote } from "lucide/dist/esm/icons/quote.mjs";
 import { default as ChevronDown } from "lucide/dist/esm/icons/chevron-down.mjs";
@@ -2136,6 +2136,7 @@ function editorRenderOptions(
   canvasMaxHeadingLevel: number;
   serializeMaxHeadingLevel: number;
   posts: RenderPostEntry[];
+  excludePostListPageRoute?: string;
 } {
   return {
     viewport,
@@ -2146,6 +2147,7 @@ function editorRenderOptions(
     // differs" and detach. Clamping happens on the canvas only.
     serializeMaxHeadingLevel: 6,
     posts: editorPostIndex(),
+    excludePostListPageRoute: state.currentMeta?.route,
   };
 }
 

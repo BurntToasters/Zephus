@@ -1270,6 +1270,403 @@ async function runFreshQualityPassChecks(svc, blockRender) {
   }
 }
 
+async function runWebEngineAndUiAuditChecks(svc, blockRender) {
+  const esbuild = require("esbuild");
+  const { JSDOM } = require("jsdom");
+  const dom = new JSDOM("<!doctype html><html><body></body></html>");
+  const compileRendererHelper = (entryRel) => {
+    const out = esbuild.buildSync({
+      entryPoints: [path.join(ROOT, entryRel)],
+      bundle: true,
+      write: false,
+      format: "cjs",
+      platform: "node",
+    });
+    const mod = { exports: {} };
+    const sandbox = {
+      module: mod,
+      exports: mod.exports,
+      require,
+      console,
+      URL,
+      decodeURIComponent,
+      encodeURIComponent,
+      window: dom.window,
+      document: dom.window.document,
+      DOMParser: dom.window.DOMParser,
+      NodeFilter: dom.window.NodeFilter,
+      HTMLElement: dom.window.HTMLElement,
+      HTMLTemplateElement: dom.window.HTMLTemplateElement,
+      Element: dom.window.Element,
+      Node: dom.window.Node,
+    };
+    vm.runInNewContext(out.outputFiles[0].text, sandbox, { timeout: 5000 });
+    return mod.exports;
+  };
+
+  let editorBlockRender;
+  let editorParse;
+  let editorBlocks;
+  let editorSerialize;
+  try {
+    editorBlockRender = compileRendererHelper(
+      "src/renderer/editorBlockRender.ts",
+    );
+    editorParse = compileRendererHelper("src/renderer/editorParse.ts");
+    editorBlocks = compileRendererHelper("src/renderer/editorBlocks.ts");
+    editorSerialize = compileRendererHelper("src/renderer/editorSerialize.ts");
+  } catch (e) {
+    record("web engine helpers bundle for e2e", false, e.message);
+    return;
+  }
+
+  // 1. Post List self-exclusion parity between build renderer and editor renderer.
+  {
+    const postListBlock = {
+      id: "pl-e2e",
+      type: "postlist",
+      props: { title: "Posts", folder: "/blog", limit: "5", cls: "" },
+    };
+    const posts = [
+      { route: "/blog", title: "Blog Index", date: "2026-01-01" },
+      { route: "/blog/hello", title: "Hello World", date: "2026-01-02" },
+    ];
+    const buildHtml = blockRender.renderBlockHtml(postListBlock, {
+      viewport: "desktop",
+      forCanvas: false,
+      maxHeadingLevel: 6,
+      posts,
+      excludePostListPageRoute: "/blog",
+    });
+    const editorSerializeHtml = editorBlockRender.blockToHtmlForEditor(
+      postListBlock,
+      {
+        viewport: "desktop",
+        forCanvas: false,
+        canvasMaxHeadingLevel: 6,
+        posts,
+        excludePostListPageRoute: "/blog",
+      },
+    );
+    const editorCanvasHtml = editorBlockRender.blockToHtmlForEditor(
+      postListBlock,
+      {
+        viewport: "desktop",
+        forCanvas: true,
+        canvasMaxHeadingLevel: 6,
+        posts,
+        excludePostListPageRoute: "/blog",
+      },
+    );
+    const engineSrc = fs.readFileSync(
+      path.join(ROOT, "src", "renderer", "zephusEngine.ts"),
+      "utf8",
+    );
+    const engineForwardsRoute =
+      engineSrc.includes("excludePostListPageRoute") &&
+      editorSerializeHtml === buildHtml &&
+      !editorSerializeHtml.includes('href="/blog"') &&
+      !editorCanvasHtml.includes('href="/blog"') &&
+      editorCanvasHtml.includes('href="/blog/hello"');
+    record(
+      "postlist self-exclusion editor parity",
+      engineForwardsRoute,
+      `serializeMatch=${editorSerializeHtml === buildHtml} canvasHasSelf=${editorCanvasHtml.includes('href="/blog"')}`,
+    );
+  }
+
+  // 2. Legacy inline text-align parity between main regex parser and renderer DOM parser.
+  {
+    let uid = 0;
+    const parser = editorParse.createEditorPageParser({
+      uid: () => `e2e-${++uid}`,
+      createFallbackSection: () => ({
+        id: `e2e-${++uid}`,
+        type: "section",
+        label: "Main",
+        props: { wrapper: "none", cls: "" },
+        children: [],
+      }),
+      knownBlockTypes: editorBlocks.KNOWN_BLOCK_TYPES,
+    });
+    const src =
+      '---\nimport BaseLayout from "../layouts/BaseLayout.astro";\n---\n<BaseLayout>\n<p style="color:red; text-align: center">Centered copy</p>\n</BaseLayout>\n';
+    const mainSections = svc.schema.parseSectionsFromSource(src);
+    const { inner } = editorSerialize.splitManagedPageSource(src);
+    const editorSections = parser.parseSections(inner);
+    const mainAlign = mainSections[0]?.children?.[0]?.style?.align;
+    const editorAlign = editorSections[0]?.children?.[0]?.style?.align;
+    record(
+      "legacy inline style text-align parser parity",
+      mainAlign === "center" && editorAlign === "center",
+      `mainAlign=${String(mainAlign)} editorAlign=${String(editorAlign)}`,
+    );
+  }
+
+  // 3. Reusable sections storage containment blocks symlink escapes.
+  {
+    if (process.platform === "win32") {
+      record(
+        "reusable sections symlink escape blocked",
+        true,
+        "skipped on win32",
+      );
+    } else {
+      const reusable = await import(
+        pathToFileURL(
+          path.join(ROOT, "dist", "main", "services", "reusableSections.js"),
+        ).href
+      );
+      const tmp = fs.mkdtempSync(
+        path.join(os.tmpdir(), "zephus-e2e-reusable-"),
+      );
+      try {
+        const outsideDir = path.join(tmp, "outside");
+        const project = path.join(tmp, "project");
+        fs.mkdirSync(outsideDir, { recursive: true });
+        fs.mkdirSync(path.join(project, ".zephus"), { recursive: true });
+        const outsideFile = path.join(outsideDir, "reusable-sections.json");
+        const initialOutside = JSON.stringify([
+          {
+            id: "ext-1",
+            label: "Outside Secret",
+            html: "<p>outside</p>",
+            updatedAt: "2026-01-01",
+          },
+        ]);
+        fs.writeFileSync(outsideFile, initialOutside, "utf8");
+        fs.symlinkSync(outsideDir, path.join(project, ".zephus", "templates"));
+
+        const listed = reusable.listReusableSections(project);
+        const saved = reusable.saveReusableSection(
+          project,
+          "Inject",
+          "<p>x</p>",
+        );
+        const deleted = reusable.deleteReusableSection(project, "ext-1");
+        const afterOutside = fs.readFileSync(outsideFile, "utf8");
+
+        const pass =
+          listed.ok === false &&
+          listed.sections.length === 0 &&
+          saved.ok === false &&
+          deleted.ok === false &&
+          afterOutside === initialOutside;
+        record(
+          "reusable sections symlink escape blocked",
+          pass,
+          `listOk=${listed.ok} saveOk=${saved.ok} delOk=${deleted.ok} intact=${afterOutside === initialOutside}`,
+        );
+      } catch (e) {
+        record("reusable sections symlink escape blocked", false, e.message);
+      } finally {
+        rm(tmp);
+      }
+    }
+  }
+
+  // 4. Asset repoint preserves structural metadata and updates reusable sections.
+  {
+    let ctx;
+    try {
+      ctx = mkSite(svc, "minimal");
+    } catch (e) {
+      record(
+        "asset repoint structural safety & reusable sections",
+        false,
+        e.message,
+      );
+      ctx = null;
+    }
+    if (ctx) {
+      const { tmp, project } = ctx;
+      try {
+        const assetUsage = await import(
+          pathToFileURL(
+            path.join(ROOT, "dist", "main", "services", "assetUsage.js"),
+          ).href
+        );
+        const reusable = await import(
+          pathToFileURL(
+            path.join(ROOT, "dist", "main", "services", "reusableSections.js"),
+          ).href
+        );
+        const rel = "index.astro";
+        const readDoc = svc.schema.readPageDocument(project, rel, "src/pages");
+        const oldAsset = "/assets/images/logo.png";
+        const newAsset = "/assets/images/brand.svg";
+        svc.schema.writePageDocument(project, "src/pages", {
+          ...readDoc.pageDocument,
+          sections: [
+            {
+              id: "sec-assets-band",
+              type: "section",
+              label: `${oldAsset} Band`,
+              props: { wrapper: "none", cls: oldAsset },
+              children: [
+                {
+                  id: "h-e2e",
+                  type: "heading",
+                  props: { text: `See ${oldAsset}`, level: "2", cls: oldAsset },
+                },
+                {
+                  id: "img-e2e",
+                  type: "image",
+                  props: { src: oldAsset, alt: "Brand", cls: oldAsset },
+                },
+              ],
+            },
+          ],
+        });
+        reusable.saveReusableSection(
+          project,
+          "Footer Brand",
+          `<img src="${oldAsset}" alt="Brand" />`,
+        );
+
+        const usage = assetUsage.findAssetUsage(project, "src/pages", oldAsset);
+        const repoint = assetUsage.repointAssetReferences(
+          project,
+          "src/pages",
+          oldAsset,
+          newAsset,
+        );
+        const afterDoc = svc.schema.readPageDocument(project, rel, "src/pages");
+        const afterSec = afterDoc.pageDocument?.sections?.[0];
+        const afterH = afterSec?.children?.[0];
+        const afterImg = afterSec?.children?.[1];
+        const afterReusable = reusable.listReusableSections(project);
+
+        const hasReusableRef =
+          Array.isArray(usage.siteReferences) &&
+          usage.siteReferences.some((s) => s.includes("Footer Brand"));
+        const structuralIntact =
+          afterSec?.label === `${oldAsset} Band` &&
+          afterSec?.props?.cls === oldAsset &&
+          afterH?.props?.cls === oldAsset &&
+          afterImg?.props?.cls === oldAsset;
+        const contentUpdated =
+          afterImg?.props?.src === newAsset &&
+          afterH?.props?.text === `See ${newAsset}` &&
+          afterReusable.sections?.[0]?.html?.includes(newAsset);
+
+        record(
+          "asset repoint structural safety & reusable sections",
+          !!repoint.ok &&
+            hasReusableRef &&
+            structuralIntact &&
+            !!contentUpdated,
+          `hasReusableRef=${hasReusableRef} structuralIntact=${structuralIntact} contentUpdated=${contentUpdated}`,
+        );
+      } catch (e) {
+        record(
+          "asset repoint structural safety & reusable sections",
+          false,
+          e.message,
+        );
+      } finally {
+        rm(tmp);
+      }
+    }
+  }
+
+  // 5. Un-annotated <video> elements migrate cleanly to video blocks across both parsers.
+  {
+    let uid = 0;
+    const parser = editorParse.createEditorPageParser({
+      uid: () => `e2e-v-${++uid}`,
+      createFallbackSection: () => ({
+        id: `e2e-v-${++uid}`,
+        type: "section",
+        label: "Main",
+        props: { wrapper: "none", cls: "" },
+        children: [],
+      }),
+      knownBlockTypes: editorBlocks.KNOWN_BLOCK_TYPES,
+    });
+    const xssUrl = "java" + "script:alert(1)";
+    const src =
+      '---\nimport BaseLayout from "../layouts/BaseLayout.astro";\n---\n<BaseLayout>\n' +
+      '<video controls src="/assets/clip.mp4" title="Demo"></video>\n' +
+      '<video controls style="width: 100%; border-radius: 8px" title="SourceDemo"><source src="/assets/alt.webm" type="video/webm" /></video>\n' +
+      `<video src="${xssUrl}"></video>\n` +
+      "</BaseLayout>\n";
+    const mainBlocks =
+      svc.schema.parseSectionsFromSource(src)[0]?.children ?? [];
+    const { inner } = editorSerialize.splitManagedPageSource(src);
+    const editorBlocksParsed = parser.parseSections(inner)[0]?.children ?? [];
+
+    const checkList = (blocks) =>
+      blocks.length === 3 &&
+      blocks[0].type === "video" &&
+      blocks[0].props?.src === "/assets/clip.mp4" &&
+      blocks[0].props?.title === "Demo" &&
+      blocks[1].type === "video" &&
+      blocks[1].props?.src === "/assets/alt.webm" &&
+      blocks[1].props?.title === "SourceDemo" &&
+      blocks[1].style?.radius === "8px" &&
+      blocks[2].type === "html";
+
+    const okMain = checkList(mainBlocks);
+    const okEditor = checkList(editorBlocksParsed);
+    record(
+      "unannotated video migration parity",
+      okMain && okEditor,
+      `main=${okMain} editor=${okEditor}`,
+    );
+  }
+
+  // 6. Managed stylesheet includes complete runtime styles for all supported blocks & shadows.
+  {
+    let ctx;
+    try {
+      ctx = mkSite(svc, "minimal");
+    } catch (e) {
+      record("managed stylesheet covers all block classes", false, e.message);
+      ctx = null;
+    }
+    if (ctx) {
+      const { tmp, project } = ctx;
+      try {
+        const cssPath = path.join(
+          project,
+          "public",
+          "styles",
+          "zephus-managed.css",
+        );
+        const css = fs.existsSync(cssPath)
+          ? fs.readFileSync(cssPath, "utf8")
+          : "";
+        const requiredSelectors = [
+          "--shadow-sm",
+          "--shadow-md",
+          ".section-box",
+          ".button",
+          ".lead",
+          ".zephus-column",
+          ".zephus-feature",
+          ".zephus-testimonial",
+          ".zephus-accordion",
+          ".zephus-stats",
+          ".zephus-pricing",
+          ".zephus-cta",
+          ".zephus-postlist",
+          ".zephus-gallery",
+          'iframe[data-zephus-block="embed"]',
+        ];
+        const missing = requiredSelectors.filter((sel) => !css.includes(sel));
+        record(
+          "managed stylesheet covers all block classes",
+          missing.length === 0,
+          missing.length === 0 ? "ok" : `missing: ${missing.join(", ")}`,
+        );
+      } finally {
+        rm(tmp);
+      }
+    }
+  }
+}
+
 async function main() {
   ensureDraftsUserDataDir();
   const dist = (p) =>
@@ -1526,6 +1923,9 @@ async function main() {
 
   console.log("\n[fresh quality pass checks]");
   await runFreshQualityPassChecks(svc, blockRender);
+
+  console.log("\n[web engine & parity audit checks]");
+  await runWebEngineAndUiAuditChecks(svc, blockRender);
 
   console.log("\n[astro rebuild on mutated sites]");
   const ASTRO_ENTRY = path.join(

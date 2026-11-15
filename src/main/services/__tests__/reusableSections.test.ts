@@ -118,4 +118,73 @@ describe("reusableSections", () => {
     const sections = await import("../reusableSections");
     expect(sections.listReusableSections(projectDir).sections).toHaveLength(0);
   });
+
+  it.skipIf(process.platform === "win32")(
+    "blocks symlinked templates directory escaping project root",
+    async () => {
+      const outsideDir = path.join(tmpDir, "outside-templates");
+      fs.mkdirSync(outsideDir, { recursive: true });
+      const outsideFile = path.join(outsideDir, "reusable-sections.json");
+      const sentinel = JSON.stringify([
+        {
+          id: "ext-1",
+          label: "External",
+          html: "<p>secret</p>",
+          updatedAt: "2026-01-01",
+        },
+      ]);
+      fs.writeFileSync(outsideFile, sentinel, "utf8");
+      fs.mkdirSync(path.join(projectDir, ".zephus"), { recursive: true });
+      fs.symlinkSync(outsideDir, path.join(projectDir, ".zephus", "templates"));
+
+      const sections = await import("../reusableSections");
+      const listed = sections.listReusableSections(projectDir);
+      expect(listed.ok).toBe(false);
+      expect(listed.sections).toHaveLength(0);
+
+      const saved = sections.saveReusableSection(
+        projectDir,
+        "Injected",
+        "<p>bad</p>",
+      );
+      expect(saved.ok).toBe(false);
+
+      const deleted = sections.deleteReusableSection(projectDir, "ext-1");
+      expect(deleted.ok).toBe(false);
+      expect(fs.readFileSync(outsideFile, "utf8")).toBe(sentinel);
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "blocks symlinked reusable-sections.json escaping project root",
+    async () => {
+      const outsideFile = path.join(tmpDir, "outside-store.json");
+      const sentinel = JSON.stringify([
+        {
+          id: "ext-2",
+          label: "Outside File",
+          html: "<p>outside</p>",
+          updatedAt: "2026-01-01",
+        },
+      ]);
+      fs.writeFileSync(outsideFile, sentinel, "utf8");
+      fs.mkdirSync(path.join(projectDir, ".zephus", "templates"), {
+        recursive: true,
+      });
+      fs.symlinkSync(
+        outsideFile,
+        path.join(projectDir, ".zephus", "templates", "reusable-sections.json"),
+      );
+
+      const sections = await import("../reusableSections");
+      expect(sections.listReusableSections(projectDir).ok).toBe(false);
+      expect(
+        sections.saveReusableSection(projectDir, "Hijack", "<p>pwn</p>").ok,
+      ).toBe(false);
+      expect(sections.deleteReusableSection(projectDir, "ext-2").ok).toBe(
+        false,
+      );
+      expect(fs.readFileSync(outsideFile, "utf8")).toBe(sentinel);
+    },
+  );
 });

@@ -355,4 +355,74 @@ describe("assetUsage", () => {
     // The numeric style value survives the tree rewrite.
     expect(reread.pageDocument!.sections[0]?.style?.columns).toBe(2);
   });
+
+  it("preserves structural metadata (label, cls, id, level) and repoints reusable sections", async () => {
+    const reusable = await import("../reusableSections");
+    const rel = pagePathFromSlug("src/pages", "guarded");
+    fs.writeFileSync(path.join(project, rel), "stub", "utf8");
+    ensureVisualSchema(project, "src/pages");
+    const current = readPageDocument(project, rel, "src/pages");
+    const oldAsset = "/assets/images/logo.png";
+    const newAsset = "/assets/images/brand.svg";
+    writePageDocument(project, "src/pages", {
+      ...current.pageDocument!,
+      sections: [
+        {
+          id: "sec-1",
+          type: "section",
+          label: `${oldAsset} Band`,
+          props: { wrapper: "none", cls: oldAsset },
+          children: [
+            {
+              id: "h-1",
+              type: "heading",
+              props: {
+                text: `See ${oldAsset}`,
+                level: "2",
+                cls: oldAsset,
+              },
+            },
+            {
+              id: "img-1",
+              type: "image",
+              props: { src: oldAsset, alt: "Brand", cls: oldAsset },
+            },
+          ],
+        },
+      ],
+    });
+    const savedSection = reusable.saveReusableSection(
+      project,
+      "Logo Banner",
+      `<img src="${oldAsset}" alt="Brand" />`,
+    );
+    expect(savedSection.ok).toBe(true);
+
+    const usage = findAssetUsage(project, "src/pages", oldAsset);
+    expect(usage.ok).toBe(true);
+    expect(
+      usage.siteReferences.some((entry) => entry.includes("Logo Banner")),
+    ).toBe(true);
+
+    const result = repointAssetReferences(
+      project,
+      "src/pages",
+      oldAsset,
+      newAsset,
+    );
+    expect(result.ok).toBe(true);
+    expect(result.updated).toBeGreaterThanOrEqual(3);
+
+    const reread = readPageDocument(project, rel, "src/pages");
+    const sec = reread.pageDocument!.sections[0]!;
+    expect(sec.label).toBe(`${oldAsset} Band`);
+    expect(sec.props["cls"]).toBe(oldAsset);
+    expect(sec.children[0]?.props["cls"]).toBe(oldAsset);
+    expect(sec.children[0]?.props["text"]).toBe(`See ${newAsset}`);
+    expect(sec.children[1]?.props["cls"]).toBe(oldAsset);
+    expect(sec.children[1]?.props["src"]).toBe(newAsset);
+
+    const updatedReusable = reusable.listReusableSections(project);
+    expect(updatedReusable.sections[0]?.html).toContain(newAsset);
+  });
 });

@@ -16,6 +16,8 @@ export interface EditorBlockRenderOptions {
   serializeMaxHeadingLevel?: number;
   /** Pages available to Post List blocks; must mirror the build's index. */
   posts?: RenderPostEntry[];
+  /** Current page route excluded from Post List results (mirrors build). */
+  excludePostListPageRoute?: string;
 }
 
 const CANVAS_FORBIDDEN_TAGS = new Set([
@@ -117,6 +119,7 @@ export function blockToHtmlForEditor(
       ? sanitizeHtmlForCanvas
       : undefined,
     posts: options.posts,
+    excludePostListPageRoute: options.excludePostListPageRoute,
   });
 }
 

@@ -18,7 +18,24 @@
         <!-- Sidebar Navigation -->
         <aside class="start-sidebar">
           <div class="start-brand">
-            <div class="brand-logo"></div>
+            <div class="brand-logo" aria-hidden="true">
+              <svg class="zephus-mark" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M5 6.5h14l-7.5 11H19"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+                <circle
+                  cx="5"
+                  cy="17.5"
+                  r="1.6"
+                  fill="currentColor"
+                  opacity="0.7"
+                />
+              </svg>
+            </div>
             <div class="brand-meta">
               <h1 class="brand-title">Zephus</h1>
               <p class="brand-subtitle">Visual Astro Builder</p>
@@ -174,7 +191,24 @@
             <div class="pane-content">
               <div class="about-container">
                 <div class="about-hero">
-                  <div class="about-brand-logo"></div>
+                  <div class="about-brand-logo" aria-hidden="true">
+                    <svg class="zephus-mark" viewBox="0 0 24 24" fill="none">
+                      <path
+                        d="M5 6.5h14l-7.5 11H19"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                      <circle
+                        cx="5"
+                        cy="17.5"
+                        r="1.6"
+                        fill="currentColor"
+                        opacity="0.7"
+                      />
+                    </svg>
+                  </div>
                   <h3 class="about-app-name">Zephus</h3>
                   <p id="about-app-version" class="about-app-version">Zephus</p>
                   <p class="about-lead">
@@ -231,7 +265,30 @@
       <a class="skip-link" href="#canvas">Skip to canvas</a>
       <header class="topbar">
         <div class="topbar-left">
-          <span class="brand-sm">Zephus</span>
+          <span class="brand-sm">
+            <svg
+              class="zephus-mark zephus-mark-sm"
+              viewBox="0 0 24 24"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path
+                d="M5 6.5h14l-7.5 11H19"
+                stroke="currentColor"
+                stroke-width="2.2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <circle
+                cx="5"
+                cy="17.5"
+                r="1.7"
+                fill="currentColor"
+                opacity="0.7"
+              />
+            </svg>
+            <span>Zephus</span>
+          </span>
           <span id="project-name" class="project-name"></span>
           <span id="git-branch" class="git-branch"></span>
         </div>
@@ -300,69 +357,81 @@
           </div>
         </div>
         <div class="topbar-right">
-          <button
-            id="btn-undo"
-            class="btn ghost"
-            title="Undo (Ctrl/Cmd+Z)"
-            aria-label="Undo last change"
+          <div class="topbar-cluster" role="group" aria-label="History">
+            <button
+              id="btn-undo"
+              class="btn ghost"
+              title="Undo (Ctrl/Cmd+Z)"
+              aria-label="Undo last change"
+            >
+              <i data-lucide="undo-2"></i> Undo
+            </button>
+            <button
+              id="btn-redo"
+              class="btn ghost"
+              title="Redo (Ctrl/Cmd+Shift+Z)"
+              aria-label="Redo last change"
+            >
+              <i data-lucide="redo-2"></i> Redo
+            </button>
+          </div>
+          <span class="topbar-divider" aria-hidden="true"></span>
+          <div
+            class="topbar-cluster"
+            role="group"
+            aria-label="Preview and Publish"
           >
-            <i data-lucide="undo-2"></i> Undo
-          </button>
-          <button
-            id="btn-redo"
-            class="btn ghost"
-            title="Redo (Ctrl/Cmd+Shift+Z)"
-            aria-label="Redo last change"
-          >
-            <i data-lucide="redo-2"></i> Redo
-          </button>
-          <button id="btn-preview" class="btn" aria-label="Start Preview">
-            <i data-lucide="play"></i> Start Preview
-          </button>
-          <button
-            id="preview-url-chip"
-            class="preview-url-chip hidden"
-            type="button"
-            title="Copy preview URL"
-            aria-label="Copy preview URL"
-          >
-            <i data-lucide="link"></i>
-            <span></span>
-          </button>
-          <button
-            id="btn-publish"
-            class="btn"
-            aria-label="Publish Site to Production"
-          >
-            <i data-lucide="globe"></i> Publish
-          </button>
-          <button id="btn-save" class="btn primary" aria-label="Save Changes">
-            <i data-lucide="save"></i><span id="save-label">Save</span>
-          </button>
-          <button
-            id="btn-help"
-            class="btn ghost"
-            title="Keyboard Shortcuts &amp; Help"
-            aria-label="View Keyboard Shortcuts and Help"
-          >
-            <i data-lucide="info"></i> Help
-          </button>
-          <button
-            id="btn-settings"
-            class="btn ghost"
-            title="Settings"
-            aria-label="Open Settings"
-          >
-            <i data-lucide="settings"></i> Settings
-          </button>
-          <button
-            id="btn-close"
-            class="btn ghost"
-            title="Close Project"
-            aria-label="Close Project and Return Home"
-          >
-            <i data-lucide="log-out"></i> Close
-          </button>
+            <button id="btn-preview" class="btn" aria-label="Start Preview">
+              <i data-lucide="play"></i> Start Preview
+            </button>
+            <button
+              id="preview-url-chip"
+              class="preview-url-chip hidden"
+              type="button"
+              title="Copy preview URL"
+              aria-label="Copy preview URL"
+            >
+              <i data-lucide="link"></i>
+              <span></span>
+            </button>
+            <button
+              id="btn-publish"
+              class="btn"
+              aria-label="Publish Site to Production"
+            >
+              <i data-lucide="globe"></i> Publish
+            </button>
+            <button id="btn-save" class="btn primary" aria-label="Save Changes">
+              <i data-lucide="save"></i><span id="save-label">Save</span>
+            </button>
+          </div>
+          <span class="topbar-divider" aria-hidden="true"></span>
+          <div class="topbar-cluster" role="group" aria-label="Workspace tools">
+            <button
+              id="btn-help"
+              class="btn ghost"
+              title="Keyboard Shortcuts &amp; Help"
+              aria-label="View Keyboard Shortcuts and Help"
+            >
+              <i data-lucide="info"></i> Help
+            </button>
+            <button
+              id="btn-settings"
+              class="btn ghost"
+              title="Settings"
+              aria-label="Open Settings"
+            >
+              <i data-lucide="settings"></i> Settings
+            </button>
+            <button
+              id="btn-close"
+              class="btn ghost"
+              title="Close Project"
+              aria-label="Close Project and Return Home"
+            >
+              <i data-lucide="log-out"></i> Close
+            </button>
+          </div>
         </div>
       </header>
 
