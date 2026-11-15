@@ -115,8 +115,9 @@ export function createKeyboardHandler(deps: KeyboardDeps) {
     }
 
     if (!state.project) return;
+    const key = e.key.toLowerCase();
 
-    if (mod && e.key === "s") {
+    if (mod && key === "s") {
       void performSave();
       e.preventDefault();
       return;
@@ -134,12 +135,12 @@ export function createKeyboardHandler(deps: KeyboardDeps) {
       return;
     }
     // Mod+E toggles Visual/Code mode.
-    if (mod && e.key === "e" && !editing) {
+    if (mod && key === "e" && !editing) {
       setMode(state.mode === "code" ? "visual" : "code");
       e.preventDefault();
       return;
     }
-    if (mod && e.key === "f" && !editing) {
+    if (mod && key === "f" && !editing) {
       // CodeMirror's own search keymap also binds Mod-f; when it already handled
       // the keystroke (its panel is open), don't stack the app's modal too.
       if (!e.defaultPrevented) void openFindReplaceModal();
@@ -156,13 +157,13 @@ export function createKeyboardHandler(deps: KeyboardDeps) {
       // mode must keep NATIVE undo — running cm.undo() here hijacked it (the
       // visual-mode editing guard was bypassed by this branch).
       if (editing) return;
-      if (e.key === "z" && !e.shiftKey) {
+      if (key === "z" && !e.shiftKey) {
         deps.cmUndo();
         updateUndoRedoButtons();
         e.preventDefault();
         return;
       }
-      if (e.key === "y" || (e.key === "z" && e.shiftKey)) {
+      if (key === "y" || (key === "z" && e.shiftKey)) {
         deps.cmRedo();
         updateUndoRedoButtons();
         e.preventDefault();
@@ -180,20 +181,17 @@ export function createKeyboardHandler(deps: KeyboardDeps) {
       !active.classList.contains("block");
     if (
       onChromeControl &&
-      (e.key === "Delete" ||
-        e.key === "Backspace" ||
-        e.key === "d" ||
-        e.key === "D")
+      (e.key === "Delete" || e.key === "Backspace" || key === "d")
     ) {
       return;
     }
-    if (mod && e.key === "z" && !e.shiftKey) {
+    if (mod && key === "z" && !e.shiftKey) {
       doUndo();
       e.preventDefault();
-    } else if (mod && (e.key === "y" || (e.key === "z" && e.shiftKey))) {
+    } else if (mod && (key === "y" || (key === "z" && e.shiftKey))) {
       doRedo();
       e.preventDefault();
-    } else if (mod && (e.key === "d" || e.key === "D")) {
+    } else if (mod && key === "d") {
       const block = findSelectedBlock();
       if (block) {
         duplicateSelectedBlock(block);
@@ -202,13 +200,13 @@ export function createKeyboardHandler(deps: KeyboardDeps) {
         duplicateSection(state.selectedSectionId);
         e.preventDefault();
       }
-    } else if (mod && e.key === "c") {
+    } else if (mod && key === "c") {
       copySelectionToClipboard();
       e.preventDefault();
-    } else if (mod && e.key === "x") {
+    } else if (mod && key === "x") {
       void cutSelectionToClipboard();
       e.preventDefault();
-    } else if (mod && e.key === "v") {
+    } else if (mod && key === "v") {
       pasteFromClipboard();
       e.preventDefault();
     } else if (e.key === "Delete" || e.key === "Backspace") {

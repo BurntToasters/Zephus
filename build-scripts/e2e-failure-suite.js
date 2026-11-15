@@ -1665,6 +1665,561 @@ async function runWebEngineAndUiAuditChecks(svc, blockRender) {
       }
     }
   }
+
+  // 7. Dangling symlink escape blocked in assertRealpathInside & duplicatePage.
+  {
+    if (process.platform === "win32") {
+      record(
+        "dangling symlink escape blocked in assertRealpathInside",
+        true,
+        "skipped on win32",
+      );
+    } else {
+      let ctx;
+      try {
+        ctx = mkSite(svc, "minimal");
+      } catch (e) {
+        record(
+          "dangling symlink escape blocked in assertRealpathInside",
+          false,
+          e.message,
+        );
+        ctx = null;
+      }
+      if (ctx) {
+        const { tmp, project } = ctx;
+        try {
+          const fsSafe = await import(
+            pathToFileURL(
+              path.join(ROOT, "dist", "main", "services", "fsSafe.js"),
+            ).href
+          );
+          const outsideTarget = path.join(tmp, "outside-target.astro");
+          const linkPath = path.join(project, "src", "pages", "escape.astro");
+          fs.symlinkSync(outsideTarget, linkPath);
+          let threw = false;
+          try {
+            fsSafe.assertRealpathInside(project, linkPath);
+          } catch {
+            threw = true;
+          }
+          const dup = svc.pageManager.duplicatePage(
+            project,
+            "src/pages/index.astro",
+            "src/pages",
+            "escape",
+          );
+          const createdOutside = fs.existsSync(outsideTarget);
+          record(
+            "dangling symlink escape blocked in assertRealpathInside",
+            threw && dup.ok === false && !createdOutside,
+            `threw=${threw} dupOk=${dup.ok} createdOutside=${createdOutside}`,
+          );
+        } catch (e) {
+          record(
+            "dangling symlink escape blocked in assertRealpathInside",
+            false,
+            e.message,
+          );
+        } finally {
+          rm(tmp);
+        }
+      }
+    }
+  }
+
+  // 8. Repo settings symlink containment blocks external reads and .corrupt backups.
+  {
+    if (process.platform === "win32") {
+      record("repo settings symlink containment", true, "skipped on win32");
+    } else {
+      let ctx;
+      try {
+        ctx = mkSite(svc, "minimal");
+      } catch (e) {
+        record("repo settings symlink containment", false, e.message);
+        ctx = null;
+      }
+      if (ctx) {
+        const { tmp, project } = ctx;
+        try {
+          const settingsSvc = await import(
+            pathToFileURL(
+              path.join(ROOT, "dist", "main", "services", "settings.js"),
+            ).href
+          );
+          const secretFile = path.join(tmp, "outside-secret.txt");
+          fs.writeFileSync(secretFile, "PRIVATE=1\n", "utf8");
+          const settingsPath = path.join(project, ".zephus", "settings.json");
+          fs.rmSync(settingsPath, { force: true });
+          fs.symlinkSync(secretFile, settingsPath);
+          const loaded = settingsSvc.readRepoSettings(project);
+          const hasCorruptBackup = fs
+            .readdirSync(path.join(project, ".zephus"))
+            .some((name) => name.includes(".corrupt-"));
+          record(
+            "repo settings symlink containment",
+            loaded.schemaVersion === 1 && !hasCorruptBackup,
+            `schemaVersion=${loaded.schemaVersion} hasCorrupt=${hasCorruptBackup}`,
+          );
+        } catch (e) {
+          record("repo settings symlink containment", false, e.message);
+        } finally {
+          rm(tmp);
+        }
+      }
+    }
+  }
+
+  // 9. detachPageDocument pins pagesDir and blocks layout overwrite.
+  {
+    let ctx;
+    try {
+      ctx = mkSite(svc, "minimal");
+    } catch (e) {
+      record(
+        "detachPageDocument pins pagesDir and blocks layout overwrite",
+        false,
+        e.message,
+      );
+      ctx = null;
+    }
+    if (ctx) {
+      const { tmp, project } = ctx;
+      try {
+        const layoutPath = path.join(
+          project,
+          "src",
+          "layouts",
+          "BaseLayout.astro",
+        );
+        const before = fs.readFileSync(layoutPath, "utf8");
+        const res = svc.schema.detachPageDocument(
+          project,
+          "src/layouts/BaseLayout.astro",
+          "src/layouts",
+          "<p>pwned</p>",
+        );
+        const after = fs.readFileSync(layoutPath, "utf8");
+        record(
+          "detachPageDocument pins pagesDir and blocks layout overwrite",
+          res.ok === false && after === before,
+          `ok=${res.ok} unchanged=${after === before}`,
+        );
+      } finally {
+        rm(tmp);
+      }
+    }
+  }
+
+  // 10. writeProjectFile blocks vite, postcss, and tailwind config execution.
+  {
+    let ctx;
+    try {
+      ctx = mkSite(svc, "minimal");
+    } catch (e) {
+      record(
+        "writeProjectFile blocks vite/postcss/tailwind configs",
+        false,
+        e.message,
+      );
+      ctx = null;
+    }
+    if (ctx) {
+      const { tmp, project } = ctx;
+      try {
+        const filesSvc = await import(
+          pathToFileURL(path.join(ROOT, "dist", "main", "services", "files.js"))
+            .href
+        );
+        const targets = [
+          "vite.config.mjs",
+          "postcss.config.js",
+          "tailwind.config.ts",
+        ];
+        const results = targets.map((cfg) => ({
+          cfg,
+          res: filesSvc.writeProjectFile(project, cfg, "export default {};"),
+        }));
+        const allBlocked = results.every((r) => r.res.ok === false);
+        record(
+          "writeProjectFile blocks vite/postcss/tailwind configs",
+          allBlocked,
+          results.map((r) => `${r.cfg}:${r.res.ok}`).join(", "),
+        );
+      } finally {
+        rm(tmp);
+      }
+    }
+  }
+
+  // 11. reattachPageDocument recovers out-of-sync page.
+  {
+    let ctx;
+    try {
+      ctx = mkSite(svc, "minimal");
+    } catch (e) {
+      record(
+        "reattachPageDocument recovers out-of-sync page",
+        false,
+        e.message,
+      );
+      ctx = null;
+    }
+    if (ctx) {
+      const { tmp, project } = ctx;
+      try {
+        const pageRel = "src/pages/index.astro";
+        const pageFile = path.join(project, pageRel);
+        const updated = fs
+          .readFileSync(pageFile, "utf8")
+          .replace("</BaseLayout>", "  <p>Hand edit</p>\n</BaseLayout>");
+        fs.writeFileSync(pageFile, updated, "utf8");
+        const before = svc.schema.readPageDocument(
+          project,
+          pageRel,
+          "src/pages",
+        );
+        const reattached = svc.schema.reattachPageDocument(
+          project,
+          pageRel,
+          "src/pages",
+        );
+        const pass =
+          before.pageDocument?.managedFileStatus === "out-of-sync" &&
+          reattached.ok === true &&
+          reattached.pageDocument?.managedFileStatus === "managed";
+        record(
+          "reattachPageDocument recovers out-of-sync page",
+          pass,
+          `before=${before.pageDocument?.managedFileStatus} after=${reattached.pageDocument?.managedFileStatus}`,
+        );
+      } finally {
+        rm(tmp);
+      }
+    }
+  }
+
+  // 12. renamePage blocks home page and syncs detached page nav.
+  {
+    let ctx;
+    try {
+      ctx = mkSite(svc, "minimal");
+    } catch (e) {
+      record(
+        "renamePage blocks home page and syncs detached page nav",
+        false,
+        e.message,
+      );
+      ctx = null;
+    }
+    if (ctx) {
+      const { tmp, project } = ctx;
+      try {
+        const homeRes = svc.pageManager.renamePage(
+          project,
+          "src/pages/index.astro",
+          "src/pages",
+          "home-renamed",
+        );
+        svc.schema.createSchemaPage(project, "src/pages", "team");
+        svc.schema.detachPageDocument(
+          project,
+          "src/pages/team.astro",
+          "src/pages",
+          "---\nimport BaseLayout from '../layouts/BaseLayout.astro';\n---\n<BaseLayout><p>Team</p></BaseLayout>\n",
+        );
+        const teamRes = svc.pageManager.renamePage(
+          project,
+          "src/pages/team.astro",
+          "src/pages",
+          "our-team",
+        );
+        const siteDoc = svc.schema.readSiteDocument(project, "src/pages");
+        const hasUpdatedNav = !!siteDoc.site?.shell?.navItems?.some(
+          (item) => item.href === "/our-team",
+        );
+        record(
+          "renamePage blocks home page and syncs detached page nav",
+          homeRes.ok === false && teamRes.ok === true && hasUpdatedNav,
+          `homeOk=${homeRes.ok} teamOk=${teamRes.ok} nav=${hasUpdatedNav}`,
+        );
+      } finally {
+        rm(tmp);
+      }
+    }
+  }
+
+  // 13. Bare domain siteUrl generates discovery files.
+  {
+    let ctx;
+    try {
+      ctx = mkSite(svc, "minimal");
+    } catch (e) {
+      record("bare domain siteUrl generates discovery files", false, e.message);
+      ctx = null;
+    }
+    if (ctx) {
+      const { tmp, project } = ctx;
+      try {
+        const siteRes = svc.schema.readSiteDocument(project, "src/pages");
+        const written = svc.schema.writeSiteDocument(
+          project,
+          { ...siteRes.site, siteUrl: "example.com" },
+          "src/pages",
+        );
+        const sitemapPath = path.join(project, "public", "sitemap.xml");
+        const robotsPath = path.join(project, "public", "robots.txt");
+        const sitemap = fs.existsSync(sitemapPath)
+          ? fs.readFileSync(sitemapPath, "utf8")
+          : "";
+        const robots = fs.existsSync(robotsPath)
+          ? fs.readFileSync(robotsPath, "utf8")
+          : "";
+        record(
+          "bare domain siteUrl generates discovery files",
+          written.ok &&
+            sitemap.includes("https://example.com/") &&
+            robots.includes("https://example.com/sitemap.xml"),
+          `sitemap=${sitemap.includes("https://example.com/")} robots=${robots.includes("https://example.com/sitemap.xml")}`,
+        );
+      } finally {
+        rm(tmp);
+      }
+    }
+  }
+
+  // 14. Postlist canvas image hydration and noindex exclusion.
+  {
+    const html = blockRender.renderBlockHtml(
+      {
+        id: "pl-img",
+        type: "postlist",
+        props: { title: "News", folder: "/blog", showImage: "true" },
+      },
+      {
+        viewport: "desktop",
+        forCanvas: true,
+        maxHeadingLevel: 6,
+        posts: [
+          {
+            route: "/blog/p1",
+            title: "Post 1",
+            description: "",
+            date: "2026-01-01",
+            author: "Alice",
+            image: "/assets/images/hero.jpg",
+          },
+        ],
+      },
+    );
+    const built = svc.schema.buildPostIndex([
+      {
+        page: "src/pages/blog/p1.astro",
+        route: "/blog/p1",
+        slug: "blog/p1",
+        title: "P1",
+        navLabel: "P1",
+        metaDescription: "",
+        navVisible: true,
+        isHome: false,
+        detached: false,
+        socialImage: "/assets/images/hero.jpg",
+        canonicalUrl: "",
+        noindex: false,
+        publishDate: "2026-01-01",
+        author: "Alice",
+      },
+      {
+        page: "src/pages/blog/hidden.astro",
+        route: "/blog/hidden",
+        slug: "blog/hidden",
+        title: "Hidden",
+        navLabel: "Hidden",
+        metaDescription: "",
+        navVisible: false,
+        isHome: false,
+        detached: false,
+        socialImage: "",
+        canonicalUrl: "",
+        noindex: true,
+        publishDate: "2026-01-02",
+        author: "Alice",
+      },
+    ]);
+    const hasPlaceholder =
+      html.includes(`src="${blockRender.CANVAS_ASSET_PLACEHOLDER_SRC}"`) &&
+      html.includes('data-asset-src="/assets/images/hero.jpg"');
+    const excludesNoindex = built.length === 1 && built[0].route === "/blog/p1";
+    record(
+      "postlist canvas image hydration and noindex exclusion",
+      hasPlaceholder && excludesNoindex,
+      `placeholder=${hasPlaceholder} builtLen=${built.length}`,
+    );
+  }
+
+  // 15. Blockquote without <p> and legacy section style parity.
+  {
+    let uid = 0;
+    const parser = editorParse.createEditorPageParser({
+      uid: () => `e2e-p-${++uid}`,
+      createFallbackSection: () => ({
+        id: `e2e-p-${++uid}`,
+        type: "section",
+        label: "Main",
+        props: { wrapper: "none", cls: "" },
+        children: [],
+      }),
+      knownBlockTypes: editorBlocks.KNOWN_BLOCK_TYPES,
+    });
+    const src =
+      '---\nimport BaseLayout from "../layouts/BaseLayout.astro";\n---\n<BaseLayout>\n' +
+      '<section style="padding: 40px 20px; background: #ff0000">\n' +
+      "<blockquote>Direct quote<cite>Author</cite></blockquote>\n" +
+      "</section>\n</BaseLayout>\n";
+    const mainSec = svc.schema.parseSectionsFromSource(src)[0];
+    const { inner } = editorSerialize.splitManagedPageSource(src);
+    const editorSec = parser.parseSections(inner)[0];
+    const mainOk =
+      mainSec?.style?.padding === "40px 20px" &&
+      mainSec?.style?.background === "#ff0000" &&
+      mainSec?.children?.[0]?.props?.text === "Direct quote" &&
+      mainSec?.children?.[0]?.props?.cite === "Author";
+    const editorOk =
+      editorSec?.style?.padding === "40px 20px" &&
+      editorSec?.style?.background === "#ff0000" &&
+      editorSec?.children?.[0]?.props?.text === "Direct quote" &&
+      editorSec?.children?.[0]?.props?.cite === "Author";
+    record(
+      "blockquote without p and legacy section style parity",
+      Boolean(mainOk && editorOk),
+      `mainOk=${Boolean(mainOk)} editorOk=${Boolean(editorOk)}`,
+    );
+  }
+
+  // 16. renameAsset preserves dotted version stems.
+  {
+    let ctx;
+    try {
+      ctx = mkSite(svc, "minimal");
+    } catch (e) {
+      record("renameAsset preserves dotted version stems", false, e.message);
+      ctx = null;
+    }
+    if (ctx) {
+      const { tmp, project } = ctx;
+      try {
+        const assetsSvc = await import(
+          pathToFileURL(
+            path.join(ROOT, "dist", "main", "services", "assets.js"),
+          ).href
+        );
+        const png1x1 = Buffer.from(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+          "base64",
+        );
+        const srcImg = path.join(tmp, "hero.png");
+        fs.writeFileSync(srcImg, png1x1);
+        const imported = assetsSvc.importAssetsFromPaths(project, "public", [
+          srcImg,
+        ]);
+        const webPath = imported.imported?.[0]?.webPath;
+        const renamed = assetsSvc.renameAsset(
+          project,
+          "public",
+          webPath,
+          "release-v1.2",
+        );
+        record(
+          "renameAsset preserves dotted version stems",
+          renamed.ok === true &&
+            renamed.webPath === "/assets/images/release-v1.2.png",
+          renamed.ok ? renamed.webPath : (renamed.error ?? "failed"),
+        );
+      } finally {
+        rm(tmp);
+      }
+    }
+  }
+
+  // 17. editorIcons resolves kebab-case data-lucide names and engine registers all used icons.
+  {
+    const iconsSrc = fs.readFileSync(
+      path.join(ROOT, "src", "renderer", "editorIcons.ts"),
+      "utf8",
+    );
+    const engineSrc = fs.readFileSync(
+      path.join(ROOT, "src", "renderer", "zephusEngine.ts"),
+      "utf8",
+    );
+    const requiredKeys = [
+      "ArrowDown",
+      "ArrowUp",
+      "Blocks",
+      "BookOpen",
+      "Copy",
+      "CreditCard",
+      "Edit3",
+      "Ellipsis",
+      "Files",
+      "GripVertical",
+      "Images",
+      "Layers3",
+      "LoaderCircle",
+      "LockKeyhole",
+      "Minus",
+      "MoveVertical",
+      "PanelTopOpen",
+      "Pencil",
+      "RemoveFormatting",
+      "Rocket",
+      "Search",
+      "SlidersHorizontal",
+      "Terminal",
+      "Trash2",
+      "Unlink",
+      "Video",
+    ];
+    const hasPascalHelper =
+      iconsSrc.includes("toPascalCase") && engineSrc.includes("Edit3");
+    const missing = requiredKeys.filter((k) => !engineSrc.includes(k));
+    record(
+      "editorIcons resolves kebab-case data-lucide icons",
+      hasPascalHelper && missing.length === 0,
+      missing.length === 0
+        ? `hasPascal=${hasPascalHelper}`
+        : `missing: ${missing.join(", ")}`,
+    );
+  }
+
+  // 18. splash.html & styles.css promote root chrome tokens and Studio dark palette.
+  {
+    const splashHtml = fs.readFileSync(
+      path.join(ROOT, "src", "renderer", "splash.html"),
+      "utf8",
+    );
+    const stylesCss = fs.readFileSync(
+      path.join(ROOT, "src", "renderer", "styles.css"),
+      "utf8",
+    );
+    const rootBlockMatch = stylesCss.match(/:root\s*\{[\s\S]*?\}/);
+    const lightBlockMatch = stylesCss.match(
+      /\[data-theme="light"\]\s*\{[\s\S]*?\}/,
+    );
+    const hasRootChrome =
+      !!rootBlockMatch?.[0].includes("--chrome-0") &&
+      !!rootBlockMatch?.[0].includes("--chrome-border") &&
+      !!lightBlockMatch?.[0].includes("--chrome-0");
+    const hasSplashStudio =
+      splashHtml.includes("#090a0f") &&
+      splashHtml.includes("zephus-mark") &&
+      splashHtml.includes("#6366f1");
+    record(
+      "splash.html and styles.css root chrome tokens",
+      hasRootChrome && hasSplashStudio,
+      `rootChrome=${hasRootChrome} splashStudio=${hasSplashStudio}`,
+    );
+  }
 }
 
 async function main() {

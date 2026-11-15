@@ -30,12 +30,22 @@ export function createSite(
 
   const written: string[] = [];
   const zephusDir = path.join(targetPath, ".zephus");
-  const targetExisted = fs.existsSync(targetPath);
-  const targetWasEmpty =
-    targetExisted && fs.readdirSync(targetPath).length === 0;
-  const hadZephusDir = fs.existsSync(zephusDir);
+  let targetExisted = false;
+  let targetWasEmpty = false;
+  let hadZephusDir = false;
   try {
-    if (fs.existsSync(targetPath) && fs.readdirSync(targetPath).length > 0) {
+    targetExisted = fs.existsSync(targetPath);
+    if (targetExisted) {
+      if (!fs.statSync(targetPath).isDirectory()) {
+        return {
+          ok: false,
+          error: "Choose an empty folder for the new site.",
+        };
+      }
+      targetWasEmpty = fs.readdirSync(targetPath).length === 0;
+    }
+    hadZephusDir = fs.existsSync(zephusDir);
+    if (targetExisted && !targetWasEmpty) {
       const looksLikeZephus =
         fs.existsSync(path.join(targetPath, ".zephus")) ||
         fs.existsSync(path.join(targetPath, "astro.config.mjs"));

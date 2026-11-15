@@ -263,7 +263,7 @@ function cssStringValue(value: string): string {
 }
 
 /** 1×1 transparent GIF — placeholder until project assets hydrate on canvas. */
-const CANVAS_ASSET_PLACEHOLDER_SRC =
+export const CANVAS_ASSET_PLACEHOLDER_SRC =
   "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
 
 export function collectResponsiveCss(sections: SectionNode[]): string {
@@ -567,11 +567,16 @@ export function renderBlockHtml(
           ]
             .filter(Boolean)
             .join("");
+          const rawPostImage = post.image ? safeUrl(post.image) : "";
+          const postImgSrcAttr =
+            forCanvas && rawPostImage.startsWith("/")
+              ? `src="${CANVAS_ASSET_PLACEHOLDER_SRC}" data-asset-src="${escapeAttr(
+                  rawPostImage,
+                )}"`
+              : `src="${escapeAttr(rawPostImage)}"`;
           const image =
-            showImage && post.image
-              ? `<img class="zephus-postlist-image" src="${escapeAttr(
-                  safeUrl(post.image),
-                )}" alt="" loading="lazy" decoding="async" />`
+            showImage && rawPostImage
+              ? `<img class="zephus-postlist-image" ${postImgSrcAttr} alt="" loading="lazy" decoding="async" />`
               : "";
           const excerpt =
             showExcerpt && post.description

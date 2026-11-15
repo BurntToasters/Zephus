@@ -706,6 +706,18 @@ export function listExistingPageDocuments(
     .filter((entry): entry is PageDocument => Boolean(entry));
 }
 
+function normalizeSiteUrlInput(rawSiteUrl: string): string {
+  const trimmed = (rawSiteUrl || "").trim();
+  if (!trimmed) return "";
+  if (/^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(trimmed) || trimmed.startsWith("/")) {
+    return trimmed;
+  }
+  if (/^[^/\s]+\.[a-z]{2,}([/?#:].*)?$/i.test(trimmed)) {
+    return `https://${trimmed}`;
+  }
+  return trimmed;
+}
+
 function renderManagedLayout(
   site: SiteDocument,
   navItems: NavItem[],
@@ -767,7 +779,7 @@ interface Props {
   socialImage?: string;
   noindex?: boolean;
 }
-const siteUrl = ${JSON.stringify(site.siteUrl.trim())};
+const siteUrl = ${JSON.stringify(normalizeSiteUrlInput(site.siteUrl))};
 const siteName = ${JSON.stringify(site.shell.siteTitle || site.siteName)};
 const {
   title = siteName,
@@ -1617,6 +1629,7 @@ export function parseSectionsFromSource(raw: string): SectionNode[] {
         // props payload failed to parse — a fresh id would change bytes on
         // the first save and break the responsive-CSS anchor.
         const storedSectionId = dataAttrValue(tag, "data-zephus-id").trim();
+        const sectionStyle = parseInlineStyle(attrValue(tag, "style"));
         sections.push({
           id: storedSectionId || "b" + Math.random().toString(36).slice(2, 9),
           type: "section",
@@ -1625,6 +1638,7 @@ export function parseSectionsFromSource(raw: string): SectionNode[] {
             wrapper: "box",
             cls: attrValue(tag, "class"),
           },
+          ...(sectionStyle ? { style: sectionStyle } : {}),
           children: parseBlocksFromInner(childInner),
         });
       }
@@ -1760,14 +1774,16 @@ export function isValidPublishDate(value: string): boolean {
 }
 
 export function buildPostIndex(docs: PageMeta[]): RenderPostEntry[] {
-  return docs.map((doc) => ({
-    route: doc.route,
-    title: doc.title || doc.navLabel || doc.slug,
-    description: doc.metaDescription,
-    date: isValidPublishDate(doc.publishDate) ? doc.publishDate.trim() : "",
-    author: doc.author,
-    image: doc.socialImage,
-  }));
+  return docs
+    .filter((doc) => !doc.noindex)
+    .map((doc) => ({
+      route: doc.route,
+      title: doc.title || doc.navLabel || doc.slug,
+      description: doc.metaDescription,
+      date: isValidPublishDate(doc.publishDate) ? doc.publishDate.trim() : "",
+      author: doc.author,
+      image: doc.socialImage,
+    }));
 }
 
 function pageImportPath(
@@ -1871,9 +1887,10 @@ function removeManagedPublicFile(publicRoot: string, fileName: string): void {
 
 /** Resolves discovery metadata against the configured deployment base. */
 export function resolveAbsoluteHttpUrl(siteUrl: string, value: string): string {
-  if (!value.trim()) return "";
+  const effectiveSiteUrl = normalizeSiteUrlInput(siteUrl);
+  if (!effectiveSiteUrl || !value.trim()) return "";
   try {
-    const base = new URL(siteUrl);
+    const base = new URL(effectiveSiteUrl);
     if (base.protocol !== "http:" && base.protocol !== "https:") return "";
     base.search = "";
     base.hash = "";
@@ -2665,6 +2682,7 @@ export function ensureVisualSchema(
   options?: EnsureVisualSchemaOptions,
 ): SchemaEnsureResult {
   try {
+    pagesDir = pinnedPagesDir(projectPath, pagesDir);
     const astro = detectAstro(projectPath);
     const layoutPath = path.posix.join(
       astro.srcDir,
@@ -3345,6 +3363,7 @@ export function writePageMetadataPreservingSource(
   doc: PageDocument,
 ): PageDocumentResult {
   try {
+    pagesDir = pinnedPagesDir(projectPath, pagesDir);
     const site = readJsonFile<SiteDocument>(siteDocumentFile(projectPath));
     if (!site) {
       return {
@@ -3371,6 +3390,7 @@ export function writePageMetadataPreservingSource(
       generatedHash: doc.generatedHash,
     };
     writePageDocumentFile(projectPath, nextDoc);
+    refreshPostListPages(projectPath, pagesDir, site, nextDoc.page);
     syncSiteShellOutputs(projectPath, site, pagesDir);
     const updatedSite = writeSiteJsonIfChanged(projectPath, site);
     return {
@@ -3400,6 +3420,7 @@ export function detachPageDocument(
   source: string,
 ): PageDocumentResult {
   try {
+    pagesDir = pinnedPagesDir(projectPath, pagesDir);
     // Confine the write target to a real page under pagesDir: the renderer
     // supplies both path and bytes, and a bare writeFileSync would overwrite
     // ANY in-root file (BaseLayout.astro, package.json, astro.config.mjs)
@@ -3420,6 +3441,25 @@ export function detachPageDocument(
       slug,
       path.extname(page) || ".astro",
     );
+    const normPage = normalizeProjectRelative(page);
+    const normPagesDir = normalizeProjectRelative(pagesDir).replace(/\/+$/, "");
+    const normCanonical = normalizeProjectRelative(canonical);
+    const matchesCanonicalOrRelative =
+      normPage === normCanonical ||
+      `${normPagesDir}/${normPage}` === normCanonical;
+    if (
+      !matchesCanonicalOrRelative ||
+      !fs.existsSync(safeResolve(projectPath, canonical))
+    ) {
+      return {
+        ok: false,
+        site: null,
+        pageDocument: null,
+        source: null,
+        generatedSource: null,
+        error: "Page path must stay inside the pages directory.",
+      };
+    }
     const current = readPageDocument(projectPath, page, pagesDir);
     if (!current.ok || !current.pageDocument || !current.site) {
       return current;
@@ -3483,20 +3523,21 @@ export function reattachPageDocument(
       };
     }
     if (existing && !existing.detached) {
-      // Already managed — nothing to reattach. Return the current state.
-      const site = readJsonFile<SiteDocument>(siteDocumentFile(projectPath));
-      const actualSource = readPinnedCanonicalPageSource(
-        projectPath,
-        page,
-        pagesDir,
-      );
-      return {
-        ok: true,
-        site: site ?? null,
-        pageDocument: existing,
-        source: actualSource,
-        generatedSource: actualSource,
-      };
+      const current = readPageDocument(projectPath, canonicalPage, pagesDir);
+      if (
+        current.ok &&
+        current.pageDocument &&
+        !current.pageDocument.detached &&
+        current.pageDocument.managedFileStatus === "managed"
+      ) {
+        return {
+          ok: true,
+          site: current.site,
+          pageDocument: current.pageDocument,
+          source: current.source,
+          generatedSource: current.generatedSource,
+        };
+      }
     }
 
     const source = readPinnedCanonicalPageSource(projectPath, page, pagesDir);
@@ -3556,6 +3597,7 @@ export function createSchemaPage(
   pagesDir: string,
   slug: string,
 ): PageDocumentResult {
+  pagesDir = pinnedPagesDir(projectPath, pagesDir);
   const page = pagePathFromSlug(pagesDir, slug);
   const route = routeFromPage(page, pagesDir);
   const notFound = isNotFoundSlug(slug);
@@ -3669,11 +3711,17 @@ export function renamePageSchema(
     };
     const prevFile = pageSchemaFile(projectPath, prevSlug);
     const nextFile = pageSchemaFile(projectPath, nextSlug);
+    const isCaseOnlyRename =
+      prevFile !== nextFile &&
+      prevFile.toLowerCase() === nextFile.toLowerCase();
     fs.mkdirSync(path.dirname(nextFile), { recursive: true });
+    if (isCaseOnlyRename && fs.existsSync(prevFile)) {
+      fs.renameSync(prevFile, nextFile);
+    }
     // Write the new sidecar first, then remove the old one: deleting before
     // the write would permanently lose the schema if the write fails.
     writeJsonFile(nextFile, nextDoc);
-    if (prevFile !== nextFile && fs.existsSync(prevFile)) {
+    if (!isCaseOnlyRename && prevFile !== nextFile && fs.existsSync(prevFile)) {
       fs.rmSync(prevFile, { force: true });
     }
     // The route changed, so Post List links pointing at it must be rebuilt.

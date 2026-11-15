@@ -32,6 +32,14 @@ export function createElement(
   return svg;
 }
 
+function toPascalCase(value: string): string {
+  return value
+    .split("-")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join("");
+}
+
 export function createIcons(options: {
   icons: Record<string, IconNode>;
   attrs?: Record<string, string>;
@@ -42,7 +50,7 @@ export function createIcons(options: {
   );
   for (const element of elements) {
     const name = element.getAttribute("data-lucide") ?? "";
-    const icon = icons[name];
+    const icon = icons[name] ?? icons[toPascalCase(name)];
     if (!icon) {
       console.warn(
         `<i data-lucide="${name}"></i> icon name was not found in the provided icons object.`,

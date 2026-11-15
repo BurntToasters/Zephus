@@ -557,7 +557,14 @@ export function renameAsset(
     const requested = sanitizeFilename(
       path.basename(String(nextName ?? "")).trim(),
     );
-    const stem = path.basename(requested, path.extname(requested)).trim();
+    const reqExt = path.extname(requested);
+    const stripExt =
+      reqExt &&
+      (reqExt.toLowerCase() === ext.toLowerCase() ||
+        /^\.[a-zA-Z]{2,5}$/.test(reqExt))
+        ? reqExt
+        : "";
+    const stem = path.basename(requested, stripExt).trim();
     if (!stem) return { ok: false, error: "Enter a file name." };
 
     const dir = path.dirname(file);

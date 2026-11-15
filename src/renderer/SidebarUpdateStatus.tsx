@@ -41,7 +41,7 @@ export function SidebarUpdateStatusPanel() {
       <span
         style={
           current().emphasized
-            ? { color: "#ffffff", "font-weight": "bold" }
+            ? { color: "var(--text)", "font-weight": "bold" }
             : undefined
         }
       >

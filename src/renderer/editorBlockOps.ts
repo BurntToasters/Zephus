@@ -387,6 +387,7 @@ export function createBlockOpsActions(deps: BlockOpsDeps) {
     const [moved] = state.sections.splice(index, 1);
     if (!moved) return;
     state.sections.splice(next, 0, moved);
+    state.selectedId = null;
     state.selectedSectionId = moved.id;
     commitBlockChange(`Moved section ${direction < 0 ? "up" : "down"}`);
   }

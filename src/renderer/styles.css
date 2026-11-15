@@ -30,6 +30,15 @@
   --danger-bg: rgba(239, 68, 68, 0.12);
   --warning: #f59e0b;
   --warning-bg: rgba(245, 158, 11, 0.12);
+  --chrome-0: #0a0c12;
+  --chrome-1: #10131c;
+  --chrome-2: #161a26;
+  --chrome-3: #1e2333;
+  --chrome-border: rgba(148, 163, 184, 0.14);
+  --chrome-border-strong: rgba(148, 163, 184, 0.24);
+  --chrome-muted: #9da5b8;
+  --chrome-focus: #818cf8;
+  --chrome-shadow: 0 18px 44px rgba(0, 0, 0, 0.28);
 
   --code-font-size: 13px;
   --radius-sm: 4px;
@@ -63,6 +72,15 @@
   --accent: #4f46e5;
   --accent-hover: #4338ca;
   --accent-bg: rgba(79, 70, 229, 0.1);
+  --chrome-0: #e9ebf1;
+  --chrome-1: #f6f7fa;
+  --chrome-2: #ffffff;
+  --chrome-3: #eef0f5;
+  --chrome-border: rgba(63, 63, 70, 0.16);
+  --chrome-border-strong: rgba(63, 63, 70, 0.28);
+  --chrome-muted: #52525b;
+  --chrome-focus: #4338ca;
+  --chrome-shadow: 0 16px 34px rgba(24, 24, 27, 0.12);
   --shadow-sm: 0 1px 2px 0 rgba(17, 19, 26, 0.06);
   --shadow-md:
     0 4px 6px -1px rgba(17, 19, 26, 0.1), 0 2px 4px -1px rgba(17, 19, 26, 0.06);
@@ -85,6 +103,15 @@
     --accent: #4f46e5;
     --accent-hover: #4338ca;
     --accent-bg: rgba(79, 70, 229, 0.1);
+    --chrome-0: #e9ebf1;
+    --chrome-1: #f6f7fa;
+    --chrome-2: #ffffff;
+    --chrome-3: #eef0f5;
+    --chrome-border: rgba(63, 63, 70, 0.16);
+    --chrome-border-strong: rgba(63, 63, 70, 0.28);
+    --chrome-muted: #52525b;
+    --chrome-focus: #4338ca;
+    --chrome-shadow: 0 16px 34px rgba(24, 24, 27, 0.12);
     --shadow-sm: 0 1px 2px 0 rgba(17, 19, 26, 0.06);
     --shadow-md:
       0 4px 6px -1px rgba(17, 19, 26, 0.1),
@@ -276,7 +303,7 @@ body {
 }
 
 .start-nav-item:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--panel-card);
   color: var(--text);
 }
 
@@ -306,7 +333,7 @@ body {
 .start-sidebar-footer {
   margin-top: auto;
   padding-top: 20px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid var(--border);
 }
 
 .sidebar-version-text {
@@ -327,8 +354,8 @@ body {
   width: 100%;
   padding: 6px 10px;
   border-radius: 20px;
-  background: rgba(9, 9, 11, 0.4);
-  border: 1px solid rgba(255, 255, 255, 0.04);
+  background: var(--panel-card);
+  border: 1px solid var(--border);
   text-align: left;
   font: inherit;
 }
@@ -786,12 +813,6 @@ body {
 
 .about-licenses-list-container {
   margin-top: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 16px;
-  overflow: hidden;
-  max-height: 400px;
-  overflow-y: auto;
-  background: rgba(9, 9, 11, 0.2);
 }
 
 .about-licenses-list-container.hidden {
@@ -1058,16 +1079,8 @@ body {
 }
 
 .git-branch {
-  font-size: 11px;
-  color: var(--accent-2);
-  background: var(--accent-2-bg);
-  padding: 2px 8px;
-  border: 1px solid transparent;
-  border-radius: 20px;
-  font-weight: 600;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
 }
 
 .git-branch svg {
@@ -1418,6 +1431,18 @@ body {
   gap: 4px;
   padding-left: 14px;
   border-left: 1px solid var(--border);
+}
+
+.layers-list .layer-children .layer-button {
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+}
+
+.layers-list .layer-children .layer-button.active {
+  background: var(--accent-bg);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--text);
 }
 
 .palette li {
@@ -2126,43 +2151,7 @@ body {
 }
 
 /* Responsive Viewports with sleek mock hardware bezels */
-#view-editor {
-  --chrome-0: #0a0c12;
-  --chrome-1: #10131c;
-  --chrome-2: #161a26;
-  --chrome-3: #1e2333;
-  --chrome-border: rgba(148, 163, 184, 0.14);
-  --chrome-border-strong: rgba(148, 163, 184, 0.24);
-  --chrome-muted: #9da5b8;
-  --chrome-focus: #818cf8;
-  --chrome-shadow: 0 18px 44px rgba(0, 0, 0, 0.28);
-}
-
-[data-theme="light"] #view-editor {
-  --chrome-0: #e9ebf1;
-  --chrome-1: #f6f7fa;
-  --chrome-2: #ffffff;
-  --chrome-3: #eef0f5;
-  --chrome-border: rgba(63, 63, 70, 0.16);
-  --chrome-border-strong: rgba(63, 63, 70, 0.28);
-  --chrome-muted: #52525b;
-  --chrome-focus: #4338ca;
-  --chrome-shadow: 0 16px 34px rgba(24, 24, 27, 0.12);
-}
-
-@media (prefers-color-scheme: light) {
-  [data-theme="system"] #view-editor {
-    --chrome-0: #e9ebf1;
-    --chrome-1: #f6f7fa;
-    --chrome-2: #ffffff;
-    --chrome-3: #eef0f5;
-    --chrome-border: rgba(63, 63, 70, 0.16);
-    --chrome-border-strong: rgba(63, 63, 70, 0.28);
-    --chrome-muted: #52525b;
-    --chrome-focus: #4338ca;
-    --chrome-shadow: 0 16px 34px rgba(24, 24, 27, 0.12);
-  }
-}
+/* Editor chrome tokens (--chrome-*) are defined at root theme scope. */
 
 /* The canvas is a real keyboard destination for the skip link. */
 .skip-link {
@@ -2633,21 +2622,27 @@ body {
   display: none !important;
 }
 
-#view-editor .meta-field {
+#view-editor .meta-field,
+.modal .meta-field {
   gap: 6px;
   color: var(--chrome-muted);
   font-size: 11px;
   font-weight: 650;
 }
 
-#view-editor .meta-field > span {
+#view-editor .meta-field > span,
+.modal .meta-field > span {
   line-height: 1.25;
 }
 
 #view-editor .meta-field input.text,
 #view-editor .meta-field textarea,
 #view-editor .meta-field select,
-#view-editor .length-unit {
+#view-editor .length-unit,
+.modal .meta-field input.text,
+.modal .meta-field textarea,
+.modal .meta-field select,
+.modal .length-unit {
   min-height: 34px;
   border-color: var(--chrome-border);
   border-radius: 7px;
@@ -2658,37 +2653,110 @@ body {
 
 #view-editor .meta-field input.text,
 #view-editor .meta-field textarea,
-#view-editor .meta-field select {
+#view-editor .meta-field select,
+.modal .meta-field input.text,
+.modal .meta-field textarea,
+.modal .meta-field select {
   padding: 8px 9px;
 }
 
 #view-editor .meta-field input.text:hover,
 #view-editor .meta-field textarea:hover,
-#view-editor .meta-field select:hover {
+#view-editor .meta-field select:hover,
+.modal .meta-field input.text:hover,
+.modal .meta-field textarea:hover,
+.modal .meta-field select:hover {
   border-color: var(--chrome-border-strong);
 }
 
 #view-editor .meta-field input.text:focus,
 #view-editor .meta-field textarea:focus,
 #view-editor .meta-field select:focus,
-#view-editor .length-unit:focus {
+#view-editor .length-unit:focus,
+.modal .meta-field input.text:focus,
+.modal .meta-field textarea:focus,
+.modal .meta-field select:focus,
+.modal .length-unit:focus {
   border-color: var(--chrome-focus);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--chrome-focus) 18%, transparent);
 }
 
 #view-editor .length-control,
 #view-editor .color-control,
-#view-editor .link-field {
+#view-editor .link-field,
+.modal .length-control,
+.modal .color-control,
+.modal .link-field {
   gap: 6px;
 }
 
-#view-editor .color-swatch {
+#view-editor .color-swatch,
+.modal .color-swatch {
   width: 34px;
   height: 34px;
   padding: 3px;
   border-color: var(--chrome-border);
   border-radius: 7px;
   background: var(--chrome-0);
+}
+
+.font-control {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.font-custom {
+  width: 100%;
+}
+
+.font-preview {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.theme-card-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 140px;
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.theme-card-preview-empty {
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.settings-section .field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings-section .field + .field {
+  margin-top: 12px;
+}
+
+.asset-grid > .muted {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 18px 12px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  text-align: center;
+  font-size: 12px;
 }
 
 #view-editor .prop-actions {
@@ -4043,12 +4111,6 @@ body {
   border-radius: var(--zephus-radius, 12px);
 }
 
-/* Visible keyboard focus for all interactive elements. */
-:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-  border-radius: var(--radius-sm);
-}
 .block:focus-visible,
 .palette li:focus-visible {
   outline: 2px solid var(--accent);
@@ -4813,7 +4875,7 @@ body {
 
 .help-table td {
   padding: 8px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid var(--border);
 }
 
 .help-table td:first-child {
@@ -4828,7 +4890,7 @@ kbd {
   padding: 2px 5px;
   font-size: 11px;
   box-shadow: 0 1px 1px rgba(0, 0, 0, 0.2);
-  color: #c9cad5;
+  color: var(--text);
 }
 
 .help-modal-content ul {
@@ -4875,19 +4937,6 @@ kbd {
 /* The window can go down to 960px wide; keep the canvas usable there by
    trimming the rails instead of letting the canvas collapse. */
 @media (max-width: 1180px) {
-  #view-editor .panel {
-    flex: 0 0 224px;
-    width: 224px;
-    padding: 14px;
-    gap: 16px;
-  }
-
-  #view-editor .panel.right {
-    flex: 0 0 288px;
-    flex-basis: 288px;
-    width: 288px;
-  }
-
   #view-editor .canvas-wrap {
     padding: 16px;
   }
@@ -4912,6 +4961,7 @@ kbd {
 }
 
 /* ---------- Focused editor workspace rails ---------- */
+#view-editor .panel[data-workspace-side],
 .panel[data-workspace-side] {
   padding: 0;
   gap: 0;

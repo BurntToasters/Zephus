@@ -4,7 +4,11 @@ import { OperationResult, PageListResult, PageMeta } from "../types";
 import { assertRealpathInside, safeResolve } from "./fsSafe";
 import { detectAstro } from "./project";
 import { toProjectRelativePath } from "./projectPaths";
-import { normalizePageSlug, routeFromPage } from "../../shared/pageIdentity";
+import {
+  normalizePageSlug,
+  routeFromPage,
+  slugFromPage,
+} from "../../shared/pageIdentity";
 import {
   createSchemaPage,
   deletePageSchema,
@@ -131,6 +135,7 @@ export function listPageMetadata(
   projectPath: string,
   pagesDir: string,
 ): PageListResult {
+  pagesDir = pinnedPagesDir(projectPath, pagesDir);
   // Ensure once, then read sidecars directly (no second full pass per save).
   const ensured = ensureVisualSchema(projectPath, pagesDir);
   if (!ensured.ok) {
@@ -202,6 +207,7 @@ export function createManagedPage(
   slugInput: string,
   pagesDir: string,
 ): OperationResult {
+  pagesDir = pinnedPagesDir(projectPath, pagesDir);
   const slug = normalizePageSlug(slugInput);
   if (!slug) return { ok: false, error: "Invalid page slug." };
   const rel = pagePathFromSlug(pagesDir, slug);
@@ -241,6 +247,10 @@ export function renamePage(
   pagesDir = pinnedPagesDir(projectPath, pagesDir);
   const membership = assertPageInsidePagesDir(page, pagesDir);
   if (!membership.ok) return membership;
+  const prevSlug = slugFromPage(page, pagesDir);
+  if (prevSlug === "index" || routeFromPage(page, pagesDir) === "/") {
+    return { ok: false, error: "The home page cannot be renamed." };
+  }
   const nextSlug = normalizePageSlug(nextSlugInput);
   if (!nextSlug) return { ok: false, error: "Invalid page slug." };
   const ext = path.extname(page) || ".astro";
@@ -248,7 +258,9 @@ export function renamePage(
   const nextRel = pagePathFromSlug(pagesDir, nextSlug, ext);
   const to = resolvePage(projectPath, nextRel);
   if (from === to) return { ok: true };
-  if (fs.existsSync(to)) {
+  const isCaseOnlyRename =
+    from.toLowerCase() === to.toLowerCase() && fs.existsSync(from);
+  if (fs.existsSync(to) && !isCaseOnlyRename) {
     return { ok: false, error: `A page at ${nextSlug} already exists.` };
   }
   try {
@@ -298,8 +310,12 @@ export function renamePage(
         current.pageDocument.detached ||
         current.pageDocument.managedFileStatus === "out-of-sync"
       ) {
-        writePageDocumentFile(projectPath, nextDoc);
-        return { ok: true };
+        const synced = writePageMetadataPreservingSource(
+          projectPath,
+          pagesDir,
+          nextDoc,
+        );
+        return synced.ok ? { ok: true } : { ok: false, error: synced.error };
       }
       const saved = writePageDocument(projectPath, pagesDir, nextDoc);
       if (!saved.ok) {

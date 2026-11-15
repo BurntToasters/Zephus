@@ -9,7 +9,12 @@ import {
   MAX_RECENT_PROJECTS,
   RepoSettings,
 } from "../types";
-import { readJsonSafe, writeFileAtomic } from "./fsSafe";
+import {
+  assertRealpathInside,
+  readJsonSafe,
+  safeResolve,
+  writeFileAtomic,
+} from "./fsSafe";
 
 /** Resolves the OS-specific user config directory for Zephus. */
 function globalSettingsPath(): string {
@@ -114,19 +119,23 @@ export function removeRecentProject(projectPath: string): GlobalSettings {
   return settings;
 }
 
-function repoSettingsPath(projectPath: string): string {
-  return path.join(projectPath, ".zephus", "settings.json");
-}
-
 export function isZephusProject(projectPath: string): boolean {
   return fs.existsSync(path.join(projectPath, ".zephus"));
 }
 
 export function readRepoSettings(projectPath: string): RepoSettings {
-  const file = repoSettingsPath(projectPath);
-  const { data } = readJsonSafe<Partial<RepoSettings>>(file);
-  if (!data) return { ...DEFAULT_REPO_SETTINGS };
-  return { ...DEFAULT_REPO_SETTINGS, ...data };
+  try {
+    const zephusDir = safeResolve(projectPath, ".zephus");
+    assertRealpathInside(projectPath, zephusDir);
+    const file = safeResolve(projectPath, ".zephus/settings.json");
+    assertRealpathInside(projectPath, file);
+    const { data } = readJsonSafe<Partial<RepoSettings>>(file);
+    if (!data) return { ...DEFAULT_REPO_SETTINGS };
+    return { ...DEFAULT_REPO_SETTINGS, ...data };
+  } catch (error) {
+    log.warn("Refusing unsafe repo settings path.", error);
+    return { ...DEFAULT_REPO_SETTINGS };
+  }
 }
 
 /** Merges global + repo settings with repo-over-global precedence (R6.7). */

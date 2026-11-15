@@ -15,8 +15,14 @@ import {
 import {
   detachPageDocument,
   readPageDocument,
+  readSiteDocument,
+  reattachPageDocument,
   writePageDocument,
+  writeSiteDocument,
 } from "../schema";
+import { assertRealpathInside } from "../fsSafe";
+import { readRepoSettings } from "../settings";
+import { writeProjectFile } from "../files";
 
 let tmpDir: string;
 let project: string;
@@ -276,4 +282,142 @@ describe("deletePage restore", () => {
       }
     },
   );
+});
+
+describe("round 2 audit security & web engine failure checks", () => {
+  it.skipIf(process.platform === "win32")(
+    "rejects dangling symlinks pointing outside the project in assertRealpathInside",
+    () => {
+      const outsideTarget = path.join(tmpDir, "outside-target.astro");
+      const linkPath = path.join(project, "src", "pages", "escape.astro");
+      fs.symlinkSync(outsideTarget, linkPath);
+      expect(() => assertRealpathInside(project, linkPath)).toThrow(
+        /escapes the project directory/i,
+      );
+      const dup = duplicatePage(
+        project,
+        path.join("src", "pages", "index.astro"),
+        "src/pages",
+        "escape",
+      );
+      expect(dup.ok).toBe(false);
+      expect(fs.existsSync(outsideTarget)).toBe(false);
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "refuses repo settings symlink escape without creating .corrupt backups",
+    () => {
+      const outsideSecret = path.join(tmpDir, "secret.txt");
+      fs.writeFileSync(outsideSecret, "PRIVATE_KEY=NOT_JSON\n", "utf8");
+      const zephusDir = path.join(project, ".zephus");
+      fs.mkdirSync(zephusDir, { recursive: true });
+      const settingsFile = path.join(zephusDir, "settings.json");
+      fs.rmSync(settingsFile, { force: true });
+      fs.symlinkSync(outsideSecret, settingsFile);
+
+      const settings = readRepoSettings(project);
+      expect(settings.schemaVersion).toBe(1);
+      const files = fs.readdirSync(zephusDir);
+      expect(files.some((f) => f.includes(".corrupt-"))).toBe(false);
+    },
+  );
+
+  it("pins pagesDir in detachPageDocument so layouts cannot be overwritten", () => {
+    const layout = path.join(project, "src", "layouts", "BaseLayout.astro");
+    const before = fs.readFileSync(layout, "utf8");
+    const res = detachPageDocument(
+      project,
+      "src/layouts/BaseLayout.astro",
+      "src/layouts",
+      "<p>pwned</p>",
+    );
+    expect(res.ok).toBe(false);
+    expect(fs.readFileSync(layout, "utf8")).toBe(before);
+  });
+
+  it("blocks writes to executable Vite, PostCSS, and Tailwind config files", () => {
+    for (const cfg of [
+      "vite.config.mjs",
+      "postcss.config.js",
+      "tailwind.config.ts",
+    ]) {
+      const res = writeProjectFile(project, cfg, "export default {};");
+      expect(res.ok).toBe(false);
+    }
+  });
+
+  it("reattaches an out-of-sync page back to managed state", () => {
+    const pageRel = path.join("src", "pages", "index.astro");
+    const pageFile = path.join(project, pageRel);
+    const modified = fs
+      .readFileSync(pageFile, "utf8")
+      .replace(
+        "</BaseLayout>",
+        "  <p>Hand edited paragraph</p>\n</BaseLayout>",
+      );
+    fs.writeFileSync(pageFile, modified, "utf8");
+
+    const before = readPageDocument(project, pageRel, "src/pages");
+    expect(before.ok).toBe(true);
+    expect(before.pageDocument?.managedFileStatus).toBe("out-of-sync");
+
+    const reattached = reattachPageDocument(project, pageRel, "src/pages");
+    expect(reattached.ok).toBe(true);
+    expect(reattached.pageDocument?.managedFileStatus).toBe("managed");
+    expect(reattached.pageDocument?.detached).toBe(false);
+  });
+
+  it("blocks renaming the home page and syncs site navigation when renaming a detached page", () => {
+    const homeRename = renamePage(
+      project,
+      path.join("src", "pages", "index.astro"),
+      "src/pages",
+      "home-renamed",
+    );
+    expect(homeRename.ok).toBe(false);
+
+    const created = createSchemaPage(project, "src/pages", "team");
+    expect(created.ok).toBe(true);
+    const detached = detachPageDocument(
+      project,
+      path.join("src", "pages", "team.astro"),
+      "src/pages",
+      "---\nimport BaseLayout from '../layouts/BaseLayout.astro';\n---\n<BaseLayout><p>Team</p></BaseLayout>\n",
+    );
+    expect(detached.ok).toBe(true);
+
+    const renamed = renamePage(
+      project,
+      path.join("src", "pages", "team.astro"),
+      "src/pages",
+      "our-team",
+    );
+    expect(renamed.ok).toBe(true);
+    const siteRes = readSiteDocument(project);
+    expect(
+      siteRes.site?.shell.navItems.some((item) => item.href === "/our-team"),
+    ).toBe(true);
+  });
+
+  it("normalizes bare domain siteUrl to https:// for sitemap and layout", () => {
+    const siteRes = readSiteDocument(project);
+    expect(siteRes.ok).toBe(true);
+    const written = writeSiteDocument(
+      project,
+      { ...siteRes.site!, siteUrl: "example.com" },
+      "src/pages",
+    );
+    expect(written.ok).toBe(true);
+    const sitemap = fs.readFileSync(
+      path.join(project, "public", "sitemap.xml"),
+      "utf8",
+    );
+    expect(sitemap).toContain("https://example.com/");
+    const layout = fs.readFileSync(
+      path.join(project, "src", "layouts", "BaseLayout.astro"),
+      "utf8",
+    );
+    expect(layout).toContain("https://example.com");
+  });
 });

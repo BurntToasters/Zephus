@@ -68,7 +68,7 @@ function assertWritablePath(relativePath: string): void {
   if (
     PROTECTED_WRITE_TARGETS.has(base) ||
     PROTECTED_WRITE_EXTENSIONS.has(ext) ||
-    /^astro\.config\.[mc]?[jt]s$/.test(base)
+    /^(astro|vite|postcss|tailwind)\.config\.[mc]?[jt]s$/.test(base)
   ) {
     throw new Error(
       "This file is managed by the project and cannot be edited here.",

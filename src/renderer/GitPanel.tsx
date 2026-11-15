@@ -67,6 +67,7 @@ export function GitBranchTag() {
       type="button"
       class="git-branch-chip"
       title="Open Git panel"
+      hidden={!gitStatus()}
       onClick={openGitTab}
     >
       <span class="sr-only">Open Git panel</span>

@@ -101,6 +101,30 @@ export function ImageContentGroup(props: {
                 focalBox = element;
               }}
               class="focal-box"
+              tabIndex={0}
+              role="slider"
+              aria-label="Image focal point"
+              aria-valuetext={`${position().x}% horizontal, ${position().y}% vertical`}
+              onKeyDown={(event) => {
+                const step = event.shiftKey ? 10 : 5;
+                let dx = 0;
+                let dy = 0;
+                if (event.key === "ArrowLeft") dx = -step;
+                else if (event.key === "ArrowRight") dx = step;
+                else if (event.key === "ArrowUp") dy = -step;
+                else if (event.key === "ArrowDown") dy = step;
+                else return;
+                event.preventDefault();
+                const current = position();
+                const x = Math.round(
+                  Math.min(100, Math.max(0, current.x + dx)),
+                );
+                const y = Math.round(
+                  Math.min(100, Math.max(0, current.y + dy)),
+                );
+                setPosition({ x, y });
+                props.state.onStyleChange("objectPosition", `${x}% ${y}%`);
+              }}
               onPointerDown={(event) => {
                 event.preventDefault();
                 dragging = true;

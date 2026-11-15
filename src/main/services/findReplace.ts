@@ -31,6 +31,19 @@ const SEARCHABLE_PROPS = new Set([
   "col3",
   "col4",
   "alt",
+  "alt1",
+  "alt2",
+  "alt3",
+  "alt4",
+  "alt5",
+  "alt6",
+  "alt7",
+  "alt8",
+  "alt9",
+  "alt10",
+  "alt11",
+  "alt12",
+  "emptyText",
   "label",
 ]);
 
@@ -78,7 +91,9 @@ function occurrencesInPlainText(
 }
 
 function looksLikeMarkup(value: string): boolean {
-  return /<[a-zA-Z!/]/.test(value);
+  return /<\/?[a-zA-Z][a-zA-Z0-9-]*(?:\s[^>]*)?\/?>|<!--[\s\S]*?-->/.test(
+    value,
+  );
 }
 
 function forEachMarkupRun(

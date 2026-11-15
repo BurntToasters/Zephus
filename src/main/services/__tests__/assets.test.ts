@@ -500,6 +500,17 @@ describe("renameAsset", () => {
     expect(result.webPath).toBe("/assets/images/other.png");
   });
 
+  it("preserves numeric dotted version stems when renaming assets", () => {
+    const result = renameAsset(
+      projectDir,
+      "public",
+      "/assets/images/pic.png",
+      "release-v1.2",
+    );
+    expect(result.ok).toBe(true);
+    expect(result.webPath).toBe("/assets/images/release-v1.2.png");
+  });
+
   it("strips directory parts from the requested name", () => {
     const result = renameAsset(
       projectDir,

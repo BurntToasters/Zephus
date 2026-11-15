@@ -174,4 +174,29 @@ describe("keyboard handler", () => {
     fire(onKeydown, "z", { meta: true });
     expect(calls).toContain("cm-undo");
   });
+
+  it("handles Shift-modified uppercase keys (Cmd+Shift+Z, Cmd+Shift+S, Cmd+Shift+E)", () => {
+    const { deps, calls } = makeDeps();
+    const { onKeydown } = createKeyboardHandler(deps);
+    fire(onKeydown, "Z", { meta: true, shift: true });
+    expect(calls).toContain("redo");
+    fire(onKeydown, "S", { meta: true, shift: true });
+    expect(calls).toContain("save");
+    fire(onKeydown, "E", { meta: true, shift: true });
+    expect(calls).toContain("mode:code");
+
+    const codeHarness = makeDeps({
+      getState: () =>
+        ({
+          mode: "code",
+          currentViewport: "desktop",
+          project: { path: "/p" },
+          selectedId: null,
+          selectedSectionId: null,
+        }) as never,
+    });
+    const codeHandler = createKeyboardHandler(codeHarness.deps);
+    fire(codeHandler.onKeydown, "Z", { meta: true, shift: true });
+    expect(codeHarness.calls).toContain("cm-redo");
+  });
 });

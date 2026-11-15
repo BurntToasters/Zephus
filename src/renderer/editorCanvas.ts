@@ -524,6 +524,10 @@ export function createCanvasActions(deps: CanvasDeps) {
         onColorChange: (value) => commitSectionStyle("color", value),
         onRadiusChange: (value) => commitSectionStyle("radius", value),
         onHideOnChange: (viewport, hidden) => {
+          if (isNodeLocked(section)) {
+            setStatus(lockedMutationMessage("section"));
+            return;
+          }
           pushUndoForControlChange();
           section.style = section.style ?? {};
           const hideOn = section.style.hideOn ?? [];
@@ -634,6 +638,10 @@ export function createCanvasActions(deps: CanvasDeps) {
         onClearImage:
           block.type === "image"
             ? () => {
+                if (isNodeLocked(block)) {
+                  setStatus(lockedMutationMessage("block"));
+                  return;
+                }
                 pushUndoForControlChange();
                 block.props["src"] = "";
                 commitInspectorChange(`Updated ${block.type} src`, true);
@@ -641,11 +649,19 @@ export function createCanvasActions(deps: CanvasDeps) {
             : undefined,
         onAddGalleryImage:
           block.type === "gallery"
-            ? () =>
+            ? () => {
+                if (isNodeLocked(block)) {
+                  setStatus(lockedMutationMessage("block"));
+                  return;
+                }
                 openAssetBrowser({
                   filter: "images",
                   title: "Add Gallery Image",
                   onSelect: (webPath) => {
+                    if (isNodeLocked(block)) {
+                      setStatus(lockedMutationMessage("block"));
+                      return;
+                    }
                     pushUndo();
                     const existing = (block.props["images"] ?? "").trim();
                     block.props["images"] = existing
@@ -653,11 +669,16 @@ export function createCanvasActions(deps: CanvasDeps) {
                       : webPath;
                     commitBlockChange("Added gallery image");
                   },
-                })
+                });
+              }
             : undefined,
         onReorderGalleryImage:
           block.type === "gallery"
             ? (from, to) => {
+                if (isNodeLocked(block)) {
+                  setStatus(lockedMutationMessage("block"));
+                  return;
+                }
                 const images = galleryImages(block);
                 if (to < 0 || to >= images.length) return;
                 if (from < 0 || from >= images.length || from === to) return;
@@ -676,6 +697,10 @@ export function createCanvasActions(deps: CanvasDeps) {
         onRemoveGalleryImage:
           block.type === "gallery"
             ? (index) => {
+                if (isNodeLocked(block)) {
+                  setStatus(lockedMutationMessage("block"));
+                  return;
+                }
                 const images = galleryImages(block);
                 const alts = images.map(
                   (_, altIndex) => block.props[`alt${altIndex + 1}`] ?? "",

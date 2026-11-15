@@ -308,4 +308,49 @@ describe("parser parity (schema regex parser vs renderer DOM parser)", () => {
     expect(blocks?.[1]?.style?.radius).toBe("8px");
     expect(blocks?.[2]?.type).toBe("html");
   });
+
+  it("extracts blockquote quote and cite separately when no <p> child is present", () => {
+    const src = WRAP(
+      `<blockquote>Raw quote text<cite>Jane Doe</cite></blockquote>`,
+    );
+    expectParity(src);
+    const { renderer } = parseBoth(src);
+    const block = (
+      renderer as Array<{
+        children: Array<{ type: string; props: Record<string, string> }>;
+      }>
+    )[0]?.children[0];
+    expect(block?.type).toBe("quote");
+    expect(block?.props["text"]).toBe("Raw quote text");
+    expect(block?.props["cite"]).toBe("Jane Doe");
+  });
+
+  it("preserves legacy section inline style and hex colors identically across parsers", () => {
+    const src = WRAP(
+      `<section class="band" style="padding: 48px 24px; background: #112233">
+  <h2 style="color: #abcdef">Heading</h2>
+</section>`,
+    );
+    expectParity(src);
+    const { renderer } = parseBoth(src);
+    const section = (
+      renderer as Array<{
+        style?: { padding?: string; background?: string };
+        children: Array<{ style?: { color?: string } }>;
+      }>
+    )[0];
+    expect(section?.style?.padding).toBe("48px 24px");
+    expect(section?.style?.background).toBe("#112233");
+    expect(section?.children[0]?.style?.color).toBe("#abcdef");
+  });
+
+  it("produces deterministic legacy section labels across repeated parseSections calls", () => {
+    const { inner } = splitManagedPageSource(
+      WRAP(`<section><p>One</p></section><section><p>Two</p></section>`),
+    );
+    const first = parser.parseSections(inner).map((s) => s.label);
+    const second = parser.parseSections(inner).map((s) => s.label);
+    expect(first).toEqual(["Section 1", "Section 2"]);
+    expect(second).toEqual(first);
+  });
 });
