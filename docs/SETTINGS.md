@@ -113,7 +113,7 @@ Zephus uses this Node.js version to run:
 
 ### View App Version
 
-See your current Zephus version (e.g., `0.1.0-db.5`).
+See your current Zephus version (e.g., `1.0.0`).
 
 ---
 

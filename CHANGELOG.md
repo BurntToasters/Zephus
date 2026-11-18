@@ -35,6 +35,14 @@ approved.
   jsdom 31.0.0, Vitest 5.1.0, TypeScript 6.0.3 (`~6.0.3`), npm 12.2.2
   (`packageManager`).
 
+**Renderer compile against Lucide 1.72:**
+
+- Icon imports follow the files Lucide 1.72 ships. `Heading` loads
+  `letter-h.mjs`, `AlertTriangle` loads `triangle-exclamation-point.mjs`, and
+  `Trash2` loads `trash.mjs`. The old paths `heading.mjs`, `triangle-alert.mjs`,
+  and `trash-2.mjs` are not in that release, and they broke renderer compile
+  and runtime smoke.
+
 **Stability work carried from the beta cycle:**
 
 - Rounds 15–36 included; runtime smoke (save, drafts, publish, git,
