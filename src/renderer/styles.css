@@ -3332,7 +3332,7 @@ body {
 /* Helper text under a form field: explains what the value affects. */
 .meta-hint {
   color: var(--muted);
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.45;
 }
 
@@ -3513,7 +3513,7 @@ body {
 .find-replace-excerpt {
   margin: 4px 0 0 8px;
   color: var(--muted);
-  font-size: 11.5px;
+  font-size: 12px;
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -3639,7 +3639,7 @@ body {
 
 .asset-size {
   color: var(--muted);
-  font-size: 10.5px;
+  font-size: 11px;
 }
 
 .asset-name {
