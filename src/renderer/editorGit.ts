@@ -46,7 +46,21 @@ export function createEditorGitActions(deps: EditorGitDeps) {
     return next;
   }
 
+  // Git IPC can resolve long after the user closed or switched projects.
+  // Publish only while the originating project is still open so a late result
+  // cannot overwrite the Git panel or status line of a different project.
+  function isCurrentProject(projectPath: string): boolean {
+    return deps.getProjectPath() === projectPath;
+  }
+
+  function publishIfCurrent(projectPath: string, publish: () => void): void {
+    if (isCurrentProject(projectPath)) {
+      publish();
+    }
+  }
+
   async function runGitAction<T>(
+    projectPath: string,
     label: string,
     run: () => Promise<T>,
     handle: (result: T) => Promise<void> | void,
@@ -55,20 +69,24 @@ export function createEditorGitActions(deps: EditorGitDeps) {
     try {
       result = await enqueue(run);
     } catch (error) {
-      deps.setStatus(
-        `${label}: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      publishIfCurrent(projectPath, () => {
+        deps.setStatus(
+          `${label}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      });
+      return;
+    }
+    if (!isCurrentProject(projectPath)) {
       return;
     }
     await handle(result);
   }
 
-  async function refreshGit(options?: {
-    fetchRemote?: boolean;
-  }): Promise<void> {
-    const projectPath = deps.getProjectPath();
-    if (!projectPath) {
-      deps.setGitStatus(null);
+  async function refreshGitForProject(
+    projectPath: string,
+    options?: { fetchRemote?: boolean },
+  ): Promise<void> {
+    if (!isCurrentProject(projectPath)) {
       return;
     }
     try {
@@ -77,11 +95,24 @@ export function createEditorGitActions(deps: EditorGitDeps) {
           fetchRemote: options?.fetchRemote ?? false,
         }),
       );
-      deps.setGitStatus(git);
+      publishIfCurrent(projectPath, () => deps.setGitStatus(git));
     } catch (error) {
       console.error("Failed to refresh Git status:", error);
-      deps.setGitStatus(null);
+      publishIfCurrent(projectPath, () => deps.setGitStatus(null));
     }
+  }
+
+  async function refreshGit(options?: {
+    fetchRemote?: boolean;
+  }): Promise<void> {
+    const projectPath = deps.getProjectPath();
+    if (!projectPath) {
+      // No project was open when the refresh started; clear immediately so a
+      // project opened later cannot inherit this state.
+      deps.setGitStatus(null);
+      return;
+    }
+    await refreshGitForProject(projectPath, options);
   }
 
   async function commitGitChanges(
@@ -94,6 +125,7 @@ export function createEditorGitActions(deps: EditorGitDeps) {
       return;
     }
     await runGitAction(
+      projectPath,
       "Git commit failed",
       () => deps.zephus.commitGitChanges(projectPath, message, paths),
       async (result) => {
@@ -102,20 +134,26 @@ export function createEditorGitActions(deps: EditorGitDeps) {
           // Fresh git installs have no user.name/email — raw "Please tell me who
           // you are" reads as the app being broken on a first commit.
           if (/Please tell me who you are|user\.(name|email)/i.test(error)) {
-            deps.setStatus(
-              'Git needs your identity first: run `git config --global user.name "Your Name"` and `git config --global user.email you@example.com`, then commit again.',
+            publishIfCurrent(projectPath, () =>
+              deps.setStatus(
+                'Git needs your identity first: run `git config --global user.name "Your Name"` and `git config --global user.email you@example.com`, then commit again.',
+              ),
             );
             return;
           }
-          deps.setStatus("Git commit failed: " + error);
+          publishIfCurrent(projectPath, () =>
+            deps.setStatus("Git commit failed: " + error),
+          );
           return;
         }
-        deps.setStatus(
-          paths?.length
-            ? `Committed ${paths.length} file(s).`
-            : "Committed changes.",
+        publishIfCurrent(projectPath, () =>
+          deps.setStatus(
+            paths?.length
+              ? `Committed ${paths.length} file(s).`
+              : "Committed changes.",
+          ),
         );
-        await refreshGit({ fetchRemote: true });
+        await refreshGitForProject(projectPath, { fetchRemote: true });
       },
     );
   }
@@ -127,15 +165,20 @@ export function createEditorGitActions(deps: EditorGitDeps) {
       return;
     }
     await runGitAction(
+      projectPath,
       "Git push failed",
       () => deps.zephus.pushGitChanges(projectPath),
       async (result) => {
         if (!result.ok) {
-          deps.setStatus("Git push failed: " + (result.error ?? "unknown"));
+          publishIfCurrent(projectPath, () =>
+            deps.setStatus("Git push failed: " + (result.error ?? "unknown")),
+          );
           return;
         }
-        deps.setStatus("Pushed to remote.");
-        await refreshGit({ fetchRemote: true });
+        publishIfCurrent(projectPath, () =>
+          deps.setStatus("Pushed to remote."),
+        );
+        await refreshGitForProject(projectPath, { fetchRemote: true });
       },
     );
   }
@@ -147,18 +190,26 @@ export function createEditorGitActions(deps: EditorGitDeps) {
       return;
     }
     await runGitAction(
+      projectPath,
       "Git pull failed",
       () => deps.zephus.pullGitChanges(projectPath),
       async (result) => {
         if (!result.ok) {
-          deps.setStatus("Git pull failed: " + (result.error ?? "unknown"));
+          publishIfCurrent(projectPath, () =>
+            deps.setStatus("Git pull failed: " + (result.error ?? "unknown")),
+          );
           return;
         }
-        deps.setStatus(
-          "Pulled from remote (fast-forward). Reload from disk if page sources changed outside Zephus.",
+        publishIfCurrent(projectPath, () =>
+          deps.setStatus(
+            "Pulled from remote (fast-forward). Reload from disk if page sources changed outside Zephus.",
+          ),
         );
+        if (!isCurrentProject(projectPath)) {
+          return;
+        }
         await deps.onPullComplete?.();
-        await refreshGit({ fetchRemote: true });
+        await refreshGitForProject(projectPath, { fetchRemote: true });
       },
     );
   }
@@ -170,15 +221,20 @@ export function createEditorGitActions(deps: EditorGitDeps) {
       return;
     }
     await runGitAction(
+      projectPath,
       "Git init failed",
       () => deps.zephus.initGitRepo(projectPath),
       async (result) => {
         if (!result.ok) {
-          deps.setStatus("Git init failed: " + (result.error ?? "unknown"));
+          publishIfCurrent(projectPath, () =>
+            deps.setStatus("Git init failed: " + (result.error ?? "unknown")),
+          );
           return;
         }
-        deps.setStatus("Git repository initialized.");
-        await refreshGit({ fetchRemote: false });
+        publishIfCurrent(projectPath, () =>
+          deps.setStatus("Git repository initialized."),
+        );
+        await refreshGitForProject(projectPath, { fetchRemote: false });
       },
     );
   }

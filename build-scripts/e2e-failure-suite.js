@@ -2142,6 +2142,158 @@ async function runWebEngineAndUiAuditChecks(svc, blockRender) {
     }
   }
 
+  // 16b. Asset filenames with URL delimiters keep their on-disk names while
+  // web paths are segment-encoded; encoded traversal stays rejected.
+  {
+    let ctx;
+    try {
+      ctx = mkSite(svc, "minimal");
+    } catch (e) {
+      record("asset URLs encode #, %, and spaces", false, e.message);
+      ctx = null;
+    }
+    if (ctx) {
+      const { tmp, project } = ctx;
+      try {
+        const assetsSvc = await import(
+          pathToFileURL(
+            path.join(ROOT, "dist", "main", "services", "assets.js"),
+          ).href
+        );
+        const png1x1 = Buffer.from(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+          "base64",
+        );
+        const diskName = "hero #100%.png";
+        const encoded = "/assets/images/hero%20%23100%25.png";
+        const srcImg = path.join(tmp, diskName);
+        fs.writeFileSync(srcImg, png1x1);
+        const imported = assetsSvc.importAssetsFromPaths(project, "public", [
+          srcImg,
+        ]);
+        const webPath = imported.imported?.[0]?.webPath;
+        const rawFile = path.join(
+          project,
+          "public",
+          "assets",
+          "images",
+          diskName,
+        );
+        const hashedUrl = webPath
+          ? new URL(webPath, "https://zephus.test/")
+          : null;
+        const listed = assetsSvc.listProjectAssets(project, "public");
+        const listedEntry = listed.assets?.find(
+          (a) => a.fileName === `images/${diskName}`,
+        );
+        const rawExists = fs.existsSync(rawFile);
+        const read = webPath
+          ? assetsSvc.readAssetDataUrl(project, "public", webPath)
+          : { ok: false };
+        const renamed = webPath
+          ? assetsSvc.renameAsset(project, "public", webPath, "hero #2%")
+          : { ok: false };
+        const renamedFile = path.join(
+          project,
+          "public",
+          "assets",
+          "images",
+          "hero #2%.png",
+        );
+        const renamedUrl = renamed.webPath
+          ? new URL(renamed.webPath, "https://zephus.test/")
+          : null;
+        const legacyRenamedRead = assetsSvc.readAssetDataUrl(
+          project,
+          "public",
+          "/assets/images/hero #2%.png",
+        );
+        const literalPercentName = "legacy%20percent.png";
+        const literalPercentSrc = path.join(tmp, literalPercentName);
+        fs.writeFileSync(literalPercentSrc, png1x1);
+        const literalImported = assetsSvc.importAssetsFromPaths(
+          project,
+          "public",
+          [literalPercentSrc],
+        );
+        const literalEncoded = literalImported.imported?.[0]?.webPath;
+        const literalDecodedName = path.join(
+          project,
+          "public",
+          "assets",
+          "images",
+          "legacy percent.png",
+        );
+        const legacyLiteralRead = assetsSvc.readAssetDataUrl(
+          project,
+          "public",
+          "/assets/images/legacy%20percent.png",
+        );
+        const encodedLiteralRead = assetsSvc.readAssetDataUrl(
+          project,
+          "public",
+          literalEncoded,
+        );
+        const roundTripOk =
+          imported.ok === true &&
+          webPath === encoded &&
+          hashedUrl !== null &&
+          hashedUrl.hash === "" &&
+          hashedUrl.search === "" &&
+          rawExists &&
+          listedEntry?.webPath === encoded &&
+          read.ok === true &&
+          String(read.dataUrl).startsWith("data:image/png;base64,") &&
+          renamed.ok === true &&
+          renamed.webPath === "/assets/images/hero%20%232%25.png" &&
+          fs.existsSync(renamedFile) &&
+          renamedUrl !== null &&
+          renamedUrl.hash === "" &&
+          legacyRenamedRead.ok === true &&
+          literalImported.ok === true &&
+          literalEncoded === "/assets/images/legacy%2520percent.png" &&
+          !fs.existsSync(literalDecodedName) &&
+          legacyLiteralRead.ok === true &&
+          encodedLiteralRead.ok === true;
+        record(
+          "asset URLs encode #, %, and spaces",
+          roundTripOk,
+          `webPath=${webPath} listed=${listedEntry?.webPath} renamed=${renamed.webPath} legacy=${legacyRenamedRead.ok} literal=${legacyLiteralRead.ok}/${literalEncoded}`,
+        );
+
+        const keep = path.join(project, "keep.png");
+        fs.writeFileSync(keep, "outside public");
+        const traversalWebPath = "/assets/images/%2e%2e/%2e%2e/%2e%2e/keep.png";
+        const deleted = assetsSvc.deleteAsset(
+          project,
+          "public",
+          traversalWebPath,
+        );
+        const readTraversal = assetsSvc.readAssetDataUrl(
+          project,
+          "public",
+          traversalWebPath,
+        );
+        const encodedSlash = assetsSvc.renameAsset(
+          project,
+          "public",
+          "/assets%2Fimages%2F%2e%2e%2F%2e%2e%2F%2e%2e%2Fkeep.png",
+          "escaped",
+        );
+        record(
+          "asset encoded traversal rejected",
+          deleted.ok === false &&
+            readTraversal.ok === false &&
+            encodedSlash.ok === false &&
+            fs.existsSync(keep),
+          `delete=${deleted.error ?? "allowed"} read=${readTraversal.error ?? "allowed"} rename=${encodedSlash.error ?? "allowed"}`,
+        );
+      } finally {
+        rm(tmp);
+      }
+    }
+  }
+
   // 17. editorIcons resolves kebab-case data-lucide names and engine registers all used icons.
   {
     const iconsSrc = fs.readFileSync(

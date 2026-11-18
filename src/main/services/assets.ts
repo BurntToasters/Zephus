@@ -97,6 +97,74 @@ function assertRealChild(root: string, target: string, error: string): void {
   }
 }
 
+/**
+ * Encodes a filesystem-relative path for a web URL. Each segment is encoded
+ * separately so legal filename delimiters (spaces, "#", "%", "?") cannot be
+ * parsed as URL syntax, while "/" directory separators are preserved.
+ */
+function encodeWebPath(relative: string): string {
+  return relative.split("/").map(encodeURIComponent).join("/");
+}
+
+/**
+ * Rejects segments that could change meaning during filesystem resolution.
+ * Applied independently to raw web-path segments and their decoded forms.
+ */
+function assertSafeWebPathSegment(segment: string): void {
+  if (
+    !segment ||
+    segment === "." ||
+    segment === ".." ||
+    segment.includes("\0") ||
+    segment.includes("/") ||
+    segment.includes("\\")
+  ) {
+    throw new Error("Invalid asset path.");
+  }
+}
+
+interface AssetWebPathCandidates {
+  /** Percent-decoded segments, or null when any segment has no valid escape. */
+  decoded: string[] | null;
+  /** Raw segments, for legacy references that contain a literal "%". */
+  raw: string[];
+}
+
+/**
+ * Splits a managed asset web path into raw and decoded candidates. Each
+ * segment is validated independently: decoding the whole string first would
+ * turn an encoded slash into a real separator before containment checks run.
+ */
+function decodeAssetWebPath(webPath: string): AssetWebPathCandidates {
+  if (typeof webPath !== "string" || !webPath.trim()) {
+    throw new Error("Missing asset path.");
+  }
+  const relative = webPath.replace(/^\/+/, "");
+  if (!relative) {
+    throw new Error("Invalid asset path.");
+  }
+  const raw = relative.split("/");
+  for (const segment of raw) {
+    assertSafeWebPathSegment(segment);
+  }
+  const decodedSegments: string[] = [];
+  let allDecoded = true;
+  for (const segment of raw) {
+    let decoded: string;
+    try {
+      decoded = decodeURIComponent(segment);
+    } catch {
+      // A literal "%" is legal in legacy file names. Keep validating the
+      // remaining segments so encoded traversal is still a hard rejection.
+      allDecoded = false;
+      continue;
+    }
+    assertSafeWebPathSegment(decoded);
+    decodedSegments.push(decoded);
+  }
+  return { decoded: allDecoded ? decodedSegments : null, raw };
+}
+
 function resolveRealPublicRoot(
   projectPath: string,
   publicRoot: string,
@@ -213,7 +281,10 @@ function copyIntoAssets(
   const destPath = path.join(targetDir, name);
   assertImportDestinationNotSymlink(destPath);
   fs.copyFileSync(realSource, destPath);
-  return { webPath: `/${ASSETS_ROOT}/${category}/${name}`, category };
+  return {
+    webPath: `/${ASSETS_ROOT}/${category}/${encodeWebPath(name)}`,
+    category,
+  };
 }
 
 /**
@@ -376,7 +447,7 @@ function collectAssets(
       out.push({
         fileName: childRel,
         size,
-        webPath: `${webPrefix}/${childRel}`,
+        webPath: `${webPrefix}/${encodeWebPath(childRel)}`,
         category,
       });
     }
@@ -405,6 +476,73 @@ export interface AssetDataUrlResult {
 }
 
 /**
+ * Resolves one candidate segment list inside the public directory. Returns
+ * null only when the candidate does not exist, so a missing decoded name can
+ * fall back to a legacy raw name without hiding containment or symlink errors.
+ */
+function resolveAssetCandidate(
+  publicRoot: string,
+  realPublicRoot: string,
+  segments: string[],
+): { resolved: string; realResolved: string } | null {
+  const resolved = path.join(publicRoot, ...segments);
+  assertRealChild(publicRoot, resolved, "Path escapes the public directory.");
+  try {
+    fs.lstatSync(resolved);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === "ENOTDIR") return null;
+    throw error;
+  }
+  const realResolved = fs.realpathSync.native(resolved);
+  assertRealChild(
+    realPublicRoot,
+    realResolved,
+    "Path escapes the public directory.",
+  );
+  return { resolved, realResolved };
+}
+
+/**
+ * Resolves a web path to a real file inside the public directory. The decoded
+ * name is tried first using standard URL semantics; when that file is absent,
+ * the raw name is tried so legacy references with literal "%" keep working.
+ * Both candidates use the same lexical and realpath containment checks.
+ */
+function resolvePublicAssetFile(
+  projectPath: string,
+  publicDir: string,
+  webPath: string,
+): { resolved: string; realResolved: string; publicRoot: string } {
+  const candidates = decodeAssetWebPath(webPath);
+  const publicRoot = resolveProjectRelativeDir(
+    projectPath,
+    publicDir,
+    "public",
+  ).absolute;
+  const realPublicRoot = resolveRealPublicRoot(projectPath, publicRoot);
+  const attempts: string[][] = [];
+  if (candidates.decoded) {
+    attempts.push(candidates.decoded);
+  }
+  const rawDiffers =
+    !candidates.decoded ||
+    candidates.decoded.some(
+      (segment, index) => segment !== candidates.raw[index],
+    );
+  if (rawDiffers) {
+    attempts.push(candidates.raw);
+  }
+  for (const segments of attempts) {
+    const found = resolveAssetCandidate(publicRoot, realPublicRoot, segments);
+    if (found) {
+      return { ...found, publicRoot: realPublicRoot };
+    }
+  }
+  throw new Error("Asset file not found.");
+}
+
+/**
  * Reads an image asset (referenced by its web path) and returns it as a data
  * URL for in-app thumbnails. The renderer's CSP allows data: images but not
  * file://, so this is how previews are shown without the dev server running.
@@ -415,34 +553,19 @@ export function readAssetDataUrl(
   webPath: string,
 ): AssetDataUrlResult {
   try {
-    const relative = webPath.replace(/^\/+/, "");
-    const publicRoot = resolveProjectRelativeDir(
+    const { realResolved } = resolvePublicAssetFile(
       projectPath,
       publicDir,
-      "public",
-    ).absolute;
-    const resolved = path.resolve(publicRoot, relative);
-    if (
-      resolved !== publicRoot &&
-      !resolved.startsWith(publicRoot + path.sep)
-    ) {
-      return { ok: false, error: "Path escapes the public directory." };
-    }
-    const realPublicRoot = resolveRealPublicRoot(projectPath, publicRoot);
-    const realResolved = fs.realpathSync.native(resolved);
-    assertRealChild(
-      realPublicRoot,
-      realResolved,
-      "Path escapes the public directory.",
+      webPath,
     );
-    const ext = path.extname(resolved).slice(1).toLowerCase();
+    const ext = path.extname(realResolved).slice(1).toLowerCase();
     const mime = MIME_BY_EXTENSION[ext];
     if (!mime) return { ok: false, error: "Unsupported image type." };
-    const stat = fs.statSync(resolved);
+    const stat = fs.statSync(realResolved);
     if (stat.size > MAX_DATA_URL_BYTES) {
       return { ok: false, error: "Image too large to preview." };
     }
-    const buffer = fs.readFileSync(resolved);
+    const buffer = fs.readFileSync(realResolved);
     return {
       ok: true,
       dataUrl: `data:${mime};base64,${buffer.toString("base64")}`,
@@ -466,26 +589,10 @@ function resolveManagedAssetFile(
   publicDir: string,
   webPath: string,
 ): { file: string; publicRoot: string } {
-  if (typeof webPath !== "string" || !webPath.trim()) {
-    throw new Error("Missing asset path.");
-  }
-  const relative = webPath.replace(/^\/+/, "");
-  if (!relative || relative.split(/[\\/]/).includes("..")) {
-    throw new Error("Invalid asset path.");
-  }
-  const publicRoot = resolveProjectRelativeDir(
+  const { resolved, realResolved, publicRoot } = resolvePublicAssetFile(
     projectPath,
     publicDir,
-    "public",
-  ).absolute;
-  const resolved = path.resolve(publicRoot, relative);
-  assertRealChild(publicRoot, resolved, "Path escapes the public directory.");
-  const realPublicRoot = resolveRealPublicRoot(projectPath, publicRoot);
-  const realResolved = fs.realpathSync.native(resolved);
-  assertRealChild(
-    realPublicRoot,
-    realResolved,
-    "Path escapes the public directory.",
+    webPath,
   );
   if (!fs.statSync(realResolved).isFile()) {
     throw new Error("Asset is not a file.");
@@ -508,13 +615,13 @@ function resolveManagedAssetFile(
       "This asset is a symlink. Deleting or renaming it would affect the file it points to; remove the link manually instead.",
     );
   }
-  return { file: realResolved, publicRoot: realPublicRoot };
+  return { file: realResolved, publicRoot };
 }
 
 /** Converts an absolute file inside the public root back to its web path. */
 function webPathForFile(publicRoot: string, file: string): string {
   const rel = path.relative(publicRoot, file).split(path.sep).join("/");
-  return `/${rel}`;
+  return `/${encodeWebPath(rel)}`;
 }
 
 /** Deletes a managed asset file from the project's public directory. */
