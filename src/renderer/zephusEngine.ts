@@ -494,6 +494,14 @@ const keyboard = createKeyboardHandler({
   pasteFromClipboard: () => pasteFromClipboard(),
   deleteBlock: (block) => deleteBlock(block),
   deleteSection: (id) => deleteSection(id),
+  deselectCanvasSelection: () => {
+    state.selectedId = null;
+    state.selectedSectionId = null;
+    renderLayers();
+    renderCanvasSelection();
+    renderProperties();
+  },
+  setStatus: (message) => setStatus(message),
   cmUndo: () => cm?.undo(),
   cmRedo: () => cm?.redo(),
 });

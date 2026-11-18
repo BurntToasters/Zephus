@@ -879,6 +879,43 @@ export function bindCanvasHandlers(
 
   const canvasContainer = $maybe("canvas");
   if (!canvasContainer) return;
+
+  /** Blocks in flat document order: section order, then each section's blocks. */
+  function flatBlocks(): Array<{ section: SectionNode; block: Block }> {
+    return state.sections.flatMap((section) =>
+      section.children.map((block) => ({ section, block })),
+    );
+  }
+
+  /** Block shells in the same flat order the canvas renders them. */
+  function blockShellsInOrder(): HTMLElement[] {
+    if (!canvasContainer) return [];
+    return Array.from(
+      canvasContainer.querySelectorAll<HTMLElement>(
+        ":scope > .canvas-section > .section-body > .block",
+      ),
+    );
+  }
+
+  function clearCanvasSelection(): void {
+    state.selectedId = null;
+    state.selectedSectionId = null;
+    renderLayers();
+    canvas.renderCanvasSelection();
+    renderProperties();
+  }
+
+  function selectBlockAt(index: number): void {
+    const entry = flatBlocks()[index];
+    if (!entry) return;
+    state.selectedId = entry.block.id;
+    state.selectedSectionId = entry.section.id;
+    renderLayers();
+    canvas.renderCanvasSelection();
+    renderProperties();
+    blockShellsInOrder()[index]?.focus();
+  }
+
   try {
     mountCanvas(canvasContainer);
     registerCanvasHandlers({
@@ -977,7 +1014,37 @@ export function bindCanvasHandlers(
           renderLayers();
           canvas.renderCanvasSelection();
           renderProperties();
+          return;
         }
+        if (event.key === "Escape") {
+          if (!state.selectedId && !state.selectedSectionId) return;
+          event.preventDefault();
+          clearCanvasSelection();
+          return;
+        }
+        if (
+          event.key !== "ArrowUp" &&
+          event.key !== "ArrowDown" &&
+          event.key !== "Home" &&
+          event.key !== "End"
+        ) {
+          return;
+        }
+        const blocks = flatBlocks();
+        if (blocks.length === 0) return;
+        const currentIndex = blocks.findIndex(
+          (entry) => entry.block.id === block.id,
+        );
+        let targetIndex: number;
+        if (event.key === "ArrowDown") targetIndex = currentIndex + 1;
+        else if (event.key === "ArrowUp") targetIndex = currentIndex - 1;
+        else if (event.key === "Home") targetIndex = 0;
+        else targetIndex = blocks.length - 1;
+        // Handled even at a boundary so the page never scrolls under the
+        // focused block; only Home/End/arrows that land on a block move it.
+        event.preventDefault();
+        if (targetIndex < 0 || targetIndex >= blocks.length) return;
+        selectBlockAt(targetIndex);
       },
       onBlockClick: (event, sectionView, blockView, preview) => {
         const section = liveCanvasSection(sectionView);

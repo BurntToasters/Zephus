@@ -2220,6 +2220,106 @@ async function runWebEngineAndUiAuditChecks(svc, blockRender) {
       `rootChrome=${hasRootChrome} splashStudio=${hasSplashStudio}`,
     );
   }
+
+  // 19. Text-safe palette tokens meet WCAG 2.1 AA (4.5:1) on every surface.
+  {
+    const stylesCss = fs.readFileSync(
+      path.join(ROOT, "src", "renderer", "styles.css"),
+      "utf8",
+    );
+    const blockTokens = (blockRe) => {
+      const block = stylesCss.match(blockRe)?.[0] ?? "";
+      const tokens = {};
+      const declRe = /--([a-z0-9-]+)\s*:\s*([^;]+);/g;
+      let decl;
+      while ((decl = declRe.exec(block))) tokens[decl[1]] = decl[2].trim();
+      return tokens;
+    };
+    const hexToRgb = (value) => {
+      const m = /^#([0-9a-f]{6})$/i.exec(value ?? "");
+      if (!m) return null;
+      const n = parseInt(m[1], 16);
+      return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+    };
+    const luminance = (rgb) => {
+      const channel = (v) => {
+        const c = v / 255;
+        return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+      };
+      return (
+        0.2126 * channel(rgb[0]) +
+        0.7152 * channel(rgb[1]) +
+        0.0722 * channel(rgb[2])
+      );
+    };
+    const contrast = (fg, bg) => {
+      const a = luminance(fg);
+      const b = luminance(bg);
+      return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+    };
+    const themes = [
+      ["dark", /:root\s*\{[\s\S]*?\}/],
+      ["light", /\[data-theme="light"\]\s*\{[\s\S]*?\}/],
+      [
+        "system-light",
+        /@media \(prefers-color-scheme: light\)\s*\{\s*\[data-theme="system"\]\s*\{[\s\S]*?\}/,
+      ],
+    ];
+    const textTokens = [
+      "accent-text",
+      "accent-2-text",
+      "danger-text",
+      "warning-text",
+    ];
+    const surfaces = [
+      "bg",
+      "bg-app",
+      "bg-alt",
+      "panel",
+      "panel-card",
+      "chrome-0",
+      "chrome-2",
+      "chrome-3",
+    ];
+    const failures = [];
+    let lowest = { ratio: Infinity, detail: "" };
+    for (const [themeName, blockRe] of themes) {
+      const tokens = blockTokens(blockRe);
+      for (const token of textTokens) {
+        const fg = hexToRgb(tokens[token]);
+        if (!fg) {
+          failures.push(`${themeName} --${token} missing`);
+          continue;
+        }
+        for (const surface of surfaces) {
+          const bg = hexToRgb(tokens[surface]);
+          if (!bg) {
+            failures.push(`${themeName} --${surface} missing`);
+            continue;
+          }
+          const ratio = contrast(fg, bg);
+          if (ratio < lowest.ratio) {
+            lowest = {
+              ratio,
+              detail: `${themeName} --${token} on --${surface}`,
+            };
+          }
+          if (ratio < 4.5) {
+            failures.push(
+              `${themeName} --${token} on --${surface} ${ratio.toFixed(2)}:1`,
+            );
+          }
+        }
+      }
+    }
+    record(
+      "wcag text token contrast",
+      failures.length === 0,
+      failures.length === 0
+        ? `min ${lowest.ratio.toFixed(2)}:1 (${lowest.detail})`
+        : failures.slice(0, 4).join("; "),
+    );
+  }
 }
 
 async function main() {

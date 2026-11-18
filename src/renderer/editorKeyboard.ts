@@ -19,6 +19,8 @@ export interface KeyboardDeps {
   doRedo: () => void;
   findSelectedBlock: () => Block | null;
   findSection: (id: string | null) => SectionNode | null;
+  deselectCanvasSelection: () => void;
+  setStatus: (message: string) => void;
   duplicateSelectedBlock: (block: Block) => void;
   duplicateSection: (id: string) => void;
   copySelectionToClipboard: () => void;
@@ -44,6 +46,8 @@ export function createKeyboardHandler(deps: KeyboardDeps) {
     doRedo,
     findSelectedBlock,
     findSection,
+    deselectCanvasSelection,
+    setStatus,
     duplicateSelectedBlock,
     duplicateSection,
     copySelectionToClipboard,
@@ -91,6 +95,25 @@ export function createKeyboardHandler(deps: KeyboardDeps) {
         e.key === "h" ||
         e.key === "H")
     ) {
+      return;
+    }
+
+    // Escape clears the canvas selection, but only in visual mode: in code
+    // mode it keeps its native CodeMirror/input meaning, and the inline-edit
+    // session owns Escape while an editable target holds focus.
+    if (e.key === "Escape") {
+      // A modal's capture handler closes on Escape and preventDefaults it;
+      // by the time this bubble listener runs the modal is already shut, so
+      // the open check alone would let the keystroke fall through and deselect
+      // the canvas behind it.
+      if (e.defaultPrevented) return;
+      if (modalOpen || editing) return;
+      if (!state.project) return;
+      if (state.mode !== "visual") return;
+      if (state.selectedId || state.selectedSectionId) {
+        deselectCanvasSelection();
+        e.preventDefault();
+      }
       return;
     }
 
@@ -214,11 +237,15 @@ export function createKeyboardHandler(deps: KeyboardDeps) {
       if (block && !block.locked) {
         void deleteBlock(block);
         e.preventDefault();
-      } else if (!block && state.selectedSectionId && !state.selectedId) {
+      } else if (block) {
+        setStatus("This block is locked. Unlock it to edit.");
+      } else if (state.selectedSectionId && !state.selectedId) {
         const section = findSection(state.selectedSectionId);
         if (section && !section.locked) {
           void deleteSection(state.selectedSectionId);
           e.preventDefault();
+        } else if (section) {
+          setStatus("This section is locked. Unlock it to edit.");
         }
       }
     }

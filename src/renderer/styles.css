@@ -30,6 +30,11 @@
   --danger-bg: rgba(239, 68, 68, 0.12);
   --warning: #f59e0b;
   --warning-bg: rgba(245, 158, 11, 0.12);
+  /* Text-safe variants: use only at `color:` sites (WCAG 2.1 AA, 4.5:1). */
+  --accent-text: #818cf8;
+  --accent-2-text: #34d399;
+  --danger-text: #f87171;
+  --warning-text: #fbbf24;
   --chrome-0: #0a0c12;
   --chrome-1: #10131c;
   --chrome-2: #161a26;
@@ -72,6 +77,10 @@
   --accent: #4f46e5;
   --accent-hover: #4338ca;
   --accent-bg: rgba(79, 70, 229, 0.1);
+  --accent-text: #4338ca;
+  --accent-2-text: #065f46;
+  --danger-text: #b91c1c;
+  --warning-text: #92400e;
   --chrome-0: #e9ebf1;
   --chrome-1: #f6f7fa;
   --chrome-2: #ffffff;
@@ -103,6 +112,10 @@
     --accent: #4f46e5;
     --accent-hover: #4338ca;
     --accent-bg: rgba(79, 70, 229, 0.1);
+    --accent-text: #4338ca;
+    --accent-2-text: #065f46;
+    --danger-text: #b91c1c;
+    --warning-text: #92400e;
     --chrome-0: #e9ebf1;
     --chrome-1: #f6f7fa;
     --chrome-2: #ffffff;
@@ -980,7 +993,7 @@ body {
 
 .btn.danger {
   border-color: var(--danger);
-  color: var(--danger);
+  color: var(--danger-text);
   background: transparent;
 }
 
@@ -1061,7 +1074,7 @@ body {
 .zephus-mark-sm {
   width: 16px;
   height: 16px;
-  color: var(--accent);
+  color: var(--accent-text);
   flex-shrink: 0;
 }
 
@@ -1075,7 +1088,7 @@ body {
 }
 
 .project-name.dirty {
-  color: var(--warning);
+  color: var(--warning-text);
 }
 
 .git-branch {
@@ -1154,7 +1167,7 @@ body {
 
 .vp-btn.active {
   background: var(--panel-card);
-  color: var(--accent);
+  color: var(--accent-text);
   box-shadow: var(--shadow-sm);
 }
 
@@ -1351,7 +1364,7 @@ body {
 }
 
 .page-loading-icon {
-  color: var(--accent);
+  color: var(--accent-text);
   animation: zephus-spin 0.8s linear infinite;
 }
 
@@ -1834,7 +1847,7 @@ body {
 .canvas-insert-button:hover,
 .canvas-insert-button:focus-visible {
   border-color: var(--accent);
-  color: var(--accent);
+  color: var(--accent-text);
   outline: none;
 }
 
@@ -1936,7 +1949,7 @@ body {
   border-radius: 999px;
   padding: 4px 8px;
   background: var(--accent-bg);
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -2027,7 +2040,7 @@ body {
 }
 
 .canvas-action-button.danger {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .canvas-action-button.danger:hover,
@@ -3237,13 +3250,13 @@ body {
 
 .overview-pill.good {
   border-color: rgba(16, 185, 129, 0.28);
-  color: var(--accent-2);
+  color: var(--accent-2-text);
   background: rgba(16, 185, 129, 0.08);
 }
 
 .overview-pill.warn {
   border-color: rgba(245, 158, 11, 0.28);
-  color: var(--warning);
+  color: var(--warning-text);
   background: rgba(245, 158, 11, 0.08);
 }
 
@@ -3544,7 +3557,7 @@ body {
 .inline-format-btn.active {
   background: var(--accent-bg);
   border-color: var(--accent);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .inline-format-btn svg {
@@ -3621,7 +3634,7 @@ body {
 
 .asset-tile-actions .mini-btn.danger:hover {
   border-color: var(--danger);
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .asset-size {
@@ -3850,17 +3863,17 @@ body {
 
 .git-panel .g-m {
   background: var(--warning-bg);
-  color: var(--warning);
+  color: var(--warning-text);
 }
 
 .git-panel .g-a {
   background: var(--accent-2-bg);
-  color: var(--accent-2);
+  color: var(--accent-2-text);
 }
 
 .git-panel .g-d {
   background: var(--danger-bg);
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .git-panel .g-warning {
@@ -3872,7 +3885,7 @@ body {
   border: 1px solid var(--warning);
   border-radius: var(--radius-sm);
   background: var(--warning-bg);
-  color: var(--warning);
+  color: var(--warning-text);
   font-size: 11px;
   line-height: 1.4;
 }
@@ -3935,7 +3948,7 @@ body {
 }
 
 .publish-hosts a {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .editable-text {
@@ -4150,7 +4163,7 @@ body {
 }
 
 .dirty-dot {
-  color: var(--warning);
+  color: var(--warning-text);
   margin-left: 6px;
   font-size: 8px;
   vertical-align: middle;
@@ -4407,7 +4420,7 @@ body {
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .theme-preview-description {
@@ -4496,7 +4509,7 @@ body {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  color: var(--accent);
+  color: var(--accent-text);
   margin: 0 0 4px;
 }
 
@@ -4864,7 +4877,7 @@ body {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--accent);
+  color: var(--accent-text);
   margin: 0 0 10px;
 }
 
@@ -4977,7 +4990,7 @@ kbd {
 }
 
 .workspace-rail-title span {
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.12em;
@@ -5165,14 +5178,14 @@ kbd {
 [data-theme="light"] .overview-pill.info,
 [data-theme="light"] .pane-kicker,
 [data-theme="light"] .help-section h4 {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 @media (prefers-color-scheme: light) {
   [data-theme="system"] .overview-pill.info,
   [data-theme="system"] .pane-kicker,
   [data-theme="system"] .help-section h4 {
-    color: var(--accent);
+    color: var(--accent-text);
   }
 }
 
@@ -5328,7 +5341,7 @@ kbd {
    covered by the modal overlay, so failures must render here). */
 .form-error {
   display: block;
-  color: var(--danger);
+  color: var(--danger-text);
   font-size: 12px;
   margin-top: 4px;
 }

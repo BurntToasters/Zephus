@@ -58,6 +58,24 @@ export function HelpModalContent() {
             </tr>
             <tr>
               <td>
+                <kbd>↑</kbd> / <kbd>↓</kbd>
+              </td>
+              <td>Move Selection Between Blocks</td>
+            </tr>
+            <tr>
+              <td>
+                <kbd>Home</kbd> / <kbd>End</kbd>
+              </td>
+              <td>Select First / Last Block</td>
+            </tr>
+            <tr>
+              <td>
+                <kbd>Esc</kbd>
+              </td>
+              <td>Deselect</td>
+            </tr>
+            <tr>
+              <td>
                 <kbd>Ctrl/Cmd</kbd> + <kbd>F</kbd>
               </td>
               <td>Find and Replace Across Pages</td>

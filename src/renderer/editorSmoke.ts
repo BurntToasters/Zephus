@@ -286,6 +286,145 @@ export function installEditorSmokeHook(deps: EditorSmokeDeps): void {
     renderCanvas();
     renderProperties();
 
+    // Arrow-key traversal: selection and DOM focus follow the flat block order
+    // (across sections), Home/End jump to the page edges, Escape deselects.
+    const blockShellsInOrder = (): HTMLElement[] =>
+      Array.from(
+        document.querySelectorAll<HTMLElement>(
+          "#canvas > .canvas-section > .section-body > .block",
+        ),
+      );
+    const flatBlockIds = (): string[] =>
+      state.sections.flatMap((entry) =>
+        entry.children.map((child) => child.id),
+      );
+    const activeBlockId = (): string | null => {
+      const active = document.activeElement;
+      if (!(active instanceof HTMLElement)) return null;
+      const index = blockShellsInOrder().indexOf(active);
+      return index >= 0 ? (flatBlockIds()[index] ?? null) : null;
+    };
+    const pressBlockKey = (shell: HTMLElement, key: string): boolean => {
+      const event = new KeyboardEvent("keydown", {
+        bubbles: true,
+        cancelable: true,
+        key,
+      });
+      shell.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+    const shells = blockShellsInOrder();
+    const headingShell = shells[0];
+    const buttonShell = shells[1];
+    assert(
+      !!headingShell && !!buttonShell,
+      `Editor smoke: block shells missing for keyboard traversal (shells=${shells.length}).`,
+    );
+    if (headingShell && buttonShell) {
+      headingShell.focus();
+      assert(
+        pressBlockKey(headingShell, "ArrowDown"),
+        "Editor smoke: ArrowDown on a block was not handled.",
+      );
+      assert(
+        state.selectedId === "smoke-button",
+        `Editor smoke: ArrowDown did not select the next block (selected=${state.selectedId}).`,
+      );
+      assert(
+        activeBlockId() === "smoke-button",
+        `Editor smoke: ArrowDown did not move DOM focus (focused=${activeBlockId()}).`,
+      );
+      pressBlockKey(buttonShell, "ArrowDown");
+      assert(
+        state.selectedId === "smoke-button" &&
+          activeBlockId() === "smoke-button",
+        `Editor smoke: ArrowDown on the last block did not stay put (selected=${state.selectedId} focused=${activeBlockId()}).`,
+      );
+      pressBlockKey(buttonShell, "ArrowUp");
+      assert(
+        state.selectedId === "smoke-heading" &&
+          activeBlockId() === "smoke-heading",
+        `Editor smoke: ArrowUp did not return to the previous block (selected=${state.selectedId} focused=${activeBlockId()}).`,
+      );
+      pressBlockKey(headingShell, "End");
+      assert(
+        state.selectedId === "smoke-button" &&
+          activeBlockId() === "smoke-button",
+        `Editor smoke: End did not select the last block (selected=${state.selectedId} focused=${activeBlockId()}).`,
+      );
+      pressBlockKey(buttonShell, "Home");
+      assert(
+        state.selectedId === "smoke-heading" &&
+          activeBlockId() === "smoke-heading",
+        `Editor smoke: Home did not select the first block (selected=${state.selectedId} focused=${activeBlockId()}).`,
+      );
+      pressBlockKey(headingShell, "Escape");
+      assert(
+        state.selectedId === null && state.selectedSectionId === null,
+        `Editor smoke: Escape did not clear the selection (block=${state.selectedId} section=${state.selectedSectionId}).`,
+      );
+      assert(
+        !document.querySelector(".block.selected") &&
+          !document.querySelector(".canvas-section.selected"),
+        "Editor smoke: Escape did not clear the rendered canvas selection.",
+      );
+    }
+
+    // The document-level Escape path must clear a click selection too.
+    state.selectedId = "smoke-heading";
+    state.selectedSectionId = section.id;
+    renderCanvas();
+    renderProperties();
+    $("canvas").focus();
+    const escapeEvent = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      key: "Escape",
+    });
+    document.dispatchEvent(escapeEvent);
+    assert(
+      state.selectedId === null && state.selectedSectionId === null,
+      `Editor smoke: document Escape did not clear the selection (block=${state.selectedId} section=${state.selectedSectionId}).`,
+    );
+    assert(
+      escapeEvent.defaultPrevented,
+      "Editor smoke: document Escape was not handled.",
+    );
+
+    // Delete on a locked block must keep the block and say why.
+    const headingBlock = findBlockLocation("smoke-heading")?.block;
+    if (headingBlock) {
+      headingBlock.locked = true;
+      state.selectedId = "smoke-heading";
+      state.selectedSectionId = section.id;
+      renderCanvas();
+      renderProperties();
+      const lockedDelete = new KeyboardEvent("keydown", {
+        bubbles: true,
+        cancelable: true,
+        key: "Delete",
+      });
+      document.dispatchEvent(lockedDelete);
+      assert(
+        state.sections[0]?.children.length === 2 &&
+          state.sections[0]?.children[0]?.id === "smoke-heading",
+        "Editor smoke: Delete removed a locked block.",
+      );
+      assert(
+        (document.getElementById("status-bar")?.textContent ?? "").includes(
+          "locked",
+        ),
+        `Editor smoke: Delete on a locked block did not set a status (status="${document.getElementById("status-bar")?.textContent ?? ""}").`,
+      );
+      assert(
+        !lockedDelete.defaultPrevented,
+        "Editor smoke: Delete on a locked block changed preventDefault behavior.",
+      );
+      headingBlock.locked = false;
+      renderCanvas();
+      renderProperties();
+    }
+
     // Keyboard resize of the selected block writes width + undo restores it.
     const selBlock = findBlockLocation(state.selectedId);
     const originalWidth = selBlock?.block.style?.width;

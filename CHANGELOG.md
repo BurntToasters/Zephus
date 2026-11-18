@@ -68,6 +68,11 @@ are guarantees, not an open blocker list.
 - Production-license modals no longer stack a stale loading frame; failed installs keep the app recoverable.
 - `noUnusedLocals` / `noUnusedParameters` enabled; lint is 0 warnings.
 
+**1.0 accessibility and HID audit batch (verified 2026-11-18):**
+
+- The UI palette now ships text-safe tokens — `--accent-text`, `--accent-2-text`, `--danger-text`, `--warning-text` — defined per theme in `styles.css` (dark `:root`, `[data-theme="light"]`, and the light `[data-theme="system"]` media block). Every `color:` site uses the text variant while borders, fills, and `accent-color` keep the base tokens. The computed WCAG 2.1 failures that motivated this: light-theme warning text measured 1.8–2.2:1, accent-2 2.1–2.5:1, danger 3.2–3.8:1, and the 9px Git badges sat at 1.71:1 (modified) and 2.8:1 (deleted); dark-theme accent text measured 3.5–4.4:1. The failure suite gained check 19, `wcag text token contrast`, which computes all 96 text-token-on-surface pairs in plain JS and fails any ratio under 4.5:1; the passing minimum is 5.24:1 (dark `--accent-text` on `--chrome-3`).
+- The visual canvas closes its keyboard gap: ArrowUp/ArrowDown move block selection across section boundaries with DOM focus following the selection, Home/End jump to the first/last block, and Escape clears the selection from both the focused-block path and the document-level path (guarded against modal capture, inline-edit sessions, and code mode). Delete on a locked block or section now sets a status message instead of failing silently, and the help modal documents the new keys. Runtime smoke asserts all of it end to end in real Electron: traversal, boundary stay-put, Home/End, both Escape paths, rendered-selection clearing, and the locked-delete status.
+
 ## 0.1.0-beta.6 — Release Candidate for 0.1.0
 
 ### Round 36 — production polish for the 0.1.0 RC
