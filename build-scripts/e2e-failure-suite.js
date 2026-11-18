@@ -2322,6 +2322,198 @@ async function runWebEngineAndUiAuditChecks(svc, blockRender) {
   }
 }
 
+/**
+ * Every bundled starter theme must ship an accessible accent plus a managed
+ * layout/CSS with keyboard-navigation safeguards. Uses the real theme/wizard/
+ * schema services against temp sites, so this cannot pass by asserting on
+ * product source strings alone.
+ */
+async function runStarterThemeA11yChecks(svc) {
+  const hexToRgb = (value) => {
+    const match = /^#([0-9a-f]{6})$/i.exec(String(value ?? "").trim());
+    if (!match) return null;
+    const n = parseInt(match[1], 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  };
+  const channel = (v) => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  const luminance = (rgb) =>
+    0.2126 * channel(rgb[0]) +
+    0.7152 * channel(rgb[1]) +
+    0.0722 * channel(rgb[2]);
+  const contrast = (a, b) => {
+    const la = luminance(a);
+    const lb = luminance(b);
+    return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+  };
+  const white = [255, 255, 255];
+  const themeIds = svc.themes.listThemes().map((t) => t.id);
+  const accentFailures = [];
+  const outputFailures = [];
+  let checked = 0;
+  let lowest = { ratio: Infinity, detail: "" };
+
+  for (const themeId of themeIds) {
+    let tmp = null;
+    try {
+      const ctx = mkSite(svc, themeId);
+      tmp = ctx.tmp;
+      const { project } = ctx;
+
+      // Stored design tokens come back through the schema service.
+      const siteRead = svc.schema.readSiteDocument(project);
+      if (!siteRead.ok || !siteRead.site) {
+        accentFailures.push(
+          `${themeId}: site.json unreadable (${siteRead.error ?? "no site"})`,
+        );
+      } else {
+        checked += 1;
+        const accent = siteRead.site.design.accent;
+        const background = siteRead.site.design.background;
+        const accentRgb = hexToRgb(accent);
+        const backgroundRgb = hexToRgb(background);
+        if (!accentRgb || !backgroundRgb) {
+          accentFailures.push(
+            `${themeId}: unparseable accent=${JSON.stringify(accent)} background=${JSON.stringify(background)}`,
+          );
+        } else {
+          // White is always checked; the stored background is only a second
+          // surface when it actually differs from white.
+          const surfaces = [["#ffffff", white]];
+          if (backgroundRgb.some((v, i) => v !== white[i])) {
+            surfaces.push([background, backgroundRgb]);
+          }
+          for (const [label, bg] of surfaces) {
+            const ratio = contrast(accentRgb, bg);
+            if (ratio < lowest.ratio) {
+              lowest = { ratio, detail: `${themeId} ${accent} on ${label}` };
+            }
+            if (ratio < 4.5) {
+              accentFailures.push(
+                `${themeId} ${accent} on ${label} ${ratio.toFixed(2)}:1`,
+              );
+            }
+          }
+        }
+      }
+
+      const layoutPath = path.join(
+        project,
+        "src",
+        "layouts",
+        "BaseLayout.astro",
+      );
+      const layout = fs.existsSync(layoutPath)
+        ? fs.readFileSync(layoutPath, "utf8")
+        : "";
+      const skipTag =
+        layout.match(
+          /<a\b[^>]*\bclass="[^"]*\bzephus-skip-link\b[^"]*"[^>]*>/i,
+        )?.[0] ?? "";
+      const skipHref = skipTag.match(/\bhref="#([^"]+)"/i)?.[1] ?? "";
+      const mainId = layout.match(/<main\b[^>]*\bid="([^"]+)"/i)?.[1] ?? "";
+      const navTag =
+        layout.match(
+          /<nav\b[^>]*\bclass="[^"]*\bzephus-shell-nav\b[^"]*"[^>]*>/i,
+        )?.[0] ?? "";
+      const navName = navTag.match(/\baria-label="([^"]+)"/i)?.[1] ?? "";
+
+      if (!skipTag) outputFailures.push(`${themeId}: no .zephus-skip-link`);
+      if (!skipHref)
+        outputFailures.push(`${themeId}: skip link has no #target`);
+      if (!mainId) outputFailures.push(`${themeId}: <main> has no id target`);
+      if (skipHref && mainId && skipHref !== mainId) {
+        outputFailures.push(
+          `${themeId}: skip #${skipHref} does not match main #${mainId}`,
+        );
+      }
+      if (!navName.trim()) {
+        outputFailures.push(`${themeId}: primary nav has no aria-label`);
+      }
+
+      const cssFiles = [
+        ["global.css", path.join(project, "public", "styles", "global.css")],
+        [
+          "zephus-managed.css",
+          path.join(project, "public", "styles", "zephus-managed.css"),
+        ],
+      ];
+      for (const [name, file] of cssFiles) {
+        const css = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
+        if (!/\.zephus-skip-link\b/.test(css)) {
+          outputFailures.push(`${themeId}: ${name} lacks skip-link styles`);
+        }
+        if (!/:focus-visible\b/.test(css)) {
+          outputFailures.push(`${themeId}: ${name} lacks :focus-visible`);
+        }
+        if (!/@media\s*\(prefers-reduced-motion:\s*reduce\)/i.test(css)) {
+          outputFailures.push(`${themeId}: ${name} lacks reduced-motion media`);
+        }
+        const reduced =
+          css.match(
+            /@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{[^}]*\}/i,
+          )?.[0] ?? "";
+        if (!/scroll-behavior\s*:\s*auto/i.test(reduced)) {
+          outputFailures.push(
+            `${themeId}: ${name} reduced-motion does not disable smooth scrolling`,
+          );
+        }
+        const hover = css.match(/\.button:hover\s*\{[^}]*\}/i)?.[0] ?? "";
+        if (!hover) {
+          outputFailures.push(`${themeId}: ${name} lacks .button:hover`);
+        } else {
+          if (/\bopacity\s*:/.test(hover)) {
+            outputFailures.push(
+              `${themeId}: ${name} .button:hover uses opacity`,
+            );
+          }
+          if (!/\bbackground\s*:/.test(hover)) {
+            outputFailures.push(
+              `${themeId}: ${name} .button:hover lacks darker background`,
+            );
+          }
+        }
+        if (
+          !/\.button\.secondary:hover\s*\{[^}]*background\s*:\s*transparent/i.test(
+            css,
+          )
+        ) {
+          outputFailures.push(
+            `${themeId}: ${name} secondary hover is not contrast-preserving`,
+          );
+        }
+      }
+    } catch (e) {
+      const message = e && e.message ? e.message : String(e);
+      accentFailures.push(`${themeId}: ${message}`);
+      outputFailures.push(`${themeId}: ${message}`);
+    } finally {
+      if (tmp) rm(tmp);
+    }
+  }
+
+  const summarize = (failures) =>
+    `${failures.length} issue(s): ${failures.slice(0, 8).join("; ")}${
+      failures.length > 8 ? " …" : ""
+    }`;
+  record(
+    "starter theme accents >= 4.5:1 on white and stored background",
+    accentFailures.length === 0 && checked === themeIds.length,
+    accentFailures.length === 0 && checked === themeIds.length
+      ? `${themeIds.length} themes, min ${lowest.ratio.toFixed(2)}:1 (${lowest.detail})`
+      : summarize(accentFailures),
+  );
+  record(
+    "managed starter output keyboard/reduced-motion safeguards",
+    outputFailures.length === 0,
+    outputFailures.length === 0
+      ? `${themeIds.length} themes checked`
+      : summarize(outputFailures),
+  );
+}
+
 async function main() {
   ensureDraftsUserDataDir();
   const dist = (p) =>
@@ -2578,6 +2770,9 @@ async function main() {
 
   console.log("\n[fresh quality pass checks]");
   await runFreshQualityPassChecks(svc, blockRender);
+
+  console.log("\n[starter theme accessibility checks]");
+  await runStarterThemeA11yChecks(svc);
 
   console.log("\n[web engine & parity audit checks]");
   await runWebEngineAndUiAuditChecks(svc, blockRender);

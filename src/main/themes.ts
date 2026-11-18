@@ -103,6 +103,23 @@ body { margin: 0; line-height: 1.65; -webkit-font-smoothing: antialiased; }
 img { max-width: 100%; height: auto; display: block; border-radius: var(--zephus-radius, 12px); }
 video { max-width: 100%; display: block; border-radius: var(--zephus-radius, 12px); background: #000; }
 a { color: var(--accent); }
+:where(a, button, summary, input, select, textarea, [tabindex]):focus-visible {
+  outline: 3px solid var(--fg);
+  outline-offset: 2px;
+}
+.zephus-skip-link {
+  position: absolute;
+  top: -4rem;
+  left: 1rem;
+  z-index: 100;
+  padding: 0.65rem 1rem;
+  background: var(--accent);
+  color: #ffffff;
+  border-radius: 0 0 var(--zephus-radius, 12px) var(--zephus-radius, 12px);
+  font-weight: 600;
+  text-decoration: none;
+}
+.zephus-skip-link:focus-visible { top: 0; }
 .lead { font-size: 1.2rem; color: var(--muted); }
 .button {
   display: inline-block;
@@ -113,8 +130,9 @@ a { color: var(--accent); }
   text-decoration: none;
   font-weight: 600;
 }
-.button:hover { opacity: 0.92; }
+.button:hover { background: color-mix(in srgb, var(--accent) 86%, #000); }
 .button.secondary { background: transparent; color: var(--accent); border: 1.5px solid var(--border); }
+.button.secondary:hover { background: transparent; border-color: var(--accent); }
 .zephus-column { padding: 0.5rem; }
 .zephus-column h3 { margin-top: 0; }
 [data-zephus-block="columns"] { display: grid; }
@@ -167,6 +185,15 @@ iframe[data-zephus-block="embed"] {
   width: 100%;
   min-height: 360px;
   border: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 `;
 
@@ -813,7 +840,7 @@ function docsDef(): ThemeDef {
     name: "Documentation",
     description: "Docs site with clear, focused content pages.",
     design: makeDesign({
-      accent: "#0ea5e9",
+      accent: "#0369a1",
       containerWidth: "820px",
       ...fonts({ name: "Inter" }, { name: "Inter" }),
     }),
@@ -952,7 +979,7 @@ function portfolioDef(): ThemeDef {
     name: "Portfolio",
     description: "Personal portfolio to showcase your work.",
     design: makeDesign({
-      accent: "#f97316",
+      accent: "#c2410c",
       containerWidth: "920px",
       ...fonts(
         { name: "Inter" },
@@ -1128,7 +1155,7 @@ function saasDef(): ThemeDef {
     name: "SaaS",
     description: "App / software landing page with pricing.",
     design: makeDesign({
-      accent: "#6366f1",
+      accent: "#4f46e5",
       ...fonts(
         { name: "Plus Jakarta Sans" },
         { name: "Plus Jakarta Sans", weights: [600, 700, 800] },
@@ -1334,7 +1361,7 @@ function eventDef(): ThemeDef {
     name: "Event",
     description: "Conference / event site with schedule and speakers.",
     design: makeDesign({
-      accent: "#0d9488",
+      accent: "#0f766e",
       containerWidth: "1040px",
       ...fonts({ name: "Inter" }, { name: "Sora", weights: [600, 700, 800] }),
     }),

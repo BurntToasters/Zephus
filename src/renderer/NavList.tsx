@@ -81,7 +81,11 @@ export function NavListPanel() {
                   ? `Open ${entry.label}`
                   : "Custom link — not an editable page"
               }
-              aria-label={`Open ${entry.label} (${entry.href})`}
+              aria-label={
+                entry.page
+                  ? `Open ${entry.label} (${entry.href})`
+                  : `Custom link ${entry.label} (${entry.href}) — not an editable page`
+              }
               onClick={() => {
                 if (entry.page) handlers?.onOpenPage(entry.page);
               }}

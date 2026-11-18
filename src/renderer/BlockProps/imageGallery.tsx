@@ -60,6 +60,7 @@ export function ImageContentGroup(props: {
         <button
           type="button"
           class="btn ghost"
+          disabled={!props.src}
           onClick={() => props.state.onClearImage?.()}
         >
           Remove
@@ -104,6 +105,9 @@ export function ImageContentGroup(props: {
               tabIndex={0}
               role="slider"
               aria-label="Image focal point"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={position().x}
               aria-valuetext={`${position().x}% horizontal, ${position().y}% vertical`}
               onKeyDown={(event) => {
                 const step = event.shiftKey ? 10 : 5;

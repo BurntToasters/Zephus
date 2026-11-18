@@ -313,6 +313,28 @@ a {
   color: var(--zephus-accent);
 }
 
+:where(a, button, summary, input, select, textarea, [tabindex]):focus-visible {
+  outline: 3px solid var(--zephus-foreground);
+  outline-offset: 2px;
+}
+
+.zephus-skip-link {
+  position: absolute;
+  top: -4rem;
+  left: 1rem;
+  z-index: 100;
+  padding: 0.65rem 1rem;
+  background: var(--zephus-accent);
+  color: #ffffff;
+  border-radius: 0 0 var(--zephus-radius) var(--zephus-radius);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.zephus-skip-link:focus-visible {
+  top: 0;
+}
+
 .zephus-announcement {
   background: var(--zephus-accent);
   color: #ffffff;
@@ -416,13 +438,18 @@ section[data-zephus-block="section"] {
 }
 
 .button:hover {
-  opacity: 0.92;
+  background: color-mix(in srgb, var(--zephus-accent) 86%, #000);
 }
 
 .button.secondary {
   background: transparent;
   color: var(--zephus-accent);
   border: 1.5px solid color-mix(in srgb, var(--zephus-foreground) 16%, transparent);
+}
+
+.button.secondary:hover {
+  background: transparent;
+  border-color: var(--zephus-accent);
 }
 
 .zephus-column {
@@ -616,6 +643,21 @@ section:has(> .zephus-pricing) > :is(h1, h2, h3, h4, p, .lead) {
 
   .zephus-shell-main {
     padding-inline: 1rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 `;
@@ -859,13 +901,14 @@ ${customCssLink}
     {customHeadHtml ? <Fragment set:html={customHeadHtml} /> : null}
   </head>
   <body>
+    <a class="zephus-skip-link" href="#zephus-main-content">Skip to main content</a>
 ${announcement}    <header class="zephus-shell-header">
       <a class="zephus-shell-logo" href="/">${escapeHtml(site.shell.logoText || site.siteName)}</a>
-      <nav class="zephus-shell-nav">
+      <nav class="zephus-shell-nav" aria-label="Primary navigation">
 ${navLinks}${cta}
       </nav>
     </header>
-    <main class="zephus-shell-main">
+    <main class="zephus-shell-main" id="zephus-main-content" tabindex="-1">
       <slot />
     </main>
     <footer class="zephus-shell-footer">

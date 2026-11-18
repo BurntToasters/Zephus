@@ -20,7 +20,7 @@ export function HomeDraftRecoveryPanel() {
   return (
     <Show when={entries().length > 0}>
       <div class="pane-header-title" style={{ "margin-bottom": "12px" }}>
-        <p class="pane-kicker" style={{ color: "var(--warning)" }}>
+        <p class="pane-kicker" style={{ color: "var(--warning-text)" }}>
           Unsaved Work Recovery
         </p>
         <strong style={{ "font-size": "14px" }}>

@@ -71,14 +71,7 @@ function ThemeCard(props: { theme: ThemeCardEntry }) {
     <article
       classList={{ "theme-card": true, selected: props.theme.selected }}
       data-theme-id={props.theme.id}
-      tabIndex={0}
       onClick={() => handlers?.onSelect(props.theme.id)}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          handlers?.onSelect(props.theme.id);
-        }
-      }}
       onDblClick={() => handlers?.onCreateFromTheme(props.theme.id)}
     >
       <div
@@ -122,6 +115,7 @@ function ThemeCard(props: { theme: ThemeCardEntry }) {
       <div class="theme-card-actions">
         <button
           class="mini-btn"
+          aria-label={`Preview ${props.theme.name} theme`}
           onClick={(event) => {
             event.stopPropagation();
             handlers?.onPreview(props.theme.id);
@@ -131,6 +125,8 @@ function ThemeCard(props: { theme: ThemeCardEntry }) {
         </button>
         <button
           class="mini-btn theme-select-btn"
+          aria-label={`Select ${props.theme.name} theme`}
+          aria-pressed={props.theme.selected ? "true" : "false"}
           onClick={(event) => {
             event.stopPropagation();
             handlers?.onSelect(props.theme.id);

@@ -50,6 +50,7 @@ export function TemplatePalette() {
             <button
               type="button"
               class="mini-btn"
+              aria-label={`Delete saved section ${tpl.label}`}
               onClick={(event) => {
                 event.stopPropagation();
                 void tpl.onDelete?.();

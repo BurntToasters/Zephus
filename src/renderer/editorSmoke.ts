@@ -1,5 +1,6 @@
 /** Editor smoke harness (--smoke / ?smoke=1). */
 
+import { EditorView } from "@codemirror/view";
 import type { EditorSessionState } from "./editorSession";
 import type { EditorBlock, SectionNode } from "../main/types";
 
@@ -667,6 +668,93 @@ export function installEditorSmokeHook(deps: EditorSmokeDeps): void {
         radioTabIndex("mode-code") === 0 && radioTabIndex("mode-visual") === -1,
         `Editor smoke: mode ArrowRight roving tabindex wrong (visual=${radioTabIndex("mode-visual")} code=${radioTabIndex("mode-code")}).`,
       );
+
+      // CodeMirror names its contenteditable so screen readers announce the
+      // page source, and its documented tab-focus toggle must genuinely release
+      // Tab from indentation. Synthetic keydowns need Chromium's legacy keyCode
+      // for CodeMirror's tab-focus check, so the helper pins it per key.
+      const cmContent = codeEditor.querySelector<HTMLElement>(".cm-content");
+      assert(
+        !!cmContent && cmContent.isContentEditable,
+        "Editor smoke: CodeMirror contenteditable missing after switching to code.",
+      );
+      if (cmContent) {
+        assert(
+          cmContent.getAttribute("aria-label") === "Page source code",
+          `Editor smoke: CodeMirror contenteditable is unnamed (aria-label=${JSON.stringify(cmContent.getAttribute("aria-label"))} role=${JSON.stringify(cmContent.getAttribute("role"))}).`,
+        );
+        assert(
+          cmContent.getAttribute("spellcheck") === "false" &&
+            cmContent.getAttribute("autocorrect") === "off" &&
+            cmContent.getAttribute("autocapitalize") === "off",
+          `Editor smoke: CodeMirror source-editing attributes wrong (spellcheck=${JSON.stringify(cmContent.getAttribute("spellcheck"))} autocorrect=${JSON.stringify(cmContent.getAttribute("autocorrect"))} autocapitalize=${JSON.stringify(cmContent.getAttribute("autocapitalize"))}).`,
+        );
+
+        const cmView = EditorView.findFromDOM(codeEditor);
+        assert(
+          !!cmView,
+          "Editor smoke: CodeMirror view not found from the editor DOM.",
+        );
+        if (cmView) {
+          const pressCodeKey = (
+            init: KeyboardEventInit,
+            keyCode?: number,
+          ): boolean => {
+            const event = new KeyboardEvent("keydown", {
+              bubbles: true,
+              cancelable: true,
+              ...init,
+            });
+            if (keyCode !== undefined) {
+              Object.defineProperty(event, "keyCode", { value: keyCode });
+            }
+            cmContent.dispatchEvent(event);
+            return event.defaultPrevented;
+          };
+          const mac = /Mac/.test(navigator.platform);
+          const mod = mac ? { metaKey: true } : { ctrlKey: true };
+          const toggleTabFocus = mac
+            ? { key: "m", shiftKey: true, altKey: true }
+            : { key: "m", ctrlKey: true };
+          const sourceBeforeTab = cmView.state.doc.toString();
+
+          assert(
+            pressCodeKey({ key: "Tab" }, 9),
+            "Editor smoke: Tab was not captured for code indentation.",
+          );
+          assert(
+            cmView.state.doc.toString() !== sourceBeforeTab,
+            "Editor smoke: Tab did not indent the page source.",
+          );
+          pressCodeKey({ key: "z", ...mod }, 90);
+          assert(
+            cmView.state.doc.toString() === sourceBeforeTab,
+            "Editor smoke: undo did not restore the source after the Tab test.",
+          );
+
+          assert(
+            pressCodeKey(toggleTabFocus, 77),
+            `Editor smoke: documented tab-focus toggle (${mac ? "Shift+Alt+M" : "Ctrl+M"}) was not handled.`,
+          );
+          assert(
+            !pressCodeKey({ key: "Tab" }, 9),
+            "Editor smoke: Tab remained captured after enabling tab-focus mode.",
+          );
+          assert(
+            pressCodeKey(toggleTabFocus, 77),
+            "Editor smoke: tab-focus mode could not be toggled back off.",
+          );
+          assert(
+            pressCodeKey({ key: "Tab" }, 9),
+            "Editor smoke: Tab was not captured again after restoring tab-focus mode.",
+          );
+          pressCodeKey({ key: "z", ...mod }, 90);
+          assert(
+            cmView.state.doc.toString() === sourceBeforeTab,
+            "Editor smoke: tab-focus test left the page source modified.",
+          );
+        }
+      }
 
       pressRadioKey($("mode-code"), "ArrowLeft");
       assert(

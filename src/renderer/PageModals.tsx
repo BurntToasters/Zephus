@@ -251,6 +251,7 @@ export function renderNavigationPreviewModal(
               <input
                 type="checkbox"
                 checked={row.visible}
+                aria-label={`Show ${row.label.trim() || row.href} (${row.href}) in navigation`}
                 onChange={(event) =>
                   row.onVisibleChange(event.currentTarget.checked)
                 }
@@ -258,6 +259,7 @@ export function renderNavigationPreviewModal(
               <input
                 class="text"
                 value={row.label}
+                aria-label={`Edit navigation label for ${row.label.trim() || row.href} (${row.href})`}
                 onInput={(event) =>
                   row.onLabelChange(event.currentTarget.value)
                 }

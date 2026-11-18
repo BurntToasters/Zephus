@@ -77,6 +77,15 @@ export function createCodeEditor(
     // Tab indents / Shift+Tab unindents (documented shortcut; basicSetup does
     // not include it by default).
     keymap.of([indentWithTab]),
+    // Name the contenteditable so screen readers do not announce an unnamed
+    // textbox. Spellcheck/autocorrection would rewrite source code, so pin
+    // those off rather than relying on CodeMirror's defaults.
+    EditorView.contentAttributes.of({
+      "aria-label": "Page source code",
+      spellcheck: "false",
+      autocorrect: "off",
+      autocapitalize: "off",
+    }),
     language.of(html()),
     editorTheme.of(editorThemeExtensions()),
     EditorView.updateListener.of((update) => {

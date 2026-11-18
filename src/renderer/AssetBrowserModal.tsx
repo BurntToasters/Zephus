@@ -54,7 +54,6 @@ export function renderAssetBrowserModalBody(
       <div class="asset-browser">
         <div
           class={`asset-dropzone${dragover() ? " dragover" : ""}`}
-          tabindex="0"
           role="region"
           aria-label="Drop files here to import"
           onDragEnter={(event) => {

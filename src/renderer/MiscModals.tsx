@@ -329,7 +329,7 @@ export function renderPublishSuccessModalBody(
     () => (
       <div class="publish-done">
         {state.newerEditsNotIncluded ? (
-          <p class="muted" style="color: var(--warning)">
+          <p class="muted" style="color: var(--warning-text)">
             Note: edits made while the build was running were NOT included. Save
             and build again to publish them.
           </p>

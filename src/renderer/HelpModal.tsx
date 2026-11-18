@@ -168,6 +168,15 @@ export function HelpModalContent() {
               </td>
               <td>Indent / unindent</td>
             </tr>
+            <tr>
+              <td>
+                <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) /{" "}
+                <kbd>Shift</kbd> + <kbd>Alt</kbd> + <kbd>M</kbd> (macOS)
+              </td>
+              <td>
+                Toggle whether Tab indents or moves focus out of the editor
+              </td>
+            </tr>
           </tbody>
         </table>
       </div>

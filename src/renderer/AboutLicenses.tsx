@@ -41,7 +41,7 @@ export function AboutLicensesPanel() {
           fallback={
             <p
               class="muted"
-              style={{ padding: "16px", color: "var(--danger)" }}
+              style={{ padding: "16px", color: "var(--danger-text)" }}
             >
               {current().error}
             </p>
