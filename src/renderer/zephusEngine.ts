@@ -109,7 +109,7 @@ import { default as Save } from "lucide/dist/esm/icons/save.mjs";
 import { default as LogOut } from "lucide/dist/esm/icons/log-out.mjs";
 import { default as RefreshCw } from "lucide/dist/esm/icons/refresh-cw.mjs";
 import { default as Square } from "lucide/dist/esm/icons/square.mjs";
-import { default as Heading } from "lucide/dist/esm/icons/letter-h.mjs";
+import { default as Heading } from "lucide/dist/esm/icons/heading.mjs";
 import { default as AlignLeft } from "lucide/dist/esm/icons/text-align-start.mjs";
 import { default as ImageIcon } from "lucide/dist/esm/icons/image.mjs";
 import { default as Layout } from "lucide/dist/esm/icons/panels-top-left.mjs";
@@ -117,7 +117,7 @@ import { default as LayoutTemplate } from "lucide/dist/esm/icons/layout-template
 import { default as FileCode } from "lucide/dist/esm/icons/file-code.mjs";
 import { default as Link } from "lucide/dist/esm/icons/link.mjs";
 import { default as GitBranch } from "lucide/dist/esm/icons/git-branch.mjs";
-import { default as AlertTriangle } from "lucide/dist/esm/icons/triangle-exclamation-point.mjs";
+import { default as AlertTriangle } from "lucide/dist/esm/icons/triangle-alert.mjs";
 import { default as Star } from "lucide/dist/esm/icons/star.mjs";
 import { default as Quote } from "lucide/dist/esm/icons/quote.mjs";
 import { default as ChevronDown } from "lucide/dist/esm/icons/chevron-down.mjs";
@@ -127,6 +127,32 @@ import { default as Megaphone } from "lucide/dist/esm/icons/megaphone.mjs";
 import { default as Newspaper } from "lucide/dist/esm/icons/newspaper.mjs";
 import { default as X } from "lucide/dist/esm/icons/x.mjs";
 import { default as Info } from "lucide/dist/esm/icons/info.mjs";
+import { default as ArrowDown } from "lucide/dist/esm/icons/arrow-down.mjs";
+import { default as ArrowUp } from "lucide/dist/esm/icons/arrow-up.mjs";
+import { default as Blocks } from "lucide/dist/esm/icons/blocks.mjs";
+import { default as BookOpen } from "lucide/dist/esm/icons/book-open.mjs";
+import { default as Copy } from "lucide/dist/esm/icons/copy.mjs";
+import { default as CreditCard } from "lucide/dist/esm/icons/credit-card.mjs";
+import { default as Edit3 } from "lucide/dist/esm/icons/pen-line.mjs";
+import { default as Ellipsis } from "lucide/dist/esm/icons/ellipsis.mjs";
+import { default as Files } from "lucide/dist/esm/icons/files.mjs";
+import { default as GripVertical } from "lucide/dist/esm/icons/grip-vertical.mjs";
+import { default as Images } from "lucide/dist/esm/icons/images.mjs";
+import { default as Layers3 } from "lucide/dist/esm/icons/layers.mjs";
+import { default as LoaderCircle } from "lucide/dist/esm/icons/loader-circle.mjs";
+import { default as LockKeyhole } from "lucide/dist/esm/icons/lock-keyhole.mjs";
+import { default as Minus } from "lucide/dist/esm/icons/minus.mjs";
+import { default as MoveVertical } from "lucide/dist/esm/icons/move-vertical.mjs";
+import { default as PanelTopOpen } from "lucide/dist/esm/icons/panel-top-open.mjs";
+import { default as Pencil } from "lucide/dist/esm/icons/pencil.mjs";
+import { default as RemoveFormatting } from "lucide/dist/esm/icons/remove-formatting.mjs";
+import { default as Rocket } from "lucide/dist/esm/icons/rocket.mjs";
+import { default as Search } from "lucide/dist/esm/icons/search.mjs";
+import { default as SlidersHorizontal } from "lucide/dist/esm/icons/sliders-horizontal.mjs";
+import { default as Terminal } from "lucide/dist/esm/icons/terminal.mjs";
+import { default as Trash2 } from "lucide/dist/esm/icons/trash-2.mjs";
+import { default as Unlink } from "lucide/dist/esm/icons/unlink.mjs";
+import { default as Video } from "lucide/dist/esm/icons/video.mjs";
 import type { RenderPostEntry } from "../shared/blockRender";
 import { renderHelpModal } from "./HelpModal";
 import { mountAboutLicenses } from "./AboutLicenses";
@@ -249,6 +275,32 @@ function refreshIcons(): void {
       Newspaper,
       X,
       Info,
+      ArrowDown,
+      ArrowUp,
+      Blocks,
+      BookOpen,
+      Copy,
+      CreditCard,
+      Edit3,
+      Ellipsis,
+      Files,
+      GripVertical,
+      Images,
+      Layers3,
+      LoaderCircle,
+      LockKeyhole,
+      Minus,
+      MoveVertical,
+      PanelTopOpen,
+      Pencil,
+      RemoveFormatting,
+      Rocket,
+      Search,
+      SlidersHorizontal,
+      Terminal,
+      Trash2,
+      Unlink,
+      Video,
     },
   });
 }
@@ -1752,6 +1804,17 @@ function openHelpModal(): void {
   ]);
 }
 
+function siteDocumentsDiffer(
+  a: SiteDocument | null,
+  b: SiteDocument | null,
+): boolean {
+  if (!a || !b) return a !== b;
+  return (
+    JSON.stringify({ ...a, generatedAt: "" }) !==
+    JSON.stringify({ ...b, generatedAt: "" })
+  );
+}
+
 async function reloadPages(): Promise<void> {
   const sessionGeneration = editorSessionGeneration;
   const project = state.project;
@@ -1775,8 +1838,7 @@ async function reloadPages(): Promise<void> {
     // Keep the staging baseline while the user has staged (unsaved) site
     // changes: replacing it with the disk copy would let a later save
     // silently overwrite external site.json edits made since staging.
-    const siteChanged =
-      JSON.stringify(state.siteDocument) !== JSON.stringify(site.site);
+    const siteChanged = siteDocumentsDiffer(state.siteDocument, site.site);
     state.siteDocument = site.site;
     if (siteChanged && (state.undo.length > 0 || state.redo.length > 0)) {
       // Undo snapshots captured the OLD site document; undoing a page edit
@@ -1784,6 +1846,8 @@ async function reloadPages(): Promise<void> {
       state.undo = [];
       state.redo = [];
       updateUndoRedoButtons();
+    } else if (!siteChanged) {
+      retargetUndoSiteSnapshots(site.site);
     }
   }
   syncCurrentMeta();
@@ -2117,14 +2181,16 @@ function parsePage(raw: string): void {
  * canvas preview and the generated page list identical posts.
  */
 function editorPostIndex(): RenderPostEntry[] {
-  return state.pageMeta.map((meta) => ({
-    route: meta.route,
-    title: meta.title || meta.navLabel || meta.slug,
-    description: meta.metaDescription,
-    date: isValidDateString(meta.publishDate) ? meta.publishDate : "",
-    author: meta.author,
-    image: meta.socialImage,
-  }));
+  return state.pageMeta
+    .filter((meta) => !meta.noindex)
+    .map((meta) => ({
+      route: meta.route,
+      title: meta.title || meta.navLabel || meta.slug,
+      description: meta.metaDescription,
+      date: isValidDateString(meta.publishDate) ? meta.publishDate : "",
+      author: meta.author,
+      image: meta.socialImage,
+    }));
 }
 
 function editorRenderOptions(
@@ -2136,6 +2202,7 @@ function editorRenderOptions(
   canvasMaxHeadingLevel: number;
   serializeMaxHeadingLevel: number;
   posts: RenderPostEntry[];
+  excludePostListPageRoute?: string;
 } {
   return {
     viewport,
@@ -2146,6 +2213,7 @@ function editorRenderOptions(
     // differs" and detach. Clamping happens on the canvas only.
     serializeMaxHeadingLevel: 6,
     posts: editorPostIndex(),
+    excludePostListPageRoute: state.currentMeta?.route,
   };
 }
 
@@ -2458,6 +2526,10 @@ function openLinkPicker(current: string, onPick: (href: string) => void): void {
       },
     },
   ]);
+  registerCleanup(() => {
+    disposeLinkBody?.();
+    disposeLinkBody = null;
+  });
 }
 
 /** Builds a Google Fonts css2 URL from family specs, or "" if none. */
@@ -2547,6 +2619,7 @@ async function reloadSiteDocumentFromDisk(): Promise<void> {
   }
   if (!site.ok || !site.site) return;
   state.siteDocument = site.site;
+  retargetUndoSiteSnapshots(site.site);
   state.pendingSiteDocument = null;
   state.pendingSiteEditorKind = null;
   clearSiteChanges(state);
@@ -2655,6 +2728,9 @@ const editorSiteSave = createEditorSiteSaveActions({
   getState: () => state,
   setStatus,
   onSiteStateChanged: () => {
+    if (!state.siteDirty && state.siteDocument) {
+      retargetUndoSiteSnapshots(state.siteDocument);
+    }
     applyDesignPreview();
     renderDirtyIndicators();
     if (state.siteDirty) scheduleDraftWrite();
@@ -2746,6 +2822,7 @@ const editorSave = createEditorSaveActions({
   syncBlocksFromSections,
   clearChanges,
   markDirty,
+  retargetUndoSiteSnapshots,
   scheduleDraftWrite,
   renderDirtyIndicators,
   reloadPages,

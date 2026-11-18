@@ -265,4 +265,92 @@ describe("parser parity (schema regex parser vs renderer DOM parser)", () => {
       }));
     expect(shape(renderer)).toEqual(shape(main));
   });
+
+  it("extracts legacy inline text-align into style.align in both parsers", () => {
+    expectParity(
+      WRAP(`<p style="color:red; text-align: center">Centered</p>
+<h2 style="text-align: right">Right</h2>
+<blockquote style="text-align: left">Quote</blockquote>`),
+    );
+    const { renderer } = parseBoth(
+      WRAP(`<p style="text-align: center">Centered</p>`),
+    );
+    const blocks = (
+      renderer as Array<{ children: Array<{ style?: { align?: string } }> }>
+    )[0]?.children;
+    expect(blocks?.[0]?.style?.align).toBe("center");
+  });
+
+  it("migrates un-annotated <video> tags (and safe <source>) identically while leaving unsafe schemes as raw html", () => {
+    const xssUrl = "java" + "script:alert(1)";
+    const src =
+      WRAP(`<video controls src="/assets/clip.mp4" title="Demo"></video>
+<video controls style="width: 100%; border-radius: 8px" title="SourceClip"><source src="/assets/alt.webm" type="video/webm" /></video>
+<video src="${xssUrl}"></video>`);
+    expectParity(src);
+    const { renderer } = parseBoth(src);
+    const blocks = (
+      renderer as Array<{
+        children: Array<{
+          type: string;
+          props: Record<string, string>;
+          style?: { radius?: string };
+        }>;
+      }>
+    )[0]?.children;
+    expect(blocks).toHaveLength(3);
+    expect(blocks?.[0]?.type).toBe("video");
+    expect(blocks?.[0]?.props["src"]).toBe("/assets/clip.mp4");
+    expect(blocks?.[0]?.props["title"]).toBe("Demo");
+    expect(blocks?.[1]?.type).toBe("video");
+    expect(blocks?.[1]?.props["src"]).toBe("/assets/alt.webm");
+    expect(blocks?.[1]?.props["title"]).toBe("SourceClip");
+    expect(blocks?.[1]?.style?.radius).toBe("8px");
+    expect(blocks?.[2]?.type).toBe("html");
+  });
+
+  it("extracts blockquote quote and cite separately when no <p> child is present", () => {
+    const src = WRAP(
+      `<blockquote>Raw quote text<cite>Jane Doe</cite></blockquote>`,
+    );
+    expectParity(src);
+    const { renderer } = parseBoth(src);
+    const block = (
+      renderer as Array<{
+        children: Array<{ type: string; props: Record<string, string> }>;
+      }>
+    )[0]?.children[0];
+    expect(block?.type).toBe("quote");
+    expect(block?.props["text"]).toBe("Raw quote text");
+    expect(block?.props["cite"]).toBe("Jane Doe");
+  });
+
+  it("preserves legacy section inline style and hex colors identically across parsers", () => {
+    const src = WRAP(
+      `<section class="band" style="padding: 48px 24px; background: #112233">
+  <h2 style="color: #abcdef">Heading</h2>
+</section>`,
+    );
+    expectParity(src);
+    const { renderer } = parseBoth(src);
+    const section = (
+      renderer as Array<{
+        style?: { padding?: string; background?: string };
+        children: Array<{ style?: { color?: string } }>;
+      }>
+    )[0];
+    expect(section?.style?.padding).toBe("48px 24px");
+    expect(section?.style?.background).toBe("#112233");
+    expect(section?.children[0]?.style?.color).toBe("#abcdef");
+  });
+
+  it("produces deterministic legacy section labels across repeated parseSections calls", () => {
+    const { inner } = splitManagedPageSource(
+      WRAP(`<section><p>One</p></section><section><p>Two</p></section>`),
+    );
+    const first = parser.parseSections(inner).map((s) => s.label);
+    const second = parser.parseSections(inner).map((s) => s.label);
+    expect(first).toEqual(["Section 1", "Section 2"]);
+    expect(second).toEqual(first);
+  });
 });

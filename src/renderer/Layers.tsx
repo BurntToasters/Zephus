@@ -34,6 +34,7 @@ export function LayersPanel() {
           <li classList={{ active: section.active }}>
             <button
               class="layer-button"
+              aria-current={section.active ? "true" : undefined}
               onClick={() => handlers?.onSelectSection(section.id)}
             >
               {section.label}
@@ -46,8 +47,10 @@ export function LayersPanel() {
                     <button
                       classList={{
                         "layer-button": true,
+                        active: child.active,
                         muted: !child.active,
                       }}
+                      aria-current={child.active ? "true" : undefined}
                       onClick={() =>
                         handlers?.onSelectChild(section.id, child.id)
                       }

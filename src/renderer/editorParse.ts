@@ -7,6 +7,7 @@ import type {
   SectionNode,
 } from "../main/types";
 import { HTML_RAW_LINE_SENTINEL } from "../shared/blockRender";
+import { safeUrl } from "../shared/renderHelpers";
 
 type Block = EditorBlock;
 type BlockType = EditorBlockType;
@@ -47,18 +48,36 @@ export function parseZephusJsonAttr<T>(value: string | null): T | undefined {
 }
 
 function styleFromLegacyProps(el: HTMLElement): BlockStyle | undefined {
-  const style = {
-    color: el.style.color || undefined,
-    background: el.style.background || undefined,
-    padding: el.style.padding || undefined,
-    margin: el.style.margin || undefined,
-    width: el.style.width || undefined,
-    height: el.style.height || undefined,
-    maxWidth: el.style.maxWidth || undefined,
-    radius: el.style.borderRadius || undefined,
-    gap: el.style.gap || undefined,
-  } satisfies BlockStyle;
-  return Object.values(style).some(Boolean) ? style : undefined;
+  const raw = el.getAttribute("style") ?? "";
+  if (!raw.trim()) return undefined;
+  const style: BlockStyle = {};
+  for (const part of raw.split(";")) {
+    const colon = part.indexOf(":");
+    if (colon < 0) continue;
+    const key = part.slice(0, colon).trim().toLowerCase();
+    const val = part.slice(colon + 1).trim();
+    if (!val) continue;
+    if (key === "color") style.color = val;
+    else if (key === "background") style.background = val;
+    else if (key === "padding") style.padding = val;
+    else if (key === "margin") style.margin = val;
+    else if (key === "width") style.width = val;
+    else if (key === "height") style.height = val;
+    else if (key === "max-width") style.maxWidth = val;
+    else if (key === "border-radius") style.radius = val;
+    else if (key === "gap") style.gap = val;
+    else if (key === "text-align") {
+      const normalized = val.toLowerCase();
+      if (
+        normalized === "left" ||
+        normalized === "center" ||
+        normalized === "right"
+      ) {
+        style.align = normalized;
+      }
+    }
+  }
+  return Object.keys(style).length > 0 ? style : undefined;
 }
 
 export interface EditorParseDeps {
@@ -96,11 +115,6 @@ function htmlBlockInnerRaw(el: HTMLElement): string {
 }
 
 export function createEditorPageParser(deps: EditorParseDeps) {
-  // Mirrors the main-process parser's `Section ${sections.length + 1}` label
-  // for legacy <section> wrappers (schema.ts). Counted in parse order so both
-  // parsers emit identical labels — a divergence landed in data-zephus-props
-  // and changed bytes on the first save.
-  let legacySectionCount = 0;
   function parseInner(inner: string, topLevel = false): Block[] {
     const doc = new DOMParser().parseFromString(
       `<div id="z-root">${inner}</div>`,
@@ -214,18 +228,26 @@ export function createEditorPageParser(deps: EditorParseDeps) {
           style: styleFromLegacyProps(el),
         });
       } else if (tag === "blockquote") {
+        const paragraphs = Array.from(el.querySelectorAll("p"))
+          .map((paragraph) => elementText(paragraph).trim())
+          .filter(Boolean);
+        let quoteText = paragraphs.join("\n");
+        if (!quoteText) {
+          const clone = el.cloneNode(true) as Element;
+          for (const citeNode of Array.from(clone.querySelectorAll("cite"))) {
+            citeNode.remove();
+          }
+          quoteText = elementText(clone).trim();
+        }
+        const citeEl = el.querySelector("cite");
         blocks.push({
           id: deps.uid(),
           type: "quote",
           props: {
             // Join every paragraph (not just the first), matching the
             // main-process parser.
-            text:
-              Array.from(el.querySelectorAll("p"))
-                .map((paragraph) => elementText(paragraph).trim())
-                .filter(Boolean)
-                .join("\n") || elementText(el).trim(),
-            cite: el.querySelector("cite")?.textContent?.trim() ?? "",
+            text: quoteText,
+            cite: citeEl ? elementText(citeEl).trim() : "",
             cls,
           },
           style: styleFromLegacyProps(el),
@@ -244,6 +266,31 @@ export function createEditorPageParser(deps: EditorParseDeps) {
           },
           style: styleFromLegacyProps(el),
         });
+      } else if (tag === "video") {
+        const directSrc = el.getAttribute("src")?.trim() ?? "";
+        const sourceSrc =
+          el.querySelector("source[src]")?.getAttribute("src")?.trim() ?? "";
+        const candidateSrc = directSrc || sourceSrc;
+        const validSrc = candidateSrc ? safeUrl(candidateSrc) : "";
+        if (validSrc) {
+          blocks.push({
+            id: deps.uid(),
+            type: "video",
+            props: {
+              src: validSrc,
+              title: el.getAttribute("title") ?? "Video",
+              cls,
+            },
+            style: styleFromLegacyProps(el),
+          });
+        } else {
+          blocks.push({
+            id: deps.uid(),
+            type: "html",
+            props: {},
+            raw: el.outerHTML,
+          });
+        }
       } else if (tag === "iframe") {
         blocks.push({
           id: deps.uid(),
@@ -296,12 +343,13 @@ export function createEditorPageParser(deps: EditorParseDeps) {
       };
     }
     const cls = el.getAttribute("class") ?? "";
-    legacySectionCount += 1;
+    const style = styleFromLegacyProps(el);
     return {
       id: storedId || deps.uid(),
       type: "section",
-      label: `Section ${legacySectionCount}`,
+      label: `Section ${index + 1}`,
       props: { wrapper: "box", cls },
+      ...(style ? { style } : {}),
       children: parseInner(el.innerHTML),
     };
   }

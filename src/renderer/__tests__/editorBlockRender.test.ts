@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from "vitest";
-import { sanitizeHtmlForCanvas } from "../editorBlockRender";
+import {
+  blockToHtmlForEditor,
+  sanitizeHtmlForCanvas,
+} from "../editorBlockRender";
 
 describe("sanitizeHtmlForCanvas", () => {
   it("removes script, object, embed, iframe, and form elements", () => {
@@ -127,5 +130,46 @@ describe("sanitizeHtmlForCanvas", () => {
     expect(out).toContain('<a href="/about">About</a>');
     expect(out).toContain('src="/assets/x.png"');
     expect(out).toContain("<strong>bold</strong>");
+  });
+});
+
+describe("blockToHtmlForEditor", () => {
+  it("excludes the current page route from postlist output when excludePostListPageRoute is set", () => {
+    const postlist = {
+      id: "pl-1",
+      type: "postlist" as const,
+      props: { title: "Posts", folder: "/blog", limit: "5", cls: "" },
+    };
+    const posts = [
+      {
+        route: "/blog",
+        title: "Blog Index",
+        date: "2026-01-01",
+        description: "",
+        author: "",
+        image: "",
+      },
+      {
+        route: "/blog/post-a",
+        title: "Post A",
+        date: "2026-01-02",
+        description: "",
+        author: "",
+        image: "",
+      },
+    ];
+    for (const forCanvas of [false, true]) {
+      const html = blockToHtmlForEditor(postlist, {
+        viewport: "desktop",
+        forCanvas,
+        canvasMaxHeadingLevel: 6,
+        posts,
+        excludePostListPageRoute: "/blog",
+      });
+      expect(html).not.toContain('href="/blog"');
+      expect(html).not.toContain("Blog Index");
+      expect(html).toContain('href="/blog/post-a"');
+      expect(html).toContain("Post A");
+    }
   });
 });

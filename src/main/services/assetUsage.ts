@@ -13,6 +13,10 @@ import {
   writeSiteDocument,
 } from "./schema";
 import { detectAstro, listPages } from "./project";
+import {
+  listReusableSections,
+  writeStoredReusableSections,
+} from "./reusableSections";
 
 function pageSidecarRel(slug: string): string {
   const normalized = normalizePageSlug(slug);
@@ -98,7 +102,33 @@ function replaceReferences(
   return { value: out, count };
 }
 
-/** Recursively replaces references inside every string of a section tree. */
+const STRUCTURAL_BLOCK_PROP_KEYS = new Set([
+  "cls",
+  "level",
+  "ordered",
+  "variant",
+]);
+
+function replaceInProps(
+  props: Record<string, string>,
+  from: string,
+  to: string,
+): { value: Record<string, string>; count: number } {
+  let count = 0;
+  const out: Record<string, string> = {};
+  for (const [key, val] of Object.entries(props)) {
+    if (STRUCTURAL_BLOCK_PROP_KEYS.has(key) || typeof val !== "string") {
+      out[key] = val;
+      continue;
+    }
+    const next = replaceReferences(val, from, to);
+    count += next.count;
+    out[key] = next.value;
+  }
+  return { value: out, count };
+}
+
+/** Recursively replaces references inside style objects while preserving primitives. */
 function replaceInStrings(
   value: unknown,
   from: string,
@@ -127,6 +157,48 @@ function replaceInStrings(
     return { value: out, count };
   }
   return { value, count: 0 };
+}
+
+/** Replaces asset references only in editable content/style fields, preserving structural metadata. */
+function replaceInSections(
+  sections: PageDocument["sections"],
+  from: string,
+  to: string,
+): { value: PageDocument["sections"]; count: number } {
+  let count = 0;
+  const nextSections = sections.map((section) => {
+    const nextStyle = section.style
+      ? replaceInStrings(section.style, from, to)
+      : { value: section.style, count: 0 };
+    count += nextStyle.count;
+    const nextChildren = section.children.map((block) => {
+      const nextProps = replaceInProps(block.props, from, to);
+      const nextBlockStyle = block.style
+        ? replaceInStrings(block.style, from, to)
+        : { value: block.style, count: 0 };
+      const nextRaw =
+        typeof block.raw === "string"
+          ? replaceReferences(block.raw, from, to)
+          : { value: block.raw, count: 0 };
+      count += nextProps.count + nextBlockStyle.count + nextRaw.count;
+      return {
+        ...block,
+        props: nextProps.value,
+        ...(block.style !== undefined
+          ? { style: nextBlockStyle.value as typeof block.style }
+          : {}),
+        ...(block.raw !== undefined ? { raw: nextRaw.value } : {}),
+      };
+    });
+    return {
+      ...section,
+      ...(section.style !== undefined
+        ? { style: nextStyle.value as typeof section.style }
+        : {}),
+      children: nextChildren,
+    };
+  });
+  return { value: nextSections, count };
 }
 
 /** Points every saved reference to `from` at `to`, after an asset was renamed. */
@@ -166,7 +238,7 @@ export function repointAssetReferences(
       // overwrite the user's file with regenerated output. Their references
       // can only be fixed by hand (the tooling cannot see inside them).
       if (doc.detached || doc.managedFileStatus === "out-of-sync") continue;
-      const sections = replaceInStrings(doc.sections, previous, next);
+      const sections = replaceInSections(doc.sections, previous, next);
       const socialImage = replaceReferences(
         doc.socialImage ?? "",
         previous,
@@ -176,7 +248,7 @@ export function repointAssetReferences(
 
       const result = writePageDocument(projectPath, pagesDir, {
         ...doc,
-        sections: sections.value as PageDocument["sections"],
+        sections: sections.value,
         socialImage: socialImage.value,
       });
       if (!result.ok) {
@@ -232,6 +304,39 @@ export function repointAssetReferences(
       }
     }
 
+    const reusable = listReusableSections(projectPath);
+    if (!reusable.ok && reusable.error) {
+      return {
+        ok: false,
+        updated,
+        error: reusable.error,
+      };
+    }
+    if (reusable.ok && reusable.sections.length > 0) {
+      let reusableCount = 0;
+      const nextSections = reusable.sections.map((section) => {
+        const replaced = replaceReferences(section.html, previous, next);
+        reusableCount += replaced.count;
+        return replaced.count > 0
+          ? { ...section, html: replaced.value }
+          : section;
+      });
+      if (reusableCount > 0) {
+        const savedReusable = writeStoredReusableSections(
+          projectPath,
+          nextSections,
+        );
+        if (!savedReusable.ok) {
+          return {
+            ok: false,
+            updated,
+            error: savedReusable.error ?? "Could not update reusable sections.",
+          };
+        }
+        updated += reusableCount;
+      }
+    }
+
     return { ok: true, updated };
   } catch (error) {
     return {
@@ -258,9 +363,46 @@ function referenceCount(haystack: string, webPath: string): number {
   return count;
 }
 
+function countInStrings(value: unknown, webPath: string): number {
+  if (typeof value === "string") return referenceCount(value, webPath);
+  if (Array.isArray(value)) {
+    return value.reduce((sum, item) => sum + countInStrings(item, webPath), 0);
+  }
+  if (value && typeof value === "object") {
+    return Object.values(value as Record<string, unknown>).reduce(
+      (sum: number, val) => sum + countInStrings(val, webPath),
+      0,
+    );
+  }
+  return 0;
+}
+
+function sectionsReferenceCount(
+  sections: PageDocument["sections"],
+  webPath: string,
+): number {
+  let count = 0;
+  for (const section of sections) {
+    count += countInStrings(section.style, webPath);
+    for (const block of section.children) {
+      count += countInStrings(block.style, webPath);
+      if (typeof block.raw === "string") {
+        count += referenceCount(block.raw, webPath);
+      }
+      for (const [key, val] of Object.entries(block.props)) {
+        if (STRUCTURAL_BLOCK_PROP_KEYS.has(key) || typeof val !== "string") {
+          continue;
+        }
+        count += referenceCount(val, webPath);
+      }
+    }
+  }
+  return count;
+}
+
 function pageReferenceCount(doc: PageDocument, webPath: string): number {
   return (
-    referenceCount(JSON.stringify(doc.sections), webPath) +
+    sectionsReferenceCount(doc.sections, webPath) +
     referenceCount(doc.socialImage ?? "", webPath)
   );
 }
@@ -367,10 +509,26 @@ export function findAssetUsage(
         ...(usageGap ? { usageGap } : {}),
       };
     }
+    const places = site.site ? siteReferences(site.site, normalized) : [];
+    const reusable = listReusableSections(projectPath);
+    if (!reusable.ok && reusable.error) {
+      return {
+        ok: false,
+        pages,
+        siteReferences: places,
+        error: reusable.error,
+        ...(usageGap ? { usageGap } : {}),
+      };
+    }
+    for (const section of reusable.sections) {
+      if (referenceCount(section.html, normalized) > 0) {
+        places.push(`Reusable section: ${section.label}`);
+      }
+    }
     return {
       ok: true,
       pages,
-      siteReferences: site.site ? siteReferences(site.site, normalized) : [],
+      siteReferences: places,
       ...(usageGap ? { usageGap } : {}),
     };
   } catch (error) {

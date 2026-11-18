@@ -21,8 +21,8 @@
           Helvetica,
           Arial,
           sans-serif;
-        background: #09090b;
-        color: #f4f4f5;
+        background: #090a0f;
+        color: #f8fafc;
         overflow: hidden;
         user-select: none;
       }
@@ -33,10 +33,31 @@
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        gap: 8px;
+        gap: 12px;
         padding: 24px;
         box-sizing: border-box;
         text-align: center;
+        background: radial-gradient(
+          circle at 50% 35%,
+          rgba(99, 102, 241, 0.14),
+          rgba(9, 10, 15, 0) 68%
+        );
+      }
+
+      .brand-logo {
+        width: 48px;
+        height: 48px;
+        border-radius: 14px;
+        background: rgba(99, 102, 241, 0.14);
+        border: 1px solid rgba(99, 102, 241, 0.28);
+        display: grid;
+        place-items: center;
+        color: #818cf8;
+      }
+
+      .zephus-mark {
+        width: 24px;
+        height: 24px;
       }
 
       .title {
@@ -49,14 +70,55 @@
       .status {
         margin: 0;
         font-size: 13px;
-        color: #a1a1aa;
+        color: #94a3b8;
+      }
+
+      .loader {
+        width: 128px;
+        height: 3px;
+        border-radius: 999px;
+        background: rgba(148, 163, 184, 0.18);
+        overflow: hidden;
+        margin-top: 4px;
+      }
+
+      .loader-bar {
+        width: 42%;
+        height: 100%;
+        border-radius: 999px;
+        background: #6366f1;
+        animation: zephus-splash-slide 1.2s ease-in-out infinite;
+      }
+
+      @keyframes zephus-splash-slide {
+        0% {
+          transform: translateX(-100%);
+        }
+        100% {
+          transform: translateX(260%);
+        }
       }
     </style>
   </head>
   <body>
     <div class="wrap">
+      <div class="brand-logo" aria-hidden="true">
+        <svg class="zephus-mark" viewBox="0 0 24 24" fill="none">
+          <path
+            d="M5 6.5H19L5 17.5H19"
+            stroke="currentColor"
+            stroke-width="2.2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+          <circle cx="5" cy="17.5" r="1.6" fill="currentColor" opacity="0.7" />
+        </svg>
+      </div>
       <h1 class="title">Zephus</h1>
-      <p class="status">Loading…</p>
+      <p class="status">Visual Astro Builder</p>
+      <div class="loader" aria-hidden="true">
+        <div class="loader-bar"></div>
+      </div>
     </div>
   </body>
 </html>

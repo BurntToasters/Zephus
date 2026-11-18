@@ -5,6 +5,7 @@ import * as path from "path";
 import log from "electron-log";
 import { GitStatus } from "../types";
 import { relativePathIsSecret } from "./files";
+import { assertRealpathInside, writeFileAtomic } from "./fsSafe";
 
 const DEFAULT_GITIGNORE = `node_modules/
 dist/
@@ -277,8 +278,9 @@ export async function initGitRepo(projectPath: string): Promise<void> {
   // node_modules/, dist/ and possibly .env. Write a safe default when the
   // project has none — never overwrite an existing one.
   const gitignorePath = path.join(projectPath, ".gitignore");
-  if (!fs.existsSync(gitignorePath)) {
-    fs.writeFileSync(gitignorePath, DEFAULT_GITIGNORE);
+  assertRealpathInside(projectPath, gitignorePath);
+  if (!fs.lstatSync(gitignorePath, { throwIfNoEntry: false })) {
+    writeFileAtomic(gitignorePath, DEFAULT_GITIGNORE);
   }
 }
 

@@ -60,6 +60,7 @@ export function createSettingsModalActions(deps: SettingsModalDeps) {
     showModal,
     showModalNode,
     closeModal,
+    registerCleanup,
     modalController,
     applyCodeFontSize,
     nodeStatusMessage,
@@ -351,6 +352,10 @@ export function createSettingsModalActions(deps: SettingsModalDeps) {
         },
       },
     ]);
+    registerCleanup(() => {
+      disposeSettingsBody?.();
+      disposeSettingsBody = null;
+    });
 
     void window.zephus
       .getNodeStatus()

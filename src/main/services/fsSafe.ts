@@ -38,10 +38,31 @@ export function safeResolve(projectPath: string, relativePath: string): string {
 export function assertRealpathInside(
   projectPath: string,
   targetPath: string,
+  depth = 0,
 ): { realRoot: string; realTarget: string } {
+  if (depth > 16) {
+    throw new Error("Path escapes the project directory.");
+  }
   const realRoot = fs.realpathSync.native(path.resolve(projectPath));
-  let existing = targetPath;
-  while (!fs.existsSync(existing)) {
+  let existing = path.resolve(targetPath);
+  while (true) {
+    let lstat: fs.Stats | null;
+    try {
+      lstat = fs.lstatSync(existing);
+    } catch {
+      lstat = null;
+    }
+    if (lstat) {
+      if (lstat.isSymbolicLink() && !fs.existsSync(existing)) {
+        const rawTarget = fs.readlinkSync(existing);
+        const resolvedLinkTarget = path.resolve(
+          path.dirname(existing),
+          rawTarget,
+        );
+        return assertRealpathInside(realRoot, resolvedLinkTarget, depth + 1);
+      }
+      break;
+    }
     const parent = path.dirname(existing);
     if (parent === existing) {
       throw new Error("Path escapes the project directory.");

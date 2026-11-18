@@ -121,7 +121,7 @@ describe("parser edge branches", () => {
     ) as unknown as ParseResultUnit[];
     const block = tree[0]?.children?.[0];
     expect(block?.style?.color).toBe("red");
-    expect(block?.style?.background).toBe("rgb(255, 255, 255)");
+    expect(block?.style?.background).toBe("#fff");
   });
 
   it("keeps comment markers verbatim", () => {

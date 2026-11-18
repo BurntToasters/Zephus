@@ -41,6 +41,7 @@ export interface EditorSaveDeps {
   renderDirtyIndicators: () => void;
   reloadPages: () => Promise<void>;
   persistPendingSiteDocument: () => Promise<boolean>;
+  retargetUndoSiteSnapshots?: (site: SiteDocument) => void;
   afterSave: () => void;
   zephus: Pick<
     Window["zephus"],
@@ -180,6 +181,9 @@ export function createEditorSaveActions(deps: EditorSaveDeps) {
               state.pageDocument = generated.pageDocument;
               if (!state.siteDirty) {
                 state.siteDocument = generated.site;
+                if (generated.site) {
+                  deps.retargetUndoSiteSnapshots?.(generated.site);
+                }
               }
               state.managedStatus = generated.pageDocument.managedFileStatus;
               state.visualEditable = true;
@@ -210,6 +214,9 @@ export function createEditorSaveActions(deps: EditorSaveDeps) {
             state.pageDocument = saved.pageDocument;
             if (!state.siteDirty) {
               state.siteDocument = saved.site;
+              if (saved.site) {
+                deps.retargetUndoSiteSnapshots?.(saved.site);
+              }
             }
             state.managedStatus = saved.pageDocument.managedFileStatus;
             state.visualEditable = true;

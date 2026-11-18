@@ -71,6 +71,14 @@ function ThemeCard(props: { theme: ThemeCardEntry }) {
     <article
       classList={{ "theme-card": true, selected: props.theme.selected }}
       data-theme-id={props.theme.id}
+      tabIndex={0}
+      onClick={() => handlers?.onSelect(props.theme.id)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          handlers?.onSelect(props.theme.id);
+        }
+      }}
       onDblClick={() => handlers?.onCreateFromTheme(props.theme.id)}
     >
       <div

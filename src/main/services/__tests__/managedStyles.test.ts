@@ -76,4 +76,34 @@ describe("managed styles", () => {
     expect(accentLine.slice(0, -1)).not.toContain(";");
     expect(accentLine).not.toContain("}");
   });
+
+  it("emits complete runtime styles for all Zephus blocks, sections, and shadows", () => {
+    const css = fs.readFileSync(
+      path.join(project, "public", "styles", "zephus-managed.css"),
+      "utf8",
+    );
+    const requiredTokens = [
+      "--shadow-sm:",
+      "--shadow-md:",
+      "--shadow-lg:",
+      ".section-box",
+      ".button",
+      ".lead",
+      ".zephus-column",
+      ".zephus-feature",
+      ".zephus-testimonial",
+      ".zephus-accordion",
+      ".zephus-stats",
+      ".zephus-pricing",
+      ".zephus-cta",
+      ".zephus-postlist",
+      ".zephus-gallery",
+      'iframe[data-zephus-block="embed"]',
+    ];
+    for (const token of requiredTokens) {
+      expect(css, `expected managed stylesheet to include ${token}`).toContain(
+        token,
+      );
+    }
+  });
 });
