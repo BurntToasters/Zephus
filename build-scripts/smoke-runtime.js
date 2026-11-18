@@ -123,6 +123,10 @@ function runRuntimeSmoke(skipCompile = false) {
     runNpm(["run", "compile"]);
   }
 
+  // The production bundle strips the smoke harness (editorSmoke stub);
+  // this run needs it, so re-bundle the renderer with --smoke. ~1s.
+  runNpm(["run", "compile:renderer", "--", "--smoke"]);
+
   const noSandboxRequested = process.argv.includes("--no-sandbox");
   if (
     noSandboxRequested &&

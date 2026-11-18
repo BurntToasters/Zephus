@@ -8,12 +8,26 @@ const path = require("path");
 
 const root = path.resolve(__dirname, "..");
 const watch = process.argv.includes("--watch");
+const smoke = process.argv.includes("--smoke");
 
 // Records which node_modules packages get inlined into the shipped bundle so
 // crawl-licenses.js can attribute them. A repo-local cache is deterministic,
 // excluded from packaging, and removed by dist-tools clean; a fixed os.tmpdir
 // file could survive another checkout/version and silently misattribute licenses.
 const META_OUT = path.join(root, ".cache", "zephus", "renderer-meta.json");
+
+// Production bundles redirect the smoke harness to a no-op stub: the renderer
+// only loads it under main.ts's ?smoke=1 dev query, so shipping ~27KB of test
+// code would be dead weight. smoke-runtime.js rebuilds with --smoke instead.
+const smokeStubPlugin = {
+  name: "zephus-smoke-stub",
+  setup(build) {
+    if (smoke) return;
+    build.onResolve({ filter: /editorSmoke$/ }, () => ({
+      path: path.join(root, "src", "renderer", "editorSmokeStub.ts"),
+    }));
+  },
+};
 
 const options = {
   entryPoints: [path.join(root, "src", "renderer", "zephusEngine.ts")],
@@ -26,7 +40,7 @@ const options = {
   legalComments: "none",
   metafile: true,
   logLevel: "info",
-  plugins: [solidPlugin()],
+  plugins: [smokeStubPlugin, solidPlugin()],
 };
 
 function writeMeta(metafile) {
