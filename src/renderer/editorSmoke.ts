@@ -3,6 +3,7 @@
 import { EditorView } from "@codemirror/view";
 import type { EditorSessionState } from "./editorSession";
 import type { EditorBlock, SectionNode } from "../main/types";
+import { renderPublishSuccessModalBody } from "./MiscModals";
 
 type Block = EditorBlock;
 
@@ -831,6 +832,47 @@ export function installEditorSmokeHook(deps: EditorSmokeDeps): void {
         assert(
           onDisk.ok && (onDisk.content ?? "").includes(smokeMarker),
           "Editor smoke: saved page file missing ZEPHUS_SMOKE_BLOCK marker.",
+        );
+      }
+
+      // Publish-success copy must match the real reveal result: render both
+      // states into a throwaway detached container (never the live modal).
+      try {
+        const copyFor = (revealed: boolean): string => {
+          const host = document.createElement("div");
+          const dispose = renderPublishSuccessModalBody(host, {
+            outputDir: "dist",
+            revealed,
+          });
+          try {
+            return (host.textContent ?? "").replace(/\s+/g, " ").trim();
+          } finally {
+            dispose();
+            host.remove();
+          }
+        };
+        const revealedCopy = copyFor(true);
+        const failedCopy = copyFor(false);
+        assert(
+          /opened in your file manager/i.test(revealedCopy),
+          `Editor smoke: publish-success copy omitted the reveal confirmation ("${revealedCopy}").`,
+        );
+        assert(
+          !/opened in your file manager/i.test(failedCopy),
+          `Editor smoke: publish-success copy claimed a failed reveal was open ("${failedCopy}").`,
+        );
+        assert(
+          /open output folder/i.test(failedCopy),
+          `Editor smoke: publish-success copy did not point at Open Output Folder ("${failedCopy}").`,
+        );
+        assert(
+          revealedCopy !== failedCopy,
+          "Editor smoke: publish-success copy ignored the reveal result.",
+        );
+      } catch (error) {
+        assert(
+          false,
+          `Editor smoke: publish-success copy check crashed (${error instanceof Error ? error.message : String(error)}).`,
         );
       }
 

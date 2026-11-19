@@ -2160,6 +2160,16 @@ async function runWebEngineAndUiAuditChecks(svc, blockRender) {
             path.join(ROOT, "dist", "main", "services", "assets.js"),
           ).href
         );
+        const assetUsage = await import(
+          pathToFileURL(
+            path.join(ROOT, "dist", "main", "services", "assetUsage.js"),
+          ).href
+        );
+        const reusable = await import(
+          pathToFileURL(
+            path.join(ROOT, "dist", "main", "services", "reusableSections.js"),
+          ).href
+        );
         const png1x1 = Buffer.from(
           "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
           "base64",
@@ -2172,6 +2182,94 @@ async function runWebEngineAndUiAuditChecks(svc, blockRender) {
           srcImg,
         ]);
         const webPath = imported.imported?.[0]?.webPath;
+        const legacySpelling = "/assets/images/hero #100%.png";
+        const readLegacyDoc = svc.schema.readPageDocument(
+          project,
+          "index.astro",
+          "src/pages",
+        );
+        const seededDoc = readLegacyDoc.pageDocument
+          ? svc.schema.writePageDocument(project, "src/pages", {
+              ...readLegacyDoc.pageDocument,
+              socialImage: legacySpelling,
+              sections: [
+                {
+                  id: "sec-legacy-alias",
+                  type: "section",
+                  label: `${encoded} Band`,
+                  props: { wrapper: "none", cls: encoded },
+                  style: { background: `url(${legacySpelling})` },
+                  children: [
+                    {
+                      id: "h-legacy-alias",
+                      type: "heading",
+                      props: {
+                        text: `See ${legacySpelling} and ${encoded}`,
+                        level: "2",
+                        cls: legacySpelling,
+                      },
+                    },
+                    {
+                      id: "img-legacy-alias",
+                      type: "image",
+                      props: {
+                        src: legacySpelling,
+                        alt: "Legacy",
+                        cls: legacySpelling,
+                      },
+                      style: { background: `url(${legacySpelling})` },
+                    },
+                    {
+                      id: "raw-legacy-alias",
+                      type: "html",
+                      props: {},
+                      raw: `<img src="${legacySpelling}" alt="A" /><img src="${legacySpelling}" alt="B" />`,
+                    },
+                  ],
+                },
+              ],
+            })
+          : { ok: false };
+        const seededReusable = reusable.saveReusableSection(
+          project,
+          "Legacy Alias Banner",
+          `<img src="${legacySpelling}" alt="A" /><img src="${legacySpelling}" alt="B" />`,
+        );
+        const legacySite = svc.schema.readSiteDocument(project);
+        const seededSite = legacySite.site
+          ? svc.schema.writeSiteDocument(
+              project,
+              {
+                ...legacySite.site,
+                faviconPath: legacySpelling,
+                shell: {
+                  ...legacySite.site.shell,
+                  footerHtml: `<img src="${legacySpelling}" alt="Footer" />`,
+                  customHeadHtml: `<link rel="preload" href="${legacySpelling}" />`,
+                },
+              },
+              "src/pages",
+            )
+          : { ok: false };
+        const legacyUsage = assetUsage.findAssetUsage(
+          project,
+          "src/pages",
+          encoded,
+        );
+        const legacyUsageCount = Number(legacyUsage.pages?.[0]?.count ?? 0);
+        const legacyUsageOk =
+          seededDoc.ok === true &&
+          seededReusable.ok === true &&
+          seededSite.ok === true &&
+          legacyUsage.ok === true &&
+          legacyUsage.pages?.length === 1 &&
+          legacyUsageCount === 8 &&
+          ["Site favicon", "Footer HTML", "Custom head HTML"].every((place) =>
+            legacyUsage.siteReferences?.includes(place),
+          ) &&
+          legacyUsage.siteReferences?.some((place) =>
+            place.includes("Legacy Alias Banner"),
+          );
         const rawFile = path.join(
           project,
           "public",
@@ -2193,6 +2291,14 @@ async function runWebEngineAndUiAuditChecks(svc, blockRender) {
         const renamed = webPath
           ? assetsSvc.renameAsset(project, "public", webPath, "hero #2%")
           : { ok: false };
+        const legacyRepoint = renamed.ok
+          ? assetUsage.repointAssetReferences(
+              project,
+              "src/pages",
+              webPath,
+              renamed.webPath,
+            )
+          : { ok: false, updated: 0 };
         const renamedFile = path.join(
           project,
           "public",
@@ -2233,6 +2339,73 @@ async function runWebEngineAndUiAuditChecks(svc, blockRender) {
           project,
           "public",
           literalEncoded,
+        );
+        const afterLegacyDoc = svc.schema.readPageDocument(
+          project,
+          "index.astro",
+          "src/pages",
+        ).pageDocument;
+        const afterLegacySec = afterLegacyDoc?.sections?.[0];
+        const [afterLegacyH, afterLegacyImg, afterLegacyRaw] =
+          afterLegacySec?.children ?? [];
+        const afterLegacySite = svc.schema.readSiteDocument(project).site;
+        const afterLegacyReusable = reusable.listReusableSections(project);
+        const newEncoded = renamed.webPath;
+        const structuralLegacyIntact =
+          afterLegacySec?.props?.cls === encoded &&
+          afterLegacyH?.props?.cls === legacySpelling;
+        const legacyContent = JSON.stringify({
+          sectionProps: Object.fromEntries(
+            Object.entries(afterLegacySec?.props ?? {}).filter(
+              ([key]) => key !== "cls",
+            ),
+          ),
+          sectionStyle: afterLegacySec?.style,
+          blocks: (afterLegacySec?.children ?? []).map((block) => ({
+            props: Object.fromEntries(
+              Object.entries(block.props ?? {}).filter(
+                ([key]) => key !== "cls",
+              ),
+            ),
+            style: block.style,
+            raw: block.raw,
+          })),
+          socialImage: afterLegacyDoc?.socialImage,
+          favicon: afterLegacySite?.faviconPath,
+          footer: afterLegacySite?.shell?.footerHtml,
+          head: afterLegacySite?.shell?.customHeadHtml,
+          reusable: afterLegacyReusable.sections?.map((s) => s.html),
+        });
+        const legacyContentClean =
+          !legacyContent.includes(legacySpelling) &&
+          !legacyContent.includes(encoded);
+        const legacyAliasOk =
+          legacyUsageOk &&
+          legacyRepoint.ok === true &&
+          legacyRepoint.updated === 13 &&
+          structuralLegacyIntact &&
+          afterLegacyH?.props?.text === `See ${newEncoded} and ${newEncoded}` &&
+          afterLegacyImg?.props?.src === newEncoded &&
+          afterLegacyImg?.style?.background === `url(${newEncoded})` &&
+          afterLegacySec?.style?.background === `url(${newEncoded})` &&
+          String(afterLegacyRaw?.raw ?? "").split(newEncoded).length - 1 ===
+            2 &&
+          afterLegacyDoc?.socialImage === newEncoded &&
+          afterLegacySite?.faviconPath === newEncoded &&
+          String(afterLegacySite?.shell?.footerHtml ?? "").includes(
+            newEncoded,
+          ) &&
+          String(afterLegacySite?.shell?.customHeadHtml ?? "").includes(
+            newEncoded,
+          ) &&
+          String(afterLegacyReusable.sections?.[0]?.html ?? "").includes(
+            newEncoded,
+          ) &&
+          legacyContentClean;
+        record(
+          "asset legacy raw aliases find & repoint",
+          legacyAliasOk,
+          `usage=${legacyUsageCount} sites=${legacyUsage.siteReferences?.length} repointed=${legacyRepoint.updated} structural=${structuralLegacyIntact} clean=${legacyContentClean}`,
         );
         const roundTripOk =
           imported.ok === true &&
@@ -2280,13 +2453,27 @@ async function runWebEngineAndUiAuditChecks(svc, blockRender) {
           "/assets%2Fimages%2F%2e%2e%2F%2e%2e%2F%2e%2e%2Fkeep.png",
           "escaped",
         );
+        const helperThrows = (value) => {
+          try {
+            assetsSvc.assetReferenceSpellings(value);
+            return false;
+          } catch {
+            return true;
+          }
+        };
+        const aliasTraversalThrew = helperThrows(traversalWebPath);
+        const aliasSlashThrew = helperThrows(
+          "/assets%2Fimages%2F%2e%2e%2F%2e%2e%2Fkeep.png",
+        );
         record(
           "asset encoded traversal rejected",
           deleted.ok === false &&
             readTraversal.ok === false &&
             encodedSlash.ok === false &&
+            aliasTraversalThrew &&
+            aliasSlashThrew &&
             fs.existsSync(keep),
-          `delete=${deleted.error ?? "allowed"} read=${readTraversal.error ?? "allowed"} rename=${encodedSlash.error ?? "allowed"}`,
+          `delete=${deleted.error ?? "allowed"} read=${readTraversal.error ?? "allowed"} rename=${encodedSlash.error ?? "allowed"} aliases=${aliasTraversalThrew}/${aliasSlashThrew}`,
         );
       } finally {
         rm(tmp);

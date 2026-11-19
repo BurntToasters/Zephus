@@ -512,6 +512,9 @@ export function createPreviewPublishActions(deps: PreviewPublishDeps) {
       renderPublishSuccessModalBody(pubWrap, {
         outputDir,
         newerEditsNotIncluded: newerEdits,
+        // Report what the OS actually did: the modal used to promise the folder
+        // was open even when shell.openPath failed. Missing means not revealed.
+        revealed: r.revealed === true,
       });
       showModalNode("Site Built — Ready to Go Online", pubWrap, [
         {

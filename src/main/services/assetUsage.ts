@@ -17,6 +17,7 @@ import {
   listReusableSections,
   writeStoredReusableSections,
 } from "./reusableSections";
+import { assetReferenceSpellings } from "./assets";
 
 function pageSidecarRel(slug: string): string {
   const normalized = normalizePageSlug(slug);
@@ -70,34 +71,62 @@ function isTokenBoundary(char: string): boolean {
   return !/[A-Za-z0-9._/-]/.test(char);
 }
 
-/** Replaces whole-token occurrences of `from` with `to`, counting replacements. */
+/**
+ * Reference spellings that can name the asset: its canonical web path plus the
+ * legacy raw form older sidecars saved. Invalid managed paths fall back to
+ * their literal spelling so hand-written values remain repointable.
+ */
+function referenceAliases(webPath: string): string[] {
+  const normalized = String(webPath ?? "").trim();
+  if (!normalized) return [];
+  try {
+    return assetReferenceSpellings(normalized);
+  } catch {
+    return [normalized.normalize("NFC")];
+  }
+}
+
+/** Longest-first so a spelling containing another spelling still matches whole. */
+function sortAliases(aliases: string[]): string[] {
+  return [...new Set(aliases.filter(Boolean))].sort(
+    (a, b) => b.length - a.length,
+  );
+}
+
+/**
+ * Replaces whole-token occurrences of any reference spelling with `to`.
+ * A single pass means an occurrence is counted once even when spellings
+ * overlap, and identical aliases are de-duplicated first.
+ */
 function replaceReferences(
   value: string,
-  from: string,
+  aliases: string[],
   to: string,
 ): { value: string; count: number } {
-  if (!value || !from) return { value, count: 0 };
+  const ordered = sortAliases(aliases);
+  if (!value || ordered.length === 0) return { value, count: 0 };
   let out = "";
   let count = 0;
   let index = 0;
-  for (;;) {
-    const found = value.indexOf(from, index);
-    if (found === -1) {
-      out += value.slice(index);
-      break;
+  while (index < value.length) {
+    let matched = "";
+    for (const alias of ordered) {
+      if (!value.startsWith(alias, index)) continue;
+      const before = index > 0 ? value.charAt(index - 1) : "";
+      const after = value.charAt(index + alias.length);
+      if (isTokenBoundary(before) && isTokenBoundary(after)) {
+        matched = alias;
+        break;
+      }
     }
-    // A filename character before or after the match means this is a longer,
-    // different path (e.g. `/a/hero.png` inside `/my/a/hero.png`) — leave it.
-    const before = found > 0 ? value.charAt(found - 1) : "";
-    const after = value.charAt(found + from.length);
-    out += value.slice(index, found);
-    if (!isTokenBoundary(before) || !isTokenBoundary(after)) {
-      out += from;
-    } else {
+    if (matched) {
       out += to;
       count += 1;
+      index += matched.length;
+      continue;
     }
-    index = found + from.length;
+    out += value.charAt(index);
+    index += 1;
   }
   return { value: out, count };
 }
@@ -111,7 +140,7 @@ const STRUCTURAL_BLOCK_PROP_KEYS = new Set([
 
 function replaceInProps(
   props: Record<string, string>,
-  from: string,
+  aliases: string[],
   to: string,
 ): { value: Record<string, string>; count: number } {
   let count = 0;
@@ -121,7 +150,7 @@ function replaceInProps(
       out[key] = val;
       continue;
     }
-    const next = replaceReferences(val, from, to);
+    const next = replaceReferences(val, aliases, to);
     count += next.count;
     out[key] = next.value;
   }
@@ -131,16 +160,16 @@ function replaceInProps(
 /** Recursively replaces references inside style objects while preserving primitives. */
 function replaceInStrings(
   value: unknown,
-  from: string,
+  aliases: string[],
   to: string,
 ): { value: unknown; count: number } {
   if (typeof value === "string") {
-    return replaceReferences(value, from, to);
+    return replaceReferences(value, aliases, to);
   }
   if (Array.isArray(value)) {
     let count = 0;
     const out = value.map((item) => {
-      const next = replaceInStrings(item, from, to);
+      const next = replaceInStrings(item, aliases, to);
       count += next.count;
       return next.value;
     });
@@ -150,7 +179,7 @@ function replaceInStrings(
     let count = 0;
     const out: Record<string, unknown> = {};
     for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
-      const next = replaceInStrings(val, from, to);
+      const next = replaceInStrings(val, aliases, to);
       count += next.count;
       out[key] = next.value;
     }
@@ -162,23 +191,23 @@ function replaceInStrings(
 /** Replaces asset references only in editable content/style fields, preserving structural metadata. */
 function replaceInSections(
   sections: PageDocument["sections"],
-  from: string,
+  aliases: string[],
   to: string,
 ): { value: PageDocument["sections"]; count: number } {
   let count = 0;
   const nextSections = sections.map((section) => {
     const nextStyle = section.style
-      ? replaceInStrings(section.style, from, to)
+      ? replaceInStrings(section.style, aliases, to)
       : { value: section.style, count: 0 };
     count += nextStyle.count;
     const nextChildren = section.children.map((block) => {
-      const nextProps = replaceInProps(block.props, from, to);
+      const nextProps = replaceInProps(block.props, aliases, to);
       const nextBlockStyle = block.style
-        ? replaceInStrings(block.style, from, to)
+        ? replaceInStrings(block.style, aliases, to)
         : { value: block.style, count: 0 };
       const nextRaw =
         typeof block.raw === "string"
-          ? replaceReferences(block.raw, from, to)
+          ? replaceReferences(block.raw, aliases, to)
           : { value: block.raw, count: 0 };
       count += nextProps.count + nextBlockStyle.count + nextRaw.count;
       return {
@@ -211,14 +240,14 @@ export function repointAssetReferences(
   try {
     // NFC-normalize both sides: macOS filenames can come back NFD (or NFC)
     // depending on how they were created, and references written by hand may
-    // use the other form — matching must be form-agnostic.
-    const previous = String(from ?? "")
-      .trim()
-      .normalize("NFC");
+    // use the other form — matching must be form-agnostic. Legacy raw
+    // spellings are repointed too, so old sidecars cannot keep a dead path.
+    const aliases = referenceAliases(from);
     const next = String(to ?? "")
       .trim()
       .normalize("NFC");
-    if (!previous || !next || previous === next) {
+    const sources = aliases.filter((alias) => alias !== next);
+    if (!next || sources.length === 0) {
       return { ok: true, updated: 0 };
     }
 
@@ -238,10 +267,10 @@ export function repointAssetReferences(
       // overwrite the user's file with regenerated output. Their references
       // can only be fixed by hand (the tooling cannot see inside them).
       if (doc.detached || doc.managedFileStatus === "out-of-sync") continue;
-      const sections = replaceInSections(doc.sections, previous, next);
+      const sections = replaceInSections(doc.sections, sources, next);
       const socialImage = replaceReferences(
         doc.socialImage ?? "",
-        previous,
+        sources,
         next,
       );
       if (sections.count === 0 && socialImage.count === 0) continue;
@@ -265,17 +294,17 @@ export function repointAssetReferences(
     if (site.ok && site.site) {
       const favicon = replaceReferences(
         site.site.faviconPath ?? "",
-        previous,
+        sources,
         next,
       );
       const footer = replaceReferences(
         site.site.shell.footerHtml ?? "",
-        previous,
+        sources,
         next,
       );
       const head = replaceReferences(
         site.site.shell.customHeadHtml ?? "",
-        previous,
+        sources,
         next,
       );
       const siteCount = favicon.count + footer.count + head.count;
@@ -315,7 +344,7 @@ export function repointAssetReferences(
     if (reusable.ok && reusable.sections.length > 0) {
       let reusableCount = 0;
       const nextSections = reusable.sections.map((section) => {
-        const replaced = replaceReferences(section.html, previous, next);
+        const replaced = replaceReferences(section.html, sources, next);
         reusableCount += replaced.count;
         return replaced.count > 0
           ? { ...section, html: replaced.value }
@@ -347,30 +376,43 @@ export function repointAssetReferences(
   }
 }
 
-/** Matches the web path as a whole token, so `/a/hero.png` ignores `/a/hero.png.bak`. */
-function referenceCount(haystack: string, webPath: string): number {
-  if (!webPath) return 0;
+/** Counts whole-token occurrences of any reference spelling, once per occurrence. */
+function referenceCount(haystack: string, aliases: string[]): number {
+  const ordered = sortAliases(aliases);
+  if (!haystack || ordered.length === 0) return 0;
   let count = 0;
-  let index = haystack.indexOf(webPath);
-  while (index !== -1) {
-    // A filename character on either side means this is a longer, different
-    // path — not a reference to this asset.
-    const before = index > 0 ? haystack.charAt(index - 1) : "";
-    const after = haystack.charAt(index + webPath.length);
-    if (isTokenBoundary(before) && isTokenBoundary(after)) count += 1;
-    index = haystack.indexOf(webPath, index + webPath.length);
+  let index = 0;
+  while (index < haystack.length) {
+    let matched = "";
+    for (const alias of ordered) {
+      if (!haystack.startsWith(alias, index)) continue;
+      // A filename character on either side means this is a longer, different
+      // path — not a reference to this asset.
+      const before = index > 0 ? haystack.charAt(index - 1) : "";
+      const after = haystack.charAt(index + alias.length);
+      if (isTokenBoundary(before) && isTokenBoundary(after)) {
+        matched = alias;
+        break;
+      }
+    }
+    if (matched) {
+      count += 1;
+      index += matched.length;
+      continue;
+    }
+    index += 1;
   }
   return count;
 }
 
-function countInStrings(value: unknown, webPath: string): number {
-  if (typeof value === "string") return referenceCount(value, webPath);
+function countInStrings(value: unknown, aliases: string[]): number {
+  if (typeof value === "string") return referenceCount(value, aliases);
   if (Array.isArray(value)) {
-    return value.reduce((sum, item) => sum + countInStrings(item, webPath), 0);
+    return value.reduce((sum, item) => sum + countInStrings(item, aliases), 0);
   }
   if (value && typeof value === "object") {
     return Object.values(value as Record<string, unknown>).reduce(
-      (sum: number, val) => sum + countInStrings(val, webPath),
+      (sum: number, val) => sum + countInStrings(val, aliases),
       0,
     );
   }
@@ -379,43 +421,43 @@ function countInStrings(value: unknown, webPath: string): number {
 
 function sectionsReferenceCount(
   sections: PageDocument["sections"],
-  webPath: string,
+  aliases: string[],
 ): number {
   let count = 0;
   for (const section of sections) {
-    count += countInStrings(section.style, webPath);
+    count += countInStrings(section.style, aliases);
     for (const block of section.children) {
-      count += countInStrings(block.style, webPath);
+      count += countInStrings(block.style, aliases);
       if (typeof block.raw === "string") {
-        count += referenceCount(block.raw, webPath);
+        count += referenceCount(block.raw, aliases);
       }
       for (const [key, val] of Object.entries(block.props)) {
         if (STRUCTURAL_BLOCK_PROP_KEYS.has(key) || typeof val !== "string") {
           continue;
         }
-        count += referenceCount(val, webPath);
+        count += referenceCount(val, aliases);
       }
     }
   }
   return count;
 }
 
-function pageReferenceCount(doc: PageDocument, webPath: string): number {
+function pageReferenceCount(doc: PageDocument, aliases: string[]): number {
   return (
-    sectionsReferenceCount(doc.sections, webPath) +
-    referenceCount(doc.socialImage ?? "", webPath)
+    sectionsReferenceCount(doc.sections, aliases) +
+    referenceCount(doc.socialImage ?? "", aliases)
   );
 }
 
-function siteReferences(site: SiteDocument, webPath: string): string[] {
+function siteReferences(site: SiteDocument, aliases: string[]): string[] {
   const places: string[] = [];
-  if (referenceCount(site.faviconPath ?? "", webPath) > 0) {
+  if (referenceCount(site.faviconPath ?? "", aliases) > 0) {
     places.push("Site favicon");
   }
-  if (referenceCount(site.shell.footerHtml ?? "", webPath) > 0) {
+  if (referenceCount(site.shell.footerHtml ?? "", aliases) > 0) {
     places.push("Footer HTML");
   }
-  if (referenceCount(site.shell.customHeadHtml ?? "", webPath) > 0) {
+  if (referenceCount(site.shell.customHeadHtml ?? "", aliases) > 0) {
     places.push("Custom head HTML");
   }
   return places;
@@ -443,6 +485,7 @@ export function findAssetUsage(
         error: "Missing asset path.",
       };
     }
+    const aliases = referenceAliases(normalized);
 
     const pagesDir = detectAstro(projectPath).pagesDir;
     const missingSidecars = pagesMissingSidecar(projectPath, pagesDir);
@@ -481,7 +524,7 @@ export function findAssetUsage(
         unscanned.push(doc.navLabel || doc.title || doc.slug);
         return [];
       }
-      const count = pageReferenceCount(doc, normalized);
+      const count = pageReferenceCount(doc, aliases);
       if (count <= 0) return [];
       return [
         {
@@ -509,7 +552,7 @@ export function findAssetUsage(
         ...(usageGap ? { usageGap } : {}),
       };
     }
-    const places = site.site ? siteReferences(site.site, normalized) : [];
+    const places = site.site ? siteReferences(site.site, aliases) : [];
     const reusable = listReusableSections(projectPath);
     if (!reusable.ok && reusable.error) {
       return {
@@ -521,7 +564,7 @@ export function findAssetUsage(
       };
     }
     for (const section of reusable.sections) {
-      if (referenceCount(section.html, normalized) > 0) {
+      if (referenceCount(section.html, aliases) > 0) {
         places.push(`Reusable section: ${section.label}`);
       }
     }

@@ -42,6 +42,11 @@ export interface PublishSuccessModalState {
   outputDir: string;
   /** True when edits arrived while the build ran (not in the output). */
   newerEditsNotIncluded?: boolean;
+  /**
+   * True only when the OS actually opened the output folder. Missing/false
+   * means the reveal failed, so the copy must not claim it is open.
+   */
+  revealed?: boolean;
 }
 
 /** Common BCP 47 tags offered for `<html lang>`; any value can be typed. */
@@ -320,12 +325,13 @@ export function renderSiteShellModalBody(
   );
 }
 
+/** Renders the publish-success body; returns the Solid dispose handle. */
 export function renderPublishSuccessModalBody(
   container: HTMLElement,
   state: PublishSuccessModalState,
-): void {
+): () => void {
   container.innerHTML = "";
-  render(
+  return render(
     () => (
       <div class="publish-done">
         {state.newerEditsNotIncluded ? (
@@ -336,7 +342,9 @@ export function renderPublishSuccessModalBody(
         ) : null}
         <p>
           Your site was built into the <strong>{state.outputDir}</strong> folder
-          (now open in your file manager).
+          {state.revealed
+            ? " (opened in your file manager)."
+            : ". Use Open Output Folder to view it."}
         </p>
         <p>To put it online, upload that folder to a free static host:</p>
         <ul class="publish-hosts">

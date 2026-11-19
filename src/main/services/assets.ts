@@ -165,6 +165,42 @@ function decodeAssetWebPath(webPath: string): AssetWebPathCandidates {
   return { decoded: allDecoded ? decodedSegments : null, raw };
 }
 
+/**
+ * Every unique reference spelling that can name one managed web path: the
+ * NFC-normalized path itself plus, when decoding is unambiguous, the legacy
+ * raw spelling older sidecars saved (e.g. `/assets/images/hero #1.png` for
+ * `/assets/images/hero%20%231.png`). Decoding reuses the strict segment
+ * validation above, so encoded slashes, backslashes, and dot segments throw
+ * instead of turning into aliases.
+ */
+export function assetReferenceSpellings(webPath: string): string[] {
+  const normalized = String(webPath ?? "")
+    .trim()
+    .normalize("NFC");
+  if (!normalized) return [];
+  const { decoded } = decodeAssetWebPath(normalized);
+  const spellings = [normalized];
+  if (!decoded) return spellings;
+  for (const segment of decoded) {
+    let redecoded: string;
+    try {
+      redecoded = decodeURIComponent(segment);
+    } catch {
+      // A literal "%" with no valid escape cannot denote any other name.
+      continue;
+    }
+    // A decoded segment that is itself a valid encoding of a different name
+    // makes the raw spelling ambiguous: it could point at another file, so
+    // never treat it as an alias for this one.
+    if (redecoded !== segment) return spellings;
+  }
+  const leading = /^\/+/.exec(normalized)?.[0] ?? "";
+  const alias =
+    leading + decoded.map((segment) => segment.normalize("NFC")).join("/");
+  if (!spellings.includes(alias)) spellings.push(alias);
+  return spellings;
+}
+
 function resolveRealPublicRoot(
   projectPath: string,
   publicRoot: string,
