@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-smoke-complete"
+description = "Enables the smoke_complete command without any pre-configured scope."
+commands.allow = ["smoke_complete"]
+
+[[permission]]
+identifier = "deny-smoke-complete"
+description = "Denies the smoke_complete command without any pre-configured scope."
+commands.deny = ["smoke_complete"]

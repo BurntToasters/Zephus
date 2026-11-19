@@ -1,0 +1,50 @@
+[package]
+name = "zephus"
+version = "1.0.0"
+description = "Local WYSIWYG website editor for Astro sites"
+license = "GPL-3.0"
+authors = ["BurntToasters <code@rosie.run>"]
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2.12", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri-plugin-dialog = "2"
+tauri-plugin-process = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-opener = "2"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-single-instance = "2"
+tauri-plugin-updater = "2"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_Storage_FileSystem",
+  "Win32_System_JobObjects",
+  "Win32_System_Threading",
+  "Win32_UI_WindowsAndMessaging",
+] }
+
+[dependencies.url]
+version = "2"
+default-features = false
+
+# Patched: macOS transactional install, confined tar, Linux helper PATH, Windows ShellExecute.
+[patch.crates-io]
+tauri-plugin-updater = { path = "vendor/tauri-plugin-updater" }
+
+[profile.release]
+panic = "abort"
+codegen-units = 16
+lto = "thin"
+strip = true

@@ -150,7 +150,16 @@ vite.config.ts.timestamp-*
 
 # Zephus build artifacts
 release/
+flatpak-build/
+flatpak-repo/
+.flatpak-source/
 licenses.json
+
+# Tauri / Rust
+src-tauri/target/
+src-tauri/*.key
+src-tauri/**/*.key
+!src-tauri/**/*.key.pub
 
 # Compiled renderer output (TypeScript compiled in-place)
 src/renderer/**/*.js

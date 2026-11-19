@@ -1,0 +1,33 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+// zephus:managed schema=.zephus/pages/index.json
+draft: true
+---
+
+<BaseLayout title="Home">
+  <section data-zephus-id="s1p" data-zephus-block="section" data-zephus-props="%7B%22wrapper%22%3A%22none%22%2C%22cls%22%3A%22zephus-hero%22%2C%22label%22%3A%22Hero%22%7D" data-zephus-style="%7B%22background%22%3A%22var(--zephus-surface)%22%2C%22padding%22%3A%224.5rem%201.5rem%22%2C%22align%22%3A%22center%22%2C%22radius%22%3A%220%22%7D" class="zephus-hero" style="text-align:center;background:var(--zephus-surface);padding:4.5rem 1.5rem;border-radius:0">
+  <h1 data-zephus-id="b1l" data-zephus-block="heading" data-zephus-props="%7B%22text%22%3A%22Welcome%20to%20your%20new%20site%22%2C%22level%22%3A%221%22%2C%22cls%22%3A%22%22%7D">Welcome to your new site</h1>
+  <p data-zephus-id="b1m" data-zephus-block="text" data-zephus-props="%7B%22text%22%3A%22A%20clean%2C%20blank%20canvas.%20Double-click%20any%20text%20to%20edit%20it%2C%20or%20drag%20blocks%20in%20from%20the%20left%20panel.%22%2C%22cls%22%3A%22lead%22%7D" class="lead">A clean, blank canvas. Double-click any text to edit it, or drag blocks in from the left panel.</p>
+  <a data-zephus-id="b1n" data-zephus-block="button" data-zephus-props="%7B%22text%22%3A%22Get%20started%22%2C%22href%22%3A%22%2F%22%2C%22cls%22%3A%22%22%7D" class="button" href="/">Get started</a>
+  <img data-zephus-id="b1o" data-zephus-block="image" data-zephus-props="%7B%22src%22%3A%22%2Fassets%2Fimages%2Fplaceholder-wide.svg%22%2C%22alt%22%3A%22Your%20hero%20image%22%2C%22cls%22%3A%22%22%7D" src="/assets/images/placeholder-wide.svg" alt="Your hero image" />
+  <p data-zephus-id="e2e-rich-link" data-zephus-block="text" data-zephus-props="%7B%22text%22%3A%22See%20%3Ca%20href%3D%5C%22%2Fabout%5C%22%3Evisit%3C%2Fa%3E%22%7D" data-zephus-style="%7B%7D">See <a href="/about">visit</a></p>
+  <p data-zephus-id="e2e-rich-strong" data-zephus-block="text" data-zephus-props="%7B%22text%22%3A%22%3Cstrong%3Evisit%3C%2Fstrong%3E%22%7D" data-zephus-style="%7B%7D"><strong>visit</strong></p>
+  <section data-zephus-id="e2e-columns" data-zephus-block="columns" data-zephus-props="%7B%22col1%22%3A%22One%22%2C%22col2%22%3A%22Two%22%2C%22count%22%3A%222%22%7D" data-zephus-style="%7B%22columns%22%3A2%7D" style="grid-template-columns:repeat(2, minmax(0, 1fr))"><div class="zephus-column">One</div><div class="zephus-column">Two</div></section>
+  <div data-zephus-id="e2e-html-block" data-zephus-block="html" data-zephus-props="%7B%7D"><section>
+  <p>ZEPHUSHTML</p>
+</section></div>
+  </section>
+  <section data-zephus-id="s1u" data-zephus-block="section" data-zephus-props="%7B%22wrapper%22%3A%22none%22%2C%22cls%22%3A%22%22%2C%22label%22%3A%22Highlights%22%7D" data-zephus-style="%7B%22padding%22%3A%223rem%201.5rem%22%2C%22maxWidth%22%3A%22var(--zephus-container-width)%22%7D" style="max-width:var(--zephus-container-width);padding:3rem 1.5rem">
+  <h2 data-zephus-id="b1q" data-zephus-block="heading" data-zephus-props="%7B%22text%22%3A%22Everything%20in%20one%20place%22%2C%22level%22%3A%222%22%2C%22cls%22%3A%22%22%7D">Everything in one place</h2>
+  <div data-zephus-id="b1r" data-zephus-block="feature" data-zephus-props="%7B%22icon%22%3A%22%E2%9C%8F%EF%B8%8F%22%2C%22title%22%3A%22Edit%20visually%22%2C%22text%22%3A%22Click%20any%20element%20on%20the%20page%20and%20change%20it%20%E2%80%94%20no%20code%20required.%22%2C%22cls%22%3A%22%22%7D" class="zephus-feature"><div class="zephus-feature-icon">✏️</div><h3>Edit visually</h3><p>Click any element on the page and change it — no code required.</p></div>
+  <div data-zephus-id="b1s" data-zephus-block="feature" data-zephus-props="%7B%22icon%22%3A%22%F0%9F%A7%A9%22%2C%22title%22%3A%22Drag%20in%20blocks%22%2C%22text%22%3A%22Headings%2C%20images%2C%20buttons%2C%20galleries%2C%20pricing%2C%20and%20more.%22%2C%22cls%22%3A%22%22%7D" class="zephus-feature"><div class="zephus-feature-icon">🧩</div><h3>Drag in blocks</h3><p>Headings, images, buttons, galleries, pricing, and more.</p></div>
+  <div data-zephus-id="b1t" data-zephus-block="feature" data-zephus-props="%7B%22icon%22%3A%22%F0%9F%9A%80%22%2C%22title%22%3A%22Publish%20fast%22%2C%22text%22%3A%22Build%20a%20real%20Astro%20site%20you%20can%20host%20anywhere.%22%2C%22cls%22%3A%22%22%7D" class="zephus-feature"><div class="zephus-feature-icon">🚀</div><h3>Publish fast</h3><p>Build a real Astro site you can host anywhere.</p></div>
+  </section>
+  <section data-zephus-id="s1x" data-zephus-block="section" data-zephus-props="%7B%22wrapper%22%3A%22none%22%2C%22cls%22%3A%22%22%2C%22label%22%3A%22Intro%22%7D" data-zephus-style="%7B%22padding%22%3A%223rem%201.5rem%22%2C%22maxWidth%22%3A%22var(--zephus-container-width)%22%7D" style="max-width:var(--zephus-container-width);padding:3rem 1.5rem">
+  <h2 data-zephus-id="b1v" data-zephus-block="heading" data-zephus-props="%7B%22text%22%3A%22Make%20it%20yours%22%2C%22level%22%3A%222%22%2C%22cls%22%3A%22%22%7D">Make it yours</h2>
+  <p data-zephus-id="b1w" data-zephus-block="text" data-zephus-props="%7B%22text%22%3A%22Replace%20this%20copy%20with%20your%20own.%20Add%20headings%2C%20images%2C%20buttons%2C%20lists%2C%20and%20more%20%E2%80%94%20everything%20here%20is%20fully%20editable.%22%2C%22cls%22%3A%22%22%7D">Replace this copy with your own. Add headings, images, buttons, lists, and more — everything here is fully editable.</p>
+  </section>
+  <section data-zephus-id="s1z" data-zephus-block="section" data-zephus-props="%7B%22wrapper%22%3A%22none%22%2C%22cls%22%3A%22%22%2C%22label%22%3A%22CTA%22%7D" data-zephus-style="%7B%22padding%22%3A%223rem%201.5rem%22%2C%22maxWidth%22%3A%22var(--zephus-container-width)%22%7D" style="max-width:var(--zephus-container-width);padding:3rem 1.5rem">
+  <div data-zephus-id="b1y" data-zephus-block="cta" data-zephus-props="%7B%22heading%22%3A%22Ready%20to%20build%3F%22%2C%22text%22%3A%22Start%20with%20this%20page%20and%20shape%20it%20into%20your%20own.%22%2C%22buttonText%22%3A%22Get%20started%22%2C%22buttonHref%22%3A%22%2F%22%2C%22cls%22%3A%22%22%7D" class="zephus-cta"><h2>Ready to build?</h2><p>Start with this page and shape it into your own.</p><a class="button" href="/">Get started</a></div>
+  </section>
+</BaseLayout>

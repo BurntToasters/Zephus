@@ -49,20 +49,20 @@ describe("IPC bridge sync", () => {
   });
 
   it("every declared channel is used by the preload bridge", () => {
-    const preload = fs.readFileSync(
-      path.join(__dirname, "..", "preload.ts"),
-      "utf8",
-    );
+    const preload = [
+      fs.readFileSync(path.join(__dirname, "..", "preload.ts"), "utf8"),
+      fs.readFileSync(path.join(__dirname, "..", "zephusApi.ts"), "utf8"),
+    ].join("\n");
     const used = new Set(channelNamesFromSource(preload));
     const missing = channelsFromIpcFile().filter((name) => !used.has(name));
     expect(missing).toEqual([]);
   });
 
   it("every channel used by the renderer typing is bridged in preload", () => {
-    const preload = fs.readFileSync(
-      path.join(__dirname, "..", "preload.ts"),
-      "utf8",
-    );
+    const preload = [
+      fs.readFileSync(path.join(__dirname, "..", "preload.ts"), "utf8"),
+      fs.readFileSync(path.join(__dirname, "..", "zephusApi.ts"), "utf8"),
+    ].join("\n");
     const dts = fs.readFileSync(
       path.join(__dirname, "..", "..", "renderer", "zephus.d.ts"),
       "utf8",

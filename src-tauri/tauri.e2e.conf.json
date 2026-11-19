@@ -1,0 +1,16 @@
+{
+  "build": {
+    "beforeBuildCommand": "npm run compile"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "security": {
+      "capabilities": [
+        "default",
+        "splash"
+      ]
+    }
+  },
+  "productName": "Zephus",
+  "identifier": "run.rosie.zephus"
+}

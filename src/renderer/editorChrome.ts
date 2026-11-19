@@ -122,7 +122,11 @@ export function createChromeActions(deps: ChromeDeps) {
   const state = getState();
 
   function installChrome(): void {
-    if (window.location.search.includes("smoke=1")) {
+    const smokeWindow = window as Window & { __ZEPHUS_SMOKE__?: boolean };
+    if (
+      window.location.search.includes("smoke=1") ||
+      smokeWindow.__ZEPHUS_SMOKE__ === true
+    ) {
       installSmokeHook();
     }
     window.refreshIcons = refreshIcons;

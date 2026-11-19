@@ -1,0 +1,105 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Zephus",
+  "version": "1.0.0",
+  "identifier": "run.rosie.zephus",
+  "build": {
+    "beforeDevCommand": "npm run dev:serve",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "npm run compile",
+    "frontendDist": "../dist/frontend"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "create": false,
+        "title": "Zephus",
+        "url": "index.html",
+        "width": 1280,
+        "height": 820,
+        "minWidth": 960,
+        "minHeight": 640,
+        "resizable": true,
+        "visible": false,
+        "center": true,
+        "dragDropEnabled": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' http://127.0.0.1:* http://localhost:*; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; frame-src 'self' http://localhost:* http://127.0.0.1:* http://[::1]:*; worker-src 'none'",
+      "dangerousDisableAssetCspModification": [
+        "style-src"
+      ],
+      "capabilities": [
+        "default",
+        "splash"
+      ]
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "dmg",
+      "app",
+      "nsis",
+      "appimage"
+    ],
+    "publisher": "BurntToasters",
+    "copyright": "Copyright (c) BurntToasters",
+    "category": "Development",
+    "shortDescription": "Local WYSIWYG editor for Astro sites",
+    "longDescription": "Zephus is a local WYSIWYG website editor for Astro sites: edit content in place, manage themes, and preview changes before you publish.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.png",
+      "icons/icon.ico",
+      "icons/icon.icns"
+    ],
+    "createUpdaterArtifacts": true,
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "installerIcon": "icons/icon.ico"
+      }
+    },
+    "macOS": {
+      "entitlements": "entitlements.plist",
+      "hardenedRuntime": true,
+      "minimumSystemVersion": "15.0",
+      "bundleVersion": "1.0.0",
+      "dmg": {
+        "background": "dmg/background.png",
+        "windowSize": {
+          "width": 648,
+          "height": 480
+        },
+        "appPosition": {
+          "x": 120,
+          "y": 300
+        },
+        "applicationFolderPosition": {
+          "x": 546,
+          "y": 300
+        }
+      }
+    },
+    "linux": {
+      "appimage": {
+        "bundleMediaFramework": false
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/BurntToasters/zephus/releases/latest/download/latest-{{target}}-{{arch}}.json",
+        "https://github.com/BurntToasters/zephus/releases/latest/download/latest-{{target}}.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEE5OEQzMEUzMDdGQzY4NjMKUldRamFQd0g0ekNOcWZKUkExZmoxQmJXWDg0dU5OTGk1VmtpenVRMGt0aW5OQTB2Qmx1ZmZkTVUK",
+      "requireSignedVersion": true
+    }
+  }
+}

@@ -2,8 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import githubCli from "../../../build-scripts/github-cli.js";
-import releaseUploadPolicy from "../../../build-scripts/release-upload-policy.js";
+import githubCli from "../../../scripts/github-cli.cjs";
+import releaseUploadPolicy from "../../../scripts/release-upload-policy.js";
 
 const { githubCliEnvironment, githubStatusCode } = githubCli;
 const { getReleaseUploadFiles, releaseSourceFailures, selectMatchingDraft } =

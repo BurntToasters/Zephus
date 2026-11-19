@@ -25,9 +25,14 @@ const isDev =
     // `electron .` (npm start) runs the app WITHOUT the --dev flag and with
     // process.defaultApp === true; it is still a dev run and needs devtools.
     process.defaultApp === true);
-const isSmoke =
+const isTauriHost = process.env.ZEPHUS_HOST === "tauri";
+const smokeRequested =
   !app.isPackaged &&
   (process.argv.includes("--smoke") || process.env.ZEPHUS_SMOKE === "1");
+// The Tauri window runs the smoke script. This process only scaffolds the
+// project and serves IPC. Running the Electron webContents smoke here would
+// target the shim window.
+const isSmoke = smokeRequested && !isTauriHost;
 const isBootCheck = process.env.ZEPHUS_BOOT_CHECK === "1";
 const isPrimaryInstance =
   isSmoke || isBootCheck || typeof app.requestSingleInstanceLock !== "function"
@@ -814,7 +819,7 @@ function createMainWindow(): void {
 
     // ZEPHUS_BOOT_CHECK=1: verify the packaged binary boots — the renderer
     // loaded + became visible. Exit 0 immediately (no UI automation).
-    if (isBootCheck) {
+    if (isBootCheck && !isTauriHost) {
       log.info("[boot-check] packaged renderer loaded successfully");
       app.exit(0);
       return;
@@ -1105,7 +1110,12 @@ if (!isPrimaryInstance) {
       closePreviewWindow();
       return { ok: true };
     });
-    if (isSmoke) {
+    if (isTauriHost && smokeRequested) {
+      (
+        globalThis as { __zephusSmokeProjectPath?: string | null }
+      ).__zephusSmokeProjectPath = scaffoldSmokeProject();
+    }
+    if (smokeRequested) {
       ipcMain.handle(
         IPC.smokeExternalWrite,
         (

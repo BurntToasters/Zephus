@@ -39,7 +39,7 @@ function assertContainedTarget(
   return current;
 }
 
-/** Reusable sections are stored inside the project (`.zephus/templates/reusable-sections.json`) so they travel with the project. */
+/** Reusable sections are stored in the project and travel with it. */
 function sectionsPath(projectPath: string): string {
   return assertContainedTarget(projectPath, [
     ".zephus",

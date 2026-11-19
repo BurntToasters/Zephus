@@ -1,0 +1,519 @@
+const { execSync } = require("child_process");
+const fs = require("fs");
+const path = require("path");
+const yaml = require("js-yaml");
+const scriptVersion = "1.0.0";
+const testVersion = require("../package.json").version;
+
+const colors = {
+  reset: "\x1b[0m",
+  green: "\x1b[32m",
+  red: "\x1b[31m",
+  yellow: "\x1b[33m",
+  blue: "\x1b[34m",
+  bold: "\x1b[1m",
+};
+
+const results = {
+  unit: { status: "pending", passed: 0, failed: 0 },
+  compile: { status: "pending" },
+  lint: { status: "pending" },
+  format: { status: "pending" },
+  typecheck: { status: "pending" },
+  syntax: { status: "pending", checked: 0, failed: 0, failures: [] },
+  config: { status: "pending", checks: 0, failed: 0, failures: [] },
+};
+
+function stripAnsi(value) {
+  return value.replace(/\u001b\[[0-9;]*m/g, "");
+}
+
+function printBanner(title) {
+  console.log(`${colors.bold}${colors.blue}
+╔══════════════════════════════════════╗
+║ ${title.padEnd(36, " ")} ║
+╚══════════════════════════════════════╝
+Zephus Version: ${testVersion}
+Script Version: ${scriptVersion}
+${colors.reset}`);
+}
+
+function parseUnitTests(output) {
+  const clean = stripAnsi(output);
+  const testsLine = clean
+    .split(/\r?\n/)
+    .find((line) => line.trim().startsWith("Tests"));
+  if (!testsLine) return;
+  const passedMatch = testsLine.match(/(\d+)\s+passed/);
+  const failedMatch = testsLine.match(/(\d+)\s+failed/);
+  results.unit.passed = passedMatch ? parseInt(passedMatch[1], 10) : 0;
+  results.unit.failed = failedMatch ? parseInt(failedMatch[1], 10) : 0;
+}
+
+function runCommand(name, command, parser) {
+  console.log(`${colors.blue}${colors.bold}Running ${name}...${colors.reset}`);
+  try {
+    const output = execSync(command, { encoding: "utf8", stdio: "pipe" });
+    const parsed = parser ? parser(output) : undefined;
+    // Honor parser assertion: if the parser explicitly returns ok:false,
+    // treat the step as failed even though the process exited 0.
+    if (parsed && parsed.ok === false) {
+      const details = stripAnsi(output)
+        .trim()
+        .split(/\r?\n/)
+        .slice(-12)
+        .join("\n");
+      if (details) console.log(`${colors.yellow}${details}${colors.reset}`);
+      console.log(`${colors.red}✗ ${name} failed${colors.reset}\n`);
+      return { ok: false, output };
+    }
+    console.log(`${colors.green}✓ ${name} passed${colors.reset}\n`);
+    return { ok: true, output };
+  } catch (error) {
+    const output = `${error.stdout || ""}${error.stderr || ""}`;
+    if (parser) parser(output);
+    const details = stripAnsi(output)
+      .trim()
+      .split(/\r?\n/)
+      .slice(-12)
+      .join("\n");
+    if (details) console.log(`${colors.yellow}${details}${colors.reset}`);
+    console.log(`${colors.red}✗ ${name} failed${colors.reset}\n`);
+    return { ok: false, output };
+  }
+}
+
+function collectScriptFiles(rootDir) {
+  const out = [];
+  const skip = new Set(["node_modules", ".git", "dist"]);
+
+  function walk(currentDir) {
+    const entries = fs.readdirSync(currentDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.name.startsWith(".")) {
+        if (entry.name !== ".github") continue;
+      }
+
+      const fullPath = path.join(currentDir, entry.name);
+      if (entry.isDirectory()) {
+        if (skip.has(entry.name)) continue;
+        walk(fullPath);
+        continue;
+      }
+
+      if (entry.isFile() && /\.(cjs|mjs|js|ts)$/.test(entry.name)) {
+        out.push(fullPath);
+      }
+    }
+  }
+
+  walk(rootDir);
+  return out;
+}
+
+function runSyntaxChecks() {
+  console.log(
+    `${colors.blue}${colors.bold}Running syntax checks...${colors.reset}`,
+  );
+  const files = [
+    ...collectScriptFiles(path.join(process.cwd(), "src")),
+    ...collectScriptFiles(path.join(process.cwd(), "scripts")),
+  ];
+  const uniqueFiles = Array.from(new Set(files)).sort();
+
+  for (const filePath of uniqueFiles) {
+    results.syntax.checked += 1;
+    try {
+      if (/\.ts$/.test(filePath)) {
+        // TypeScript files are validated by the tsc compile step, skip node --check
+        continue;
+      }
+      execSync(`node --check "${filePath}"`, { stdio: "pipe" });
+    } catch (error) {
+      results.syntax.failed += 1;
+      const relativePath = path.relative(process.cwd(), filePath);
+      const output = stripAnsi(
+        `${error.stdout || ""}${error.stderr || ""}`,
+      ).trim();
+      results.syntax.failures.push(
+        `${relativePath}${output ? `\n${output}` : ""}`,
+      );
+    }
+  }
+
+  results.syntax.status = results.syntax.failed === 0 ? "passed" : "failed";
+  if (results.syntax.status === "passed") {
+    console.log(`${colors.green}✓ syntax passed${colors.reset}\n`);
+  } else {
+    console.log(`${colors.red}✗ syntax failed${colors.reset}\n`);
+  }
+}
+
+function assertConfig(check, message) {
+  results.config.checks += 1;
+  if (!check) {
+    results.config.failed += 1;
+    results.config.failures.push(message);
+  }
+}
+
+function loadYaml(filePath) {
+  const raw = fs.readFileSync(filePath, "utf8");
+  return yaml.load(raw);
+}
+
+function runConfigChecks() {
+  console.log(
+    `${colors.blue}${colors.bold}Running config checks...${colors.reset}`,
+  );
+
+  try {
+    const pkg = JSON.parse(
+      fs.readFileSync(path.join(process.cwd(), "package.json"), "utf8"),
+    );
+    assertConfig(
+      Boolean(pkg.scripts && pkg.scripts.test),
+      "package.json: missing scripts.test",
+    );
+    assertConfig(
+      Boolean(pkg.scripts && pkg.scripts["test:all"]),
+      "package.json: missing scripts.test:all",
+    );
+    assertConfig(
+      pkg.scripts["test:all"] === "node scripts/test-all.js",
+      "package.json: scripts.test:all must run scripts/test-all.js",
+    );
+    assertConfig(
+      pkg.main === "dist/main/main.js",
+      "package.json: main must be dist/main/main.js",
+    );
+    assertConfig(
+      pkg.desktopName === "run.rosie.zephus.desktop",
+      "package.json: desktopName must be run.rosie.zephus.desktop",
+    );
+    assertConfig(
+      typeof pkg.scripts?.["compile:main"] === "string" &&
+        pkg.scripts["compile:main"].includes("bundle-preload.js"),
+      "package.json: scripts.compile:main must bundle preload.js after tsc",
+    );
+    const bootCheckSource = fs.readFileSync(
+      path.join(process.cwd(), "scripts/boot-check.js"),
+      "utf8",
+    );
+    assertConfig(
+      bootCheckSource.includes("mac-universal"),
+      "scripts/boot-check.js: mac packaged boot checks must support mac-universal output",
+    );
+    const mainTsconfig = JSON.parse(
+      fs.readFileSync(path.join(process.cwd(), "tsconfig.main.json"), "utf8"),
+    );
+    assertConfig(
+      !mainTsconfig.exclude?.includes("src/**/*.test.ts"),
+      "tsconfig.main.json: main/shared tests must remain in dedicated typecheck",
+    );
+    const eslintSource = fs.readFileSync(
+      path.join(process.cwd(), "eslint.config.js"),
+      "utf8",
+    );
+    assertConfig(
+      eslintSource.includes("src/**/*.{ts,tsx}"),
+      "eslint.config.js: security rules must cover both TS and TSX source",
+    );
+    assertConfig(
+      typeof pkg.scripts?.watch === "string" &&
+        pkg.scripts.watch === "node scripts/watch.js",
+      "package.json: scripts.watch must run scripts/watch.js",
+    );
+
+    const dbReleaseScripts = [
+      "release:db:win",
+      "release:db:win:x64",
+      "release:db:win:arm64",
+      "release:db:mac",
+      "release:db:mac:ssh",
+      "release:db:linux",
+      "release:db:linux:x64",
+      "release:db:linux:arm64",
+      "release:db:all",
+    ];
+    for (const scriptName of dbReleaseScripts) {
+      const script = pkg.scripts?.[scriptName] || "";
+      assertConfig(
+        script.includes("RELEASE_PIPELINE=1") &&
+          script.includes("RELEASE_CHANNEL=db") &&
+          script.includes("release-gate.js"),
+        `package.json: ${scriptName} must fail closed through release-gate.js for the db channel`,
+      );
+    }
+
+    const tauriConfigPath = path.join(
+      process.cwd(),
+      "src-tauri",
+      "tauri.conf.json",
+    );
+    assertConfig(
+      fs.existsSync(tauriConfigPath),
+      "src-tauri/tauri.conf.json must exist",
+    );
+    const tauriConfig = JSON.parse(fs.readFileSync(tauriConfigPath, "utf8"));
+    assertConfig(
+      tauriConfig.identifier === "run.rosie.zephus",
+      "tauri.conf.json: identifier must be run.rosie.zephus",
+    );
+    assertConfig(
+      tauriConfig.version === "1.0.0",
+      "tauri.conf.json: version must be 1.0.0",
+    );
+    const requiredBuildScripts = [
+      "build:win",
+      "build:win:x64",
+      "build:win:arm64",
+      "build:mac:arm64",
+      "build:mac:x64",
+      "build:linux",
+      "build:linux:x64",
+      "build:linux:arm64",
+    ];
+    for (const scriptName of requiredBuildScripts) {
+      assertConfig(
+        typeof pkg.scripts?.[scriptName] === "string",
+        `package.json: missing scripts.${scriptName}`,
+      );
+    }
+    const buildLinux = pkg.scripts?.["build:linux"] || "";
+    assertConfig(
+      !/aarch64|arm64/i.test(buildLinux),
+      "package.json: build:linux must not target arm64",
+    );
+    const buildMac = pkg.scripts?.["build:mac"] || "";
+    assertConfig(
+      !buildMac.includes("universal-apple-darwin"),
+      "package.json: build:mac must not use universal-apple-darwin",
+    );
+    const buildWin = [
+      pkg.scripts?.["build:win"] || "",
+      pkg.scripts?.["build:win:x64"] || "",
+      pkg.scripts?.["build:win:arm64"] || "",
+      pkg.scripts?.["build:win:x64:prepared"] || "",
+      pkg.scripts?.["build:win:arm64:prepared"] || "",
+    ].join(" ");
+    assertConfig(
+      /x86_64-pc-windows-msvc/.test(buildWin) &&
+        /aarch64-pc-windows-msvc/.test(buildWin),
+      "package.json: Windows build scripts must cover x64 and arm64 MSVC targets",
+    );
+
+    const watchScript = fs.readFileSync(
+      path.join(process.cwd(), "scripts", "watch.js"),
+      "utf8",
+    );
+    assertConfig(
+      watchScript.includes("bundle-preload.js"),
+      "scripts/watch.js must watch the preload bundler to match compile output",
+    );
+
+    const requiredFiles = [
+      "src/main/main.ts",
+      "src/main/preload.ts",
+      "src/renderer/index.html",
+      "src/renderer/zephusEngine.ts",
+      "scripts/bundle-preload.js",
+      "build/app-icon.ico",
+      "build/app-icon.icns",
+      "build/app-icon.png",
+      "build/appx/appxmanifest.xml",
+      "run.rosie.zephus.desktop",
+    ];
+    for (const relativePath of requiredFiles) {
+      assertConfig(
+        fs.existsSync(path.join(process.cwd(), relativePath)),
+        `missing required file: ${relativePath}`,
+      );
+    }
+  } catch (error) {
+    assertConfig(false, `config parsing failed: ${error.message}`);
+  }
+
+  results.config.status = results.config.failed === 0 ? "passed" : "failed";
+  if (results.config.status === "passed") {
+    console.log(`${colors.green}✓ config passed${colors.reset}\n`);
+  } else {
+    console.log(`${colors.red}✗ config failed${colors.reset}\n`);
+  }
+}
+
+printBanner("Zephus Full Test Suite");
+
+function run() {
+  const startTime = Date.now();
+
+  const unitResult = runCommand("unit", "npm test", parseUnitTests);
+  results.unit.status = unitResult.ok ? "passed" : "failed";
+
+  const compileResult = runCommand("compile", "npm run compile");
+  results.compile.status = compileResult.ok ? "passed" : "failed";
+
+  const lintResult = runCommand("lint", "npm run lint");
+  results.lint.status = lintResult.ok ? "passed" : "failed";
+
+  const formatResult = runCommand("format", "npm run format:check");
+  results.format.status = formatResult.ok ? "passed" : "failed";
+
+  const typecheckResult = runCommand("typecheck", "npm run typecheck");
+  results.typecheck.status = typecheckResult.ok ? "passed" : "failed";
+
+  runSyntaxChecks();
+  runConfigChecks();
+
+  // End-to-end gates that used to live OUTSIDE test:all — the renderer could
+  // fail to boot, coverage could regress, and generated pages could break the
+  // Astro build while this script exited 0 green.
+  // CI runs the packaged-app smoke and the coverage thresholds in their own
+  // jobs (see ci.yml). The matrix quality job passes --skip-smoke and
+  // --skip-coverage so it does not duplicate either run; the dedicated Ubuntu
+  // coverage job owns coverage because Windows-specific skipIf tests would
+  // otherwise lower the matrix's measured coverage. Local test:all keeps both.
+  // Headless Linux still needs xvfb.
+  if (!process.argv.includes("--skip-smoke")) {
+    const smokeCommand =
+      process.platform === "linux" && !process.env.DISPLAY
+        ? `xvfb-run -a npm run smoke:runtime${process.env.CI === "true" ? " -- --no-sandbox" : ""}`
+        : "npm run smoke:runtime";
+    const smokeResult = runCommand("smoke", smokeCommand, (out) => ({
+      ok: /Smoke run: renderer checks passed/.test(out),
+      passed: /Smoke run: renderer checks passed/.test(out) ? 1 : 0,
+    }));
+    results.smoke = { status: smokeResult.ok ? "passed" : "failed" };
+  } else {
+    results.smoke = { status: "skipped" };
+  }
+
+  const astroResult = runCommand(
+    "astro-build",
+    "npm run test:astro-build",
+    (out) => ({
+      ok: !/fail|error/i.test(out) && /All themes build successfully/.test(out),
+      passed: /All themes build successfully/.test(out) ? 1 : 0,
+    }),
+  );
+  results.astroBuild = { status: astroResult.ok ? "passed" : "failed" };
+
+  if (!process.argv.includes("--skip-coverage")) {
+    const covResult = runCommand("coverage", "npm run test:cov", (out) => ({
+      ok: /Coverage thresholds passed/.test(out),
+      passed: /Coverage thresholds passed/.test(out) ? 1 : 0,
+    }));
+    results.coverage = { status: covResult.ok ? "passed" : "failed" };
+  } else {
+    results.coverage = { status: "skipped" };
+  }
+
+  if (!process.argv.includes("--skip-e2e")) {
+    const e2eResult = runCommand("e2e-failures", "npm run test:e2e", (out) => ({
+      ok: /E2E: \d+ passed, 0 failed/.test(out),
+      passed: /E2E: \d+ passed, 0 failed/.test(out) ? 1 : 0,
+    }));
+    results.e2e = { status: e2eResult.ok ? "passed" : "failed" };
+  } else {
+    results.e2e = { status: "skipped" };
+  }
+
+  printBanner("SUMMARY");
+
+  const summaryLines = [
+    `${colors.bold}Unit:${colors.reset}      ${results.unit.status === "passed" ? colors.green + "✓ PASS" : colors.red + "✗ FAIL"}${colors.reset} (${results.unit.passed} passed${results.unit.failed > 0 ? `, ${results.unit.failed} failed` : ""})`,
+    `${colors.bold}Compile:${colors.reset}   ${results.compile.status === "passed" ? colors.green + "✓ PASS" : colors.red + "✗ FAIL"}${colors.reset}`,
+    `${colors.bold}Lint:${colors.reset}      ${results.lint.status === "passed" ? colors.green + "✓ PASS" : colors.red + "✗ FAIL"}${colors.reset}`,
+    `${colors.bold}Format:${colors.reset}    ${results.format.status === "passed" ? colors.green + "✓ PASS" : colors.red + "✗ FAIL"}${colors.reset}`,
+    `${colors.bold}Typecheck:${colors.reset} ${results.typecheck.status === "passed" ? colors.green + "✓ PASS" : colors.red + "✗ FAIL"}${colors.reset}`,
+    `${colors.bold}Syntax:${colors.reset}    ${results.syntax.status === "passed" ? colors.green + "✓ PASS" : colors.red + "✗ FAIL"}${colors.reset} (${results.syntax.checked} checked${results.syntax.failed > 0 ? `, ${results.syntax.failed} failed` : ""})`,
+    `${colors.bold}Config:${colors.reset}    ${results.config.status === "passed" ? colors.green + "✓ PASS" : colors.red + "✗ FAIL"}${colors.reset} (${results.config.checks} checks${results.config.failed > 0 ? `, ${results.config.failed} failed` : ""})`,
+    `${colors.bold}Smoke:${colors.reset}     ${results.smoke.status === "passed" ? colors.green + "✓ PASS" : results.smoke.status === "skipped" ? colors.yellow + "⏭ SKIPPED" : colors.red + "✗ FAIL"}${colors.reset}`,
+    `${colors.bold}Astro build:${colors.reset} ${results.astroBuild.status === "passed" ? colors.green + "✓ PASS" : colors.red + "✗ FAIL"}${colors.reset}`,
+    `${colors.bold}Coverage:${colors.reset}  ${results.coverage.status === "passed" ? colors.green + "✓ PASS" : results.coverage.status === "skipped" ? colors.yellow + "⏭ SKIPPED" : colors.red + "✗ FAIL"}${colors.reset}`,
+    `${colors.bold}E2E failures:${colors.reset} ${results.e2e.status === "passed" ? colors.green + "✓ PASS" : colors.red + "✗ FAIL"}${colors.reset}`,
+  ];
+  for (const line of summaryLines) {
+    console.log(line);
+  }
+
+  if (results.syntax.failures.length > 0) {
+    console.log(`\n${colors.yellow}Syntax failures:${colors.reset}`);
+    for (const failure of results.syntax.failures) {
+      console.log(`- ${failure}`);
+    }
+  }
+
+  if (results.config.failures.length > 0) {
+    console.log(`\n${colors.yellow}Config failures:${colors.reset}`);
+    for (const failure of results.config.failures) {
+      console.log(`- ${failure}`);
+    }
+  }
+
+  const allPassed = Object.values(results).every(
+    (r) => r.status === "passed" || r.status === "skipped",
+  );
+  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+  console.log("");
+  const requireCleanProof = process.argv.includes("--require-clean-proof");
+  const skipE2e = process.argv.includes("--skip-e2e");
+
+  if (allPassed) {
+    console.log(
+      `${colors.green}${colors.bold}✓ All checks passed!${colors.reset} (${elapsed}s)`,
+    );
+    return { ok: true, requireCleanProof, skipE2e };
+  }
+
+  console.log(
+    `${colors.red}${colors.bold}✗ Some checks failed.${colors.reset} (${elapsed}s)`,
+  );
+  return { ok: false, requireCleanProof, skipE2e };
+}
+
+async function runWithReleaseProof() {
+  const outcome = run();
+  if (!outcome.ok) {
+    process.exit(1);
+  }
+  try {
+    const { recordSuccessfulQualityGate } =
+      await import("./release-session.mjs");
+    const qualityGate = recordSuccessfulQualityGate(process.cwd(), {
+      skipE2e: outcome.skipE2e,
+    });
+    if (qualityGate.recorded) {
+      console.log(
+        `Release quality-gate proof recorded (scope: ${outcome.skipE2e ? "build-vm-partial, E2E skipped" : "full local E2E"}).`,
+      );
+    } else if (outcome.requireCleanProof) {
+      console.error(
+        `${colors.red}Release quality-gate proof NOT recorded. Resolve the issue and re-run test:all.${colors.reset}`,
+      );
+      if (qualityGate.dirtyFiles) console.log(qualityGate.dirtyFiles);
+      process.exit(1);
+    }
+  } catch (error) {
+    if (outcome.requireCleanProof) {
+      console.error(
+        `${colors.red}Release quality-gate proof NOT recorded: ${error instanceof Error ? error.message : String(error)}${colors.reset}`,
+      );
+      process.exit(1);
+    }
+  }
+  process.exit(0);
+}
+
+if (require.main === module) {
+  runWithReleaseProof();
+}
+
+module.exports = {
+  runCommand,
+  runSyntaxChecks,
+  runConfigChecks,
+  stripAnsi,
+  parseUnitTests,
+  results,
+};

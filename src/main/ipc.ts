@@ -507,7 +507,7 @@ export function registerIpcHandlers(
         file = target;
       }
       const result = await shell.openPath(file);
-      return result ? { ok: false, error: result } : { ok: true };
+      return result ? { ok: false, error: result } : { ok: true, path: file };
     } catch (error) {
       return {
         ok: false,
@@ -793,7 +793,7 @@ export function registerIpcHandlers(
         const { absolute } = resolveRevealOutputDir(projectPath, outDir);
         assertRealpathInside(projectPath, absolute);
         const error = await shell.openPath(absolute);
-        return error ? { ok: false, error } : { ok: true };
+        return error ? { ok: false, error } : { ok: true, path: absolute };
       } catch (error) {
         return {
           ok: false,
@@ -862,8 +862,9 @@ export function registerIpcHandlers(
   });
   ipcMain.handle(IPC.getAppVersion, () => app.getVersion());
   ipcMain.handle(IPC.openConfigFolder, async () => {
-    const error = await shell.openPath(app.getPath("userData"));
-    return error ? { ok: false, error } : { ok: true };
+    const userData = app.getPath("userData");
+    const error = await shell.openPath(userData);
+    return error ? { ok: false, error } : { ok: true, path: userData };
   });
 
   app.on("before-quit", () => {

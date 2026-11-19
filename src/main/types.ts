@@ -459,6 +459,8 @@ export interface SchemaEnsureResult {
 export interface OperationResult {
   ok: boolean;
   error?: string;
+  /** Absolute path for shell reveal/open in non-Electron hosts. */
+  path?: string;
 }
 
 export const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {

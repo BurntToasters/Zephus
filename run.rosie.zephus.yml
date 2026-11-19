@@ -1,34 +1,114 @@
-# Flatpak manifest for Zephus.
-# This packages the electron-builder linux-unpacked output produced by
-# `npm run build:linux`. Run the electron-builder build first, then
-# `npm run flatpak:build` / `npm run flatpak:bundle`.
 app-id: run.rosie.zephus
-runtime: org.freedesktop.Platform
-runtime-version: "26.08"
-sdk: org.freedesktop.Sdk
-base: org.electronjs.Electron2.BaseApp
-base-version: "26.08"
+runtime: org.gnome.Platform
+runtime-version: "50"
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.node24
+  - org.freedesktop.Sdk.Extension.rust-stable
 command: zephus
 separate-locales: false
+
 finish-args:
   - --share=ipc
-  - --socket=x11
+  - --socket=fallback-x11
   - --socket=wayland
-  - --socket=pulseaudio
   - --share=network
   - --device=dri
-  # Editing local site repositories requires access to the user's files.
+  # The editor opens and writes the user's Astro projects.
   - --filesystem=home
   - --talk-name=org.freedesktop.Notifications
+  - --talk-name=org.freedesktop.FileManager1
+
+environment:
+  GTK_USE_PORTAL: "1"
+
 modules:
   - name: zephus
     buildsystem: simple
+    build-options:
+      # npm and Cargo fetch only integrity-locked dependencies. Application
+      # sources come from the clean commit export prepared by
+      # scripts/prepare-flatpak-source.mjs.
+      build-args:
+        - --share=network
+      prepend-path: /run/build/zephus/cargo/bin:/run/build/zephus/npm-global/bin:/usr/lib/sdk/node24/bin:/usr/lib/sdk/rust-stable/bin
+      env:
+        CARGO_HOME: /run/build/zephus/cargo
+        RUSTUP_HOME: /run/build/zephus/rustup
+        npm_config_cache: /run/build/zephus/npm-cache
+        HUSKY: "0"
     build-commands:
-      - cp -a "${ZEPHUS_LINUX_UNPACKED_DIR:-release/linux-unpacked}" /app/zephus
-      - install -Dm755 zephus.sh /app/bin/zephus
+      # The Flathub rust-stable SDK extension lags the pinned toolchain, so
+      # install rustup and the exact compiler pinned in rust-toolchain.toml.
+      - |
+        set -eu
+        PINNED="$(sed -n 's/^[[:space:]]*channel[[:space:]]*=[[:space:]]*"\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)"[[:space:]]*$/\1/p' rust-toolchain.toml)"
+        test -n "$PINNED"
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain "$PINNED" --profile minimal
+        test "$(rustc --version | cut -d' ' -f2)" = "$PINNED"
+      # The node24 SDK ships npm 11, older than the npm 12 that engines requires.
+      # npm@12 plus --before 3 days ago takes the newest 12.x that is old enough.
+      - npm install --global npm@12 --ignore-scripts --engine-strict=false --before="$(date -u -d '3 days ago' +%Y-%m-%dT%H:%M:%SZ)" --prefix /run/build/zephus/npm-global
+      - npm ci --engine-strict=false
+      - npm run sync-version
+      - npm run licenses
+      # The SDK's CFLAGS carry -O2, which cc-rs appends after aws-lc-sys's -O0
+      # for jitterentropy, and that source refuses to compile optimized. cc-rs
+      # already sets -O from the Cargo profile, so drop only the -O flags and
+      # keep the SDK hardening flags.
+      - |
+        CFLAGS="$(printf '%s' "$CFLAGS" | sed -E 's/(^| )-O[0-9sgz]?( |$)/ /g')" \
+        CXXFLAGS="$(printf '%s' "$CXXFLAGS" | sed -E 's/(^| )-O[0-9sgz]?( |$)/ /g')" \
+          npx tauri build --no-bundle -- --locked
+      - install -Dm755 src-tauri/target/release/zephus /app/bin/zephus
+      # The shell spawns `node` for the editor backend. The sandbox cannot see
+      # a host Node, so ship the node24 extension's binary on PATH.
+      - |
+        set -eu
+        node_bin=/usr/lib/sdk/node24/bin/node
+        if [ ! -f "$node_bin" ]; then
+          echo "Node.js runtime missing at $node_bin (node24 SDK extension layout changed?)" >&2
+          exit 1
+        fi
+        install -Dm755 "$node_bin" /app/bin/node
+        if ! /app/bin/node --version >/dev/null; then
+          echo "Bundled Node.js runtime failed to start in the build sandbox" >&2
+          exit 1
+        fi
+      - |
+        node_license=""
+        for candidate in /usr/lib/sdk/node24/share/doc/node/LICENSE /usr/lib/sdk/node24/share/licenses/node/LICENSE; do
+          if [ -f "$candidate" ]; then
+            node_license="$candidate"
+            break
+          fi
+        done
+        if [ -z "$node_license" ]; then
+          node_license="$(find /usr/lib/sdk/node24 -maxdepth 4 -type f -name 'LICENSE*' -not -path '*/node_modules/*' | head -n 1)"
+        fi
+        if [ -z "$node_license" ] || [ ! -f "$node_license" ]; then
+          echo "Node.js license file not found under /usr/lib/sdk/node24" >&2
+          exit 1
+        fi
+        install -Dm644 "$node_license" /app/share/zephus/licenses/node/LICENSE
       - install -Dm644 run.rosie.zephus.desktop /app/share/applications/run.rosie.zephus.desktop
       - install -Dm644 run.rosie.zephus.metainfo.xml /app/share/metainfo/run.rosie.zephus.metainfo.xml
-      - install -Dm644 build/app-icon.png /app/share/icons/hicolor/512x512/apps/run.rosie.zephus.png
+      - install -Dm644 src-tauri/icons/128x128.png /app/share/icons/hicolor/128x128/apps/run.rosie.zephus.png
+      - install -Dm644 src-tauri/icons/32x32.png /app/share/icons/hicolor/32x32/apps/run.rosie.zephus.png
+      - install -Dm644 src-tauri/icons/icon.png /app/share/icons/hicolor/512x512/apps/run.rosie.zephus.png
     sources:
       - type: dir
-        path: .
+        path: .flatpak-source
+        skip:
+          - .git
+          - .github
+          - .agents
+          - .codex
+          - .env
+          - .env.*
+          - node_modules
+          - src-tauri/target
+          - dist
+          - release
+          - flatpak-build
+          - flatpak-repo

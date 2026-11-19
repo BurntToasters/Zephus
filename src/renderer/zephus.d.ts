@@ -73,6 +73,7 @@ interface NodeCheckResult {
 interface OperationResult {
   ok: boolean;
   error?: string;
+  path?: string;
 }
 
 interface ThemeMeta {
