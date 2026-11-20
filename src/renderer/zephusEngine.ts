@@ -10,6 +10,16 @@ import {
   normalizePageSlug,
   routeFromPage,
 } from "../shared/pageIdentity";
+import {
+  accentHoverMix,
+  accentInk,
+  designCssValue,
+  headerText,
+  mutedForegroundPercent,
+  googleFontStylesheetUrl,
+  onAccentText,
+} from "../shared/renderHelpers";
+import { installCanvasLinkGuard } from "./canvasLinks";
 import { createCodeEditor, type CodeEditor } from "./codeEditor";
 import {
   activateWorkspaceTab,
@@ -30,6 +40,7 @@ import { createSiteEditorActions } from "./editorSiteEditor";
 import { createChromeActions } from "./editorChrome";
 import { createProjectOpenActions } from "./editorProject";
 import { syncRadioGroupTabIndex } from "./radioGroup";
+import { syncEditorSkipLink } from "./editorSkipLink";
 import * as editorFindReplace from "./editorFindReplace";
 import { createPreviewPublishActions } from "./editorPreviewPublish";
 import { collectUnsavedWorkSummaryLines } from "./editorUnsavedWork";
@@ -154,6 +165,7 @@ import { default as Trash2 } from "lucide/dist/esm/icons/trash.mjs";
 import { default as Unlink } from "lucide/dist/esm/icons/unlink.mjs";
 import { default as Video } from "lucide/dist/esm/icons/video.mjs";
 import type { RenderPostEntry } from "../shared/blockRender";
+import { isAcceptedImageDataUrl } from "../shared/assetPreview";
 import { renderHelpModal } from "./HelpModal";
 import { mountAboutLicenses } from "./AboutLicenses";
 
@@ -181,6 +193,9 @@ import {
   registerHomeDraftRecoveryHandlers,
 } from "./HomeDraftRecovery";
 import { mountLayers, registerLayersHandlers, updateLayers } from "./Layers";
+import { showInlineAlert, focusModalField } from "./modalFocus";
+import { linkPickerHref, linkPickerProblem } from "./linkPickerCommit";
+import { revealActiveLayer } from "./revealSelection";
 import {
   mountBlockPalette,
   updateAllowedBlocks,
@@ -196,7 +211,8 @@ import {
   registerPageListHandlers,
   updatePageList,
 } from "./PageList";
-import { renderNavigationPreviewModal, renderNewPageModal } from "./PageModals";
+import { renderNavigationPreviewModal } from "./PageModals";
+import { openNewPageModal } from "./editorNewPage";
 import {
   mountNavList,
   registerNavListHandlers,
@@ -392,6 +408,7 @@ const pageModals = createPageModalActions({
   editorSaveIsSaving: () => editorSaveGate.isSaving(),
   patchOpenPageLayoutTitle,
   pageDraftContent: () => draftContentForCurrentState(),
+  siteDraftContent: () => siteDraftContentForCurrentState(),
 });
 
 const { openPageMetaModal, openAssetBrowser } = pageModals;
@@ -468,6 +485,8 @@ const undoOps = createUndoOps({
   renderCanvas: () => renderCanvas(),
   renderProperties: () => renderProperties(),
   updateUndoRedoButtons,
+  pageDraftContent: () => draftContentForCurrentState(),
+  siteDraftContent: () => siteDraftContentForCurrentState(),
 });
 
 const { doUndo, doRedo } = undoOps;
@@ -1110,6 +1129,7 @@ let draftWriteFailureWarned = false;
 function scheduleDraftWrite(): void {
   scheduleEditorDraftWrite(state, {
     writeDraft: window.zephus.writeDraft.bind(window.zephus),
+    clearDraft: window.zephus.clearDraft.bind(window.zephus),
     pageDraftContent: draftContentForCurrentState,
     siteDraftContent: siteDraftContentForCurrentState,
     onDraftWriteFailure: () => {
@@ -1207,7 +1227,59 @@ function applyDesignPreview(): void {
           : "0 8px 20px rgba(15, 23, 42, 0.08)";
   const props: Array<[string, string | undefined]> = [
     ["--zephus-accent", design?.accent],
+    ["--zephus-on-accent", onAccentText(design?.accent)],
+    ["--zephus-accent-hover-mix", accentHoverMix(design?.accent)],
+    [
+      "--zephus-lead-mix",
+      `${mutedForegroundPercent(design?.foreground, design?.background, design?.surface, 68)}%`,
+    ],
+    [
+      "--zephus-caption-mix",
+      `${mutedForegroundPercent(design?.foreground, design?.background, design?.surface, 65)}%`,
+    ],
+    [
+      "--zephus-meta-mix",
+      `${mutedForegroundPercent(design?.foreground, design?.background, design?.surface, 72)}%`,
+    ],
+    [
+      "--zephus-hidden-opacity",
+      (
+        mutedForegroundPercent(
+          design?.foreground,
+          design?.background,
+          design?.surface,
+          60,
+        ) / 100
+      ).toFixed(2),
+    ],
+    [
+      "--zephus-locked-block-opacity",
+      (
+        mutedForegroundPercent(
+          design?.foreground,
+          design?.background,
+          design?.surface,
+          80,
+        ) / 100
+      ).toFixed(2),
+    ],
+    [
+      "--zephus-locked-section-opacity",
+      (
+        mutedForegroundPercent(
+          design?.foreground,
+          design?.background,
+          design?.surface,
+          82,
+        ) / 100
+      ).toFixed(2),
+    ],
+    [
+      "--zephus-accent-ink",
+      accentInk(design?.accent, design?.background, design?.surface),
+    ],
     ["--zephus-foreground", design?.foreground],
+    ["--zephus-header-text", headerText(design?.foreground, design?.surface)],
     ["--zephus-background", design?.background],
     ["--zephus-surface", design?.surface],
     ["--zephus-font-family", design?.fontFamily],
@@ -1221,16 +1293,19 @@ function applyDesignPreview(): void {
     ["--zephus-shadow", shadowValue],
   ];
   for (const [name, value] of props) {
-    if (value && value.trim()) canvas.style.setProperty(name, value);
+    const safe = designCssValue(value);
+    if (safe) canvas.style.setProperty(name, safe);
     else canvas.style.removeProperty(name);
   }
 
-  // Load Google Fonts link in the editor if a fontImportUrl exists
-  const fontImportUrl = design?.fontImportUrl;
+  // Load a Google Fonts stylesheet for the canvas. The same allowlist gates
+  // the generated layout, so a site file cannot put another host's CSS in
+  // the editor document.
+  const fontImportUrl = googleFontStylesheetUrl(design?.fontImportUrl);
   let fontLink = document.getElementById(
     "zephus-canvas-google-fonts",
   ) as HTMLLinkElement | null;
-  if (fontImportUrl && fontImportUrl.trim()) {
+  if (fontImportUrl) {
     if (!fontLink) {
       fontLink = document.createElement("link");
       fontLink.id = "zephus-canvas-google-fonts";
@@ -1461,6 +1536,12 @@ async function regenerateNav(): Promise<void> {
               },
             );
             if (!saved.ok) {
+              showInlineAlert(
+                wrap,
+                "nav-preview-error",
+                "Could not save navigation: " +
+                  (saved.error ?? "unknown error"),
+              );
               setStatus(
                 "Could not save navigation: " +
                   (saved.error ?? "unknown error"),
@@ -1477,10 +1558,11 @@ async function regenerateNav(): Promise<void> {
               };
             }
           } catch (error) {
-            setStatus(
+            const message =
               "Could not save navigation: " +
-                (error instanceof Error ? error.message : String(error)),
-            );
+              (error instanceof Error ? error.message : String(error));
+            showInlineAlert(wrap, "nav-preview-error", message);
+            setStatus(message);
             return;
           }
         }
@@ -1685,6 +1767,7 @@ function renderLayers(): void {
       })),
     })),
   );
+  revealActiveLayer();
 }
 
 async function writeSiteDocumentFromRenderer(
@@ -1865,52 +1948,24 @@ async function reloadPages(): Promise<void> {
 }
 
 async function newPageFlow(): Promise<void> {
-  if (!state.project) return;
-  let nextName = "";
-  const wrap = document.createElement("div");
-  renderNewPageModal(wrap, {
-    value: nextName,
-    onValueChange: (value) => {
-      nextName = value;
-    },
+  await openNewPageModal({
+    getProject: () => state.project,
+    showModalNode,
+    closeModal,
+    registerCleanup,
+    setStatus,
+    createPage: (projectPath, name, pagesDir) =>
+      window.zephus.createPage(projectPath, name, pagesDir),
+    reloadPages,
+    loadPage,
+    findCreatedPage: (normalizedSlug) =>
+      state.pageMeta.find(
+        (entry) =>
+          (normalizedSlug !== null && entry.slug === normalizedSlug) ||
+          entry.route ===
+            (normalizedSlug === "index" ? "/" : `/${normalizedSlug}`),
+      ),
   });
-
-  showModalNode("New Page", wrap, [
-    { label: "Cancel", kind: "ghost", onClick: closeModal },
-    {
-      label: "Create Page",
-      kind: "primary",
-      onClick: async () => {
-        const name = nextName.trim();
-        if (!name || !state.project) return;
-        closeModal();
-        const r = await window.zephus.createPage(
-          state.project.path,
-          name,
-          state.project.astro.pagesDir,
-        );
-        if (!r.ok) {
-          setStatus("Create page failed: " + r.error);
-          return;
-        }
-        await reloadPages();
-        // Match the NORMALIZED slug ("My Page" -> "my-page"), or the list
-        // may have refreshed with the normalized name while the raw input
-        // still holds the original — the page would be created but never
-        // opened and the editor would stay on the old page. Mirrors the
-        // main-process slug normalization (schema.ts).
-        const normalizedSlug = normalizePageSlug(name);
-        const created = state.pageMeta.find(
-          (entry) =>
-            (normalizedSlug !== null && entry.slug === normalizedSlug) ||
-            entry.route ===
-              (normalizedSlug === "index" ? "/" : `/${normalizedSlug}`),
-        );
-        if (created) await loadPage(created.page);
-        setStatus("Created page " + name);
-      },
-    },
-  ]);
 }
 
 /** Eye toggle in the page list: show/hide a page in the navigation. */
@@ -2374,6 +2429,7 @@ function hydrateCanvasAssets(root: HTMLElement): void {
       // the img is still in the DOM and still expects this particular asset.
       if (
         dataUrl &&
+        isAcceptedImageDataUrl(dataUrl) &&
         img.isConnected &&
         img.getAttribute("data-asset-src") === webPath
       ) {
@@ -2403,20 +2459,7 @@ function writeGallery(block: Block, images: string[], alts: string[]): void {
 
 /** Stops canvas links from navigating while editing (keep/reload or preview). */
 function makeCanvasLinksInert(root: HTMLElement): void {
-  root.querySelectorAll<HTMLIFrameElement>("iframe").forEach((frame) => {
-    frame.tabIndex = -1;
-  });
-  if (root.dataset["canvasLinksInert"] === "true") return;
-  root.dataset["canvasLinksInert"] = "true";
-  root.addEventListener(
-    "click",
-    (event) => {
-      const target = event.target;
-      if (!(target instanceof Element)) return;
-      if (target.closest("a[href], area[href]")) event.preventDefault();
-    },
-    true,
-  );
+  installCanvasLinkGuard(root);
 }
 
 /* ---------- Properties panel ---------- */
@@ -2464,8 +2507,15 @@ function openLinkPicker(current: string, onPick: (href: string) => void): void {
       (current.startsWith("/") ? current : ""),
     rawValue: "",
     rawEdited: false,
+    formError: "",
   };
   modalState.rawValue = prefillFor(modalState.kind, current);
+
+  const clearLinkError = (): void => {
+    if (!modalState.formError) return;
+    modalState.formError = "";
+    wrap.querySelector(".link-picker-error")?.remove();
+  };
 
   let disposeLinkBody: (() => void) | null = null;
   const renderModal = () => {
@@ -2476,25 +2526,20 @@ function openLinkPicker(current: string, onPick: (href: string) => void): void {
       pageValue: modalState.pageValue,
       pageValueMissing: modalState.pageValueMissing,
       rawValue: modalState.rawValue,
+      currentValue: current,
+      formError: modalState.formError,
       onKindChange: (value) => {
         modalState.kind = value;
-        if (value === "page" && !modalState.pageValue) {
-          modalState.pageValue = pageOptions[0]?.value ?? "";
-        }
-        // Only re-derive the raw value when the user has not typed anything:
-        // overwriting their typed URL with a prefill on every kind switch
-        // silently discards their input.
-        if (!modalState.rawEdited) {
-          modalState.rawValue = prefillFor(value, current);
-        }
-        renderModal();
+        clearLinkError();
       },
       onPageValueChange: (value) => {
         modalState.pageValue = value;
+        clearLinkError();
       },
-      onRawValueChange: (value) => {
+      onRawValueChange: (value, edited) => {
         modalState.rawValue = value;
-        modalState.rawEdited = true;
+        if (edited) modalState.rawEdited = true;
+        clearLinkError();
       },
     });
   };
@@ -2507,27 +2552,20 @@ function openLinkPicker(current: string, onPick: (href: string) => void): void {
       label: "Use Link",
       kind: "primary",
       onClick: () => {
-        const raw = modalState.rawValue.trim();
-        let href = modalState.pageValue;
-        if (modalState.kind === "email") href = raw ? `mailto:${raw}` : "";
-        else if (modalState.kind === "phone") href = raw ? `tel:${raw}` : "";
-        else if (modalState.kind === "anchor")
-          href = raw ? `#${raw.replace(/^#/, "")}` : "";
-        else if (modalState.kind === "url") {
-          href = raw || (!modalState.rawEdited ? current.trim() : "");
-        } else if (
-          modalState.kind === "page" &&
-          !href &&
-          current.startsWith("/")
-        )
-          href = current;
-        else if (
-          !href &&
-          !modalState.rawEdited &&
-          current.trim() &&
-          modalState.kind !== "page"
-        ) {
-          href = current.trim();
+        const href = linkPickerHref({
+          kind: modalState.kind,
+          pageValue: modalState.pageValue,
+          rawValue: modalState.rawValue,
+          rawEdited: modalState.rawEdited,
+          current,
+        });
+        const problem = linkPickerProblem(href);
+        if (problem) {
+          setStatus(problem);
+          modalState.formError = problem;
+          renderModal();
+          focusModalField(wrap, "input.text, .link-kind");
+          return;
         }
         closeModal();
         onPick(href);
@@ -2647,6 +2685,7 @@ function syncModeToggle(mode: Mode): void {
   visual.setAttribute("aria-checked", String(mode === "visual"));
   code.setAttribute("aria-checked", String(mode === "code"));
   syncRadioGroupTabIndex(document.querySelector<HTMLElement>(".mode-toggle"));
+  syncEditorSkipLink(document, mode);
 }
 
 function setMode(mode: Mode): void {
@@ -2832,6 +2871,7 @@ const editorSave = createEditorSaveActions({
   markDirty,
   retargetUndoSiteSnapshots,
   scheduleDraftWrite,
+  siteDraftContent: () => siteDraftContentForCurrentState(),
   renderDirtyIndicators,
   reloadPages,
   persistPendingSiteDocument,
@@ -3132,6 +3172,14 @@ const chrome = createChromeActions({
 
 function init(): void {
   chrome.installChrome();
+  document
+    .querySelector("#view-editor .skip-link")
+    ?.addEventListener("click", () => {
+      if (state.mode !== "code") return;
+      // The link focuses the code surface. Move the caret into CodeMirror
+      // after the browser applies that fragment focus.
+      queueMicrotask(() => cm?.focus());
+    });
   initStartTabs();
   initEditorWorkspaceTabs();
 
@@ -3517,7 +3565,22 @@ function init(): void {
   void chrome.bootstrap();
 }
 
-document.addEventListener("DOMContentLoaded", init);
+let editorStarted = false;
+function startEditor(): void {
+  if (editorStarted) return;
+  editorStarted = true;
+  init();
+}
+
+function bootEditor(): void {
+  if (window.zephus) {
+    startEditor();
+    return;
+  }
+  window.addEventListener("zephus-ready", () => startEditor(), { once: true });
+}
+
+document.addEventListener("DOMContentLoaded", bootEditor);
 
 function noteMountFailure(label: string, error: unknown): void {
   console.error(`Failed to mount SolidJS ${label}:`, error);

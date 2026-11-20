@@ -2,6 +2,7 @@
 
 import { safeUrl, splitLines, splitPair } from "../shared/renderHelpers";
 import { richTextFromElement } from "./inlineRichText";
+import { onToolbarKeyDown } from "./toolbarKeyboard";
 import type { EditorBlock } from "../main/types";
 
 type Block = EditorBlock;
@@ -120,7 +121,8 @@ export function createInlineEditController(deps: InlineEditDeps) {
 
   /**
    * Floating bold/italic/link controls shown while inline-editing prose.
-   * Buttons suppress mousedown so the caret and selection survive the click.
+   * A mouse click keeps the caret in the text. Keyboard activation moves
+   * focus onto the button, so the selection is restored before the command.
    */
   function createInlineFormatToolbar(
     el: HTMLElement,
@@ -130,6 +132,40 @@ export function createInlineEditController(deps: InlineEditDeps) {
     bar.className = "inline-format-toolbar";
     bar.setAttribute("role", "toolbar");
     bar.setAttribute("aria-label", "Text formatting");
+    let formattingRange: Range | null = null;
+
+    const selectionInsideEditor = (): Range | null => {
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0) return null;
+      const range = selection.getRangeAt(0);
+      const node = range.commonAncestorContainer;
+      const host = node instanceof Element ? node : node.parentElement;
+      if (!host || !el.contains(host)) return null;
+      return range;
+    };
+
+    const rememberSelection = (): void => {
+      const range = selectionInsideEditor();
+      if (range) formattingRange = range.cloneRange();
+    };
+
+    const restoreFormattingSelection = (): void => {
+      if (!formattingRange) return;
+      // focus() is synchronous. Mark the hop so the toolbar's focusout
+      // handler does not treat it as leaving the edit session.
+      bar.dataset.restoringSelection = "true";
+      try {
+        el.focus();
+        const selection = window.getSelection();
+        if (!selection) return;
+        selection.removeAllRanges();
+        selection.addRange(formattingRange);
+      } catch {
+        formattingRange = null;
+      } finally {
+        delete bar.dataset.restoringSelection;
+      }
+    };
 
     const buttons: Array<{ key: string; button: HTMLButtonElement }> = [];
     const addButton = (
@@ -144,13 +180,34 @@ export function createInlineEditController(deps: InlineEditDeps) {
       button.innerHTML = label;
       button.title = title;
       button.setAttribute("aria-label", title);
+      button.tabIndex = buttons.length === 0 ? 0 : -1;
+      button.addEventListener("keydown", onToolbarKeyDown);
+      let fromKeyboard = false;
       button.addEventListener("mousedown", (event) => {
         // Keep focus (and the selection) in the text being edited.
+        fromKeyboard = false;
         event.preventDefault();
+      });
+      button.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") fromKeyboard = true;
       });
       button.addEventListener("click", (event) => {
         event.preventDefault();
+        const returnFocus = fromKeyboard || document.activeElement === button;
+        fromKeyboard = false;
+        restoreFormattingSelection();
         onActivate();
+        rememberSelection();
+        // The link field takes focus on purpose. Every other command returns
+        // the keyboard user to the button they just used.
+        if (
+          returnFocus &&
+          !bar
+            .querySelector(".inline-format-link")
+            ?.contains(document.activeElement)
+        ) {
+          button.focus();
+        }
       });
       bar.appendChild(button);
       buttons.push({ key, button });
@@ -188,7 +245,14 @@ export function createInlineEditController(deps: InlineEditDeps) {
     linkInput.className = "text";
     linkInput.placeholder = "https://example.com or /about";
     linkInput.setAttribute("aria-label", "Link address");
+    const applyLinkButton = document.createElement("button");
+    applyLinkButton.type = "button";
+    applyLinkButton.className = "inline-format-apply";
+    applyLinkButton.textContent = "Apply";
+    applyLinkButton.title = "Apply link";
+    applyLinkButton.setAttribute("aria-label", "Apply link");
     linkRow.appendChild(linkInput);
+    linkRow.appendChild(applyLinkButton);
 
     let savedRange: Range | null = null;
     const restoreSelection = (): void => {
@@ -213,6 +277,15 @@ export function createInlineEditController(deps: InlineEditDeps) {
       applyInlineFormat("createLink", safe);
       deps.setStatus("Added link.");
     };
+    // Keep the caret in the text. A normal click would blur the field and
+    // end the edit before the address is applied.
+    applyLinkButton.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+    });
+    applyLinkButton.addEventListener("click", (event) => {
+      event.preventDefault();
+      applyLink();
+    });
 
     const promptLink = (): void => {
       if (!options.allowLinks) return;
@@ -281,7 +354,11 @@ export function createInlineEditController(deps: InlineEditDeps) {
     };
     position();
 
-    const onSelectionChange = (): void => syncState();
+    const onSelectionChange = (): void => {
+      rememberSelection();
+      syncState();
+    };
+    rememberSelection();
     document.addEventListener("selectionchange", onSelectionChange);
     window.addEventListener("resize", position);
     window.addEventListener("scroll", position, true);
@@ -332,6 +409,7 @@ export function createInlineEditController(deps: InlineEditDeps) {
     // Without this, the link-input hop (el -> input -> outside) never fires a
     // blur on `el` and the session stays stuck, swallowing all canvas clicks.
     const onToolbarFocusOut = (event: FocusEvent): void => {
+      if (toolbar!.element.dataset.restoringSelection === "true") return;
       const next = event.relatedTarget;
       if (
         next instanceof Node &&

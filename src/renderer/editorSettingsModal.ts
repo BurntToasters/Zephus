@@ -1,6 +1,7 @@
 /** App settings modal + production licenses modal. */
 
 import { renderSettingsModalBody } from "./SettingsModal";
+import { focusModalField } from "./modalFocus";
 import { renderProductionLicensesModalBody } from "./MiscModals";
 import {
   updateSettingsTabNode,
@@ -96,6 +97,7 @@ export function createSettingsModalActions(deps: SettingsModalDeps) {
       nodeBrowseBusy: false,
       nodeAutoBusy: false,
       versionText: "Zephus",
+      formError: "",
     };
     // Dispose the previous Solid root before re-rendering so its effects and
     // listeners are cleaned up instead of accumulating per re-render.
@@ -105,12 +107,26 @@ export function createSettingsModalActions(deps: SettingsModalDeps) {
     // body: that destroys the control the user is typing in. The status texts
     // are plain spans — patch them in place when the modal is open.
     const refreshSettingsStatusText = (): void => {
-      const statusEl = wrap.querySelector(
-        ".settings-inline-copy span, .settings-inline-copy > span",
-      );
+      const statusEl = wrap.querySelector(".settings-node-status");
       if (statusEl) statusEl.textContent = modalState.nodeStatusText;
       const versionEl = wrap.querySelector(".version-info-text");
       if (versionEl) versionEl.textContent = modalState.versionText;
+    };
+
+    // Rebuilding the body replaces the button that was clicked. Put focus on
+    // that control when it is still usable, otherwise the next enabled one.
+    const focusEnabledButton = (preferred: string, fallback: string): void => {
+      window.setTimeout(() => {
+        const preferredButton =
+          wrap.querySelector<HTMLButtonElement>(preferred);
+        const target =
+          preferredButton?.isConnected && !preferredButton.disabled
+            ? preferredButton
+            : [...wrap.querySelectorAll<HTMLButtonElement>(fallback)].find(
+                (button) => button.isConnected && !button.disabled,
+              );
+        target?.focus();
+      }, 0);
     };
 
     const renderModal = () => {
@@ -122,6 +138,9 @@ export function createSettingsModalActions(deps: SettingsModalDeps) {
           // control the user is interacting with (checkbox/select) and drop
           // focus. The next async re-render re-seeds from modalState.settings.
           modalState.settings = { ...modalState.settings, [key]: value };
+          if (!modalState.formError) return;
+          modalState.formError = "";
+          wrap.querySelector(".settings-error")?.remove();
         },
         onUpdaterAction: async (actionId) => {
           if (actionId === "check") {
@@ -133,15 +152,21 @@ export function createSettingsModalActions(deps: SettingsModalDeps) {
             modalState.updaterStatusText = updaterStatusMessage();
             modalState.updaterActions = currentUpdaterActions();
             renderModal();
+            focusEnabledButton(
+              `.settings-updater-action[data-updater-action="${actionId}"]`,
+              ".settings-updater-action",
+            );
             return;
           }
           if (actionId === "download") {
+            let showedFailure = false;
             try {
               const result = (await window.zephus.downloadUpdate()) as {
                 status?: string;
                 error?: string;
               };
               if (result?.status === "error") {
+                showedFailure = true;
                 showModal(
                   "Update Download Failed",
                   friendlyError(result.error),
@@ -149,7 +174,7 @@ export function createSettingsModalActions(deps: SettingsModalDeps) {
                 );
               }
             } catch (error) {
-              setStatus(
+              showSettingsError(
                 "Update download failed: " +
                   (error instanceof Error ? error.message : String(error)),
               );
@@ -157,6 +182,12 @@ export function createSettingsModalActions(deps: SettingsModalDeps) {
             modalState.updaterStatusText = updaterStatusMessage();
             modalState.updaterActions = currentUpdaterActions();
             renderModal();
+            if (!showedFailure) {
+              focusEnabledButton(
+                `.settings-updater-action[data-updater-action="${actionId}"]`,
+                ".settings-updater-action",
+              );
+            }
             return;
           }
           if (actionId === "restart") {
@@ -167,7 +198,7 @@ export function createSettingsModalActions(deps: SettingsModalDeps) {
             try {
               await window.zephus.cancelUpdateDownload();
             } catch (error) {
-              setStatus(
+              showSettingsError(
                 "Could not cancel update download: " +
                   (error instanceof Error ? error.message : String(error)),
               );
@@ -175,6 +206,10 @@ export function createSettingsModalActions(deps: SettingsModalDeps) {
             modalState.updaterStatusText = updaterStatusMessage();
             modalState.updaterActions = currentUpdaterActions();
             renderModal();
+            focusEnabledButton(
+              `.settings-updater-action[data-updater-action="${actionId}"]`,
+              ".settings-updater-action",
+            );
           }
         },
         onPickNodePath: async () => {
@@ -203,6 +238,10 @@ export function createSettingsModalActions(deps: SettingsModalDeps) {
           } finally {
             modalState.nodeBrowseBusy = false;
             renderModal();
+            focusEnabledButton(
+              ".settings-node-browse",
+              ".settings-node-browse",
+            );
           }
         },
         onAutoNodePath: async () => {
@@ -221,6 +260,7 @@ export function createSettingsModalActions(deps: SettingsModalDeps) {
           } finally {
             modalState.nodeAutoBusy = false;
             renderModal();
+            focusEnabledButton(".settings-node-auto", ".settings-node-browse");
           }
         },
         onOpenProductionLicenses: () => void openProductionLicensesModal(),
@@ -228,19 +268,26 @@ export function createSettingsModalActions(deps: SettingsModalDeps) {
           try {
             const result = await window.zephus.openConfigFolder();
             if (!result.ok) {
-              setStatus(
+              showSettingsError(
                 "Could not open config folder: " +
                   (result.error ?? "unknown error"),
               );
             }
           } catch (error) {
-            setStatus(
+            showSettingsError(
               "Could not open config folder: " +
                 (error instanceof Error ? error.message : String(error)),
             );
           }
         },
       });
+    };
+
+    const showSettingsError = (message: string): void => {
+      setStatus(message);
+      modalState.formError = message;
+      renderModal();
+      focusModalField(wrap, "#set-theme-modal");
     };
 
     renderModal();
@@ -272,14 +319,14 @@ export function createSettingsModalActions(deps: SettingsModalDeps) {
           try {
             reset = await window.zephus.writeGlobalSettings(defaults);
           } catch (error) {
-            setStatus(
+            showSettingsError(
               "Could not reset settings: " +
                 (error instanceof Error ? error.message : String(error)),
             );
             return;
           }
           if (!reset.ok) {
-            setStatus(
+            showSettingsError(
               "Could not reset settings: " + (reset.error ?? "unknown error"),
             );
             return;
@@ -318,7 +365,7 @@ export function createSettingsModalActions(deps: SettingsModalDeps) {
               modalState.settings,
             );
           } catch (error) {
-            setStatus(
+            showSettingsError(
               "Settings could not be saved: " +
                 (error instanceof Error ? error.message : String(error)),
             );
@@ -327,7 +374,7 @@ export function createSettingsModalActions(deps: SettingsModalDeps) {
           if (!saved.ok) {
             // Never claim "Settings saved." when the write failed (read-only
             // config dir, invalid custom node path, etc.).
-            setStatus(
+            showSettingsError(
               "Settings could not be saved: " +
                 (saved.error ?? "unknown error"),
             );

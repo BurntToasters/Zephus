@@ -91,6 +91,8 @@ jobs:
         env:
           WEBKIT_DISABLE_COMPOSITING_MODE: "1"
         run: npm run test:all -- --skip-smoke --skip-coverage --skip-e2e
+      - name: Coverage thresholds
+        run: npm run test:cov
 
   rust-check:
     needs: quality-gate
@@ -117,9 +119,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
         with:
           toolchain: ${{ steps.rust-toolchain.outputs.channel }}
+          components: clippy
       - run: npm ci --ignore-scripts
       - run: node scripts/npm-audit-signatures.cjs
-      - run: cargo check --locked --manifest-path src-tauri/Cargo.toml
+      - run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+      - name: Vendored updater tests
+        run: cargo test --locked --manifest-path src-tauri/vendor/tauri-plugin-updater/Cargo.toml --lib
 
   updater-manifest:
     runs-on: ubuntu-24.04

@@ -9,7 +9,10 @@ import {
   lockedMutationMessage,
 } from "./editorCommands";
 import { PALETTE, TEMPLATES, type SectionTemplate } from "./editorBlocks";
-import { isInspectorTextInputFocused } from "./editorInspector";
+import {
+  isInspectorTextInputFocused,
+  rerenderInspectorKeepingFocus,
+} from "./editorInspector";
 import type { EditorSessionState } from "./editorSession";
 import { pushEditorUndo } from "./editorUndo";
 import type {
@@ -140,7 +143,9 @@ export function createBlockOpsActions(deps: BlockOpsDeps) {
     markDirty(true);
     renderLayers();
     renderCanvas();
-    renderProperties();
+    const panel = document.getElementById("properties");
+    if (panel) rerenderInspectorKeepingFocus(panel, renderProperties);
+    else renderProperties();
   }
 
   function commitInspectorChange(
@@ -157,7 +162,9 @@ export function createBlockOpsActions(deps: BlockOpsDeps) {
       isInspectorTextInputFocused(document.activeElement);
     scheduleCanvasRepaint(typing);
     if (rerenderProperties) {
-      renderProperties();
+      const panel = document.getElementById("properties");
+      if (panel) rerenderInspectorKeepingFocus(panel, renderProperties);
+      else renderProperties();
     }
     endInspectorEdit();
   }

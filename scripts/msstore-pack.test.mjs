@@ -426,9 +426,9 @@ test("the cargo-safe-update test list includes this file", () => {
   assert.ok(list.includes("scripts/msstore-pack.test.mjs"));
 });
 
-test("the Cargo package name is the exe name (Zephus)", () => {
+test("the Cargo package name is the exe name (zephus)", () => {
   assert.equal(
     pack.cargoPackageName(fs.readFileSync(CARGO_TOML, "utf8")),
-    "Zephus",
+    "zephus",
   );
 });

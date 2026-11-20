@@ -160,6 +160,14 @@ export function createChromeActions(deps: ChromeDeps) {
       })();
     };
     window.addEventListener("beforeunload", onBeforeUnload);
+    (
+      window as Window & { zephusConfirmClose?: () => Promise<boolean> }
+    ).zephusConfirmClose = async () => {
+      if (state.project && isGlobalDirty(state)) {
+        return maybeResolveUnsavedWork();
+      }
+      return true;
+    };
     // Cmd/Ctrl+R is intercepted in the main process (the menu accelerator
     // would otherwise fire before this keydown handler). Resolve unsaved work
     // first, then reload for real — reloading while dirty used to resolve the

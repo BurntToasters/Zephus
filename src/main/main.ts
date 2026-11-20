@@ -917,7 +917,9 @@ function createMainWindow(): void {
 }
 
 function initAutoUpdater(): void {
-  if (isDev || isSmoke || isBootCheck || !app.isPackaged) return;
+  // The Tauri host checks through the updater plugin. The electron-updater
+  // shim resolves immediately and would report a false "up to date".
+  if (isTauriHost || isDev || isSmoke || isBootCheck || !app.isPackaged) return;
   setupAutoUpdater(() => mainWindow, readGlobalSettings);
   const settings = readGlobalSettings();
   if (settings.autoCheckUpdates) {
@@ -1030,6 +1032,8 @@ async function runNodeVersionCheck(): Promise<void> {
     }
 
     log.warn(`Node version check (${result.status}): ${result.message}`);
+    // The shim cannot show a dialog. The Tauri preload asks with plugin-dialog.
+    if (isTauriHost) return;
     const title =
       result.status === "missing"
         ? "Node.js Not Found"

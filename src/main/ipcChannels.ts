@@ -36,6 +36,7 @@ export const IPC = {
   fileRead: "file:read",
   importAssets: "assets:importAssets",
   importAssetPaths: "assets:importAssetPaths",
+  importAssetBytes: "assets:importAssetBytes",
   listAssets: "assets:list",
   assetDataUrl: "assets:dataUrl",
   searchPages: "pages:search",

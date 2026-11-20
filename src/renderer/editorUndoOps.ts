@@ -7,7 +7,11 @@ import {
   pushEditorRedoFromCurrent,
   pushEditorUndoFromCurrent,
 } from "./editorUndo";
-import { SITE_DRAFT_TARGET } from "./editorDraft";
+import {
+  settlePageDraftWrite,
+  settleSiteDraftWrite,
+  SITE_DRAFT_TARGET,
+} from "./editorDraft";
 import { encodeSiteDraftContent } from "./editorDraftRestore";
 import { effectiveSiteDocument } from "./editorSession";
 import type { EditorSessionState } from "./editorSession";
@@ -65,9 +69,20 @@ export function createUndoOps(deps: UndoOpsDeps) {
       (baseline !== null && serializeBlocks() !== baseline);
     if (!needsDraft) return;
     const content = pageDraftContent?.() ?? serializeBlocks();
-    void window.zephus
-      .writeDraft(projectPath, "page", page, content)
-      .catch(() => undefined);
+    void settlePageDraftWrite(
+      current,
+      {
+        writeDraft: window.zephus.writeDraft.bind(window.zephus),
+        clearDraft: window.zephus.clearDraft.bind(window.zephus),
+        pageDraftContent: () => pageDraftContent?.() ?? serializeBlocks(),
+        siteDraftContent: () =>
+          siteDraftContent?.() ?? siteDraftPayload(getState()) ?? "",
+      },
+      projectPath,
+      page,
+      current.pageRevision,
+      content,
+    );
   }
 
   function rewriteSiteDraftAfterClear(projectPath: string): void {
@@ -76,9 +91,19 @@ export function createUndoOps(deps: UndoOpsDeps) {
     if (!current.siteDirty && !current.pendingSiteDocument) return;
     const content = siteDraftContent?.() ?? siteDraftPayload(current);
     if (!content) return;
-    void window.zephus
-      .writeDraft(projectPath, "site", SITE_DRAFT_TARGET, content)
-      .catch(() => undefined);
+    void settleSiteDraftWrite(
+      current,
+      {
+        writeDraft: window.zephus.writeDraft.bind(window.zephus),
+        clearDraft: window.zephus.clearDraft.bind(window.zephus),
+        pageDraftContent: () => pageDraftContent?.() ?? serializeBlocks(),
+        siteDraftContent: () =>
+          siteDraftContent?.() ?? siteDraftPayload(getState()) ?? "",
+      },
+      projectPath,
+      current.siteRevision,
+      content,
+    );
   }
 
   function doUndo(): void {

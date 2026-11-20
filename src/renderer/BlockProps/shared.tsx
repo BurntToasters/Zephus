@@ -12,6 +12,11 @@ export {
   ToggleField,
 } from "../SectionProperties";
 import { createEffect, createSignal, onCleanup } from "solid-js";
+import { CANVAS_ASSET_PLACEHOLDER_SRC } from "../../shared/blockRender";
+import {
+  isAcceptedImageDataUrl,
+  isProjectAssetPath,
+} from "../../shared/assetPreview";
 import type {
   BlockStyle,
   EditorBlockType,
@@ -165,29 +170,29 @@ export function AssetPreviewImage(props: {
   alt: string;
   resolveAssetPreviewSrc?: (src: string) => Promise<string | null>;
 }) {
-  const [previewSrc, setPreviewSrc] = createSignal("");
+  const [previewSrc, setPreviewSrc] = createSignal(
+    CANVAS_ASSET_PLACEHOLDER_SRC,
+  );
 
   createEffect(() => {
     const source = props.src.trim();
     let cancelled = false;
+    // A relative or remote address is valid on the published site. Assigning
+    // it here asks the editor origin for it, because img-src allows 'self'.
+    setPreviewSrc(CANVAS_ASSET_PLACEHOLDER_SRC);
+    if (!isProjectAssetPath(source) || !props.resolveAssetPreviewSrc) return;
 
-    if (!source) {
-      setPreviewSrc("");
-      return;
-    }
-
-    if (!source.startsWith("/") || !props.resolveAssetPreviewSrc) {
-      setPreviewSrc(source);
-      return;
-    }
-
-    setPreviewSrc("");
     void props.resolveAssetPreviewSrc(source).then(
       (resolved) => {
-        if (!cancelled) setPreviewSrc(resolved ?? "");
+        if (cancelled) return;
+        setPreviewSrc(
+          resolved && isAcceptedImageDataUrl(resolved)
+            ? resolved
+            : CANVAS_ASSET_PLACEHOLDER_SRC,
+        );
       },
       () => {
-        if (!cancelled) setPreviewSrc("");
+        if (!cancelled) setPreviewSrc(CANVAS_ASSET_PLACEHOLDER_SRC);
       },
     );
 

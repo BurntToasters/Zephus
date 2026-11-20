@@ -10,9 +10,7 @@ const MAX_RENDERER_MESSAGE_CHARS: usize = 2000;
 static LOG_LOCK: Mutex<()> = Mutex::new(());
 
 fn log_path() -> std::path::PathBuf {
-    crate::app_state::data_dir()
-        .join("logs")
-        .join("zephus.log")
+    crate::app_state::data_dir().join("logs").join("zephus.log")
 }
 
 pub fn iso_timestamp(millis: u64) -> String {

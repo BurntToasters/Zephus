@@ -255,11 +255,28 @@ describe("canvas vs build parity", () => {
           ' src="$1"',
         )
         .replace(/\s*data-asset-src="[^"]*"/g, "");
-    for (const fixture of BLOCK_RENDER_FIXTURES) {
+    for (const fixture of BLOCK_RENDER_FIXTURES.filter(
+      (f) => !["embed", "video"].includes(f.type),
+    )) {
       const build = renderBlockHtml(fixture, {});
       const canvas = renderBlockHtml(fixture, { forCanvas: true });
       expect(normalize(canvas)).toBe(normalize(build));
     }
+  });
+
+  it("renders public embeds and videos as a canvas placeholder and build media", () => {
+    const embed = BLOCK_RENDER_FIXTURES.find((f) => f.id === "fix-embed");
+    if (!embed) throw new Error("fix-embed fixture missing");
+    expect(renderBlockHtml(embed, { forCanvas: true })).toContain(
+      "canvas-empty",
+    );
+    expect(renderBlockHtml(embed, {})).toContain("<iframe");
+    const video = BLOCK_RENDER_FIXTURES.find((f) => f.id === "fix-video");
+    if (!video) throw new Error("fix-video fixture missing");
+    expect(renderBlockHtml(video, { forCanvas: true })).toContain(
+      "canvas-empty",
+    );
+    expect(renderBlockHtml(video, {})).toContain("<video");
   });
 
   it("keeps hidden-on-desktop blocks visible on the canvas", () => {

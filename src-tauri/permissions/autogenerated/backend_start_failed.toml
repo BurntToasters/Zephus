@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-backend-start-failed"
+description = "Enables the backend_start_failed command without any pre-configured scope."
+commands.allow = ["backend_start_failed"]
+
+[[permission]]
+identifier = "deny-backend-start-failed"
+description = "Denies the backend_start_failed command without any pre-configured scope."
+commands.deny = ["backend_start_failed"]

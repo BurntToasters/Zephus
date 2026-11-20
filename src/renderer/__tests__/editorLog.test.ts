@@ -11,6 +11,10 @@ describe("editorLog", () => {
       value: 100,
       configurable: true,
     });
+    Object.defineProperty(el, "clientHeight", {
+      value: 100,
+      configurable: true,
+    });
     appendCappedLog(el, "line1\n");
     appendCappedLog(el, "line2");
     expect(el.textContent).toBe("line1\nline2");

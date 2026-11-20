@@ -47,7 +47,12 @@ export function AboutLicensesPanel() {
             </p>
           }
         >
-          <div class="licenses-table-wrap">
+          <div
+            class="licenses-table-wrap"
+            tabindex="0"
+            role="region"
+            aria-label="Third-party licenses"
+          >
             <table class="licenses-table">
               <thead>
                 <tr>

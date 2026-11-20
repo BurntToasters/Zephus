@@ -14,6 +14,8 @@ macro_rules! string_enum {
         impl $name {
             pub const NAMES: &'static [&'static str] = &[$($text),+];
 
+            // Not every enum is converted back to its name outside serde.
+            #[allow(dead_code)]
             pub fn as_str(self) -> &'static str {
                 match self {
                     $(Self::$variant => $text),+

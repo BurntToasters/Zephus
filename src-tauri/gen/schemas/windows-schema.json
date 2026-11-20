@@ -345,10 +345,28 @@
       "description": "Permission identifier",
       "oneOf": [
         {
+          "description": "Enables the apply_editor_settings command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-apply-editor-settings",
+          "markdownDescription": "Enables the apply_editor_settings command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the backend_start_failed command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-backend-start-failed",
+          "markdownDescription": "Enables the backend_start_failed command without any pre-configured scope."
+        },
+        {
           "description": "Enables the backend_url command without any pre-configured scope.",
           "type": "string",
           "const": "allow-backend-url",
           "markdownDescription": "Enables the backend_url command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the cancel_editor_close command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-cancel-editor-close",
+          "markdownDescription": "Enables the cancel_editor_close command without any pre-configured scope."
         },
         {
           "description": "Enables the cancel_update_download command without any pre-configured scope.",
@@ -459,6 +477,12 @@
           "markdownDescription": "Enables the restart_app command without any pre-configured scope."
         },
         {
+          "description": "Enables the set_backend_node command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-set-backend-node",
+          "markdownDescription": "Enables the set_backend_node command without any pre-configured scope."
+        },
+        {
           "description": "Enables the set_update_channel command without any pre-configured scope.",
           "type": "string",
           "const": "allow-set-update-channel",
@@ -477,10 +501,28 @@
           "markdownDescription": "Enables the smoke_complete command without any pre-configured scope."
         },
         {
+          "description": "Denies the apply_editor_settings command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-apply-editor-settings",
+          "markdownDescription": "Denies the apply_editor_settings command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the backend_start_failed command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-backend-start-failed",
+          "markdownDescription": "Denies the backend_start_failed command without any pre-configured scope."
+        },
+        {
           "description": "Denies the backend_url command without any pre-configured scope.",
           "type": "string",
           "const": "deny-backend-url",
           "markdownDescription": "Denies the backend_url command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the cancel_editor_close command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-cancel-editor-close",
+          "markdownDescription": "Denies the cancel_editor_close command without any pre-configured scope."
         },
         {
           "description": "Denies the cancel_update_download command without any pre-configured scope.",
@@ -589,6 +631,12 @@
           "type": "string",
           "const": "deny-restart-app",
           "markdownDescription": "Denies the restart_app command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_backend_node command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-set-backend-node",
+          "markdownDescription": "Denies the set_backend_node command without any pre-configured scope."
         },
         {
           "description": "Denies the set_update_channel command without any pre-configured scope.",

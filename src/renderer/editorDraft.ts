@@ -13,10 +13,94 @@ export const DRAFT_WRITE_DEBOUNCE_MS = 800;
 
 export interface EditorDraftWriteDeps {
   writeDraft: Pick<Window["zephus"], "writeDraft">["writeDraft"];
+  /** Removes a draft that a late write restored after a save or discard. */
+  clearDraft?: Pick<Window["zephus"], "clearDraft">["clearDraft"];
   pageDraftContent: () => string;
   siteDraftContent: () => string;
   /** Surfaced once per session: the crash-recovery net is silently dead (disk full, unwritable drafts.json) and every… */
-  onDraftWriteFailure?: () => void;
+  onDraftWriteFailure?: (error?: string) => void;
+}
+
+/** Writes a page draft, then drops it if a save or discard won the race. */
+export function settlePageDraftWrite(
+  state: EditorSessionState,
+  deps: EditorDraftWriteDeps,
+  projectPath: string,
+  page: string,
+  revision: number,
+  content: string,
+): Promise<void> {
+  return deps
+    .writeDraft(projectPath, "page", page, content)
+    .then(async (res) => {
+      if (res && !res.ok) {
+        deps.onDraftWriteFailure?.(res.error);
+        return;
+      }
+      const samePage =
+        !!state.project &&
+        state.project.path === projectPath &&
+        state.page === page;
+      if (
+        samePage &&
+        state.pageDirty &&
+        (state.pageRevision !== revision || deps.pageDraftContent() !== content)
+      ) {
+        scheduleEditorDraftWrite(state, deps);
+        return;
+      }
+      if (!samePage || !state.pageDirty) {
+        await deps
+          .clearDraft?.(projectPath, "page", page)
+          ?.catch((error: unknown) =>
+            deps.onDraftWriteFailure?.(draftFailureMessage(error)),
+          );
+      }
+    })
+    .catch((error: unknown) =>
+      deps.onDraftWriteFailure?.(draftFailureMessage(error)),
+    );
+}
+
+/** Writes a site draft, then drops it if a save or discard won the race. */
+export function settleSiteDraftWrite(
+  state: EditorSessionState,
+  deps: EditorDraftWriteDeps,
+  projectPath: string,
+  revision: number,
+  content: string,
+): Promise<void> {
+  return deps
+    .writeDraft(projectPath, "site", SITE_DRAFT_TARGET, content)
+    .then(async (res) => {
+      if (res && !res.ok) {
+        deps.onDraftWriteFailure?.(res.error);
+        return;
+      }
+      const sameProject = !!state.project && state.project.path === projectPath;
+      if (
+        sameProject &&
+        state.siteDirty &&
+        (state.siteRevision !== revision || deps.siteDraftContent() !== content)
+      ) {
+        scheduleEditorDraftWrite(state, deps);
+        return;
+      }
+      if (!sameProject || !state.siteDirty) {
+        await deps
+          .clearDraft?.(projectPath, "site", SITE_DRAFT_TARGET)
+          ?.catch((error: unknown) =>
+            deps.onDraftWriteFailure?.(draftFailureMessage(error)),
+          );
+      }
+    })
+    .catch((error: unknown) =>
+      deps.onDraftWriteFailure?.(draftFailureMessage(error)),
+    );
+}
+
+function draftFailureMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 export function cancelScheduledEditorDraftWrite(
@@ -47,39 +131,26 @@ export function scheduleEditorDraftWrite(
       // approved) must not become an unhandled rejection. A failed WRITE
       // (ok:false) is surfaced once via onDraftWriteFailure — a silently
       // dead recovery net is worse than a warning.
-      void deps
-        .writeDraft(projectPath, "page", page, content)
-        .then((res) => {
-          if (res && !res.ok) deps.onDraftWriteFailure?.();
-          if (
-            !state.project ||
-            state.project.path !== projectPath ||
-            state.page !== page
-          ) {
-            return;
-          }
-          if (state.pageRevision !== pageRevisionAtWrite) {
-            scheduleEditorDraftWrite(state, deps);
-          }
-        })
-        .catch(() => deps.onDraftWriteFailure?.());
+      void settlePageDraftWrite(
+        state,
+        deps,
+        projectPath,
+        page,
+        pageRevisionAtWrite,
+        content,
+      );
     }
     if (state.siteDirty && effectiveSiteDocument(state)) {
       const projectPath = project.path;
       const siteRevisionAtWrite = state.siteRevision;
       const siteContent = deps.siteDraftContent();
-      void deps
-        .writeDraft(projectPath, "site", SITE_DRAFT_TARGET, siteContent)
-        .then((res) => {
-          if (res && !res.ok) deps.onDraftWriteFailure?.();
-          if (!state.project || state.project.path !== projectPath) {
-            return;
-          }
-          if (state.siteRevision !== siteRevisionAtWrite) {
-            scheduleEditorDraftWrite(state, deps);
-          }
-        })
-        .catch(() => deps.onDraftWriteFailure?.());
+      void settleSiteDraftWrite(
+        state,
+        deps,
+        projectPath,
+        siteRevisionAtWrite,
+        siteContent,
+      );
     }
   }, DRAFT_WRITE_DEBOUNCE_MS);
 }

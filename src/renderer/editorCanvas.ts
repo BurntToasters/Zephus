@@ -16,6 +16,9 @@ import {
 } from "./editorBlocks";
 import type { EditorSessionState } from "./editorSession";
 import type { ResizeTarget } from "./editorResize";
+import { focusGalleryImageControl } from "./editorInspector";
+import { focusCanvasSelection, resetInspectorScroll } from "./revealSelection";
+import { isSectionMoveKey, sectionMoveTarget } from "./sectionKeyboard";
 import type {
   BlockNode,
   BlockStyle,
@@ -214,6 +217,10 @@ export function createCanvasActions(deps: CanvasDeps) {
   }
 
   function renderCanvas(): void {
+    const canvas = $("canvas");
+    const previous = document.activeElement;
+    const previousInCanvas =
+      previous instanceof Node && canvas.contains(previous);
     // A canvas re-render while an inline text session is active REPLACES the
     // focused contenteditable node; blur never fires on the detached element,
     // leaving isInlineEditing stuck true — every canvas click then no-ops.
@@ -222,7 +229,6 @@ export function createCanvasActions(deps: CanvasDeps) {
     if (isInlineEditing()) {
       finishInlineEdit();
     }
-    const canvas = $("canvas");
     canvas.setAttribute("data-viewport", state.currentViewport);
     resetDragState();
     updateCanvas({
@@ -301,6 +307,17 @@ export function createCanvasActions(deps: CanvasDeps) {
       renderCanvasSelection();
       renderProperties();
     };
+    // Deleting or moving a block removes the focused node, and the browser
+    // drops focus to the page. Put it back on the selection when the user
+    // was working in the canvas. A field outside the canvas keeps focus.
+    if (!previousInCanvas) return;
+    const active = document.activeElement;
+    const focusLost =
+      !(active instanceof HTMLElement) ||
+      !active.isConnected ||
+      active === document.body ||
+      active === document.documentElement;
+    if (focusLost) focusCanvasSelection();
   }
 
   function showIndicator(
@@ -310,10 +327,21 @@ export function createCanvasActions(deps: CanvasDeps) {
   ): void {
     if (!indicator) {
       indicator = document.createElement("div");
-      indicator.className = "drop-indicator active";
     }
+    // Blocks live in a slot, so the section body is not their parent.
+    // Placing the line on the body throws, and a line between slots
+    // becomes its own cell in a feature or pricing row.
+    const slot = ref.closest(".canvas-block-slot");
+    if (slot instanceof HTMLElement && canvas.contains(slot)) {
+      indicator.className = after
+        ? "drop-indicator active after"
+        : "drop-indicator active before";
+      slot.append(indicator);
+      return;
+    }
+    indicator.className = "drop-indicator active";
     if (after) ref.after(indicator);
-    else canvas.insertBefore(indicator, ref);
+    else ref.before(indicator);
   }
 
   function handleDrop(e: DragEvent): void {
@@ -433,6 +461,7 @@ export function createCanvasActions(deps: CanvasDeps) {
     panel.innerHTML = "";
     if (state.mode === "code") {
       lastInspectorSelectionKey = "none";
+      resetInspectorScroll();
       disposeInspectorRoot = renderPropertiesEmpty(panel, !!state.page, () => {
         if (state.page) void openPageMetaModal(state.page);
       });
@@ -447,10 +476,14 @@ export function createCanvasActions(deps: CanvasDeps) {
       : section
         ? `section:${section.id}`
         : "none";
-    if (selectionKey !== lastInspectorSelectionKey && selectionKey !== "none") {
+    const selectionChanged = selectionKey !== lastInspectorSelectionKey;
+    if (selectionChanged && selectionKey !== "none") {
       activateWorkspaceTab("right", "inspect");
     }
     lastInspectorSelectionKey = selectionKey;
+    // A different block has a different form. Keeping the old scroll position
+    // shows the empty tail of a short form after a long one.
+    if (selectionChanged) resetInspectorScroll();
     panel.innerHTML = "";
 
     if (!block && !section) {
@@ -692,6 +725,11 @@ export function createCanvasActions(deps: CanvasDeps) {
                 alts.splice(to, 0, alt ?? "");
                 writeGallery(block, images, alts);
                 commitBlockChange("Reordered gallery image");
+                focusGalleryImageControl(
+                  $("properties"),
+                  to,
+                  from > to ? "up" : "down",
+                );
               }
             : undefined,
         onRemoveGalleryImage:
@@ -710,6 +748,11 @@ export function createCanvasActions(deps: CanvasDeps) {
                 alts.splice(index, 1);
                 writeGallery(block, images, alts);
                 commitBlockChange("Removed gallery image");
+                focusGalleryImageControl(
+                  $("properties"),
+                  images.length === 0 ? -1 : Math.min(index, images.length - 1),
+                  "remove",
+                );
               }
             : undefined,
         onSaveReusable:
@@ -892,7 +935,7 @@ export function bindCanvasHandlers(
     if (!canvasContainer) return [];
     return Array.from(
       canvasContainer.querySelectorAll<HTMLElement>(
-        ":scope > .canvas-section > .section-body > .block",
+        ":scope > .canvas-section > .section-body > .canvas-block-slot > .block",
       ),
     );
   }
@@ -914,6 +957,20 @@ export function bindCanvasHandlers(
     canvas.renderCanvasSelection();
     renderProperties();
     blockShellsInOrder()[index]?.focus();
+  }
+
+  function selectSectionAt(index: number): void {
+    const section = state.sections[index];
+    if (!section || !canvasContainer) return;
+    state.selectedId = null;
+    state.selectedSectionId = section.id;
+    renderLayers();
+    canvas.renderCanvasSelection();
+    renderProperties();
+    const sectionBodies = canvasContainer.querySelectorAll<HTMLElement>(
+      ":scope > .canvas-section > .section-body",
+    );
+    sectionBodies[index]?.focus({ preventScroll: true });
   }
 
   try {
@@ -994,6 +1051,35 @@ export function bindCanvasHandlers(
         renderLayers();
         canvas.renderCanvasSelection();
         renderProperties();
+      },
+      onSectionKeyDown: (event, sectionView) => {
+        const section = liveCanvasSection(sectionView);
+        if (event.target !== event.currentTarget) return;
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          state.selectedId = null;
+          state.selectedSectionId = section.id;
+          renderLayers();
+          canvas.renderCanvasSelection();
+          renderProperties();
+          return;
+        }
+        if (event.key === "Escape") {
+          if (!state.selectedId && !state.selectedSectionId) return;
+          event.preventDefault();
+          clearCanvasSelection();
+          return;
+        }
+        if (!isSectionMoveKey(event.key)) return;
+        event.preventDefault();
+        const target = sectionMoveTarget(
+          state.sections.map((item) => ({ blockCount: item.children.length })),
+          state.sections.findIndex((item) => item.id === section.id),
+          event.key,
+        );
+        if (!target) return;
+        if (target.kind === "block") selectBlockAt(target.index);
+        else selectSectionAt(target.index);
       },
       onBlockKeyDown: (event, sectionView, blockView, preview) => {
         const section = liveCanvasSection(sectionView);
@@ -1130,7 +1216,9 @@ export function bindCanvasHandlers(
         // hover in this or another section.
         const body = event.currentTarget as HTMLElement;
         const blockShells = Array.from(
-          body.querySelectorAll<HTMLElement>(":scope > .block"),
+          body.querySelectorAll<HTMLElement>(
+            ":scope > .canvas-block-slot > .block",
+          ),
         );
         if (blockShells.length === 0) {
           canvas.setDropIndex(0);

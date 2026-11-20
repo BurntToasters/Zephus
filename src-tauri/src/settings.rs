@@ -1,6 +1,8 @@
 //! Minimal persisted settings for shell concerns (theme, update channel).
 
-use crate::constants::{allowed, ALLOWED_THEMES, ALLOWED_UPDATE_CHANNELS, CURRENT_SETTINGS_VERSION};
+use crate::constants::{
+    allowed, ALLOWED_THEMES, ALLOWED_UPDATE_CHANNELS, CURRENT_SETTINGS_VERSION,
+};
 use crate::types::{Settings, Theme, UpdateChannel};
 use serde_json::{Map, Value};
 use std::sync::Mutex;
@@ -54,12 +56,16 @@ fn load_unlocked() -> Settings {
 }
 
 pub fn load() -> Settings {
-    let _guard = SETTINGS_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _guard = SETTINGS_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     load_unlocked()
 }
 
 pub fn save_patch(patch: &Map<String, Value>) -> Result<Settings, String> {
-    let _guard = SETTINGS_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _guard = SETTINGS_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let mut settings = load_unlocked();
     if let Some(Value::String(theme)) = patch.get("theme") {
         if let Some(parsed) = Theme::parse(theme) {

@@ -80,6 +80,7 @@ function makeDeps(
       markPageDirty(state, dirty);
     }),
     scheduleDraftWrite: vi.fn(),
+    siteDraftContent: () => JSON.stringify(state.siteDocument ?? {}),
     renderDirtyIndicators: vi.fn(),
     reloadPages: vi.fn(async () => undefined),
     persistPendingSiteDocument,

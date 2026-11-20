@@ -1,3 +1,5 @@
+import { includeInModalTabOrder } from "./modalFocus";
+
 export interface ModalAction {
   label: string;
   kind?: "primary" | "danger" | "ghost";
@@ -55,11 +57,7 @@ export function createModalController(refreshIcons: () => void) {
       shell.querySelectorAll<HTMLElement>(
         'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
       ),
-    ).filter(
-      (el) =>
-        !el.hasAttribute("disabled") &&
-        (el.offsetParent !== null || getComputedStyle(el).position === "fixed"),
-    );
+    ).filter((el) => includeInModalTabOrder(el));
   }
 
   function isFocusableElement(el: HTMLElement): boolean {

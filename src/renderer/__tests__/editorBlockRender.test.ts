@@ -23,7 +23,8 @@ describe("sanitizeHtmlForCanvas", () => {
     );
     expect(out).not.toContain("onerror");
     expect(out).not.toContain("onclick");
-    expect(out).toContain('src="/a.png"');
+    expect(out).toContain('data-asset-src="/a.png"');
+    expect(out).not.toMatch(/(^|\s)src="\/a\.png"/);
   });
 
   it("strips srcdoc and formaction", () => {
@@ -67,16 +68,18 @@ describe("sanitizeHtmlForCanvas", () => {
     );
     expect(out).not.toContain("<base");
     expect(out).not.toContain("poster");
-    // The mixed srcset keeps its safe entry; the all-dangerous one is dropped.
-    expect(out).toContain('srcset="/a.png 1x"');
+    // Srcset entries are separate fetches. The canvas hydrates src only.
+    expect(out).not.toContain("srcset");
+    expect(out).toContain('data-asset-src="/ok.png"');
     expect(out).not.toContain("script:x");
   });
 
-  it("keeps safe srcset intact", () => {
+  it("does not copy srcset onto the canvas", () => {
     const out = sanitizeHtmlForCanvas(
       '<img srcset="/a.png 1x, /b.png 2x" src="/a.png">',
     );
-    expect(out).toContain('srcset="/a.png 1x, /b.png 2x"');
+    expect(out).not.toContain("srcset");
+    expect(out).toContain('data-asset-src="/a.png"');
   });
 
   it("blocks javascript: when a C0 control leads the scheme", () => {
@@ -92,7 +95,8 @@ describe("sanitizeHtmlForCanvas", () => {
       '<a href="/ab\u0001out">About</a><img src="/assets/\u0002x.png">',
     );
     expect(out).toContain('href="/about"');
-    expect(out).toContain('src="/assets/x.png"');
+    expect(out).toContain('data-asset-src="/assets/x.png"');
+    expect(out).not.toMatch(/(^|\s)src="\/assets\/x\.png"/);
   });
 
   it("sanitizes nested template contents", () => {
@@ -102,7 +106,7 @@ describe("sanitizeHtmlForCanvas", () => {
     expect(out).not.toContain("<iframe");
     expect(out).not.toContain("onerror");
     expect(out).not.toContain("<style");
-    expect(out).toContain('src="/a.png"');
+    expect(out).toContain('data-asset-src="/a.png"');
   });
 
   it("sanitizes templates nested inside templates", () => {
@@ -118,17 +122,19 @@ describe("sanitizeHtmlForCanvas", () => {
         "java" +
         'script:alert(1)">',
     );
-    expect(out).toContain('background="/ok.png"');
+    expect(out).not.toContain("background=");
     expect(out).not.toContain("java" + "script:");
-    expect(out.match(/background=/g)?.length).toBe(1);
   });
 
   it("keeps safe content intact", () => {
     const out = sanitizeHtmlForCanvas(
       '<a href="/about">About</a><img src="/assets/x.png" alt="X"><strong>bold</strong>',
     );
-    expect(out).toContain('<a href="/about">About</a>');
-    expect(out).toContain('src="/assets/x.png"');
+    expect(out).toContain('href="/about"');
+    expect(out).toContain("inert");
+    expect(out).toContain(">About</a>");
+    expect(out).toContain('data-asset-src="/assets/x.png"');
+    expect(out).not.toMatch(/(^|\s)src="\/assets\/x\.png"/);
     expect(out).toContain("<strong>bold</strong>");
   });
 });

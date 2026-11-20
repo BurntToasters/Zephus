@@ -52,6 +52,10 @@ describe("IPC bridge sync", () => {
     const preload = [
       fs.readFileSync(path.join(__dirname, "..", "preload.ts"), "utf8"),
       fs.readFileSync(path.join(__dirname, "..", "zephusApi.ts"), "utf8"),
+      fs.readFileSync(
+        path.join(__dirname, "..", "..", "renderer", "tauriPreload.ts"),
+        "utf8",
+      ),
     ].join("\n");
     const used = new Set(channelNamesFromSource(preload));
     const missing = channelsFromIpcFile().filter((name) => !used.has(name));
@@ -62,6 +66,10 @@ describe("IPC bridge sync", () => {
     const preload = [
       fs.readFileSync(path.join(__dirname, "..", "preload.ts"), "utf8"),
       fs.readFileSync(path.join(__dirname, "..", "zephusApi.ts"), "utf8"),
+      fs.readFileSync(
+        path.join(__dirname, "..", "..", "renderer", "tauriPreload.ts"),
+        "utf8",
+      ),
     ].join("\n");
     const dts = fs.readFileSync(
       path.join(__dirname, "..", "..", "renderer", "zephus.d.ts"),

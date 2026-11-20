@@ -1,5 +1,6 @@
 import { render } from "solid-js/web";
 import { For, Show, createEffect, createSignal } from "solid-js";
+import { onRecentKeyDown, recentStop, recentTabStop } from "./recentKeyboard";
 
 export interface RecentProjectEntry {
   path: string;
@@ -22,6 +23,10 @@ export interface RecentProjectsHandlers {
 const [recentProjects, setRecentProjects] = createSignal<RecentProjectsData>({
   entries: [],
 });
+const [tabStop, setTabStop] = createSignal<{
+  path: string;
+  kind: "open" | "remove";
+} | null>(null);
 let handlers: RecentProjectsHandlers | null = null;
 
 function runIconRefresh() {
@@ -38,12 +43,33 @@ export function RecentProjectsPanel() {
     runIconRefresh();
   });
 
+  const stop = () => {
+    const active = tabStop();
+    return recentStop(
+      recentProjects().entries,
+      active?.path ?? null,
+      active?.kind ?? null,
+    );
+  };
+
+  const rememberStop = (event: KeyboardEvent) => {
+    onRecentKeyDown(event);
+    const current = event.currentTarget;
+    if (!(current instanceof HTMLElement)) return;
+    const active = current.ownerDocument.activeElement;
+    if (!(active instanceof HTMLButtonElement)) return;
+    const path = active.dataset["recentPath"];
+    const kind = active.dataset["recentAction"];
+    if (!path || (kind !== "open" && kind !== "remove")) return;
+    setTabStop({ path, kind });
+  };
+
   return (
     <Show
       when={recentProjects().entries.length > 0}
       fallback={
         <div class="welcome-card">
-          <div class="welcome-icon-pill">
+          <div class="welcome-icon-pill" aria-hidden="true">
             <i data-lucide="layout"></i>
           </div>
           <h3 class="welcome-title">Welcome to Zephus</h3>
@@ -71,7 +97,19 @@ export function RecentProjectsPanel() {
             <button
               class="recent-project"
               type="button"
-              onClick={() => handlers?.onOpenProject(entry.path)}
+              data-recent-path={entry.path}
+              data-recent-action="open"
+              tabIndex={recentTabStop(
+                entry.path,
+                "open",
+                stop()?.path ?? null,
+                stop()?.kind ?? null,
+              )}
+              onKeyDown={rememberStop}
+              onClick={() => {
+                setTabStop({ path: entry.path, kind: "open" });
+                handlers?.onOpenProject(entry.path);
+              }}
             >
               <div class="recent-project-head">
                 <span class="proj-name">{entry.name}</span>
@@ -88,9 +126,19 @@ export function RecentProjectsPanel() {
               class="recent-remove"
               title="Remove from recent projects"
               aria-label={`Remove ${entry.name} from recent projects`}
+              data-recent-path={entry.path}
+              data-recent-action="remove"
+              tabIndex={recentTabStop(
+                entry.path,
+                "remove",
+                stop()?.path ?? null,
+                stop()?.kind ?? null,
+              )}
+              onKeyDown={rememberStop}
               onClick={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
+                setTabStop({ path: entry.path, kind: "remove" });
                 void handlers?.onRemoveProject(entry.path);
               }}
             >

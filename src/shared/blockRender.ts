@@ -20,6 +20,7 @@ import {
   type StyleViewport,
 } from "./renderHelpers";
 import type { BlockNode, BlockStyle, SectionNode } from "../main/types";
+import { isProjectAssetPath } from "./assetPreview";
 
 export interface RenderBlockInput extends Omit<BlockMetadataSource, "style"> {
   raw?: string;
@@ -359,14 +360,19 @@ export function renderBlockHtml(
       return `<p${common}>${richTextToHtml(block.props["text"] ?? "")}</p>`;
     case "image": {
       const src = block.props["src"] ?? "";
-      if (!src && forCanvas) {
-        return `<figure${common}><div class="canvas-empty">Missing image. Choose one in Properties.</div></figure>`;
+      if (forCanvas && !isProjectAssetPath(src)) {
+        // img-src is 'self' and data:, so a remote or relative URL cannot
+        // paint here. Project files (a leading /) hydrate to a data URL.
+        return `<figure${common}><div class="canvas-empty">${
+          src.trim()
+            ? "Image loads in the site preview."
+            : "Missing image. Choose one in Properties."
+        }</div></figure>`;
       }
-      const isProjectAsset = forCanvas && src.startsWith("/");
       // A project asset hydrates to a data URL asynchronously; an empty src
       // would fire a request for the app's own document (broken-icon flash)
       // until then, so start with a transparent placeholder instead.
-      const srcAttr = isProjectAsset
+      const srcAttr = forCanvas
         ? ` src="${CANVAS_ASSET_PLACEHOLDER_SRC}" data-asset-src="${escapeAttr(src)}"`
         : ` src="${escapeAttr(safeUrl(src))}"`;
       return `<img${common}${srcAttr} alt="${escapeAttr(block.props["alt"] ?? "")}" />`;
@@ -420,8 +426,10 @@ export function renderBlockHtml(
       }
       return `<section${galleryCommon}>${images
         .map((src, index) => {
-          const isProjectAsset = forCanvas && src.startsWith("/");
-          const srcAttr = isProjectAsset
+          if (forCanvas && !isProjectAssetPath(src)) {
+            return `<div class="canvas-empty">Image loads in the site preview.</div>`;
+          }
+          const srcAttr = forCanvas
             ? ` src="${CANVAS_ASSET_PLACEHOLDER_SRC}" data-asset-src="${escapeAttr(src)}"`
             : ` src="${escapeAttr(safeUrl(src))}"`;
           return `<img${srcAttr} alt="${escapeAttr(
@@ -444,17 +452,32 @@ export function renderBlockHtml(
         block.props["items"] ?? "",
       )}</${tag}>`;
     }
-    case "embed":
-      if (!block.props["src"] && forCanvas) {
-        return `<section${common}><div class="canvas-empty">Missing embed URL.</div></section>`;
+    case "embed": {
+      const rawSrc = block.props["src"] ?? "";
+      // The editor allows frames only for the app and loopback theme
+      // previews. A public embed iframe is a blank box there, so the canvas
+      // names it and the preview window is where it loads.
+      if (forCanvas) {
+        return `<section${common}><div class="canvas-empty">${
+          rawSrc.trim()
+            ? "Embed loads in the site preview."
+            : "Missing embed URL."
+        }</div></section>`;
       }
-      return `<iframe${common} src="${escapeAttr(safeUrl(block.props["src"] ?? ""))}" title="${escapeAttr(block.props["title"] ?? "Embed")}" loading="lazy"></iframe>`;
+      return `<iframe${common} src="${escapeAttr(safeUrl(rawSrc))}" title="${escapeAttr(block.props["title"] ?? "Embed")}" loading="lazy"></iframe>`;
+    }
     case "video": {
-      const src = block.props["src"] ?? "";
-      if (!src && forCanvas) {
-        return `<figure${common}><div class="canvas-empty">Missing video URL. Set it in Properties.</div></figure>`;
+      const rawSrc = block.props["src"] ?? "";
+      // media-src falls back to default-src 'self', so a remote or project
+      // file never plays inside the editor document.
+      if (forCanvas) {
+        return `<figure${common}><div class="canvas-empty">${
+          rawSrc.trim()
+            ? "Video plays in the site preview."
+            : "Missing video URL. Set it in Properties."
+        }</div></figure>`;
       }
-      return `<video${common} controls preload="metadata" src="${escapeAttr(safeUrl(src))}" title="${escapeAttr(block.props["title"] ?? "Video")}"></video>`;
+      return `<video${common} controls preload="metadata" src="${escapeAttr(safeUrl(rawSrc))}" title="${escapeAttr(block.props["title"] ?? "Video")}"></video>`;
     }
     case "html": {
       if (forCanvas && options.sanitizeHtmlForCanvas) {
@@ -568,15 +591,17 @@ export function renderBlockHtml(
             .filter(Boolean)
             .join("");
           const rawPostImage = post.image ? safeUrl(post.image) : "";
-          const postImgSrcAttr =
-            forCanvas && rawPostImage.startsWith("/")
-              ? `src="${CANVAS_ASSET_PLACEHOLDER_SRC}" data-asset-src="${escapeAttr(
-                  rawPostImage,
-                )}"`
-              : `src="${escapeAttr(rawPostImage)}"`;
           const image =
             showImage && rawPostImage
-              ? `<img class="zephus-postlist-image" ${postImgSrcAttr} alt="" loading="lazy" decoding="async" />`
+              ? forCanvas && !isProjectAssetPath(rawPostImage)
+                ? `<div class="canvas-empty">Image loads in the site preview.</div>`
+                : `<img class="zephus-postlist-image" ${
+                    forCanvas
+                      ? `src="${CANVAS_ASSET_PLACEHOLDER_SRC}" data-asset-src="${escapeAttr(
+                          rawPostImage,
+                        )}"`
+                      : `src="${escapeAttr(rawPostImage)}"`
+                  } alt="" loading="lazy" decoding="async" />`
               : "";
           const excerpt =
             showExcerpt && post.description

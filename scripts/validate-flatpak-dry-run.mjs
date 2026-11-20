@@ -47,7 +47,7 @@ if (fs.existsSync(sourceExporter)) {
 const manifest = path.join(root, "run.rosie.zephus.yml");
 if (fs.existsSync(manifest)) {
   const yaml = fs.readFileSync(manifest, "utf8");
-  if (!yaml.includes("runtime-version: '50'")) {
+  if (!/runtime-version:\s*['"]50['"]/.test(yaml)) {
     fail("run.rosie.zephus.yml must use org.gnome runtime 50");
   }
   if (!yaml.includes("app-id: run.rosie.zephus")) {
@@ -73,6 +73,14 @@ if (fs.existsSync(manifest)) {
   }
   if (!yaml.includes('install -Dm755 "$node_bin" /app/bin/node')) {
     fail("Flatpak must install Node on PATH for the editor backend");
+  }
+  if (
+    !yaml.includes("dest=/app/lib/Zephus") ||
+    !yaml.includes("node scripts/stage-backend-resources.mjs") ||
+    !yaml.includes('test -f "$dest/dist/main/main.js"') ||
+    !yaml.includes('test -f "$dest/node_modules/entities/package.json"')
+  ) {
+    fail("Flatpak must install the Node backend under /app/lib/Zephus");
   }
   if (yaml.includes("electron") || yaml.includes("ZEPHUS_LINUX_UNPACKED_DIR")) {
     fail("Flatpak must not package the Electron linux-unpacked tree");

@@ -29,7 +29,7 @@ const [gitPanelEditorDirty, setGitPanelEditorDirty] = createSignal(false);
 
 let gitPanelHandlers: {
   onRefresh: () => void;
-  onCommit: (message: string, paths?: string[]) => void | Promise<void>;
+  onCommit: (message: string, paths?: string[]) => boolean | Promise<boolean>;
   onPush: () => void | Promise<void>;
   onPull: () => void | Promise<void>;
   onInitRepo: () => void | Promise<void>;
@@ -199,8 +199,11 @@ export function GitPanelContent() {
     const commitAll = allPaths.length > 0 && paths.length === allPaths.length;
     setCommitting(true);
     try {
-      await gitPanelHandlers.onCommit(message, commitAll ? undefined : paths);
-      setCommitMessage("");
+      const committed = await gitPanelHandlers.onCommit(
+        message,
+        commitAll ? undefined : paths,
+      );
+      if (committed) setCommitMessage("");
     } finally {
       setCommitting(false);
     }
@@ -488,7 +491,7 @@ export function updateGitStatus(status: GitStatusData | null): void {
 
 export function registerGitPanelHandlers(handlers: {
   onRefresh: () => void;
-  onCommit: (message: string, paths?: string[]) => void | Promise<void>;
+  onCommit: (message: string, paths?: string[]) => boolean | Promise<boolean>;
   onPush: () => void | Promise<void>;
   onPull: () => void | Promise<void>;
   onInitRepo: () => void | Promise<void>;

@@ -1,7 +1,10 @@
 /** Site-level editing modals: the Site Shell editor and the Design System editor. */
 
 import { renderDesignSystemModalBody } from "./DesignSystemModal";
+import { focusModalField } from "./modalFocus";
 import { renderSiteShellModalBody } from "./MiscModals";
+import { linkPickerProblem } from "./linkPickerCommit";
+import { designCssValue } from "../shared/renderHelpers";
 import { cloneSiteDocument, effectiveSiteDocument } from "./editorSession";
 import type { SiteDocument } from "../main/types";
 
@@ -75,6 +78,8 @@ export function createSiteEditorActions(deps: SiteEditorDeps) {
       announcementVisible: nextSite.shell.announcementVisible,
       ctaLabel: nextSite.shell.navCtaLabel,
       ctaHref: nextSite.shell.navCtaHref,
+      ctaError: "" as string,
+      faviconError: "" as string,
       footerHtml: nextSite.shell.footerHtml,
       customHeadHtml: nextSite.shell.customHeadHtml,
       siteUrl: nextSite.siteUrl ?? "",
@@ -93,6 +98,8 @@ export function createSiteEditorActions(deps: SiteEditorDeps) {
         announcementVisible: shellState.announcementVisible,
         ctaLabel: shellState.ctaLabel,
         ctaHref: shellState.ctaHref,
+        ctaError: shellState.ctaError,
+        faviconError: shellState.faviconError,
         footerHtml: shellState.footerHtml,
         customHeadHtml: shellState.customHeadHtml,
         onSiteTitleChange: (value) => {
@@ -112,11 +119,15 @@ export function createSiteEditorActions(deps: SiteEditorDeps) {
         },
         onCtaHrefChange: (value) => {
           shellState.ctaHref = value;
+          if (!shellState.ctaError) return;
+          shellState.ctaError = "";
+          wrap.querySelector(".shell-cta-error")?.remove();
         },
         onPickCtaHref: () => {
           openLinkPicker(shellState.ctaHref, (href) => {
             shellState.ctaHref = href;
             mountShellModal();
+            focusModalField(wrap, ".shell-cta-href");
           });
         },
         onFooterHtmlChange: (value) => {
@@ -137,6 +148,9 @@ export function createSiteEditorActions(deps: SiteEditorDeps) {
         },
         onFaviconPathChange: (value) => {
           shellState.faviconPath = value;
+          if (!shellState.faviconError) return;
+          shellState.faviconError = "";
+          wrap.querySelector(".shell-favicon-error")?.remove();
         },
         onPickFavicon: () => {
           openAssetBrowser({
@@ -145,6 +159,7 @@ export function createSiteEditorActions(deps: SiteEditorDeps) {
             onSelect: (webPath) => {
               shellState.faviconPath = webPath;
               mountShellModal();
+              focusModalField(wrap, ".shell-favicon");
             },
           });
         },
@@ -162,6 +177,24 @@ export function createSiteEditorActions(deps: SiteEditorDeps) {
           label: "Stage Shell",
           kind: "primary",
           onClick: async () => {
+            const ctaProblem = linkPickerProblem(shellState.ctaHref.trim());
+            if (ctaProblem) {
+              setStatus(ctaProblem);
+              shellState.ctaError = ctaProblem;
+              mountShellModal();
+              focusModalField(wrap, ".shell-cta-href");
+              return;
+            }
+            const faviconProblem = linkPickerProblem(
+              shellState.faviconPath.trim(),
+            );
+            if (faviconProblem) {
+              setStatus(faviconProblem);
+              shellState.faviconError = faviconProblem;
+              mountShellModal();
+              focusModalField(wrap, ".shell-favicon");
+              return;
+            }
             const newFooter = shellState.footerHtml.trim();
             const newHead = shellState.customHeadHtml.trim();
             const hadFooter = Boolean(nextSite.shell.footerHtml.trim());
@@ -197,6 +230,7 @@ export function createSiteEditorActions(deps: SiteEditorDeps) {
               shellState.siteUrlError =
                 "Site URL must be a full http(s) address, for example https://example.com.";
               mountShellModal();
+              focusModalField(wrap, ".shell-site-url");
               return;
             }
             nextSite.siteUrl = normalizedSiteUrl;
@@ -246,6 +280,7 @@ export function createSiteEditorActions(deps: SiteEditorDeps) {
     ) as SiteDocument;
     const designState = {
       accent: nextSite.design.accent,
+      accentError: "",
       background: nextSite.design.background,
       foreground: nextSite.design.foreground,
       surface: nextSite.design.surface,
@@ -258,49 +293,73 @@ export function createSiteEditorActions(deps: SiteEditorDeps) {
       radius: nextSite.design.radius,
       containerWidth: nextSite.design.containerWidth,
       shadow: nextSite.design.shadow,
+      stylesheetError: null as null | { field: string; message: string },
     };
 
     const wrap = document.createElement("div");
-    const designModalDispose = renderDesignSystemModalBody(wrap, {
-      accent: designState.accent,
-      background: designState.background,
-      foreground: designState.foreground,
-      surface: designState.surface,
-      bodyFont: designState.bodyFont,
-      headingFont: designState.headingFont,
-      radius: designState.radius,
-      containerWidth: designState.containerWidth,
-      shadow: designState.shadow,
-      onAccentChange: (value) => {
-        designState.accent = value;
-      },
-      onBackgroundChange: (value) => {
-        designState.background = value;
-      },
-      onForegroundChange: (value) => {
-        designState.foreground = value;
-      },
-      onSurfaceChange: (value) => {
-        designState.surface = value;
-      },
-      onBodyFontChange: (stack, google) => {
-        designState.bodyFont = stack;
-        designState.bodyFontGoogle = google;
-      },
-      onHeadingFontChange: (stack, google) => {
-        designState.headingFont = stack;
-        designState.headingFontGoogle = google;
-      },
-      onRadiusChange: (value) => {
-        designState.radius = value;
-      },
-      onContainerWidthChange: (value) => {
-        designState.containerWidth = value;
-      },
-      onShadowChange: (value) => {
-        designState.shadow = value;
-      },
-    });
+    let designModalDispose: (() => void) | null = null;
+    const clearStylesheetError = (field: string, className: string): void => {
+      if (designState.stylesheetError?.field !== field) return;
+      designState.stylesheetError = null;
+      wrap.querySelector(`.${className}`)?.remove();
+    };
+    const mountDesignModal = () => {
+      designModalDispose?.();
+      designModalDispose = renderDesignSystemModalBody(wrap, {
+        accent: designState.accent,
+        accentError: designState.accentError,
+        background: designState.background,
+        foreground: designState.foreground,
+        surface: designState.surface,
+        bodyFont: designState.bodyFont,
+        headingFont: designState.headingFont,
+        radius: designState.radius,
+        containerWidth: designState.containerWidth,
+        shadow: designState.shadow,
+        onAccentChange: (value) => {
+          designState.accent = value;
+          if (!designState.accentError) return;
+          designState.accentError = "";
+          wrap.querySelector(".design-accent-error")?.remove();
+        },
+        onBackgroundChange: (value) => {
+          designState.background = value;
+          clearStylesheetError("background", "design-background-error");
+        },
+        onForegroundChange: (value) => {
+          designState.foreground = value;
+          clearStylesheetError("foreground", "design-foreground-error");
+        },
+        onSurfaceChange: (value) => {
+          designState.surface = value;
+          clearStylesheetError("surface", "design-surface-error");
+        },
+        onBodyFontChange: (stack, google) => {
+          designState.bodyFont = stack;
+          designState.bodyFontGoogle = google;
+          clearStylesheetError("bodyFont", "design-body-font-error");
+        },
+        onHeadingFontChange: (stack, google) => {
+          designState.headingFont = stack;
+          designState.headingFontGoogle = google;
+          clearStylesheetError("headingFont", "design-heading-font-error");
+        },
+        onRadiusChange: (value) => {
+          designState.radius = value;
+          clearStylesheetError("radius", "design-radius-error");
+        },
+        onContainerWidthChange: (value) => {
+          designState.containerWidth = value;
+          clearStylesheetError("containerWidth", "design-container-error");
+        },
+        onShadowChange: (value) => {
+          designState.shadow = value;
+        },
+        stylesheetError: designState.stylesheetError,
+      });
+      registerCleanup(designModalDispose);
+    };
+    mountDesignModal();
 
     showModalNode("Design System", wrap, [
       { label: "Cancel", kind: "ghost", onClick: closeModal },
@@ -312,11 +371,46 @@ export function createSiteEditorActions(deps: SiteEditorDeps) {
           // var(--accent) resolves to nothing and silently strips the brand
           // color from every link/CTA/announcement.
           if (/var\(\s*--accent\s*\)/i.test(designState.accent.trim())) {
-            setStatus(
-              "Accent color cannot reference itself (var(--accent)). Pick a concrete color.",
-            );
+            const message =
+              "Accent color cannot reference itself (var(--accent)). Pick a concrete color.";
+            setStatus(message);
+            designState.accentError = message;
+            mountDesignModal();
+            focusModalField(wrap, ".design-accent");
             return;
           }
+          const stylesheetMessage =
+            "That value cannot be used in the site stylesheet.";
+          const tokenFields = [
+            ["accent", designState.accent, ".design-accent"],
+            ["background", designState.background, ".design-background"],
+            ["foreground", designState.foreground, ".design-foreground"],
+            ["surface", designState.surface, ".design-surface"],
+            ["bodyFont", designState.bodyFont, ".design-body-font"],
+            ["headingFont", designState.headingFont, ".design-heading-font"],
+            ["radius", designState.radius, ".design-radius"],
+            ["containerWidth", designState.containerWidth, ".design-container"],
+          ] as const;
+          for (const [field, value, selector] of tokenFields) {
+            const trimmed = value.trim();
+            if (!trimmed || designCssValue(trimmed) === trimmed) continue;
+            setStatus(stylesheetMessage);
+            if (field === "accent") {
+              designState.accentError = stylesheetMessage;
+              designState.stylesheetError = null;
+            } else {
+              designState.accentError = "";
+              designState.stylesheetError = {
+                field,
+                message: stylesheetMessage,
+              };
+            }
+            mountDesignModal();
+            focusModalField(wrap, selector);
+            return;
+          }
+          designState.accentError = "";
+          designState.stylesheetError = null;
           nextSite.shell.layoutMode = "managed";
           nextSite.design.accent = designState.accent.trim();
           nextSite.design.background = designState.background.trim();

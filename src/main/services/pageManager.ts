@@ -43,9 +43,20 @@ function pinnedPagesDir(projectPath: string, pagesDir: string): string {
 function pageInsidePagesDir(page: string, pagesDir: string): boolean {
   const normPage = page.replace(/\\/g, "/").replace(/^\/+/, "");
   const normDir = pagesDir.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+  // Collapse `src/pages/../layouts/BaseLayout.astro` before the prefix test.
+  // A lexical `startsWith("src/pages/")` treats that path as a page.
+  const normalized = path.posix.normalize(normPage);
+  if (
+    normalized === ".." ||
+    normalized.startsWith("../") ||
+    normalized.startsWith("/")
+  ) {
+    return false;
+  }
   const prefix = normDir ? `${normDir}/` : "";
   return (
-    normPage.startsWith(prefix) && /\.(astro|md|mdx|html)$/i.test(normPage)
+    (!prefix || normalized.startsWith(prefix)) &&
+    /\.(astro|md|mdx|html)$/i.test(normalized)
   );
 }
 

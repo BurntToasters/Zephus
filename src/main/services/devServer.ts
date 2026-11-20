@@ -24,6 +24,23 @@ function stripAnsi(text: string): string {
   return text.replace(ANSI_PATTERN, "");
 }
 
+/** A preview URL must be the dev server itself, not userinfo that retargets the port. */
+function previewUrlFromMatch(value: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return null;
+  }
+  if (url.username !== "" || url.password !== "") return null;
+  const host = url.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  if (host !== "localhost" && host !== "127.0.0.1" && host !== "::1") {
+    return null;
+  }
+  if (url.port === "") return null;
+  return value;
+}
+
 /** Incremental URL finder: URLs (and ANSI sequences) can be split across stdout chunk boundaries, so the tail of each… */
 export class DevServerUrlScanner {
   private buffer = "";
@@ -36,23 +53,31 @@ export class DevServerUrlScanner {
   /** Feeds a raw chunk; returns the first server URL seen, or null. */
   push(chunk: string): string | null {
     this.buffer = (this.buffer + stripAnsi(chunk)).slice(-this.maxBuffer);
-    const match = this.buffer.match(URL_PATTERN);
-    if (!match || match.index === undefined) return null;
-    // A URL ending exactly at the buffer edge (no path separator) may be a
-    // truncated port/path split across chunks — wait for the next chunk to
-    // confirm before reporting it.
-    const after = this.buffer[match.index + match[0].length];
-    if (after === undefined && !match[0].endsWith("/")) return null;
-    return match[0];
+    const global = new RegExp(URL_PATTERN.source, "gi");
+    for (const match of this.buffer.matchAll(global)) {
+      if (match.index === undefined) continue;
+      // A URL ending exactly at the buffer edge (no path separator) may be a
+      // truncated port/path split across chunks — wait for the next chunk to
+      // confirm before reporting it.
+      const after = this.buffer[match.index + match[0].length];
+      if (after === undefined && !match[0].endsWith("/")) return null;
+      const accepted = previewUrlFromMatch(match[0]);
+      if (accepted) return accepted;
+    }
+    return null;
   }
 
-  /** The port of the most recent URL seen in the buffered output, if any. */
+  /** The port of the most recent accepted server URL, if any. */
   pendingPort(): number | null {
-    const global = new RegExp(URL_PATTERN.source, URL_PATTERN.flags + "g");
+    const global = new RegExp(URL_PATTERN.source, "gi");
     const matches = [...this.buffer.matchAll(global)];
-    const last = matches[matches.length - 1];
-    const port = last?.[0].match(/:(\d+)/)?.[1];
-    return port ? Number(port) : null;
+    for (let index = matches.length - 1; index >= 0; index -= 1) {
+      const accepted = previewUrlFromMatch(matches[index]?.[0] ?? "");
+      if (!accepted) continue;
+      const port = new URL(accepted).port;
+      return port ? Number(port) : null;
+    }
+    return null;
   }
 }
 

@@ -5,6 +5,7 @@
 // fully visually editable from the first open, with perfect round-trip.
 
 import { routeForSlug } from "../shared/pageIdentity";
+import { escapeHtml } from "../shared/renderHelpers";
 import {
   BlockNode,
   DesignTokenSet,
@@ -102,7 +103,7 @@ html { scroll-behavior: smooth; }
 body { margin: 0; line-height: 1.65; -webkit-font-smoothing: antialiased; }
 img { max-width: 100%; height: auto; display: block; border-radius: var(--zephus-radius, 12px); }
 video { max-width: 100%; display: block; border-radius: var(--zephus-radius, 12px); background: #000; }
-a { color: var(--accent); }
+a { color: var(--zephus-accent-ink, var(--accent)); }
 :where(a, button, summary, input, select, textarea, [tabindex]):focus-visible {
   outline: 3px solid var(--fg);
   outline-offset: 2px;
@@ -114,24 +115,24 @@ a { color: var(--accent); }
   z-index: 100;
   padding: 0.65rem 1rem;
   background: var(--accent);
-  color: #ffffff;
+  color: var(--zephus-on-accent, #ffffff);
   border-radius: 0 0 var(--zephus-radius, 12px) var(--zephus-radius, 12px);
   font-weight: 600;
   text-decoration: none;
 }
 .zephus-skip-link:focus-visible { top: 0; }
-.lead { font-size: 1.2rem; color: var(--muted); }
+.lead { font-size: 1.2rem; color: color-mix(in srgb, var(--zephus-foreground, var(--fg)) var(--zephus-lead-mix, 68%), transparent); }
 .button {
   display: inline-block;
   padding: 0.8rem 1.6rem;
   background: var(--accent);
-  color: #ffffff;
+  color: var(--zephus-on-accent, #ffffff);
   border-radius: 999px;
   text-decoration: none;
   font-weight: 600;
 }
-.button:hover { background: color-mix(in srgb, var(--accent) 86%, #000); }
-.button.secondary { background: transparent; color: var(--accent); border: 1.5px solid var(--border); }
+.button:hover { background: color-mix(in srgb, var(--accent) 86%, var(--zephus-accent-hover-mix, #000)); }
+.button.secondary { background: transparent; color: var(--zephus-accent-ink, var(--accent)); border: 1.5px solid var(--border); }
 .button.secondary:hover { background: transparent; border-color: var(--accent); }
 .zephus-column { padding: 0.5rem; }
 .zephus-column h3 { margin-top: 0; }
@@ -140,29 +141,29 @@ a { color: var(--accent); }
 .zephus-feature-icon { font-size: 2rem; line-height: 1; margin-bottom: 0.5rem; }
 .zephus-testimonial { margin: 1.5rem 0; padding: 1.5rem; background: var(--surface); border-radius: var(--zephus-radius, 12px); }
 .zephus-testimonial blockquote { margin: 0 0 0.75rem; font-size: 1.15rem; }
-.zephus-testimonial figcaption { color: var(--muted); }
+.zephus-testimonial figcaption { color: color-mix(in srgb, var(--zephus-foreground, var(--fg)) var(--zephus-caption-mix, 65%), transparent); }
 .zephus-accordion details { border-bottom: 1px solid var(--border); padding: 0.75rem 0; }
 .zephus-accordion summary { cursor: pointer; font-weight: 600; }
 .zephus-stats { display: flex; flex-wrap: wrap; gap: 2rem; }
 .zephus-stat { display: flex; flex-direction: column; }
-.zephus-stat-num { font-size: 2rem; font-weight: 800; color: var(--accent); }
-.zephus-stat-label { color: var(--muted); font-size: 0.9rem; }
+.zephus-stat-num { font-size: 2rem; font-weight: 800; color: var(--zephus-accent-ink, var(--accent)); }
+.zephus-stat-label { color: color-mix(in srgb, var(--zephus-foreground, var(--fg)) var(--zephus-caption-mix, 65%), transparent); font-size: 0.9rem; }
 .zephus-pricing { border: 1px solid var(--border); border-radius: var(--zephus-radius, 12px); padding: 1.5rem; }
 .zephus-pricing ul { padding-left: 1.1rem; }
 .zephus-price { margin: 0.5rem 0 1rem; }
 .zephus-price-amount { font-size: 2rem; font-weight: 800; }
-.zephus-price-period { color: var(--muted); }
+.zephus-price-period { color: color-mix(in srgb, var(--zephus-foreground, var(--fg)) var(--zephus-caption-mix, 65%), transparent); }
 .zephus-cta { text-align: center; padding: 2.5rem 1.5rem; background: var(--surface); border-radius: var(--zephus-radius, 12px); }
 .zephus-postlist { display: grid; gap: 1.5rem; }
 .zephus-postlist-item { display: grid; gap: 0.4rem; padding-bottom: 1.25rem; border-bottom: 1px solid color-mix(in srgb, var(--fg) 12%, transparent); }
 .zephus-postlist-item:last-child { border-bottom: 0; padding-bottom: 0; }
 .zephus-postlist-title { margin: 0; font-size: 1.35rem; }
 .zephus-postlist-title a { color: inherit; text-decoration: none; }
-.zephus-postlist-title a:hover { color: var(--accent); }
-.zephus-postlist-meta { display: flex; flex-wrap: wrap; gap: 0.75rem; font-size: 0.85rem; opacity: 0.72; }
+.zephus-postlist-title a:hover { color: var(--zephus-accent-ink, var(--accent)); }
+.zephus-postlist-meta { display: flex; flex-wrap: wrap; gap: 0.75rem; font-size: 0.85rem; color: color-mix(in srgb, var(--zephus-foreground, var(--fg)) var(--zephus-meta-mix, 72%), transparent); opacity: 1; }
 .zephus-postlist-excerpt { margin: 0; }
 .zephus-postlist-image { width: 100%; max-height: 220px; object-fit: cover; border-radius: var(--zephus-radius, 12px); }
-.zephus-postlist-empty { opacity: 0.72; font-style: italic; }
+.zephus-postlist-empty { color: color-mix(in srgb, var(--zephus-foreground, var(--fg)) var(--zephus-meta-mix, 72%), transparent); opacity: 1; font-style: italic; }
 .zephus-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 0.75rem; }
 .zephus-gallery img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--zephus-radius, 12px); }
 /* Auto-grid sibling feature/pricing blocks so repeated cards lay out in
@@ -540,7 +541,8 @@ function buildSiteDocument(
     navItems: navItemsFromPages(def.pages),
     navCtaLabel: def.shell.navCtaLabel ?? "",
     navCtaHref: def.shell.navCtaHref ?? "#",
-    footerHtml: def.shell.footerHtml ?? `<p>&copy; ${siteName}.</p>`,
+    footerHtml:
+      def.shell.footerHtml ?? `<p>&copy; ${escapeHtml(siteName)}.</p>`,
     customHeadHtml: "",
     customScriptsPath: "public/scripts/zephus-custom.js",
     customCssPath: "public/styles/zephus-custom.css",
@@ -915,7 +917,7 @@ function blogDef(siteName: string): ThemeDef {
     shell: {
       logoText: siteName,
       announcementText: "Welcome to the blog",
-      footerHtml: `<p>&copy; ${siteName}. Built with Zephus.</p>`,
+      footerHtml: `<p>&copy; ${escapeHtml(siteName)}. Built with Zephus.</p>`,
     },
     pages: [
       {

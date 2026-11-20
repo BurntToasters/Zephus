@@ -24,7 +24,18 @@ import { detectAstro, listPages } from "./project";
 import { readRepoSettings } from "./settings";
 import { readJsonSafe, writeFileAtomic } from "./fsSafe";
 import { markSelfWritten, pruneSelfWrittenMarkers } from "./watch";
-import { escapeAttr, escapeHtml, safeUrl } from "../../shared/renderHelpers";
+import {
+  accentHoverMix,
+  accentInk,
+  designCssValue,
+  headerText,
+  mutedForegroundPercent,
+  escapeAttr,
+  escapeHtml,
+  googleFontStylesheetUrl,
+  onAccentText,
+  safeUrl,
+} from "../../shared/renderHelpers";
 import { decodeHTML } from "entities";
 
 /** Escapes text for a quoted Astro attribute: HTML-escaping plus `{`/`}` as entities, because Astro evaluates `{...}`… */
@@ -225,7 +236,7 @@ function defaultShell(siteName: string, layoutPath: string): ShellConfig {
     navItems: [],
     navCtaLabel: "",
     navCtaHref: "#",
-    footerHtml: `<p>&copy; ${siteName}. Built with Zephus.</p>`,
+    footerHtml: `<p>&copy; ${escapeHtml(siteName)}. Built with Zephus.</p>`,
     customHeadHtml: "",
     customScriptsPath: "public/scripts/zephus-custom.js",
     customCssPath: "public/styles/zephus-custom.css",
@@ -234,20 +245,50 @@ function defaultShell(siteName: string, layoutPath: string): ShellConfig {
 
 const MANAGED_STYLE_PATH = path.join("public", "styles", "zephus-managed.css");
 
-function managedAssetWebPath(relativePath: string): string {
-  const normalized = relativePath.split(path.sep).join("/").replace(/^\/+/, "");
-  const publicPrefix = "public/";
-  return `/${normalized.startsWith(publicPrefix) ? normalized.slice(publicPrefix.length) : normalized}`;
-}
-
 function resolveManagedInclude(
   projectPath: string,
   relativePath: string,
 ): string | null {
   if (!relativePath.trim()) return null;
-  const target = safeResolve(projectPath, relativePath);
+  // Resolve and collapse `..` before building the URL. The old web path kept
+  // the caller's string, so `public/scripts/../../outside.js` became a script
+  // URL that left the public directory.
+  let target: string;
+  try {
+    target = safeResolve(projectPath, relativePath);
+  } catch {
+    return null;
+  }
   if (!fs.existsSync(target)) return null;
-  return managedAssetWebPath(relativePath);
+  try {
+    if (!fs.statSync(target).isFile()) return null;
+  } catch {
+    return null;
+  }
+  const normalized = path
+    .relative(path.resolve(projectPath), target)
+    .split(path.sep)
+    .join("/");
+  const publicDir = detectAstro(projectPath)
+    .publicDir.replace(/\\/g, "/")
+    .replace(/^\/+|\/+$/g, "");
+  if (
+    !publicDir ||
+    normalized === ".." ||
+    normalized.startsWith("../") ||
+    normalized.split("/").includes("..") ||
+    !normalized.startsWith(`${publicDir}/`)
+  ) {
+    return null;
+  }
+  try {
+    // A public path whose symlink lands outside public must not be linked.
+    const publicRoot = safeResolve(projectPath, publicDir);
+    assertRealpathInside(publicRoot, target);
+  } catch {
+    return null;
+  }
+  return `/${normalized.slice(publicDir.length + 1)}`;
 }
 
 function legacyLayoutBackupPath(layoutFile: string): string {
@@ -279,8 +320,15 @@ function renderManagedStyles(site: SiteDocument): string {
   const c = cssValue;
   return `:root {
   --zephus-accent: ${c(site.design.accent)};
+  --zephus-on-accent: ${onAccentText(site.design.accent)};
+  --zephus-accent-hover-mix: ${accentHoverMix(site.design.accent)};
+  --zephus-accent-ink: ${c(accentInk(site.design.accent, site.design.background, site.design.surface))};
+  --zephus-lead-mix: ${mutedForegroundPercent(site.design.foreground, site.design.background, site.design.surface, 68)}%;
+  --zephus-caption-mix: ${mutedForegroundPercent(site.design.foreground, site.design.background, site.design.surface, 65)}%;
+  --zephus-meta-mix: ${mutedForegroundPercent(site.design.foreground, site.design.background, site.design.surface, 72)}%;
   --zephus-background: ${c(site.design.background)};
   --zephus-foreground: ${c(site.design.foreground)};
+  --zephus-header-text: ${c(headerText(site.design.foreground, site.design.surface))};
   --zephus-surface: ${c(site.design.surface)};
   --zephus-radius: ${c(site.design.radius)};
   --zephus-shadow: ${managedShadowValue(site.design.shadow)};
@@ -310,7 +358,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 a {
-  color: var(--zephus-accent);
+  color: var(--zephus-accent-ink);
 }
 
 :where(a, button, summary, input, select, textarea, [tabindex]):focus-visible {
@@ -325,7 +373,7 @@ a {
   z-index: 100;
   padding: 0.65rem 1rem;
   background: var(--zephus-accent);
-  color: #ffffff;
+  color: var(--zephus-on-accent);
   border-radius: 0 0 var(--zephus-radius) var(--zephus-radius);
   font-weight: 600;
   text-decoration: none;
@@ -337,7 +385,7 @@ a {
 
 .zephus-announcement {
   background: var(--zephus-accent);
-  color: #ffffff;
+  color: var(--zephus-on-accent);
   text-align: center;
   padding: 0.7rem 1rem;
   font-size: 0.95rem;
@@ -358,7 +406,7 @@ a {
 }
 
 .zephus-shell-logo {
-  color: var(--zephus-foreground);
+  color: var(--zephus-header-text);
   text-decoration: none;
   font-family: var(--zephus-heading-font);
   font-weight: 700;
@@ -375,12 +423,12 @@ a {
 /* :where() keeps specificity at zero so a .button-classed nav link keeps
    its pill styling (the plain nav-link color must not override it). */
 .zephus-shell-nav a:where(:not(.button)) {
-  color: var(--zephus-foreground);
+  color: var(--zephus-header-text);
   text-decoration: none;
 }
 
 .zephus-shell-nav a:hover {
-  color: var(--zephus-accent);
+  color: var(--zephus-accent-ink);
 }
 
 .zephus-shell-cta {
@@ -390,7 +438,7 @@ a {
   padding: 0.7rem 1rem;
   border-radius: var(--zephus-radius);
   background: var(--zephus-accent);
-  color: #ffffff !important;
+  color: var(--zephus-on-accent) !important;
   text-decoration: none;
   box-shadow: var(--zephus-shadow);
 }
@@ -424,26 +472,26 @@ section[data-zephus-block="section"] {
 
 .lead {
   font-size: 1.2rem;
-  color: color-mix(in srgb, var(--zephus-foreground) 68%, transparent);
+  color: color-mix(in srgb, var(--zephus-foreground) var(--zephus-lead-mix), transparent);
 }
 
 .button {
   display: inline-block;
   padding: 0.8rem 1.6rem;
   background: var(--zephus-accent);
-  color: #ffffff;
+  color: var(--zephus-on-accent);
   border-radius: 999px;
   text-decoration: none;
   font-weight: 600;
 }
 
 .button:hover {
-  background: color-mix(in srgb, var(--zephus-accent) 86%, #000);
+  background: color-mix(in srgb, var(--zephus-accent) 86%, var(--zephus-accent-hover-mix));
 }
 
 .button.secondary {
   background: transparent;
-  color: var(--zephus-accent);
+  color: var(--zephus-accent-ink);
   border: 1.5px solid color-mix(in srgb, var(--zephus-foreground) 16%, transparent);
 }
 
@@ -483,7 +531,7 @@ section[data-zephus-block="section"] {
 }
 
 .zephus-testimonial figcaption {
-  color: color-mix(in srgb, var(--zephus-foreground) 65%, transparent);
+  color: color-mix(in srgb, var(--zephus-foreground) var(--zephus-caption-mix), transparent);
 }
 
 .zephus-accordion details {
@@ -510,11 +558,11 @@ section[data-zephus-block="section"] {
 .zephus-stat-num {
   font-size: 2rem;
   font-weight: 800;
-  color: var(--zephus-accent);
+  color: var(--zephus-accent-ink);
 }
 
 .zephus-stat-label {
-  color: color-mix(in srgb, var(--zephus-foreground) 65%, transparent);
+  color: color-mix(in srgb, var(--zephus-foreground) var(--zephus-caption-mix), transparent);
   font-size: 0.9rem;
 }
 
@@ -538,7 +586,7 @@ section[data-zephus-block="section"] {
 }
 
 .zephus-price-period {
-  color: color-mix(in srgb, var(--zephus-foreground) 65%, transparent);
+  color: color-mix(in srgb, var(--zephus-foreground) var(--zephus-caption-mix), transparent);
 }
 
 .zephus-cta {
@@ -576,7 +624,7 @@ section[data-zephus-block="section"] {
 }
 
 .zephus-postlist-title a:hover {
-  color: var(--zephus-accent);
+  color: var(--zephus-accent-ink);
 }
 
 .zephus-postlist-meta {
@@ -584,7 +632,8 @@ section[data-zephus-block="section"] {
   flex-wrap: wrap;
   gap: 0.75rem;
   font-size: 0.85rem;
-  opacity: 0.72;
+  color: color-mix(in srgb, var(--zephus-foreground) var(--zephus-meta-mix), transparent);
+  opacity: 1;
 }
 
 .zephus-postlist-excerpt {
@@ -599,7 +648,8 @@ section[data-zephus-block="section"] {
 }
 
 .zephus-postlist-empty {
-  opacity: 0.72;
+  color: color-mix(in srgb, var(--zephus-foreground) var(--zephus-meta-mix), transparent);
+  opacity: 1;
   font-style: italic;
 }
 
@@ -792,11 +842,10 @@ function renderManagedLayout(
   const customScriptTag = customScriptHref
     ? `\n    <script type="module" src="${escapeAttr(customScriptHref)}"></script>`
     : "";
-  const fontLinks = /^https?:\/\/fonts\.googleapis\.com\//i.test(
-    (site.design.fontImportUrl ?? "").trim(),
-  )
+  const fontHref = googleFontStylesheetUrl(site.design.fontImportUrl);
+  const fontLinks = fontHref
     ? `    <link rel="preconnect" href="https://fonts.googleapis.com" />\n    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />\n    <link rel="stylesheet" href="${escapeAttr(
-        site.design.fontImportUrl as string,
+        fontHref,
       )}" />\n`
     : "";
 
@@ -1755,18 +1804,11 @@ function defaultSectionNode(blocks: BlockNode[]): SectionNode {
 }
 
 /**
- * Sanitizes a value destined for a CSS declaration. Strips characters that
- * could break out of the declaration/rule (`;{}<>` and newlines) to prevent
- * CSS injection from design-token values in site.json. Caps length.
- * `:` and `@` are preserved: tokens like `var(--accent)` or `calc(...)`
- * are advertised as valid inputs and would be destroyed otherwise.
+ * Sanitizes a value destined for a CSS declaration. `designCssValue` strips
+ * breakout characters and `url()` / `@import`, and keeps `var()` and `calc()`.
  */
 function cssValue(value: string): string {
-  return (value ?? "")
-    .replace(/[;{}<>\\]/g, "")
-    .replace(/[\r\n]+/g, " ")
-    .trim()
-    .slice(0, 200);
+  return designCssValue(value);
 }
 
 export function renderBlockNode(
@@ -2237,7 +2279,8 @@ function defaultSiteDocument(
  * as `undefined` would emit `lang="undefined"` into the managed layout.
  */
 function withSiteDefaults(site: SiteDocument): SiteDocument {
-  const siteName = site.siteName || "Site";
+  const siteName =
+    typeof site.siteName === "string" && site.siteName ? site.siteName : "Site";
   // A site.json missing design/shell (ancient, hand-edited, or partially
   // corrupted shape) must not crash downstream code (syncSiteShellOutputs
   // reads site.shell.navItems, renderManagedStyles reads site.design.accent).
@@ -2251,7 +2294,11 @@ function withSiteDefaults(site: SiteDocument): SiteDocument {
       : defaultShell(siteName, "");
   // A hand-edited site.json with non-string nav fields used to THROW in
   // renderManagedLayout (label.trim()/safeUrl) and refuse the whole project.
-  if (Array.isArray(shell.navItems)) {
+  if (!Array.isArray(shell.navItems)) {
+    // A hand edit can store navItems as a string. Downstream render assumes
+    // an array, so a non-array is the same as no nav.
+    shell.navItems = [];
+  } else {
     const sanitized: NavItem[] = [];
     for (const item of shell.navItems) {
       if (typeof item !== "object" || item === null) continue;

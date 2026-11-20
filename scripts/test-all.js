@@ -368,11 +368,12 @@ function run() {
   // End-to-end gates that used to live OUTSIDE test:all — the renderer could
   // fail to boot, coverage could regress, and generated pages could break the
   // Astro build while this script exited 0 green.
-  // CI runs the packaged-app smoke and the coverage thresholds in their own
-  // jobs (see ci.yml). The matrix quality job passes --skip-smoke and
-  // --skip-coverage so it does not duplicate either run; the dedicated Ubuntu
-  // coverage job owns coverage because Windows-specific skipIf tests would
-  // otherwise lower the matrix's measured coverage. Local test:all keeps both.
+  // CI runs the packaged-app smoke in smoke-build and the coverage thresholds
+  // as their own Ubuntu quality-gate step (see ci.yml). That step passes
+  // --skip-smoke and --skip-coverage into test:all so it does not duplicate
+  // either run, then runs test:cov. Coverage stays on Ubuntu because the
+  // Windows skipIf tests would otherwise lower the measured coverage.
+  // Local test:all keeps both.
   // Headless Linux still needs xvfb.
   if (!process.argv.includes("--skip-smoke")) {
     const smokeCommand =
@@ -431,7 +432,7 @@ function run() {
     `${colors.bold}Smoke:${colors.reset}     ${results.smoke.status === "passed" ? colors.green + "✓ PASS" : results.smoke.status === "skipped" ? colors.yellow + "⏭ SKIPPED" : colors.red + "✗ FAIL"}${colors.reset}`,
     `${colors.bold}Astro build:${colors.reset} ${results.astroBuild.status === "passed" ? colors.green + "✓ PASS" : colors.red + "✗ FAIL"}${colors.reset}`,
     `${colors.bold}Coverage:${colors.reset}  ${results.coverage.status === "passed" ? colors.green + "✓ PASS" : results.coverage.status === "skipped" ? colors.yellow + "⏭ SKIPPED" : colors.red + "✗ FAIL"}${colors.reset}`,
-    `${colors.bold}E2E failures:${colors.reset} ${results.e2e.status === "passed" ? colors.green + "✓ PASS" : colors.red + "✗ FAIL"}${colors.reset}`,
+    `${colors.bold}E2E failures:${colors.reset} ${results.e2e.status === "passed" ? colors.green + "✓ PASS" : results.e2e.status === "skipped" ? colors.yellow + "⏭ SKIPPED" : colors.red + "✗ FAIL"}${colors.reset}`,
   ];
   for (const line of summaryLines) {
     console.log(line);

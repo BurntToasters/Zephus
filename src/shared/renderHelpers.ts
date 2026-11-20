@@ -32,6 +32,316 @@ export function safeUrl(value: string): string {
   return stripped;
 }
 
+const GOOGLE_FONT_STYLESHEET = /^https?:\/\/fonts\.googleapis\.com\//i;
+
+/**
+ * Stylesheet URL the editor and the generated layout may load.
+ * Anything else is dropped so a site file cannot inject a stylesheet
+ * into the editor document or the published head.
+ */
+export function googleFontStylesheetUrl(
+  value: string | null | undefined,
+): string {
+  const trimmed = (value ?? "").trim();
+  if (!GOOGLE_FONT_STYLESHEET.test(trimmed)) return "";
+  return trimmed;
+}
+
+/**
+ * Turns CSS escapes into the characters the browser would use. A style can
+ * spell `url` as `\75 rl`, and the canvas would still request that address.
+ */
+export function decodeCssEscapes(value: string): string {
+  return value.replace(
+    /\\(?:([0-9a-fA-F]{1,6})[ \t\n\r\f]?|([^\n\r\f])|[\n\r\f])/g,
+    (_match, hex: string | undefined, other: string | undefined) => {
+      if (hex === undefined) return other ?? "";
+      const code = Number.parseInt(hex, 16);
+      if (!Number.isFinite(code) || code === 0 || code > 0x10ffff) {
+        return "\uFFFD";
+      }
+      try {
+        return String.fromCodePoint(code);
+      } catch {
+        return "\uFFFD";
+      }
+    },
+  );
+}
+
+/** Decodes nested CSS escapes and drops comments until the text stops changing. */
+export function expandCssEscapes(value: string): string {
+  let next = value;
+  for (let i = 0; i < 8; i += 1) {
+    const decoded = decodeCssEscapes(next).replace(/\/\*[\s\S]*?\*\//g, "");
+    if (decoded === next) return next;
+    next = decoded;
+  }
+  return next;
+}
+
+/**
+ * Removes CSS that can fetch a URL. `url()` is not the only fetch: `image()`
+ * and `image-set()` accept a plain string and the browser requests it.
+ * `var()` and `calc()` stay intact.
+ */
+export function stripCssFetches(value: string): string {
+  return value
+    .replace(/url\s*\([^)]*\)?/gi, "")
+    .replace(/(?:-webkit-)?image-set\s*\([^)]*\)?/gi, "")
+    .replace(/\bimage\s*\([^)]*\)?/gi, "")
+    .replace(/expression\s*\([^)]*\)?/gi, "")
+    .replace(/@import/gi, "");
+}
+
+/**
+ * Design-token text that is written into a CSS declaration and applied on
+ * the editor canvas. Breakout characters are removed, and fetches are
+ * removed so a token used as `background` cannot load a remote resource.
+ * `var()` and `calc()` stay intact.
+ */
+export function designCssValue(value: string | null | undefined): string {
+  const expanded = expandCssEscapes(value ?? "");
+  return stripCssFetches(
+    expanded.replace(/[;{}<>\\]/g, "").replace(/[\r\n]+/g, " "),
+  )
+    .trim()
+    .slice(0, 200);
+}
+
+const ON_ACCENT_WHITE = "#ffffff";
+const ON_ACCENT_INK = "#11131a";
+
+function srgbChannel(value: number): number {
+  const channel = value / 255;
+  return channel <= 0.04045
+    ? channel / 12.92
+    : ((channel + 0.055) / 1.055) ** 2.4;
+}
+
+function relativeLuminance(rgb: readonly [number, number, number]): number {
+  return (
+    0.2126 * srgbChannel(rgb[0]) +
+    0.7152 * srgbChannel(rgb[1]) +
+    0.0722 * srgbChannel(rgb[2])
+  );
+}
+
+function contrastRatio(
+  foreground: readonly [number, number, number],
+  background: readonly [number, number, number],
+): number {
+  const lighter = relativeLuminance(foreground);
+  const darker = relativeLuminance(background);
+  const hi = Math.max(lighter, darker);
+  const lo = Math.min(lighter, darker);
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+function parseSolidColor(
+  value: string,
+): readonly [number, number, number] | null {
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(value.trim());
+  const digits = hex?.[1];
+  if (digits) {
+    const body =
+      digits.length === 3
+        ? digits
+            .split("")
+            .map((digit) => digit + digit)
+            .join("")
+        : digits;
+    const parsed = Number.parseInt(body, 16);
+    return [(parsed >> 16) & 255, (parsed >> 8) & 255, parsed & 255];
+  }
+  const rgb =
+    /^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})(?:\s*,\s*(?:1|0|0?\.\d+))?\s*\)$/i.exec(
+      value.trim(),
+    );
+  const red = Number(rgb?.[1]);
+  const green = Number(rgb?.[2]);
+  const blue = Number(rgb?.[3]);
+  if (
+    !Number.isInteger(red) ||
+    !Number.isInteger(green) ||
+    !Number.isInteger(blue) ||
+    red > 255 ||
+    green > 255 ||
+    blue > 255
+  ) {
+    return null;
+  }
+  return [red, green, blue];
+}
+
+/**
+ * Text color for a solid accent fill. White stays when it clears 4.5:1.
+ * A light custom accent switches to ink so the label stays readable.
+ * Unparsed values keep the historical white label.
+ */
+export function onAccentText(accent: string | null | undefined): string {
+  const background = parseSolidColor(accent ?? "");
+  if (!background) return ON_ACCENT_WHITE;
+  const white: readonly [number, number, number] = [255, 255, 255];
+  const ink: readonly [number, number, number] = [17, 19, 26];
+  if (contrastRatio(white, background) >= 4.5) return ON_ACCENT_WHITE;
+  if (contrastRatio(ink, background) >= 4.5) return ON_ACCENT_INK;
+  return contrastRatio(white, background) >= contrastRatio(ink, background)
+    ? ON_ACCENT_WHITE
+    : ON_ACCENT_INK;
+}
+
+/**
+ * The color mixed into a filled accent on hover. White labels darken the
+ * fill. Ink labels lighten it, so a vivid accent does not fall under 4.5:1
+ * when the pointer is over the button.
+ */
+export function accentHoverMix(accent: string | null | undefined): string {
+  return onAccentText(accent) === ON_ACCENT_INK ? "#ffffff" : "#000000";
+}
+
+const ACCENT_INK_FLOOR = 4.5;
+
+function hexChannels(rgb: readonly [number, number, number]): string {
+  return (
+    "#" + rgb.map((channel) => channel.toString(16).padStart(2, "0")).join("")
+  );
+}
+
+function mixChannels(
+  color: readonly [number, number, number],
+  target: readonly [number, number, number],
+  amount: number,
+): readonly [number, number, number] {
+  return [
+    Math.round(color[0] + (target[0] - color[0]) * amount),
+    Math.round(color[1] + (target[1] - color[1]) * amount),
+    Math.round(color[2] + (target[2] - color[2]) * amount),
+  ];
+}
+
+/**
+ * The site header lifts the surface 8% toward white. Nav hover text is the
+ * accent ink, so that lifted color has to stay in the readable set.
+ */
+function shellHeaderPlane(
+  surface: readonly [number, number, number],
+): readonly [number, number, number] {
+  return mixChannels(surface, [255, 255, 255], 0.08);
+}
+
+/**
+ * Accent used as text or a large numeral. The chosen accent stays when it
+ * already clears 4.5:1 on the page background, on cards, and on the lifted
+ * header. A light accent on a light page is darkened, and a dark accent on a
+ * dark page is lightened.
+ */
+export function accentInk(
+  accent: string | null | undefined,
+  background: string | null | undefined,
+  surface?: string | null,
+): string {
+  const original = (accent ?? "").trim();
+  const foreground = parseSolidColor(original);
+  if (!foreground) return designCssValue(original) || "#4f46e5";
+  const parsedSurface = parseSolidColor(surface ?? "");
+  const planes = [parseSolidColor(background ?? ""), parsedSurface].filter(
+    (value): value is readonly [number, number, number] => value !== null,
+  );
+  if (parsedSurface) planes.push(shellHeaderPlane(parsedSurface));
+  const surfaces = planes.length > 0 ? planes : ([[255, 255, 255]] as const);
+  const readable = (color: readonly [number, number, number]) =>
+    surfaces.every((plane) => contrastRatio(color, plane) >= ACCENT_INK_FLOOR);
+  if (readable(foreground)) return original;
+  const toward: ReadonlyArray<readonly [number, number, number]> = [
+    [17, 19, 26],
+    [255, 255, 255],
+  ];
+  let best = foreground;
+  let bestScore = Math.min(
+    ...surfaces.map((plane) => contrastRatio(foreground, plane)),
+  );
+  for (const target of toward) {
+    for (let step = 1; step <= 8; step += 1) {
+      const next = mixChannels(foreground, target, step / 8);
+      const score = Math.min(
+        ...surfaces.map((plane) => contrastRatio(next, plane)),
+      );
+      if (score > bestScore) {
+        best = next;
+        bestScore = score;
+      }
+      if (readable(next)) return hexChannels(next);
+    }
+  }
+  return hexChannels(best);
+}
+
+/**
+ * Logo and resting nav color. The header lifts the surface 8% toward white,
+ * so a foreground that just clears the page can fall under 4.5:1 there.
+ * Body text keeps the chosen foreground. Unparsed colors stay as given.
+ */
+export function headerText(
+  foreground: string | null | undefined,
+  surface: string | null | undefined,
+): string {
+  const original = (foreground ?? "").trim();
+  const ink = parseSolidColor(original);
+  const plane = parseSolidColor(surface ?? "");
+  if (!ink || !plane) return designCssValue(original) || "#0f172a";
+  const header = shellHeaderPlane(plane);
+  if (contrastRatio(ink, header) >= ACCENT_INK_FLOOR) return original;
+  const target: readonly [number, number, number] =
+    relativeLuminance(ink) >= relativeLuminance(header)
+      ? [255, 255, 255]
+      : [17, 19, 26];
+  let best = ink;
+  let bestScore = contrastRatio(ink, header);
+  for (let step = 1; step <= 100; step += 1) {
+    const next = mixChannels(ink, target, step / 100);
+    const score = contrastRatio(next, header);
+    if (score > bestScore) {
+      best = next;
+      bestScore = score;
+    }
+    if (score >= ACCENT_INK_FLOOR) return hexChannels(next);
+  }
+  return hexChannels(best);
+}
+
+/**
+ * How much of the foreground to keep in muted text such as a lead or a
+ * caption. The historical mix is `minimumPercent`. A lighter foreground
+ * keeps more of itself so the text still clears 4.5:1 on the page and on
+ * cards. Unparsed colors keep the historical mix.
+ */
+export function mutedForegroundPercent(
+  foreground: string | null | undefined,
+  background: string | null | undefined,
+  surface: string | null | undefined,
+  minimumPercent: number,
+): number {
+  const ink = parseSolidColor(foreground ?? "");
+  const floor = Math.max(0, Math.min(100, Math.round(minimumPercent)));
+  if (!ink) return floor;
+  const planes = [background, surface]
+    .map((value) => parseSolidColor(value ?? ""))
+    .filter(
+      (value): value is readonly [number, number, number] => value !== null,
+    );
+  const surfaces = planes.length > 0 ? planes : ([[255, 255, 255]] as const);
+  for (let percent = floor; percent <= 100; percent += 1) {
+    const towardPlane = 1 - percent / 100;
+    const readable = surfaces.every((plane) => {
+      const mixed = mixChannels(ink, plane, towardPlane);
+      return contrastRatio(mixed, plane) >= ACCENT_INK_FLOOR;
+    });
+    if (readable) return percent;
+  }
+  return 100;
+}
+
 /** Encodes a value as a URI-encoded JSON payload for a data-* attribute. */
 export function encodeDataPayload(value: unknown): string {
   return encodeURIComponent(JSON.stringify(value)).replace(/'/g, "%27");
@@ -343,21 +653,34 @@ export function styleAttr(
   const viewport = options.viewport ?? "desktop";
   const style = mergeViewportStyle(block.style, viewport);
   const css: string[] = [];
+  const pushCss = (property: string, value: unknown): void => {
+    if (!options.forCanvas) {
+      addCssValue(css, property, value);
+      return;
+    }
+    // The canvas is the editor document. A color field that contains url()
+    // would make the editor fetch a remote image. The published stylesheet
+    // still receives the original value.
+    const safe = blockCssValue(value);
+    if (!safe) return;
+    const stripped = designCssValue(safe);
+    if (stripped) css.push(`${property}:${stripped}`);
+  };
   if (["left", "center", "right"].includes(String(style.align))) {
     css.push(`text-align:${style.align}`);
   }
-  addCssValue(css, "width", style.width);
-  addCssValue(css, "height", style.height);
-  addCssValue(css, "max-width", style.maxWidth);
-  addCssValue(css, "background", style.background);
-  addCssValue(css, "color", style.color);
-  addCssValue(css, "padding", style.padding);
-  addCssValue(css, "margin", style.margin);
-  addCssValue(css, "border-radius", style.radius);
-  addCssValue(css, "gap", style.gap);
-  addCssValue(css, "aspect-ratio", style.aspectRatio);
-  addCssValue(css, "object-fit", style.objectFit);
-  addCssValue(css, "object-position", style.objectPosition);
+  pushCss("width", style.width);
+  pushCss("height", style.height);
+  pushCss("max-width", style.maxWidth);
+  pushCss("background", style.background);
+  pushCss("color", style.color);
+  pushCss("padding", style.padding);
+  pushCss("margin", style.margin);
+  pushCss("border-radius", style.radius);
+  pushCss("gap", style.gap);
+  pushCss("aspect-ratio", style.aspectRatio);
+  pushCss("object-fit", style.objectFit);
+  pushCss("object-position", style.objectPosition);
   if (style.columns && (block.type === "columns" || block.type === "gallery")) {
     css.push(
       `grid-template-columns:repeat(${Math.max(1, Number(style.columns) || 1)}, minmax(0, 1fr))`,
@@ -377,7 +700,7 @@ export function styleAttr(
   // (media queries). The canvas keeps hidden elements visible with a dashed
   // outline so they stay selectable — never inline display:none here.
   if (block.type === "spacer" && !style.height) {
-    addCssValue(css, "height", block.props["height"] || "48px");
+    pushCss("height", block.props["height"] || "48px");
   }
   return css.length ? ` style="${escapeAttr(css.join(";"))}"` : "";
 }

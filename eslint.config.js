@@ -52,6 +52,7 @@ module.exports = tseslint.config(
         fetch: "readonly",
         AbortSignal: "readonly",
         global: "readonly",
+        structuredClone: "readonly",
       },
     },
     rules: {
@@ -65,6 +66,12 @@ module.exports = tseslint.config(
       "no-empty": "off",
       "preserve-caught-error": "off",
       "no-useless-assignment": "off",
+    },
+  },
+  {
+    files: ["scripts/e2e-failure-suite.js"],
+    rules: {
+      "no-script-url": "off",
     },
   },
 );

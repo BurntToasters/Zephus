@@ -200,6 +200,7 @@ export function ContentGroup(props: { state: BlockPropertiesState }) {
           <TextField
             label="Embed URL"
             value={value("src")}
+            guardUrl
             onFocus={state.onFocus}
             onBlur={state.onBlur}
             onChange={(next) => state.onPropChange("src", next)}
@@ -211,6 +212,10 @@ export function ContentGroup(props: { state: BlockPropertiesState }) {
             onBlur={state.onBlur}
             onChange={(next) => state.onPropChange("title", next)}
           />
+          <p class="muted">
+            Use a public page URL, such as a YouTube embed. It loads in the site
+            preview.
+          </p>
         </Group>
       );
     case "video":
@@ -219,6 +224,7 @@ export function ContentGroup(props: { state: BlockPropertiesState }) {
           <TextField
             label="Video URL"
             value={value("src")}
+            guardUrl
             onFocus={state.onFocus}
             onBlur={state.onBlur}
             onChange={(next) => state.onPropChange("src", next)}
@@ -232,7 +238,7 @@ export function ContentGroup(props: { state: BlockPropertiesState }) {
           />
           <p class="muted">
             Use an .mp4 or .webm URL (https, or a project file under
-            public/assets). Project files play in the preview browser.
+            public/assets). It plays in the site preview.
           </p>
         </Group>
       );

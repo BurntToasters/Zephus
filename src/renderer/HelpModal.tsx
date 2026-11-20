@@ -70,6 +70,100 @@ export function HelpModalContent() {
             </tr>
             <tr>
               <td>
+                <kbd>↑</kbd> / <kbd>↓</kbd> / <kbd>Home</kbd> / <kbd>End</kbd>
+              </td>
+              <td>
+                Move between page-structure rows when that list is focused
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <kbd>↑</kbd> / <kbd>↓</kbd> / <kbd>←</kbd> / <kbd>→</kbd>
+              </td>
+              <td>
+                Move between pages and page actions when the page list is
+                focused
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <kbd>↑</kbd> / <kbd>↓</kbd> / <kbd>Home</kbd> / <kbd>End</kbd>
+              </td>
+              <td>
+                Move between navigation entries when the navigation list is
+                focused
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <kbd>↑</kbd> / <kbd>↓</kbd> / <kbd>Home</kbd> / <kbd>End</kbd>
+              </td>
+              <td>
+                Move between blocks in the block palette when that list is
+                focused
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <kbd>↑</kbd> / <kbd>↓</kbd> / <kbd>←</kbd> / <kbd>→</kbd>
+              </td>
+              <td>
+                Move between saved sections and their delete buttons when that
+                list is focused
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <kbd>↑</kbd> / <kbd>↓</kbd> / <kbd>←</kbd> / <kbd>→</kbd>
+              </td>
+              <td>
+                Move between recent projects and their remove buttons when that
+                list is focused
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <kbd>↑</kbd> / <kbd>↓</kbd> / <kbd>←</kbd> / <kbd>→</kbd>
+              </td>
+              <td>
+                Move between assets and their rename and delete buttons when
+                that browser is focused
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <kbd>↑</kbd> / <kbd>↓</kbd>
+              </td>
+              <td>Move between find results when that list is focused</td>
+            </tr>
+            <tr>
+              <td>
+                <kbd>↑</kbd> / <kbd>↓</kbd> / <kbd>←</kbd> / <kbd>→</kbd>
+              </td>
+              <td>
+                Move between starter themes and their preview and select buttons
+                when that list is focused
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <kbd>←</kbd> / <kbd>→</kbd> / <kbd>↑</kbd> / <kbd>↓</kbd>
+              </td>
+              <td>
+                Move between actions in a block or section toolbar when that
+                toolbar is focused
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <kbd>↑</kbd> / <kbd>↓</kbd> / <kbd>Home</kbd> / <kbd>End</kbd>
+              </td>
+              <td>
+                Move from a focused section into its blocks or the next section
+              </td>
+            </tr>
+            <tr>
+              <td>
                 <kbd>Esc</kbd>
               </td>
               <td>Deselect</td>
@@ -103,6 +197,15 @@ export function HelpModalContent() {
                 <kbd>Ctrl/Cmd</kbd> + <kbd>B</kbd>
               </td>
               <td>Bold</td>
+            </tr>
+            <tr>
+              <td>
+                <kbd>←</kbd> / <kbd>→</kbd>
+              </td>
+              <td>
+                Move between bold, italic, and link while the format toolbar is
+                focused
+              </td>
             </tr>
             <tr>
               <td>
@@ -188,6 +291,10 @@ export function HelpModalContent() {
             inline (HTML blocks use the Inspector markup field).
           </li>
           <li>Drag blocks inside a section or columns to reorder.</li>
+          <li>
+            Deleting or moving a block keeps keyboard focus on the canvas
+            selection.
+          </li>
           <li>
             Select blocks to edit properties in the Inspector sidebar on the
             right.

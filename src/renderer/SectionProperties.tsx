@@ -1,6 +1,7 @@
 import { createSignal } from "solid-js";
 import type { JSX } from "solid-js";
 import { render } from "solid-js/web";
+import { linkPickerProblem } from "./linkPickerCommit";
 
 const LENGTH_UNITS = ["px", "rem", "em", "%", "vh", "vw", "auto", "custom"];
 
@@ -42,8 +43,11 @@ export function TextField(props: {
   onChange: (value: string) => void;
   onFocus: () => void;
   onBlur: () => void;
+  /** A javascript:, data:, or file: address stays visible and is not saved. */
+  guardUrl?: boolean;
 }) {
   const [current, setCurrent] = createSignal(props.value);
+  const [problem, setProblem] = createSignal("");
   return (
     <label class="meta-field">
       <span>{props.label}</span>
@@ -55,9 +59,19 @@ export function TextField(props: {
         onInput={(event) => {
           const value = event.currentTarget.value;
           setCurrent(value);
+          if (props.guardUrl) {
+            const nextProblem = linkPickerProblem(value);
+            setProblem(nextProblem);
+            if (nextProblem) return;
+          }
           props.onChange(value);
         }}
       />
+      {problem() ? (
+        <span class="form-error text-field-error" role="alert">
+          {problem()}
+        </span>
+      ) : null}
     </label>
   );
 }
@@ -297,6 +311,7 @@ export function LinkField(props: {
   onBlur: () => void;
 }) {
   const [current, setCurrent] = createSignal(props.value);
+  const [problem, setProblem] = createSignal("");
   return (
     <label class="meta-field">
       <span>{props.label}</span>
@@ -310,6 +325,9 @@ export function LinkField(props: {
           onInput={(event) => {
             const value = event.currentTarget.value;
             setCurrent(value);
+            const nextProblem = linkPickerProblem(value);
+            setProblem(nextProblem);
+            if (nextProblem) return;
             props.onChange(value);
           }}
         />
@@ -318,7 +336,10 @@ export function LinkField(props: {
           class="btn ghost mini-btn"
           onClick={() =>
             props.onPick(current(), (href) => {
+              const nextProblem = linkPickerProblem(href);
               setCurrent(href);
+              setProblem(nextProblem);
+              if (nextProblem) return;
               props.onChange(href);
             })
           }
@@ -326,6 +347,11 @@ export function LinkField(props: {
           Choose...
         </button>
       </div>
+      {problem() ? (
+        <span class="form-error link-field-error" role="alert">
+          {problem()}
+        </span>
+      ) : null}
     </label>
   );
 }

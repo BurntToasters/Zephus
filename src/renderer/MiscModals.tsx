@@ -16,6 +16,8 @@ export interface SiteShellModalState {
   announcementVisible: boolean;
   ctaLabel: string;
   ctaHref: string;
+  /** Shown in the dialog when the CTA address cannot be stored. */
+  ctaError?: string;
   footerHtml: string;
   customHeadHtml: string;
   onSiteTitleChange: (value: string) => void;
@@ -32,6 +34,8 @@ export interface SiteShellModalState {
   siteUrlError?: string;
   language: string;
   faviconPath: string;
+  /** Shown in the dialog when the favicon address cannot be stored. */
+  faviconError?: string;
   onSiteUrlChange: (value: string) => void;
   onLanguageChange: (value: string) => void;
   onFaviconPathChange: (value: string) => void;
@@ -93,7 +97,12 @@ export function renderProductionLicensesModalBody(
           packages listed.
         </p>
 
-        <div class="licenses-table-wrap">
+        <div
+          class="licenses-table-wrap"
+          tabindex="0"
+          role="region"
+          aria-label="Third-party licenses"
+        >
           <table class="licenses-table">
             <thead>
               <tr>
@@ -217,7 +226,7 @@ export function renderSiteShellModalBody(
           <span>CTA link</span>
           <div class="link-field">
             <input
-              class="text"
+              class="text shell-cta-href"
               value={state.ctaHref}
               onInput={(event) =>
                 state.onCtaHrefChange(event.currentTarget.value)
@@ -231,6 +240,11 @@ export function renderSiteShellModalBody(
               Choose…
             </button>
           </div>
+          {state.ctaError ? (
+            <span class="form-error shell-cta-error" role="alert">
+              {state.ctaError}
+            </span>
+          ) : null}
         </label>
         <label class="meta-field">
           <span>Footer HTML</span>
@@ -246,7 +260,7 @@ export function renderSiteShellModalBody(
         <label class="meta-field">
           <span>Site URL</span>
           <input
-            class="text"
+            class="text shell-site-url"
             type="url"
             placeholder="https://example.com"
             value={state.siteUrl}
@@ -288,7 +302,7 @@ export function renderSiteShellModalBody(
           <span>Favicon</span>
           <div class="link-field">
             <input
-              class="text"
+              class="text shell-favicon"
               placeholder="/assets/images/favicon.png"
               value={state.faviconPath}
               onInput={(event) =>
@@ -303,6 +317,11 @@ export function renderSiteShellModalBody(
               Choose…
             </button>
           </div>
+          {state.faviconError ? (
+            <span class="form-error shell-favicon-error" role="alert">
+              {state.faviconError}
+            </span>
+          ) : null}
           <small class="meta-hint">
             The small icon browsers show in tabs and bookmarks.
           </small>

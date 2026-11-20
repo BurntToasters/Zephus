@@ -168,10 +168,10 @@ if (!process.env.GPG_KEY_ID) {
   }
 }
 
-// Windows code-signing is OPTIONAL for now: the Azure Artifact Signing
-// machinery is wired (build-scripts/electron-builder.windows.cjs signs when
-// the AZURE_* variables are complete, otherwise warns + produces unsigned
-// artifacts). A release can ship unsigned; no variable is required here.
+// Windows Authenticode signing is enforced by scripts/tauri-windows-build.mjs.
+// A stable release refuses SKIP_WIN_CODESIGN and requires the AZURE_* Artifact
+// Signing variables. This gate does not demand them so a macOS or Linux
+// release can pass before the Windows VM runs.
 
 if (failures.length > 0) {
   console.error("✗ Release gate failed:");

@@ -1,3 +1,5 @@
+import { revealActiveLayer } from "./revealSelection";
+
 export type EditorWorkspaceSide = "left" | "right";
 
 interface ActivateWorkspaceOptions {
@@ -47,6 +49,7 @@ export function activateWorkspaceTab(
     panel.hidden = !active;
   }
   root.dataset["activeWorkspaceTab"] = tabId;
+  if (side === "left" && tabId === "layers") revealActiveLayer();
   if (options.focus || focusWouldBeHidden) target.focus();
 }
 

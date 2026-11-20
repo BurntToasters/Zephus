@@ -33,7 +33,7 @@ src/shared/        Code shared by main + renderer (no Node in renderer imports)
 src/renderer/      Editor UI (Solid islands + zephusEngine orchestrator)
 ```
 
-IPC crosses the boundary via `preload.ts` → `window.zephus` in the renderer.
+IPC crosses the boundary via `preload.ts` → `window.zephus` in the renderer. Under Tauri the bridge is `src/renderer/tauriPreload.ts`.
 
 ## Render parity (important)
 

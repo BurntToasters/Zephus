@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "npm run dev:serve",
     "devUrl": "http://localhost:5173",
-    "beforeBuildCommand": "npm run compile",
+    "beforeBuildCommand": "npm run compile && node scripts/stage-backend-resources.mjs",
     "frontendDist": "../dist/frontend"
   },
   "app": {
@@ -28,23 +28,13 @@
     ],
     "security": {
       "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' http://127.0.0.1:* http://localhost:*; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; frame-src 'self' http://localhost:* http://127.0.0.1:* http://[::1]:*; worker-src 'none'",
-      "dangerousDisableAssetCspModification": [
-        "style-src"
-      ],
-      "capabilities": [
-        "default",
-        "splash"
-      ]
+      "dangerousDisableAssetCspModification": ["style-src"],
+      "capabilities": ["default", "splash"]
     }
   },
   "bundle": {
     "active": true,
-    "targets": [
-      "dmg",
-      "app",
-      "nsis",
-      "appimage"
-    ],
+    "targets": ["dmg", "app", "nsis", "appimage"],
     "publisher": "BurntToasters",
     "copyright": "Copyright (c) BurntToasters",
     "category": "Development",
@@ -58,6 +48,15 @@
       "icons/icon.ico",
       "icons/icon.icns"
     ],
+    "resources": {
+      "resources/backend/dist/main/": "dist/main/",
+      "resources/backend/dist/shared/": "dist/shared/",
+      "resources/backend/src/main/runtime/": "src/main/runtime/",
+      "resources/backend/template-previews/dist/": "template-previews/dist/",
+      "resources/backend/node_modules/": "node_modules/",
+      "resources/backend/licenses.json": "licenses.json",
+      "resources/backend/package.json": "package.json"
+    },
     "createUpdaterArtifacts": true,
     "windows": {
       "nsis": {
@@ -98,7 +97,7 @@
         "https://github.com/BurntToasters/zephus/releases/latest/download/latest-{{target}}-{{arch}}.json",
         "https://github.com/BurntToasters/zephus/releases/latest/download/latest-{{target}}.json"
       ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEE5OEQzMEUzMDdGQzY4NjMKUldRamFQd0g0ekNOcWZKUkExZmoxQmJXWDg0dU5OTGk1VmtpenVRMGt0aW5OQTB2Qmx1ZmZkTVUK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEE5OEQzMEUzMDdGQzY4NjMKUldSamFQd0g0ekNOcWZKUkExZmoxQmJXWDg0dU5OTGk1VmtpenVRMGt0aW5OQTB2Qmx1ZmZkTVUK",
       "requireSignedVersion": true
     }
   }

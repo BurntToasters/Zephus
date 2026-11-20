@@ -23,6 +23,9 @@
   --muted: #9da5b8;
   --accent: #6366f1;
   --accent-hover: #4f46e5;
+  /* Fills under white labels. #6366f1 is only 4.47:1 with white. */
+  --accent-solid: #4f46e5;
+  --accent-solid-hover: #4338ca;
   --accent-bg: rgba(99, 102, 241, 0.14);
   --accent-2: #10b981;
   --accent-2-bg: rgba(16, 185, 129, 0.12);
@@ -76,6 +79,8 @@
   --muted: #555d70;
   --accent: #4f46e5;
   --accent-hover: #4338ca;
+  --accent-solid: #4f46e5;
+  --accent-solid-hover: #4338ca;
   --accent-bg: rgba(79, 70, 229, 0.1);
   --accent-text: #4338ca;
   --accent-2-text: #065f46;
@@ -111,6 +116,8 @@
     --muted: #555d70;
     --accent: #4f46e5;
     --accent-hover: #4338ca;
+    --accent-solid: #4f46e5;
+    --accent-solid-hover: #4338ca;
     --accent-bg: rgba(79, 70, 229, 0.1);
     --accent-text: #4338ca;
     --accent-2-text: #065f46;
@@ -144,6 +151,16 @@
 *:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* Checkboxes are standalone targets. 24px matches the rest of the editor. */
+input[type="checkbox"] {
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  accent-color: var(--accent);
+  flex-shrink: 0;
+  cursor: pointer;
 }
 
 /* Suppress the browser default only on elements that provide their own
@@ -247,7 +264,7 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, var(--accent), #818cf8);
+  background: linear-gradient(135deg, var(--accent), var(--accent-hover));
   color: #ffffff;
   border-radius: 10px;
   box-shadow:
@@ -659,7 +676,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #8da2ff;
+  color: var(--accent-text);
   margin-bottom: 24px;
   box-shadow: 0 0 24px rgba(79, 70, 229, 0.2);
 }
@@ -765,7 +782,7 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, var(--accent), #818cf8);
+  background: linear-gradient(135deg, var(--accent), var(--accent-hover));
   color: #ffffff;
   border-radius: 14px;
   margin-bottom: 16px;
@@ -924,6 +941,7 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   padding: 8px 16px;
+  min-height: 24px;
   cursor: pointer;
   font-size: 13px;
   font-weight: 500;
@@ -945,7 +963,7 @@ body {
 }
 
 .btn.primary {
-  background: var(--accent);
+  background: var(--accent-solid);
   color: #ffffff;
   border-color: rgba(255, 255, 255, 0.08);
   font-weight: 600;
@@ -955,7 +973,7 @@ body {
 }
 
 .btn.primary:hover {
-  background: var(--accent-hover);
+  background: var(--accent-solid-hover);
   border-color: rgba(255, 255, 255, 0.12);
   box-shadow:
     0 6px 16px rgba(79, 70, 229, 0.36),
@@ -1016,6 +1034,8 @@ body {
   cursor: pointer;
   font-size: 11px;
   padding: 2px 6px;
+  min-width: 24px;
+  min-height: 24px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1253,7 +1273,8 @@ body {
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 0;
+  min-height: 40px;
+  padding: 9px 10px;
   border: 0;
   background: transparent;
   color: inherit;
@@ -1301,6 +1322,7 @@ body {
 .page-main {
   flex: 1;
   min-width: 0;
+  min-height: 36px;
   border: 0;
   background: transparent;
   color: inherit;
@@ -1308,7 +1330,8 @@ body {
   align-items: center;
   gap: 8px;
   text-align: left;
-  padding: 0;
+  margin: -6px 0 -6px -8px;
+  padding: 6px 0 6px 8px;
   cursor: pointer;
 }
 
@@ -1433,7 +1456,9 @@ body {
   border: 0;
   background: transparent;
   color: inherit;
-  padding: 0;
+  width: 100%;
+  min-height: 24px;
+  padding: 4px 8px;
   text-align: left;
   cursor: pointer;
   font: inherit;
@@ -1480,11 +1505,12 @@ body {
 .palette li .palette-insert-btn {
   flex: 1;
   min-width: 0;
+  min-height: 40px;
   margin-left: 0;
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 0;
+  padding: 10px 12px;
   border: 0;
   background: transparent;
   color: inherit;
@@ -1582,6 +1608,10 @@ body {
   min-height: 100%;
   position: relative;
   isolation: isolate;
+  /* Paint containment makes this the containing block for position:fixed
+     descendants and clips them. A raw HTML block cannot cover the editor
+     chrome with a viewport-sized overlay. */
+  contain: paint;
   background: var(--zephus-background, var(--bg-alt));
   color: var(--zephus-foreground, inherit);
   font-family: var(--zephus-font-family, inherit);
@@ -1669,14 +1699,23 @@ body {
 
 .resize-handle {
   position: absolute;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  pointer-events: auto;
+  display: grid;
+}
+
+.resize-handle::before {
+  content: "";
   width: 10px;
   height: 10px;
-  padding: 0;
   border: 1.5px solid var(--accent);
   border-radius: 3px;
   background: var(--panel);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-  pointer-events: auto;
 }
 
 .resize-handle:focus-visible {
@@ -1687,24 +1726,32 @@ body {
 .resize-handle.nw {
   top: 0;
   left: 0;
+  justify-content: start;
+  align-content: start;
   cursor: nwse-resize;
 }
 
 .resize-handle.ne {
   top: 0;
   right: 0;
+  justify-content: end;
+  align-content: start;
   cursor: nesw-resize;
 }
 
 .resize-handle.sw {
   bottom: 0;
   left: 0;
+  justify-content: start;
+  align-content: end;
   cursor: nesw-resize;
 }
 
 .resize-handle.se {
   right: 0;
   bottom: 0;
+  justify-content: end;
+  align-content: end;
   cursor: nwse-resize;
 }
 
@@ -1733,8 +1780,11 @@ body {
   box-shadow: 0 0 0 2px var(--accent-bg);
 }
 
+/* Locked chrome stays on the canvas to be read. The fade starts at the
+   historical amount and rises with the foreground so the text stays at
+   4.5:1 on the page and on cards. */
 .canvas-section.locked {
-  opacity: 0.82;
+  opacity: var(--zephus-locked-section-opacity, 0.82);
 }
 
 /* Blocks/sections hidden on the active viewport stay visible on the canvas
@@ -1744,11 +1794,11 @@ body {
 .canvas-section.hidden-on-viewport {
   outline: 2px dashed var(--border-focus);
   outline-offset: 3px;
-  opacity: 0.55;
+  opacity: var(--zephus-hidden-opacity, 0.6);
 }
 .canvas .block.hidden-on-viewport:hover,
 .canvas-section.hidden-on-viewport:hover {
-  opacity: 0.9;
+  opacity: max(0.9, var(--zephus-hidden-opacity, 0.6));
 }
 .canvas .block.hidden-on-viewport.selected,
 .canvas-section.hidden-on-viewport.selected {
@@ -1774,13 +1824,13 @@ body {
 }
 
 .canvas .block.locked {
-  opacity: 0.8;
+  opacity: var(--zephus-locked-block-opacity, 0.8);
 }
 
 .canvas-insert {
   position: relative;
   display: grid;
-  min-height: 18px;
+  min-height: 24px;
   margin: 1px 0;
   place-items: center;
 }
@@ -1803,6 +1853,7 @@ body {
 .canvas-insert-button {
   position: relative;
   z-index: 1;
+  height: 24px;
   min-height: 24px;
   padding: 3px 9px;
   display: inline-flex;
@@ -1857,7 +1908,7 @@ body {
 }
 
 .section-insert .canvas-insert-button {
-  opacity: 0.42;
+  opacity: 1;
 }
 
 .section-chrome {
@@ -1869,7 +1920,7 @@ body {
   margin-bottom: 8px;
   padding-left: 22px;
   min-width: 0;
-  opacity: 0.38;
+  opacity: 1;
   transition: opacity 0.15s ease;
 }
 
@@ -1892,7 +1943,7 @@ body {
   min-height: 26px;
   margin-bottom: 8px;
   min-width: 0;
-  opacity: 0.28;
+  opacity: 1;
   transition: opacity 0.15s ease;
 }
 
@@ -1948,8 +1999,16 @@ body {
   align-items: center;
   border-radius: 999px;
   padding: 4px 8px;
-  background: var(--accent-bg);
-  color: var(--accent-text);
+  /* Editor accent-text is for the dark shell. On a light page it stays near
+     2.5:1. Accent ink is already adjusted for the site surface. */
+  background: var(--zephus-surface, var(--panel-card));
+  color: var(--zephus-accent-ink, var(--accent-text));
+  border: 1px solid
+    color-mix(
+      in srgb,
+      var(--zephus-accent-ink, var(--accent-text)) 40%,
+      var(--zephus-surface, var(--panel-card))
+    );
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -1958,7 +2017,11 @@ body {
 
 .block-breadcrumb {
   font-size: 11px;
-  color: var(--muted);
+  color: color-mix(
+    in srgb,
+    var(--zephus-foreground, var(--text)) var(--zephus-meta-mix, 72%),
+    transparent
+  );
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2053,6 +2116,10 @@ body {
   border-radius: var(--radius-md);
   overflow: hidden;
   max-width: 100%;
+  /* Paint containment makes this the containing block for position:fixed
+     descendants and clips them. A raw HTML block cannot cover the other
+     blocks on the canvas. */
+  contain: paint;
 }
 
 .block-preview > * {
@@ -2106,7 +2173,7 @@ body {
   border: 1px dashed var(--border-focus);
   border-radius: var(--radius-lg);
   background: rgba(255, 255, 255, 0.02);
-  color: var(--muted);
+  color: var(--zephus-foreground, var(--text));
 }
 
 .canvas-empty {
@@ -2122,12 +2189,18 @@ body {
 .canvas-empty-state h3 {
   margin: 0;
   font-size: 20px;
-  color: var(--text);
+  color: var(--zephus-foreground, var(--text));
 }
 
+.canvas-empty span,
 .canvas-empty-state p {
   margin: 0;
   max-width: 420px;
+  color: color-mix(
+    in srgb,
+    var(--zephus-foreground, var(--text)) var(--zephus-meta-mix, 72%),
+    transparent
+  );
 }
 
 .canvas-empty-actions {
@@ -2150,6 +2223,25 @@ body {
   opacity: 1;
   background: var(--accent-2);
   box-shadow: 0 0 8px var(--accent-2);
+}
+
+/* The line sits on the block slot. A direct child of a feature or pricing
+   row would take a column, and an in-flow line would stretch the card. */
+.canvas-block-slot > .drop-indicator {
+  position: absolute;
+  left: 0;
+  right: 0;
+  margin: 0;
+  z-index: 6;
+  pointer-events: none;
+}
+
+.canvas-block-slot > .drop-indicator.before {
+  top: 0;
+}
+
+.canvas-block-slot > .drop-indicator.after {
+  bottom: 0;
 }
 
 .code-editor {
@@ -2313,14 +2405,22 @@ body {
 }
 
 #view-editor .topbar-right #btn-save {
-  border-color: color-mix(in srgb, var(--accent) 62%, var(--chrome-border));
-  background: linear-gradient(180deg, var(--accent), var(--accent-hover));
+  border-color: color-mix(
+    in srgb,
+    var(--accent-solid) 62%,
+    var(--chrome-border)
+  );
+  background: linear-gradient(
+    180deg,
+    var(--accent-solid),
+    var(--accent-solid-hover)
+  );
   color: #ffffff;
   box-shadow: 0 5px 14px color-mix(in srgb, var(--accent) 24%, transparent);
 }
 
 #view-editor .topbar-right #btn-save:hover {
-  background: var(--accent-hover);
+  background: var(--accent-solid-hover);
   color: #ffffff;
 }
 
@@ -2454,6 +2554,11 @@ body {
   padding: 9px 10px;
 }
 
+#view-editor .list li:has(> .nav-entry),
+#view-editor .list.layers-list > li {
+  padding: 0;
+}
+
 #view-editor .list li:hover {
   border-color: var(--chrome-border);
   background: var(--chrome-3);
@@ -2470,6 +2575,10 @@ body {
   border-radius: 9px;
   background: var(--chrome-2);
   box-shadow: 0 3px 10px rgba(0, 0, 0, 0.08);
+}
+
+#view-editor .palette li:has(.palette-insert-btn) {
+  padding: 0 8px 0 0;
 }
 
 #view-editor .palette li:hover {
@@ -2597,6 +2706,7 @@ body {
   gap: 8px;
   cursor: pointer;
   user-select: none;
+  min-height: 24px;
   padding: 2px 0;
 }
 
@@ -2798,7 +2908,7 @@ body {
 
 #view-editor .prop-actions .btn.danger {
   border-color: rgba(239, 68, 68, 0.3);
-  color: #f87171;
+  color: var(--danger-text);
 }
 
 #view-editor .prop-actions .btn.danger:hover {
@@ -3326,7 +3436,8 @@ body {
 }
 
 .meta-field input[type="checkbox"] {
-  width: auto;
+  width: 24px;
+  height: 24px;
 }
 
 /* Helper text under a form field: explains what the value affects. */
@@ -3504,6 +3615,7 @@ body {
   color: var(--text);
   cursor: pointer;
   text-align: left;
+  min-height: 24px;
 }
 
 .find-replace-page:hover {
@@ -3568,11 +3680,34 @@ body {
 .inline-format-link {
   flex: 1 1 100%;
   display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .inline-format-link .text {
-  width: 100%;
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+  min-height: 24px;
   font-size: 12px;
+}
+
+.inline-format-apply {
+  flex: 0 0 auto;
+  min-height: 24px;
+  min-width: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel-card);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.inline-format-apply:hover {
+  border-color: var(--accent);
+  color: var(--accent-text);
 }
 
 /* Inline formatting inside canvas text must look like the built site. */
@@ -3584,14 +3719,18 @@ body {
 }
 
 .canvas .block a[href] {
-  color: var(--zephus-accent, var(--accent));
+  color: var(--zephus-accent-ink, var(--zephus-accent, var(--accent)));
   text-decoration: underline;
 }
-/* The generic anchor rule above outranks .canvas .button (text-decoration
-   none) — button/CTA labels rendered underlined on canvas only, not in the
-   build. Exclude .button anchors. */
+/* The generic anchor rule above outranks .canvas .button. It underlined
+   button labels and painted accent ink on the accent fill. Filled buttons
+   keep the on-accent label; secondary buttons stay on the page color. */
+.canvas .block a.button,
 .canvas .block .button {
   text-decoration: none;
+}
+.canvas .block a.button:not(.secondary) {
+  color: var(--zephus-on-accent, #ffffff);
 }
 
 .asset-tile-wrap {
@@ -3845,7 +3984,9 @@ body {
 }
 
 .git-panel .g-file input[type="checkbox"] {
-  margin-top: 2px;
+  width: 24px;
+  height: 24px;
+  margin-top: 0;
   flex-shrink: 0;
 }
 
@@ -3960,23 +4101,42 @@ body {
   display: inline-block;
   padding: 0.7rem 1.4rem;
   background: var(--zephus-accent, var(--accent));
-  color: #ffffff;
+  color: var(--zephus-on-accent, #ffffff);
   border-radius: 999px;
   text-decoration: none;
   font-weight: 600;
   border: 1.5px solid transparent;
 }
+.canvas .button:not(.secondary):hover {
+  background: color-mix(
+    in srgb,
+    var(--zephus-accent, var(--accent)) 86%,
+    var(--zephus-accent-hover-mix, #000)
+  );
+}
 .canvas .button.secondary {
   background: transparent;
-  color: var(--zephus-accent, var(--accent));
-  border-color: var(--border);
+  color: var(--zephus-accent-ink, var(--zephus-accent, var(--accent)));
+  border-color: color-mix(
+    in srgb,
+    var(--zephus-foreground, var(--text)) 16%,
+    transparent
+  );
+}
+.canvas .button.secondary:hover {
+  background: transparent;
+  border-color: var(--zephus-accent, var(--accent));
 }
 .canvas .lead {
   font-size: 1.2rem;
-  color: var(--muted);
+  color: color-mix(
+    in srgb,
+    var(--zephus-foreground, var(--text)) var(--zephus-lead-mix, 68%),
+    transparent
+  );
 }
 .canvas a {
-  color: var(--zephus-accent, var(--accent));
+  color: var(--zephus-accent-ink, var(--zephus-accent, var(--accent)));
 }
 .canvas .zephus-feature-icon {
   font-size: 2rem;
@@ -4003,10 +4163,15 @@ body {
   font-size: 1.1rem;
 }
 .canvas .zephus-testimonial figcaption {
-  color: var(--muted);
+  color: color-mix(
+    in srgb,
+    var(--zephus-foreground, var(--text)) var(--zephus-caption-mix, 65%),
+    transparent
+  );
 }
 .canvas .zephus-accordion details {
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--zephus-foreground, var(--text)) 14%, transparent);
   padding: 0.5rem 0;
 }
 .canvas .zephus-accordion summary {
@@ -4025,14 +4190,19 @@ body {
 .canvas .zephus-stat-num {
   font-size: 1.75rem;
   font-weight: 800;
-  color: var(--zephus-accent, var(--accent));
+  color: var(--zephus-accent-ink, var(--zephus-accent, var(--accent)));
 }
 .canvas .zephus-stat-label {
-  color: var(--muted);
+  color: color-mix(
+    in srgb,
+    var(--zephus-foreground, var(--text)) var(--zephus-caption-mix, 65%),
+    transparent
+  );
   font-size: 0.85rem;
 }
 .canvas .zephus-pricing {
-  border: 1px solid var(--border);
+  border: 1px solid
+    color-mix(in srgb, var(--zephus-foreground, var(--text)) 14%, transparent);
   border-radius: var(--zephus-radius, 12px);
   padding: 1.25rem;
 }
@@ -4041,7 +4211,11 @@ body {
   font-weight: 800;
 }
 .canvas .zephus-price-period {
-  color: var(--muted);
+  color: color-mix(
+    in srgb,
+    var(--zephus-foreground, var(--text)) var(--zephus-caption-mix, 65%),
+    transparent
+  );
 }
 .canvas .zephus-cta {
   text-align: center;
@@ -4068,16 +4242,25 @@ body {
   margin: 0;
   font-size: 1.35rem;
 }
-.canvas .zephus-postlist-title a {
+/* .canvas .block a[href] is equally specific and comes first. Without the
+   .block qualifier, post titles stay underlined accent links on the canvas. */
+.canvas .block .zephus-postlist-title a {
   color: inherit;
   text-decoration: none;
+}
+.canvas .block .zephus-postlist-title a:hover {
+  color: var(--zephus-accent-ink, var(--zephus-accent, var(--accent)));
 }
 .canvas .zephus-postlist-meta {
   display: flex;
   flex-wrap: wrap;
   gap: 0.75rem;
   font-size: 0.85rem;
-  opacity: 0.72;
+  color: color-mix(
+    in srgb,
+    var(--zephus-foreground, var(--text)) var(--zephus-meta-mix, 72%),
+    transparent
+  );
 }
 .canvas .zephus-postlist-excerpt {
   margin: 0;
@@ -4089,7 +4272,11 @@ body {
   border-radius: var(--zephus-radius, 12px);
 }
 .canvas .zephus-postlist-empty {
-  opacity: 0.72;
+  color: color-mix(
+    in srgb,
+    var(--zephus-foreground, var(--text)) var(--zephus-meta-mix, 72%),
+    transparent
+  );
   font-style: italic;
 }
 .canvas .zephus-gallery {
@@ -4098,24 +4285,133 @@ body {
   gap: 0.75rem;
 }
 /* Auto-grid mirror of the build's `section:has(> .zephus-feature/.zephus-pricing)`
-   rule: repeated feature/pricing cards lay out in columns on the canvas too,
-   or the user designs full-width stacks that the published site renders as a
-   side-by-side grid. Block shells (with their chrome) are the grid items;
-   sibling headings/paragraphs span all columns like the build. */
-.canvas .section-body:has(> .block > .block-preview > .zephus-feature),
-.canvas .section-body:has(> .block > .block-preview > .zephus-pricing) {
+   rule. The grid items are the block slots, not the insert rails: a rail
+   between two cards would take its own column and stack the cards. */
+.canvas-block-slot {
+  position: relative;
+  min-width: 0;
+}
+.canvas
+  .section-body:has(
+    > .canvas-block-slot > .block > .block-preview > .zephus-feature
+  ),
+.canvas
+  .section-body:has(
+    > .canvas-block-slot > .block > .block-preview > .zephus-pricing
+  ) {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 1.75rem;
   align-items: start;
 }
 .canvas
-  .section-body:has(> .block > .block-preview > .zephus-feature)
-  > .block:has(> .block-preview > :is(h1, h2, h3, h4, p, .lead)),
+  .section-body:has(
+    > .canvas-block-slot > .block > .block-preview > .zephus-feature
+  )
+  > .canvas-block-slot:has(
+    > .block > .block-preview > :is(h1, h2, h3, h4, p, .lead)
+  ),
 .canvas
-  .section-body:has(> .block > .block-preview > .zephus-pricing)
-  > .block:has(> .block-preview > :is(h1, h2, h3, h4, p, .lead)) {
+  .section-body:has(
+    > .canvas-block-slot > .block > .block-preview > .zephus-pricing
+  )
+  > .canvas-block-slot:has(
+    > .block > .block-preview > :is(h1, h2, h3, h4, p, .lead)
+  ),
+.canvas
+  .section-body:has(
+    > .canvas-block-slot > .block > .block-preview > .zephus-feature
+  )
+  > .canvas-insert,
+.canvas
+  .section-body:has(
+    > .canvas-block-slot > .block > .block-preview > .zephus-pricing
+  )
+  > .canvas-insert {
   grid-column: 1 / -1;
+}
+.canvas
+  .section-body:has(
+    > .canvas-block-slot > .block > .block-preview > .zephus-feature
+  )
+  > .canvas-block-slot
+  > .canvas-insert,
+.canvas
+  .section-body:has(
+    > .canvas-block-slot > .block > .block-preview > .zephus-pricing
+  )
+  > .canvas-block-slot
+  > .canvas-insert {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  z-index: 4;
+  margin: 0;
+  transform: translateY(-50%);
+  /* The rail overlaps the card edge. Clicks pass through to the block
+     until the slot is hovered or the add button is focused. */
+  pointer-events: none;
+}
+.canvas
+  .section-body:has(
+    > .canvas-block-slot > .block > .block-preview > .zephus-feature
+  )
+  > .canvas-block-slot:hover
+  > .canvas-insert::before,
+.canvas
+  .section-body:has(
+    > .canvas-block-slot > .block > .block-preview > .zephus-pricing
+  )
+  > .canvas-block-slot:hover
+  > .canvas-insert::before,
+.canvas
+  .section-body:has(
+    > .canvas-block-slot > .block > .block-preview > .zephus-feature
+  )
+  > .canvas-block-slot:focus-within
+  > .canvas-insert::before,
+.canvas
+  .section-body:has(
+    > .canvas-block-slot > .block > .block-preview > .zephus-pricing
+  )
+  > .canvas-block-slot:focus-within
+  > .canvas-insert::before {
+  opacity: 0.45;
+  transform: scaleX(1);
+}
+.canvas
+  .section-body:has(
+    > .canvas-block-slot > .block > .block-preview > .zephus-feature
+  )
+  > .canvas-block-slot:hover
+  > .canvas-insert
+  .canvas-insert-button,
+.canvas
+  .section-body:has(
+    > .canvas-block-slot > .block > .block-preview > .zephus-pricing
+  )
+  > .canvas-block-slot:hover
+  > .canvas-insert
+  .canvas-insert-button,
+.canvas
+  .section-body:has(
+    > .canvas-block-slot > .block > .block-preview > .zephus-feature
+  )
+  > .canvas-block-slot:focus-within
+  > .canvas-insert
+  .canvas-insert-button,
+.canvas
+  .section-body:has(
+    > .canvas-block-slot > .block > .block-preview > .zephus-pricing
+  )
+  > .canvas-block-slot:focus-within
+  > .canvas-insert
+  .canvas-insert-button {
+  pointer-events: auto;
+  color: var(--text);
+  opacity: 1;
+  transform: scale(1);
 }
 .canvas .zephus-gallery img {
   width: 100%;
@@ -4182,6 +4478,11 @@ body {
   white-space: pre-wrap;
   word-break: break-all;
   color: var(--muted);
+}
+
+.dev-log:focus-visible,
+.licenses-table-wrap:focus-visible {
+  outline-offset: -2px;
 }
 
 /* Status Bar */
@@ -4355,7 +4656,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #ffffff;
+  color: var(--text);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
   transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
@@ -4555,8 +4856,8 @@ body {
 }
 
 .settings-row input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
+  width: 24px;
+  height: 24px;
   accent-color: var(--accent);
   border-radius: var(--radius-sm);
   cursor: pointer;
@@ -5151,6 +5452,34 @@ kbd {
   }
 }
 
+/* The start-screen chrome rule paints every theme card with the same
+   border. The selected card has to win that rule, and the light fill has
+   to stay light enough for the name and description. */
+#view-start .theme-card.selected {
+  border-color: var(--accent);
+  box-shadow:
+    0 0 0 1px var(--accent),
+    var(--chrome-shadow);
+}
+
+[data-theme="light"] #view-start .theme-card.selected {
+  background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+  border-color: var(--accent);
+  box-shadow:
+    0 0 0 1px var(--accent),
+    0 1px 3px rgba(24, 24, 27, 0.08);
+}
+
+@media (prefers-color-scheme: light) {
+  [data-theme="system"] #view-start .theme-card.selected {
+    background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+    border-color: var(--accent);
+    box-shadow:
+      0 0 0 1px var(--accent),
+      0 1px 3px rgba(24, 24, 27, 0.08);
+  }
+}
+
 [data-theme="light"] .workspace-tab.active {
   color: var(--text);
 }
@@ -5208,11 +5537,11 @@ kbd {
 [data-theme="light"] .page-item.hidden-page,
 [data-theme="light"] .page-item.hidden-page .page-main strong,
 [data-theme="light"] .page-item.hidden-page .page-main small {
-  color: #b45309;
+  color: var(--warning-text);
 }
 
 [data-theme="light"] .git-panel .g-m {
-  color: #b45309;
+  color: var(--warning-text);
 }
 
 [data-theme="light"] .git-panel .g-a {
@@ -5228,7 +5557,7 @@ kbd {
 }
 
 [data-theme="light"] .overview-pill.warn {
-  color: #b45309;
+  color: var(--warning-text);
 }
 
 @media (prefers-color-scheme: light) {
@@ -5251,11 +5580,11 @@ kbd {
   [data-theme="system"] .page-item.hidden-page,
   [data-theme="system"] .page-item.hidden-page .page-main strong,
   [data-theme="system"] .page-item.hidden-page .page-main small {
-    color: #b45309;
+    color: var(--warning-text);
   }
 
   [data-theme="system"] .git-panel .g-m {
-    color: #b45309;
+    color: var(--warning-text);
   }
 
   [data-theme="system"] .git-panel .g-a {
@@ -5271,7 +5600,7 @@ kbd {
   }
 
   [data-theme="system"] .overview-pill.warn {
-    color: #b45309;
+    color: var(--warning-text);
   }
 }
 
@@ -5355,6 +5684,7 @@ kbd {
   background: var(--bg-alt);
   color: var(--muted);
   border-radius: 999px;
+  min-height: 24px;
   padding: 2px 10px;
   font-size: 12px;
   cursor: pointer;

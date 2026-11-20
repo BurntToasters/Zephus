@@ -1,7 +1,10 @@
 /** Page + site save flow for the editor. */
 
 import { EditorSessionState, isGlobalDirty } from "./editorSession";
-import { cancelScheduledEditorDraftWrite } from "./editorDraft";
+import {
+  cancelScheduledEditorDraftWrite,
+  settlePageDraftWrite,
+} from "./editorDraft";
 
 // A user can press Save repeatedly while a save is in flight. Continue to
 // flush newer snapshots, but never allow a pathological stream of edits or
@@ -38,6 +41,8 @@ export interface EditorSaveDeps {
   clearChanges: () => void;
   markDirty: (dirty: boolean) => void;
   scheduleDraftWrite: () => void;
+  /** Live site recovery payload. A reschedule must not invent an empty one. */
+  siteDraftContent: () => string;
   renderDirtyIndicators: () => void;
   reloadPages: () => Promise<void>;
   persistPendingSiteDocument: () => Promise<boolean>;
@@ -257,12 +262,20 @@ export function createEditorSaveActions(deps: EditorSaveDeps) {
             const writeDraft =
               deps.zephus.writeDraft ??
               window.zephus.writeDraft.bind(window.zephus);
-            void writeDraft(
+            const draftContent = currentPageContent();
+            void settlePageDraftWrite(
+              deps.getState(),
+              {
+                writeDraft,
+                clearDraft: deps.zephus.clearDraft.bind(deps.zephus),
+                pageDraftContent: currentPageContent,
+                siteDraftContent: deps.siteDraftContent,
+              },
               projectPath,
-              "page",
               pagePath,
-              currentPageContent(),
-            ).catch(() => undefined);
+              deps.getState().pageRevision,
+              draftContent,
+            );
           } else if (!state.pageDirty) {
             deps.markDirty(true);
           }

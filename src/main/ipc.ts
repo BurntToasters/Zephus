@@ -53,6 +53,7 @@ import {
 } from "./services/install";
 import {
   importAssets,
+  importAssetBytes,
   importAssetsFromPaths,
   deleteAsset,
   renameAsset,
@@ -540,6 +541,25 @@ export function registerIpcHandlers(
           projectPath,
           detectedAstroPublicDir(projectPath),
           paths,
+        ),
+      ),
+  );
+
+  ipcMain.handle(
+    IPC.importAssetBytes,
+    (
+      _e,
+      projectPath: string,
+      _publicDir: string,
+      fileName: string,
+      bytesBase64: string,
+    ) =>
+      approved(projectPath, () =>
+        importAssetBytes(
+          projectPath,
+          detectedAstroPublicDir(projectPath),
+          fileName,
+          bytesBase64,
         ),
       ),
   );

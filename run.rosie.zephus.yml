@@ -61,6 +61,18 @@ modules:
         CXXFLAGS="$(printf '%s' "$CXXFLAGS" | sed -E 's/(^| )-O[0-9sgz]?( |$)/ /g')" \
           npx tauri build --no-bundle -- --locked
       - install -Dm755 src-tauri/target/release/zephus /app/bin/zephus
+      # Node still runs the editor backend. Stage the same tree the NSIS
+      # bundle ships, then install it where Tauri looks for product name Zephus.
+      - node scripts/stage-backend-resources.mjs
+      - |
+        set -eu
+        dest=/app/lib/Zephus
+        install -d "$dest"
+        cp -a src-tauri/resources/backend/. "$dest/"
+        test -f "$dest/dist/main/main.js"
+        test -f "$dest/src/main/runtime/registerHook.cjs"
+        test -f "$dest/node_modules/entities/package.json"
+        test -f "$dest/node_modules/sanitize-filename/package.json"
       # The shell spawns `node` for the editor backend. The sandbox cannot see
       # a host Node, so ship the node24 extension's binary on PATH.
       - |

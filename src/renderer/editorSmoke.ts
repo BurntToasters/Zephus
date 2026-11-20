@@ -293,7 +293,7 @@ export function installEditorSmokeHook(deps: EditorSmokeDeps): void {
     const blockShellsInOrder = (): HTMLElement[] =>
       Array.from(
         document.querySelectorAll<HTMLElement>(
-          "#canvas > .canvas-section > .section-body > .block",
+          "#canvas > .canvas-section > .section-body > .canvas-block-slot > .block",
         ),
       );
     const flatBlockIds = (): string[] =>

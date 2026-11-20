@@ -157,6 +157,8 @@ licenses.json
 
 # Tauri / Rust
 src-tauri/target/
+src-tauri/vendor/tauri-plugin-updater/target/
+src-tauri/resources/
 src-tauri/*.key
 src-tauri/**/*.key
 !src-tauri/**/*.key.pub

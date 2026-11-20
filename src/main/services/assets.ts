@@ -324,6 +324,105 @@ function copyIntoAssets(
 }
 
 /**
+ * The last path segment only. A dropped name is untrusted text, so directory
+ * prefixes and Windows separators are discarded before the file is created.
+ */
+function droppedAssetFileName(value: string): string {
+  if (value.includes("\0")) {
+    throw new Error("Invalid file name.");
+  }
+  const base = value.split(/[/\\]/).pop() ?? "";
+  const cleaned = sanitizeFilename(base);
+  if (
+    !cleaned ||
+    cleaned === "." ||
+    cleaned === ".." ||
+    /[/\\]/.test(cleaned)
+  ) {
+    throw new Error("Invalid file name.");
+  }
+  return cleaned;
+}
+
+/**
+ * Writes one dropped file into public/assets/<category>/. The caller has no
+ * filesystem path: the webview can read the bytes, not the source location.
+ */
+export function importAssetBytes(
+  projectPath: string,
+  publicDir: string,
+  fileName: string,
+  bytesBase64: string,
+): ImportAssetsResult {
+  const imported: { webPath: string; category: AssetCategory }[] = [];
+  const errors: string[] = [];
+  try {
+    if (typeof fileName !== "string" || typeof bytesBase64 !== "string") {
+      throw new Error("Invalid dropped file.");
+    }
+    const name = droppedAssetFileName(fileName);
+    const ext = path.extname(name).slice(1).toLowerCase();
+    if (!ext || !ALL_ASSET_EXTENSIONS.includes(ext)) {
+      errors.push(`${name}: unsupported file type` + (ext ? ` (.${ext})` : ""));
+      return { ok: false, imported, errors };
+    }
+    if (
+      bytesBase64.length > MAX_DROPPED_ASSET_BASE64 + 4 ||
+      bytesBase64.length === 0
+    ) {
+      errors.push(
+        bytesBase64.length === 0
+          ? `${name}: empty file`
+          : `${name}: file is too large to drop. Use Import Files.`,
+      );
+      return { ok: false, imported, errors };
+    }
+    const bytes = Buffer.from(bytesBase64, "base64");
+    if (bytes.length === 0 || bytes.length > MAX_DROPPED_ASSET_BYTES) {
+      errors.push(
+        bytes.length === 0
+          ? `${name}: empty file`
+          : `${name}: file is too large to drop. Use Import Files.`,
+      );
+      return { ok: false, imported, errors };
+    }
+    const category = categoryForExtension(ext);
+    const publicRoot = resolveProjectRelativeDir(
+      projectPath,
+      publicDir,
+      "public",
+    ).absolute;
+    const realPublicRoot = ensureRealPublicRoot(projectPath, publicRoot);
+    const targetDir = path.join(publicRoot, ASSETS_ROOT, category);
+    fs.mkdirSync(targetDir, { recursive: true });
+    const realTargetDir = fs.realpathSync.native(targetDir);
+    assertRealChild(
+      realPublicRoot,
+      realTargetDir,
+      "Asset directory escapes the public directory.",
+    );
+    const storedName = uniqueName(targetDir, name);
+    const destPath = path.join(targetDir, storedName);
+    assertImportDestinationNotSymlink(destPath);
+    assertRealChild(
+      path.resolve(targetDir),
+      path.resolve(destPath),
+      "Asset file escapes the public directory.",
+    );
+    fs.writeFileSync(destPath, bytes);
+    imported.push({
+      webPath: `/${ASSETS_ROOT}/${category}/${encodeWebPath(storedName)}`,
+      category,
+    });
+    return { ok: true, imported, errors };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    errors.push(message);
+    return { ok: false, imported, errors };
+  }
+}
+
+/**
  * Prompts the user to pick an image, copies it into public/assets/images,
  * and returns the web-root-relative path. Kept for the image block flow.
  */
@@ -504,6 +603,13 @@ const MIME_BY_EXTENSION: Record<string, string> = {
 
 /** Max file size to inline as a data URL for thumbnails (5 MB). */
 const MAX_DATA_URL_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Largest file a drag-and-drop can send through the local invoke body.
+ * Bigger files still import through the file dialog, which copies by path.
+ */
+const MAX_DROPPED_ASSET_BYTES = 16 * 1024 * 1024;
+const MAX_DROPPED_ASSET_BASE64 = Math.ceil(MAX_DROPPED_ASSET_BYTES / 3) * 4;
 
 export interface AssetDataUrlResult {
   ok: boolean;

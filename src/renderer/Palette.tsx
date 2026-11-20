@@ -1,6 +1,11 @@
 import { render } from "solid-js/web";
 import { createSignal, For, Show, createEffect } from "solid-js";
 import { PALETTE, PALETTE_ICONS, type BlockType } from "./editorBlocks";
+import {
+  isPaletteMoveKey,
+  onPaletteKeyDown,
+  paletteTabStop,
+} from "./paletteKeyboard";
 
 interface PaletteItem {
   type: BlockType;
@@ -53,6 +58,7 @@ const PALETTE_ITEMS: PaletteItem[] = PALETTE.map((entry) => ({
 
 const [allowedBlocks, setAllowedBlocks] = createSignal<string[] | null>(null);
 const [query, setQuery] = createSignal("");
+const [tabType, setTabType] = createSignal<string | null>(null);
 let onInsertBlockCallback: ((type: BlockType) => void) | null = null;
 
 function runIconRefresh() {
@@ -94,9 +100,29 @@ export function BlockPalette() {
     })).filter((group) => group.items.length > 0);
   };
 
+  const stopType = () => {
+    const items = filteredPalette();
+    const active = tabType();
+    if (active && items.some((item) => item.type === active)) return active;
+    return items[0]?.type ?? null;
+  };
+
   const handleKeyDown = (e: KeyboardEvent, item: PaletteItem) => {
+    if (isPaletteMoveKey(e.key)) {
+      onPaletteKeyDown(e);
+      const current = e.currentTarget;
+      const next =
+        current instanceof HTMLElement
+          ? current.ownerDocument.activeElement
+          : null;
+      if (next instanceof HTMLElement && next.dataset["block"]) {
+        setTabType(next.dataset["block"]);
+      }
+      return;
+    }
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
+      setTabType(item.type);
       onInsertBlockCallback?.(item.type);
     }
   };
@@ -137,11 +163,14 @@ export function BlockPalette() {
                   <li
                     draggable={true}
                     data-block={item.type}
-                    tabIndex={0}
+                    tabIndex={paletteTabStop(item.type, stopType())}
                     role="button"
                     aria-label={`Add ${item.label} block`}
                     title={`Add ${item.label} (or drag onto the canvas)`}
-                    onClick={() => onInsertBlockCallback?.(item.type)}
+                    onClick={() => {
+                      setTabType(item.type);
+                      onInsertBlockCallback?.(item.type);
+                    }}
                     onKeyDown={(e) => handleKeyDown(e, item)}
                     onDragStart={(e) => handleDragStart(e, item)}
                   >

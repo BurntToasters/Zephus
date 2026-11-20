@@ -85,16 +85,104 @@ function packagedBinaryCandidates(platform) {
 }
 
 const binaryCandidates = packagedBinaryCandidates(process.platform);
-const binary =
-  binaryCandidates.find((candidate) => fs.existsSync(candidate)) ??
-  binaryCandidates[0];
-if (!binary || !fs.existsSync(binary)) {
+const found =
+  binaryCandidates.find((candidate) => fs.existsSync(candidate)) ?? null;
+if (!found) {
   console.error(
     `✗ Packaged binary missing. Checked:\n  ${binaryCandidates.join("\n  ")}`,
   );
   console.error("  Run: npm run tauri:build");
   process.exit(1);
 }
+
+const RESOURCE_NAMES = [
+  "dist",
+  "src",
+  "template-previews",
+  "node_modules",
+  "licenses.json",
+  "package.json",
+];
+
+function cargoCheckoutBinary(binary) {
+  const windows = binary.replace(/\//g, "\\").toLowerCase();
+  if (process.platform === "win32") {
+    return (
+      windows.includes("\\target\\debug\\") ||
+      windows.includes("\\target\\release\\")
+    );
+  }
+  if (process.platform === "linux") {
+    const unix = binary.replace(/\\/g, "/");
+    return unix.includes("/target/debug/") || unix.includes("/target/release/");
+  }
+  return false;
+}
+
+let stagedRoot = null;
+
+function stagePackagedLayout(binary) {
+  // target\release is a checkout build. Copy the exe and the resources Tauri
+  // placed beside it so the shell takes the packaged resource path.
+  const stage = fs.mkdtempSync(path.join(os.tmpdir(), "zephus-boot-"));
+  stagedRoot = stage;
+  const sourceDir = path.dirname(binary);
+  fs.copyFileSync(binary, path.join(stage, path.basename(binary)));
+  for (const name of RESOURCE_NAMES) {
+    const from = path.join(sourceDir, name);
+    if (!fs.existsSync(from)) continue;
+    fs.cpSync(from, path.join(stage, name), { recursive: true });
+  }
+  const mainJs = path.join(stage, "dist", "main", "main.js");
+  if (!fs.existsSync(mainJs)) {
+    console.error(`✗ Staged packaged layout is missing ${mainJs}`);
+    process.exit(1);
+  }
+  return path.join(stage, path.basename(binary));
+}
+
+function appLogPath() {
+  if (process.platform === "win32") {
+    return path.join(
+      process.env.APPDATA || "",
+      "run.rosie.zephus",
+      "logs",
+      "zephus.log",
+    );
+  }
+  if (process.platform === "darwin") {
+    return path.join(
+      os.homedir(),
+      "Library",
+      "Application Support",
+      "run.rosie.zephus",
+      "logs",
+      "zephus.log",
+    );
+  }
+  const base =
+    process.env.XDG_DATA_HOME || path.join(os.homedir(), ".local", "share");
+  return path.join(base, "run.rosie.zephus", "logs", "zephus.log");
+}
+
+function expectedBackendRoot(binary) {
+  if (process.platform === "darwin") {
+    return path.resolve(path.dirname(binary), "..", "Resources");
+  }
+  const installedLib = path.resolve(
+    path.dirname(binary),
+    "..",
+    "lib",
+    "Zephus",
+  );
+  if (process.platform === "linux" && fs.existsSync(installedLib)) {
+    return installedLib;
+  }
+  return path.dirname(binary);
+}
+
+const binary = cargoCheckoutBinary(found) ? stagePackagedLayout(found) : found;
+const backendRoot = expectedBackendRoot(binary);
 
 // electron-builder applies fuses after Electron's upstream signature. On
 // macOS, intentionally unsigned CI packages are then killed by the kernel as
@@ -112,6 +200,8 @@ if (
 }
 
 console.log(`Launching packaged binary: ${binary}`);
+const logPath = appLogPath();
+const logStart = fs.existsSync(logPath) ? fs.statSync(logPath).size : 0;
 const env = {
   ...process.env,
   ZEPHUS_BOOT_CHECK: "1",
@@ -132,9 +222,39 @@ const timer = setTimeout(() => {
 
 child.on("exit", (code, signal) => {
   clearTimeout(timer);
-  if (code === 0) {
-    console.log("✓ Packaged boot check passed (renderer loaded, exit 0)");
+  let fresh = "";
+  if (fs.existsSync(logPath)) {
+    const bytes = fs.readFileSync(logPath);
+    const start = bytes.length >= logStart ? logStart : 0;
+    fresh = bytes.subarray(start).toString("utf8");
+  }
+  const haystack = fresh.toLowerCase().replace(/\//g, "\\");
+  const backendReady =
+    haystack.includes("node backend ready") &&
+    haystack.includes(backendRoot.toLowerCase().replace(/\//g, "\\"));
+  if (code === 0 && backendReady) {
+    if (stagedRoot) {
+      fs.rmSync(stagedRoot, { recursive: true, force: true });
+    }
+    console.log(
+      "✓ Packaged boot check passed (renderer loaded, Node backend started, exit 0)",
+    );
     process.exit(0);
+  }
+  if (code === 0 && !backendReady) {
+    const ready = fresh
+      .split(/\r?\n/)
+      .filter((line) => line.toLowerCase().includes("node backend ready"));
+    console.error(
+      "✗ Packaged boot exited 0 without starting the Node backend from the packaged resources.",
+    );
+    console.error(`  expected root: ${backendRoot}`);
+    if (ready.length === 0) {
+      console.error("  log has no Node backend ready line");
+    } else {
+      for (const line of ready) console.error(`  ${line}`);
+    }
+    process.exit(1);
   }
   console.error(
     `✗ Packaged boot check failed (exit=${code} signal=${signal ?? "none"})`,

@@ -1,5 +1,6 @@
 import { For, Show } from "solid-js";
 import { render } from "solid-js/web";
+import { onFindResultKeyDown } from "./findResultKeyboard";
 
 export interface FindReplaceModalState {
   query: string;
@@ -11,6 +12,8 @@ export interface FindReplaceModalState {
   totalMatches: number;
   /** The query the current results were searched with. */
   searchedQuery: string;
+  /** Shown in the dialog. The status bar is covered while this dialog is open. */
+  findError?: string;
   onQueryChange: (value: string) => void;
   onReplacementChange: (value: string) => void;
   onCaseSensitiveChange: (value: boolean) => void;
@@ -48,6 +51,11 @@ export function renderFindReplaceModalBody(
             }}
           />
         </label>
+        <Show when={state.findError}>
+          <p class="form-error find-replace-error" role="alert">
+            {state.findError}
+          </p>
+        </Show>
 
         <label class="meta-field">
           <span>Replace with</span>
@@ -65,6 +73,7 @@ export function renderFindReplaceModalBody(
           <label class="find-replace-toggle">
             <input
               type="checkbox"
+              class="find-replace-case"
               checked={state.caseSensitive}
               onChange={(event) =>
                 state.onCaseSensitiveChange(event.currentTarget.checked)
@@ -75,6 +84,7 @@ export function renderFindReplaceModalBody(
           <label class="find-replace-toggle">
             <input
               type="checkbox"
+              class="find-replace-whole"
               checked={state.wholeWord}
               onChange={(event) =>
                 state.onWholeWordChange(event.currentTarget.checked)
@@ -109,11 +119,13 @@ export function renderFindReplaceModalBody(
               </p>
               <ul class="find-replace-list">
                 <For each={state.matches ?? []}>
-                  {(match) => (
+                  {(match, index) => (
                     <li>
                       <button
                         type="button"
                         class="find-replace-page"
+                        tabIndex={index() === 0 ? 0 : -1}
+                        onKeyDown={onFindResultKeyDown}
                         onClick={() => state.onOpenPage(match.page)}
                       >
                         <strong>{match.label}</strong>

@@ -1,13 +1,11 @@
 //! Security boundary for everything the webview sends: URL safety (no private
-//! or loopback targets), download/file path allow-lists, and strict payload
-//! validation for download requests, settings patches, and queue operations.
+//! or loopback targets), file path allow-lists, and notification payloads.
 
 use crate::ip_policy::{is_public_ip, is_public_ipv4, is_public_ipv6};
 use crate::ipc::{
     FalliblePayload, IpcError, JsonObject, INVALID_PATH, INVALID_URL, VALIDATION_ERROR,
 };
 use crate::types::{NotificationInput, NotificationRequest};
-use serde_json::Value;
 use std::net::{Ipv4Addr, ToSocketAddrs};
 use std::path::{Component, Path, PathBuf};
 
@@ -90,53 +88,9 @@ pub fn is_private_or_local_host(host: &url::Host<&str>) -> bool {
     }
 }
 
-#[cfg(feature = "e2e")]
-fn e2e_allows_loopback(host: &url::Host<&str>) -> bool {
-    std::env::var("ROSI_E2E_ALLOW_LOOPBACK").as_deref() == Ok("1")
-        && matches!(host, url::Host::Ipv4(ip) if ip.is_loopback())
-}
-
-#[cfg(not(feature = "e2e"))]
-fn e2e_allows_loopback(_host: &url::Host<&str>) -> bool {
-    false
-}
-
-fn parse_web_url(value: &str) -> Option<url::Url> {
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    let url = url::Url::parse(trimmed).ok()?;
-    matches!(url.scheme(), "http" | "https").then_some(url)
-}
-
-/// Checks stable URL syntax and literal-host policy without consulting DNS.
-/// Persistence and metadata parsing use this so temporary resolver failures
-/// cannot erase user data or unparse otherwise valid extractor output.
-pub fn is_syntactically_safe_http_url(value: &str) -> bool {
-    let Some(url) = parse_web_url(value) else {
-        return false;
-    };
-    if !url.username().is_empty() || url.password().is_some() {
-        return false;
-    }
-    let Some(host) = url.host() else {
-        return false;
-    };
-    e2e_allows_loopback(&host) || !is_private_or_local_host(&host)
-}
-
-/// Accepts a syntactically safe internal HTTP(S) URL. DNS is deliberately
-/// deferred until a cancellable operation is reserved and the pinned proxy is
-/// ready to connect to the exact vetted address set.
-pub fn is_safe_http_url(value: &str) -> bool {
-    is_syntactically_safe_http_url(value)
-}
-
 /// Validates DNS answers immediately before handing a URL to the system
-/// browser/opener. ROSI cannot control DNS resolution or redirects performed
-/// after the external application receives the URL; internal preview, formats,
-/// and downloads use the pinned `network_security` proxy instead.
+/// browser/opener. Zephus cannot control DNS resolution or redirects performed
+/// after the external application receives the URL.
 pub fn is_safe_external_url(value: &str) -> bool {
     let trimmed = value.trim();
     if trimmed.is_empty() {
@@ -186,16 +140,6 @@ fn is_public_http_destination(value: &str) -> bool {
     };
     let addresses: Vec<_> = addresses.collect();
     !addresses.is_empty() && addresses.iter().all(|addr| is_public_ip(addr.ip()))
-}
-
-/// Canonical queue URL: a safe http(s) URL without its fragment.
-pub fn normalize_queue_url(value: &str) -> Option<String> {
-    if !is_syntactically_safe_http_url(value) {
-        return None;
-    }
-    let mut url = url::Url::parse(value.trim()).ok()?;
-    url.set_fragment(None);
-    Some(url.to_string())
 }
 
 // ---------------------------------------------------------------------------
@@ -368,86 +312,6 @@ fn path_error(message: impl Into<String>) -> IpcError {
 
 fn validation_error(message: impl Into<String>) -> IpcError {
     IpcError::new(VALIDATION_ERROR, message)
-}
-
-/// Empty input is allowed and means "use the default download folder".
-pub fn validate_download_path(value: &str) -> Result<String, IpcError> {
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        return Ok(String::new());
-    }
-    if !is_absolute_path(trimmed) {
-        return Err(path_error("Download path must be an absolute path."));
-    }
-    let resolved = resolve_path(trimmed);
-    if !is_allowed_download_base(&resolved) {
-        return Err(path_error(
-            "Download path must be within your home directory or an allowed external volume.",
-        ));
-    }
-    Ok(resolved.to_string_lossy().into_owned())
-}
-
-fn validate_output_path(value: &str) -> Result<String, IpcError> {
-    if !is_absolute_path(value.trim()) {
-        return Err(path_error("Download outputPath must be an absolute path."));
-    }
-    validate_download_path(value)
-}
-
-pub fn validate_ffmpeg_path_value(value: Option<&str>) -> Result<Option<String>, IpcError> {
-    let Some(value) = value else {
-        return Ok(None);
-    };
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        return Ok(None);
-    }
-    if trimmed == "ffmpeg" {
-        return Ok(Some("ffmpeg".to_string()));
-    }
-    if !is_absolute_path(trimmed) {
-        return Err(validation_error(
-            "ffmpegPath must be an absolute path, empty string, or \"ffmpeg\".",
-        ));
-    }
-    let resolved = resolve_path(trimmed);
-    let base = resolved
-        .file_name()
-        .map(|name| name.to_string_lossy().to_lowercase())
-        .unwrap_or_default();
-    if base != "ffmpeg" && base != "ffmpeg.exe" {
-        return Err(validation_error(
-            "ffmpegPath must point to ffmpeg or ffmpeg.exe.",
-        ));
-    }
-    if !resolved.exists() {
-        return Err(validation_error("ffmpegPath does not exist."));
-    }
-    Ok(Some(resolved.to_string_lossy().into_owned()))
-}
-
-/// The checks of `validate_ffmpeg_path_value` except existence, for values
-/// loaded from disk.
-pub fn validate_ffmpeg_path_shape(value: &str) -> Option<String> {
-    let trimmed = value.trim();
-    if trimmed == "ffmpeg" {
-        return Some(trimmed.to_string());
-    }
-    if !is_absolute_path(trimmed) {
-        return None;
-    }
-    let resolved = resolve_path(trimmed);
-    let base = resolved
-        .file_name()
-        .map(|name| name.to_string_lossy().to_lowercase())
-        .unwrap_or_default();
-    (base == "ffmpeg" || base == "ffmpeg.exe").then(|| resolved.to_string_lossy().into_owned())
-}
-
-/// Stored activity and queue data pass a `Value`; the commands pass a string.
-pub fn validate_file_location(value: &Value) -> Result<String, IpcError> {
-    validate_file_path(value.as_str().unwrap_or(""))
 }
 
 pub fn validate_file_path(raw: &str) -> Result<String, IpcError> {

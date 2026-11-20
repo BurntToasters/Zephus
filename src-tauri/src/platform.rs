@@ -1,6 +1,8 @@
 //! Platform queries, updater target selection, and OS handoffs.
 
-use crate::ipc::{FalliblePayload, IpcResult, JsonObject, INTERNAL_ERROR, INVALID_PATH, INVALID_URL};
+use crate::ipc::{
+    FalliblePayload, IpcResult, JsonObject, INTERNAL_ERROR, INVALID_PATH, INVALID_URL,
+};
 use crate::types::NotificationInput;
 use serde::Serialize;
 use tauri_plugin_notification::NotificationExt;

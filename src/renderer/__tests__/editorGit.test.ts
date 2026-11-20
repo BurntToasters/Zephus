@@ -111,7 +111,9 @@ describe("editorGit", () => {
       },
     });
 
-    await actions.commitGitChanges("save", ["a.ts", "b.ts"]);
+    await expect(
+      actions.commitGitChanges("save", ["a.ts", "b.ts"]),
+    ).resolves.toBe(true);
 
     expect(commitGitChanges).toHaveBeenCalledWith("/proj", "save", [
       "a.ts",
@@ -139,7 +141,7 @@ describe("editorGit", () => {
       },
     });
 
-    await actions.commitGitChanges("empty");
+    await expect(actions.commitGitChanges("empty")).resolves.toBe(false);
 
     expect(setStatus).toHaveBeenCalledWith(
       "Git commit failed: nothing to commit",
@@ -163,7 +165,7 @@ describe("editorGit", () => {
       },
     });
 
-    await expect(actions.commitGitChanges("boom")).resolves.toBeUndefined();
+    await expect(actions.commitGitChanges("boom")).resolves.toBe(false);
 
     expect(setStatus).toHaveBeenCalledWith("Git commit failed: ipc down");
   });
@@ -347,7 +349,7 @@ describe("editorGit", () => {
       },
     });
 
-    await actions.commitGitChanges("save");
+    await expect(actions.commitGitChanges("save")).resolves.toBe(false);
 
     expect(setStatus).toHaveBeenCalledWith(
       'Git needs your identity first: run `git config --global user.name "Your Name"` and `git config --global user.email you@example.com`, then commit again.',
@@ -449,7 +451,7 @@ describe("editorGit", () => {
     });
 
     await actions.refreshGit();
-    await actions.commitGitChanges("msg");
+    await expect(actions.commitGitChanges("msg")).resolves.toBe(false);
     await actions.pushGitChanges();
     await actions.pullGitChanges();
     await actions.initGitFromPanel();

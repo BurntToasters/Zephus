@@ -93,20 +93,102 @@ export interface ParsedGitStatus {
 }
 
 /** Parses `git status --porcelain` into panel lists (excludes unmerged UU and copy C). */
+const GIT_SIMPLE_ESCAPES: Record<string, string> = {
+  a: "\u0007",
+  b: "\b",
+  t: "\t",
+  n: "\n",
+  v: "\v",
+  f: "\f",
+  r: "\r",
+  "\\": "\\",
+  '"': '"',
+};
+
+/**
+ * `core.quotePath=false` stops git from octal-escaping UTF-8, but names with
+ * a leading or trailing space, a quote, or a control character are still
+ * wrapped in C quotes. Trimming that text kept the quote marks, so the panel
+ * and commit path list never matched the file on disk.
+ */
+function unquoteGitPath(value: string): string {
+  if (!value.startsWith('"')) return value;
+  let out = "";
+  let closed = false;
+  for (let index = 1; index < value.length; index += 1) {
+    const ch = value[index];
+    if (ch === '"') {
+      closed = true;
+      break;
+    }
+    if (ch !== "\\" || index + 1 >= value.length) {
+      out += ch;
+      continue;
+    }
+    const next = value[index + 1] ?? "";
+    const simple = GIT_SIMPLE_ESCAPES[next];
+    if (simple !== undefined) {
+      out += simple;
+      index += 1;
+      continue;
+    }
+    if (next >= "0" && next <= "7") {
+      const octal = value.slice(index + 1, index + 4);
+      if (/^[0-7]{3}$/.test(octal)) {
+        out += String.fromCharCode(Number.parseInt(octal, 8));
+        index += 3;
+        continue;
+      }
+    }
+    out += next;
+    index += 1;
+  }
+  return closed ? out : value;
+}
+
+/** Rename lines are `ORIG -> DEST`, and either side may be quoted. */
+function renameDestination(field: string): string {
+  let inQuote = false;
+  for (let index = 0; index < field.length; index += 1) {
+    const ch = field[index];
+    if (inQuote) {
+      if (ch === "\\") {
+        index += 1;
+        continue;
+      }
+      if (ch === '"') inQuote = false;
+      continue;
+    }
+    if (ch === '"') {
+      inQuote = true;
+      continue;
+    }
+    if (field.startsWith(" -> ", index)) return field.slice(index + 4);
+  }
+  return field;
+}
+
+function porcelainPath(line: string): string {
+  if (line.length < 4) return "";
+  const code = line.slice(0, 2);
+  const field = line.slice(3);
+  const raw = code.includes("R") ? renameDestination(field) : field;
+  return unquoteGitPath(raw);
+}
+
 export function parseStatusPorcelain(statusRaw: string): ParsedGitStatus {
   const modified: string[] = [];
   const added: string[] = [];
   const deleted: string[] = [];
 
-  for (const line of statusRaw.split("\n")) {
+  for (const rawLine of statusRaw.split("\n")) {
+    const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
     if (!line.trim()) continue;
     const code = line.slice(0, 2);
     // Unmerged conflicts and index/worktree copies are omitted — Commit All
     // must not stage paths the panel does not list.
     if (code.includes("U") || code[0] === "C" || code[1] === "C") continue;
-    const isRename = code.includes("R");
-    const arrow = isRename ? line.indexOf(" -> ") : -1;
-    const file = (arrow >= 0 ? line.slice(arrow + 4) : line.slice(3)).trim();
+    const file = porcelainPath(line);
     if (!file) continue;
     if (code.includes("D")) deleted.push(file);
     else if (code.includes("A") || code.includes("?")) added.push(file);
@@ -335,7 +417,7 @@ export async function commitProjectPaths(
   if (!normalized) {
     return { ok: false, error: "Commit message is required." };
   }
-  const unique = [...new Set(paths.map((p) => p.trim()).filter(Boolean))];
+  const unique = [...new Set(paths.filter((p) => p.trim().length > 0))];
   if (unique.length === 0) {
     return { ok: false, error: "Select at least one file to commit." };
   }

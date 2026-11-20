@@ -69,15 +69,25 @@ export function createKeyboardHandler(deps: KeyboardDeps) {
         active.tagName === "SELECT");
     const mod = e.ctrlKey || e.metaKey;
 
-    if (
-      deps.isBusy() &&
-      ((mod &&
-        ["s", "z", "y", "d", "c", "x", "v"].includes(e.key.toLowerCase())) ||
+    if (deps.isBusy()) {
+      const keyName = e.key.toLowerCase();
+      const pageShortcut =
+        (mod && ["s", "z", "y", "d", "c", "x", "v"].includes(keyName)) ||
         e.key === "Delete" ||
-        e.key === "Backspace")
-    ) {
-      e.preventDefault();
-      return;
+        e.key === "Backspace";
+      // A focused field keeps its own editing keys during a save: Backspace,
+      // Delete, and undo, redo, copy, cut, and paste. Cancelling those made a
+      // properties field ignore the key. Page shortcuts stay blocked so a save
+      // cannot also delete or undo a block.
+      const fieldEdit =
+        editing &&
+        (e.key === "Delete" ||
+          e.key === "Backspace" ||
+          (mod && ["z", "y", "c", "x", "v"].includes(keyName)));
+      if (pageShortcut && !fieldEdit) {
+        e.preventDefault();
+        return;
+      }
     }
 
     // A modal being open must not let canvas shortcuts mutate the page behind

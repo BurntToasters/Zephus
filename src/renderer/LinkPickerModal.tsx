@@ -15,9 +15,13 @@ export interface LinkPickerModalState {
   /** The current link is a route not present in pageOptions — never silently replace it with the first listed page. */
   pageValueMissing?: boolean;
   rawValue: string;
+  /** The link address this picker was opened with. */
+  currentValue: string;
   onKindChange: (value: LinkPickerKind) => void;
   onPageValueChange: (value: string) => void;
-  onRawValueChange: (value: string) => void;
+  onRawValueChange: (value: string, edited: boolean) => void;
+  /** Shown in the dialog. The status bar is covered while this dialog is open. */
+  formError?: string;
 }
 
 function fieldLabel(kind: LinkPickerKind): string {
@@ -50,6 +54,21 @@ function placeholder(kind: LinkPickerKind): string {
   }
 }
 
+function prefillFor(kind: LinkPickerKind, value: string): string {
+  const trimmed = value.trim();
+  if (kind === "email") {
+    return trimmed.startsWith("mailto:") ? trimmed.slice(7) : trimmed;
+  }
+  if (kind === "phone") {
+    return trimmed.startsWith("tel:") ? trimmed.slice(4) : trimmed;
+  }
+  if (kind === "anchor") {
+    return trimmed.startsWith("#") ? trimmed.slice(1) : trimmed;
+  }
+  if (kind === "url") return trimmed;
+  return "";
+}
+
 export function renderLinkPickerModal(
   container: HTMLElement,
   state: LinkPickerModalState,
@@ -60,14 +79,36 @@ export function renderLinkPickerModal(
     // every keystroke would destroy the focused input and drop input.
     const [raw, setRaw] = createSignal(state.rawValue);
     const [pageValue, setPageValue] = createSignal(state.pageValue);
+    const [kind, setKind] = createSignal(state.kind);
+    const [rawEdited, setRawEdited] = createSignal(false);
+    const chooseKind = (value: LinkPickerKind) => {
+      setKind(value);
+      state.onKindChange(value);
+      if (value === "page" && !pageValue()) {
+        const first = state.pageOptions[0]?.value ?? "";
+        setPageValue(first);
+        state.onPageValueChange(first);
+      }
+      if (!rawEdited()) {
+        const next = prefillFor(value, state.currentValue);
+        setRaw(next);
+        state.onRawValueChange(next, false);
+      }
+    };
     return (
       <div class="meta-form">
+        {state.formError ? (
+          <p class="form-error link-picker-error" role="alert">
+            {state.formError}
+          </p>
+        ) : null}
         <label class="meta-field">
           <span>Link type</span>
           <select
-            value={state.kind}
+            class="link-kind"
+            value={kind()}
             onChange={(event) =>
-              state.onKindChange(event.currentTarget.value as LinkPickerKind)
+              chooseKind(event.currentTarget.value as LinkPickerKind)
             }
           >
             <option value="page">Page in this site</option>
@@ -78,9 +119,9 @@ export function renderLinkPickerModal(
           </select>
         </label>
 
-        {state.kind === "page" ? (
+        {kind() === "page" ? (
           <label class="meta-field">
-            <span>{fieldLabel(state.kind)}</span>
+            <span>{fieldLabel(kind())}</span>
             {state.pageValueMissing ? (
               <p class="muted" style="margin: 4px 0 8px">
                 The current link target is not in the page list (it may be a
@@ -108,15 +149,16 @@ export function renderLinkPickerModal(
           </label>
         ) : (
           <label class="meta-field">
-            <span>{fieldLabel(state.kind)}</span>
+            <span>{fieldLabel(kind())}</span>
             <input
               class="text"
               value={raw()}
-              placeholder={placeholder(state.kind)}
+              placeholder={placeholder(kind())}
               onInput={(event) => {
                 const value = event.currentTarget.value;
                 setRaw(value);
-                state.onRawValueChange(value);
+                setRawEdited(true);
+                state.onRawValueChange(value, true);
               }}
             />
           </label>

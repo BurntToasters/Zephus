@@ -3,7 +3,7 @@
 use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::OnceLock;
-use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
+use tauri::{AppHandle, Emitter, Manager};
 
 static APP: OnceLock<AppHandle> = OnceLock::new();
 static DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
@@ -55,10 +55,6 @@ pub fn home_dir() -> Option<PathBuf> {
 
 pub fn media_dirs() -> &'static [PathBuf] {
     MEDIA_DIRS.get().map(Vec::as_slice).unwrap_or(&[])
-}
-
-pub fn main_window() -> Option<WebviewWindow> {
-    app().and_then(|app| app.get_webview_window(MAIN_WINDOW))
 }
 
 pub fn emit<S: Serialize + Clone>(event: &str, payload: S) {

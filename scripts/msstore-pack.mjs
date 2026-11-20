@@ -268,6 +268,16 @@ export function planSidecars({ binariesDir, rustTarget, manifest }) {
   return plan;
 }
 
+function listResourceFiles(dir) {
+  const files = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) files.push(...listResourceFiles(full));
+    else if (entry.isFile()) files.push(full);
+  }
+  return files;
+}
+
 // Maps tauri.conf.json bundle.resources (source relative to src-tauri, dest
 // relative to the exe folder) onto the pack folder.
 export function planResources({ tauriConf, srcTauriDir: sourceRoot, packDir }) {
@@ -296,11 +306,26 @@ export function planResources({ tauriConf, srcTauriDir: sourceRoot, packDir }) {
       continue;
     }
     const from = path.resolve(sourceRoot, source);
-    if (!fs.existsSync(from) || !fs.statSync(from).isFile()) {
+    if (!fs.existsSync(from)) {
       problems.push(`${source}: resource file missing (expected ${from})`);
       continue;
     }
-    plan.push({ from, rel: dest, to: path.join(packDir, dest) });
+    const stat = fs.statSync(from);
+    if (!stat.isFile() && !stat.isDirectory()) {
+      problems.push(`${source}: resource must be a file or directory`);
+      continue;
+    }
+    const files = stat.isFile() ? [from] : listResourceFiles(from);
+    if (files.length === 0) {
+      problems.push(`${source}: resource directory is empty`);
+      continue;
+    }
+    for (const file of files) {
+      const rel = stat.isFile()
+        ? dest
+        : path.join(dest, path.relative(from, file));
+      plan.push({ from: file, rel, to: path.join(packDir, rel) });
+    }
   }
   if (problems.length > 0) {
     throw new Error(`Resources are not ready:\n  ${problems.join("\n  ")}`);

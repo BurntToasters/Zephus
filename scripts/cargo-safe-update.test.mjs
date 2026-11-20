@@ -783,8 +783,8 @@ test("25. dependency update entry points use guarded Cargo resolution", () => {
   for (const name of ["u"]) {
     const command = packageJson.scripts[name];
     assert.match(command, /npm-safe-update/);
-    assert.match(command, /sync-version\.js/);
-    assert.match(command, /update-metainfo\.js/);
+    assert.match(command, /sync-version\.mjs/);
+    assert.match(command, /update-metainfo\.mjs/);
     assert.doesNotMatch(command, /workspace:bootstrap|format|test:all/);
   }
 });

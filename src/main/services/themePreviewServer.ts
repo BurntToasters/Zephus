@@ -104,6 +104,16 @@ export function resolveThemePreviewFile(
   return null;
 }
 
+/** A read can fail after the 200 headers were already sent. A second writeHead throws and can take down the backend. */
+export function finishPreviewReadError(res: http.ServerResponse): void {
+  if (res.headersSent || res.writableEnded) {
+    res.destroy();
+    return;
+  }
+  res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+  res.end("Could not read preview asset");
+}
+
 export function createThemePreviewRequestHandler(
   rootDir: string,
 ): http.RequestListener {
@@ -141,8 +151,7 @@ export function createThemePreviewRequestHandler(
     // of a 200 with an empty body.
     const stream = fs.createReadStream(filePath);
     stream.once("error", () => {
-      res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
-      res.end("Could not read preview asset");
+      finishPreviewReadError(res);
     });
     stream.once("open", () => {
       res.writeHead(200, {

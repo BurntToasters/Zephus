@@ -1,0 +1,1127 @@
+{
+  "sha": "ba05bb3018c07e0e960276884d8e8a2a723c809e",
+  "passed": 224,
+  "failed": 0,
+  "checks": [
+    {
+      "name": "corrupt sidecar handled",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "non-string site fields coerced",
+      "ok": true,
+      "detail": "ok=true siteName=string nav=array"
+    },
+    {
+      "name": "traversal rejected",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "dotdot page path cannot delete layout",
+      "ok": true,
+      "detail": "ok=false exists=true"
+    },
+    {
+      "name": "delete refuses .env",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "rename missing page fails clean",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "no stray file after failed rename",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "zero-edit save byte-identical",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "find/replace mutates searchable text",
+      "ok": true,
+      "detail": "replaced=1"
+    },
+    {
+      "name": "hand-authored bytes preserved on metadata write",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "draft write",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "draft read returns hello",
+      "ok": true,
+      "detail": "hello"
+    },
+    {
+      "name": "draft clear",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "draft cleared content",
+      "ok": true,
+      "detail": "empty"
+    },
+    {
+      "name": "re-ensure after mutation",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "corrupt sidecar handled",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "non-string site fields coerced",
+      "ok": true,
+      "detail": "ok=true siteName=string nav=array"
+    },
+    {
+      "name": "traversal rejected",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "dotdot page path cannot delete layout",
+      "ok": true,
+      "detail": "ok=false exists=true"
+    },
+    {
+      "name": "delete refuses .env",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "rename missing page fails clean",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "no stray file after failed rename",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "zero-edit save byte-identical",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "find/replace mutates searchable text",
+      "ok": true,
+      "detail": "replaced=1"
+    },
+    {
+      "name": "hand-authored bytes preserved on metadata write",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "draft write",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "draft read returns hello",
+      "ok": true,
+      "detail": "hello"
+    },
+    {
+      "name": "draft clear",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "draft cleared content",
+      "ok": true,
+      "detail": "empty"
+    },
+    {
+      "name": "re-ensure after mutation",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "corrupt sidecar handled",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "non-string site fields coerced",
+      "ok": true,
+      "detail": "ok=true siteName=string nav=array"
+    },
+    {
+      "name": "traversal rejected",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "dotdot page path cannot delete layout",
+      "ok": true,
+      "detail": "ok=false exists=true"
+    },
+    {
+      "name": "delete refuses .env",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "rename missing page fails clean",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "no stray file after failed rename",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "zero-edit save byte-identical",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "find/replace mutates searchable text",
+      "ok": true,
+      "detail": "replaced=1"
+    },
+    {
+      "name": "hand-authored bytes preserved on metadata write",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "draft write",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "draft read returns hello",
+      "ok": true,
+      "detail": "hello"
+    },
+    {
+      "name": "draft clear",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "draft cleared content",
+      "ok": true,
+      "detail": "empty"
+    },
+    {
+      "name": "re-ensure after mutation",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "default footer escapes site name",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "custom script path stays inside public",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "rich text replace preserves markup",
+      "ok": true,
+      "detail": "refused=false link=\"See <a href=\\\"/about\\\">visit</a>\" strong=\"<strong>visit</strong>\""
+    },
+    {
+      "name": "partial git commit respects path list",
+      "ok": true,
+      "detail": "names=file-b.txt"
+    },
+    {
+      "name": "git porcelain keeps spaced filenames",
+      "ok": true,
+      "detail": "added=[\" foo.txt\",\"my file.txt\"] listed=[\" foo.txt\",\"my file.txt\"] rename=[\"new file.txt\",\"notes -> draft.md\"]"
+    },
+    {
+      "name": "frontmatter draft survives regen",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "design slash in managed css",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "design token cannot break out of managed css",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "font stylesheet stays on google fonts",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "columns block display grid",
+      "ok": true,
+      "detail": "no display:grid rule for columns in managed css or page"
+    },
+    {
+      "name": "hideOn tablet min-width query",
+      "ok": true,
+      "detail": "@media (min-width: 721px) and (max-width: 1024px){[data-zephus-id=\"block-tablet-hide\"]{display:none!important}}"
+    },
+    {
+      "name": "html block section identity",
+      "ok": true,
+      "detail": "htmlBlocks=1 goodRaw=true sectionsBefore=4 sectionsAfter=4"
+    },
+    {
+      "name": "publish proof requires html output",
+      "ok": true,
+      "detail": "The build finished but did not produce index.html in the output folder. Check your build script and astro.config outDir."
+    },
+    {
+      "name": "custom node missing path not ok",
+      "ok": true,
+      "detail": "{\"status\":\"missing\",\"binaryPath\":\"C:\\\\Users\\\\ARC\\\\AppData\\\\Local\\\\Temp\\\\zephus-no-node-1795127517414\\\\node\",\"usedCustomPath\":true}"
+    },
+    {
+      "name": "validateNodePath rejects node symlink",
+      "ok": true,
+      "detail": "Node.js path must not be a symbolic link."
+    },
+    {
+      "name": "widened pagesDir delete blocked",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "homepage delete refused",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "preview url rejects userinfo port swap",
+      "ok": true,
+      "detail": "sneaky=null normal=http://localhost:4321/ path=http://localhost:4321/user@site window=true"
+    },
+    {
+      "name": "preview port hint ignores userinfo",
+      "ok": true,
+      "detail": "sneakyPort=null normalPort=4321"
+    },
+    {
+      "name": "preview navigation stays on the opened port",
+      "ok": true,
+      "detail": "navigation guard found"
+    },
+    {
+      "name": "canonical matches sitemap for root-relative routes",
+      "ok": true,
+      "detail": "loc=https://example.com/about layout=https://example.com/about expected=https://example.com/about"
+    },
+    {
+      "name": "sidecar write rejects external zephus symlink",
+      "ok": true,
+      "detail": "threw=true outsideJson=false"
+    },
+    {
+      "name": "listPages rejects external pages symlink",
+      "ok": true,
+      "detail": "listed=(empty)"
+    },
+    {
+      "name": "malformed sections sidecar preserved",
+      "ok": true,
+      "detail": "sectionsType=string astroChanged=false"
+    },
+    {
+      "name": "nested index save keeps file and route",
+      "ok": true,
+      "detail": "created=true index=true flat=false route=/blog"
+    },
+    {
+      "name": "nested index dual file save refused",
+      "ok": true,
+      "detail": "dualOk=false threw=false unchanged=true"
+    },
+    {
+      "name": "hideOn desktop min-width query",
+      "ok": true,
+      "detail": "desktopMedia=true inlineHide=false"
+    },
+    {
+      "name": "safeUrl rejects C0 javascript scheme",
+      "ok": true,
+      "detail": "got=\"\""
+    },
+    {
+      "name": "google font stylesheet url rejects other hosts",
+      "ok": true,
+      "detail": "evil=\"\""
+    },
+    {
+      "name": "design css value drops url fetch",
+      "ok": true,
+      "detail": "got=\"\" set=\"\" escaped=\"\" nested=\"\""
+    },
+    {
+      "name": "canvas style drops remote background fetch",
+      "ok": true,
+      "detail": "canvas= style=\"color:#123456\" built= style=\"background:url(https://evil.example/pixel);color:#123456\""
+    },
+    {
+      "name": "canvas embed and video stay in the site preview",
+      "ok": true,
+      "detail": "canvas=<section data-zephus-id=\"e2e-embed\" data-zephus-block=\"embed\" data-zephus-props=\"%7B%22src%22%3A%22http%3A%2F%2F127.0.0.1%3A9222%2F%22%2C%22title%22%3A%22Local%22%7D\"><div class=\"canvas-empty\">Embed loads in the site preview.</div></section> public=<section data-zephus-id=\"e2e-embed-public\" data-zephus-block=\"embed\" data-zephus-props=\"%7B%22src%22%3A%22https%3A%2F%2Fwww.youtube.com%2Fembed%2Fabc%22%2C%22title%22%3A%22Public%22%7D\"><div class=\"canvas-empty\">Embed loads in the site preview.</div></section> video=<figure data-zephus-id=\"e2e-video\" data-zephus-block=\"video\" data-zephus-props=\"%7B%22src%22%3A%22https%3A%2F%2Fexample.com%2Fclip.mp4%22%2C%22title%22%3A%22Clip%22%7D\"><div class=\"canvas-empty\">Video plays in the site preview.</div></figure>"
+    },
+    {
+      "name": "canvas remote images stay in the site preview",
+      "ok": true,
+      "detail": "image=<figure data-zephus-id=\"e2e-image-remote\" data-zephus-block=\"image\" data-zephus-props=\"%7B%22src%22%3A%22https%3A%2F%2Fexample.com%2Fphoto.jpg%22%2C%22alt%22%3A%22Photo%22%2C%22cls%22%3A%22%22%7D\"><div class=\"canvas-empty\">Image loads in the site preview.</div></figure> gallery=<section data-zephus-id=\"e2e-gallery-remote\" data-zephus-block=\"gallery\" data-zephus-props=\"%7B%22images%22%3A%22https%3A%2F%2Fexample.com%2Fa.jpg%5Cn%2Fassets%2Fimages%2Fb.jpg%22%2C%22cls%22%3A%22%22%7D\" class=\"zephus-gallery\"><div class=\"canvas-empty\">Image loads in the site preview.</div><img src=\"data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7\" data-asset-src=\"/assets/images/b.jpg\" alt=\"\" /></section> post=<div data-zephus-id=\"e2e-post-image\" data-zephus-block=\"postlist\" data-zephus-props=\"%7B%22showImage%22%3A%22true%22%2C%22folder%22%3A%22%2Fblog%22%2C%22cls%22%3A%22%22%7D\" class=\"zephus-postlist\"><article class=\"zephus-postlist-item\"><div class=\"canvas-empty\">Image loads in the site preview.</div><h3 class=\"zephus-postlist-title\"><a href=\"/blog/p\">P</a></h3><div class=\"zephus-postlist-meta\"><time class=\"zephus-postlist-date\" datetime=\"2026-01-01\">January 1, 2026</time></div></article></div>"
+    },
+    {
+      "name": "canvas image paths that are not project files stay in the site preview",
+      "ok": true,
+      "detail": "protocol=<figure data-zephus-id=\"e2e-image-protocol\" data-zephus-block=\"image\" data-zephus-props=\"%7B%22src%22%3A%22%2F%2Fcdn.example%2Fphoto.jpg%22%2C%22alt%22%3A%22Photo%22%2C%22cls%22%3A%22%22%7D\"><div class=\"canvas-empty\">Image loads in the site preview.</div></figure> query=<figure data-zephus-id=\"e2e-image-query\" data-zephus-block=\"image\" data-zephus-props=\"%7B%22src%22%3A%22%2Fassets%2Fimages%2Fphoto.jpg%3Fx%3D1%22%2C%22alt%22%3A%22Photo%22%2C%22cls%22%3A%22%22%7D\"><div class=\"canvas-empty\">Image loads in the site preview.</div></figure> parent=<section data-zephus-id=\"e2e-gallery-parent\" data-zephus-block=\"gallery\" data-zephus-props=\"%7B%22images%22%3A%22%2Fassets%2F..%2Fsecret.jpg%22%2C%22cls%22%3A%22%22%7D\" class=\"zephus-gallery\"><div class=\"canvas-empty\">Image loads in the site preview.</div></section> post=<div data-zephus-id=\"e2e-post-protocol\" data-zephus-block=\"postlist\" data-zephus-props=\"%7B%22showImage%22%3A%22true%22%2C%22folder%22%3A%22%2Fblog%22%2C%22cls%22%3A%22%22%7D\" class=\"zephus-postlist\"><article class=\"zephus-postlist-item\"><div class=\"canvas-empty\">Image loads in the site preview.</div><h3 class=\"zephus-postlist-title\"><a href=\"/blog/p\">P</a></h3><div class=\"zephus-postlist-meta\"><time class=\"zephus-postlist-date\" datetime=\"2026-01-01\">January 1, 2026</time></div></article></div>"
+    },
+    {
+      "name": "custom frontmatter survives post list refresh",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "secret env page read returns null source",
+      "ok": true,
+      "detail": "ok=false"
+    },
+    {
+      "name": "secret env reattach returns null source",
+      "ok": true,
+      "detail": "ok=false"
+    },
+    {
+      "name": "managed layoutPath cannot clobber package.json",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "git commit all refuses directory npmrc",
+      "ok": true,
+      "detail": "Cannot commit sensitive files: nested-secret-dir/.npmrc"
+    },
+    {
+      "name": "commitProjectPaths refuses broad pathspecs",
+      "ok": true,
+      "detail": "dot=Cannot commit with a broad path; select individual files. star=Cannot commit with a broad path; select individual files."
+    },
+    {
+      "name": "buildSpawnEnv omits custom node dir from PATH front",
+      "ok": true,
+      "detail": "first=/usr/bin:/bin nodeDir=C:\\Program Files\\nodejs"
+    },
+    {
+      "name": "findAssetUsage fails without page sidecar",
+      "ok": true,
+      "detail": "One or more pages are missing editor metadata (src/pages/orphan-no-sidecar.astro)."
+    },
+    {
+      "name": "publish outDir ignores stale dist hint",
+      "ok": true,
+      "detail": "relative=build"
+    },
+    {
+      "name": "prerelease upload omits latest yml",
+      "ok": true,
+      "detail": "isPrerelease=true hasLatest=false"
+    },
+    {
+      "name": "starter theme accents >= 4.5:1 on white and stored background",
+      "ok": true,
+      "detail": "10 themes, min 4.60:1 (blog #db2777 on #ffffff)"
+    },
+    {
+      "name": "managed starter output keyboard/reduced-motion safeguards",
+      "ok": true,
+      "detail": "10 themes checked"
+    },
+    {
+      "name": "postlist self-exclusion editor parity",
+      "ok": true,
+      "detail": "serializeMatch=true canvasHasSelf=false"
+    },
+    {
+      "name": "legacy inline style text-align parser parity",
+      "ok": true,
+      "detail": "mainAlign=center editorAlign=center"
+    },
+    {
+      "name": "reusable sections symlink escape blocked",
+      "ok": true,
+      "detail": "listOk=false saveOk=false delOk=false intact=true"
+    },
+    {
+      "name": "asset repoint structural safety & reusable sections",
+      "ok": true,
+      "detail": "hasReusableRef=true structuralIntact=true contentUpdated=true"
+    },
+    {
+      "name": "unannotated video migration parity",
+      "ok": true,
+      "detail": "main=true editor=true"
+    },
+    {
+      "name": "managed stylesheet covers all block classes",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "light accent keeps button text readable",
+      "ok": true,
+      "detail": "#fde047:true:#11131a:14.07:true | #ffffff:true:#11131a:18.55:true | rgb(253, 224, 71):true:#11131a:14.07:true | #4f46e5:true:#ffffff:6.29:true || #fde047=#6a602b@6.32/6.04:true | #ffffff=#6a6c70@5.26/5.03:true | rgb(253, 224, 71)=#6a602b@6.32/6.04:true | #4f46e5=#4f46e5@6.29/6.01:true | dark=true:#abaabc@7.83/7.78"
+    },
+    {
+      "name": "accent button hover keeps its label readable",
+      "ok": true,
+      "detail": "#f00091:true:#11131a:#ffffff:4.89:true | #4f46e5:true:#ffffff:#000000:7.78:true"
+    },
+    {
+      "name": "accent ink stays readable on the lifted header",
+      "ok": true,
+      "detail": "#9f9fa2 header=5.44 surface=6.72"
+    },
+    {
+      "name": "muted text keeps a readable mix of the foreground",
+      "ok": true,
+      "detail": "strong=68/65 slate=81@4.67/81@4.52"
+    },
+    {
+      "name": "header text stays readable on the lifted surface",
+      "ok": true,
+      "detail": "plain=#0f172a edge=#818181->#919191 header=4.55 surface=4.55"
+    },
+    {
+      "name": "post list meta keeps a readable mix of the foreground",
+      "ok": true,
+      "detail": "plain=72 slate=81@4.67"
+    },
+    {
+      "name": "dangling symlink escape blocked in assertRealpathInside",
+      "ok": true,
+      "detail": "threw=true dupOk=false createdOutside=false"
+    },
+    {
+      "name": "repo settings symlink containment",
+      "ok": true,
+      "detail": "schemaVersion=1 hasCorrupt=false"
+    },
+    {
+      "name": "detachPageDocument pins pagesDir and blocks layout overwrite",
+      "ok": true,
+      "detail": "ok=false unchanged=true"
+    },
+    {
+      "name": "writeProjectFile blocks vite/postcss/tailwind configs",
+      "ok": true,
+      "detail": "vite.config.mjs:false, postcss.config.js:false, tailwind.config.ts:false"
+    },
+    {
+      "name": "reattachPageDocument recovers out-of-sync page",
+      "ok": true,
+      "detail": "before=out-of-sync after=managed"
+    },
+    {
+      "name": "renamePage blocks home page and syncs detached page nav",
+      "ok": true,
+      "detail": "homeOk=false teamOk=true nav=true"
+    },
+    {
+      "name": "bare domain siteUrl generates discovery files",
+      "ok": true,
+      "detail": "sitemap=true robots=true"
+    },
+    {
+      "name": "postlist canvas image hydration and noindex exclusion",
+      "ok": true,
+      "detail": "placeholder=true builtLen=1"
+    },
+    {
+      "name": "blockquote without p and legacy section style parity",
+      "ok": true,
+      "detail": "mainOk=true editorOk=true"
+    },
+    {
+      "name": "renameAsset preserves dotted version stems",
+      "ok": true,
+      "detail": "/assets/images/release-v1.2.png"
+    },
+    {
+      "name": "dropped asset bytes stay inside public",
+      "ok": true,
+      "detail": "escaped=/assets/images/outside.png rejected=note.exe: unsupported file type (.exe) wired=true"
+    },
+    {
+      "name": "asset legacy raw aliases find & repoint",
+      "ok": true,
+      "detail": "usage=8 sites=4 repointed=13 structural=true clean=true"
+    },
+    {
+      "name": "asset URLs encode #, %, and spaces",
+      "ok": true,
+      "detail": "webPath=/assets/images/hero%20%23100%25.png listed=/assets/images/hero%20%23100%25.png renamed=/assets/images/hero%20%232%25.png legacy=true literal=true//assets/images/legacy%2520percent.png"
+    },
+    {
+      "name": "asset encoded traversal rejected",
+      "ok": true,
+      "detail": "delete=Invalid asset path. read=Invalid asset path. rename=Invalid asset path. aliases=true/true"
+    },
+    {
+      "name": "editorIcons resolves kebab-case data-lucide icons",
+      "ok": true,
+      "detail": "hasPascal=true"
+    },
+    {
+      "name": "splash.html and styles.css root chrome tokens",
+      "ok": true,
+      "detail": "rootChrome=true splashStudio=true"
+    },
+    {
+      "name": "canvas paint containment keeps fixed overlays inside",
+      "ok": true,
+      "detail": "canvas rule found"
+    },
+    {
+      "name": "block preview contains fixed overlays",
+      "ok": true,
+      "detail": "block preview rule found"
+    },
+    {
+      "name": "canvas links do not navigate the editor",
+      "ok": true,
+      "detail": "click=true aux=true down=true button=false"
+    },
+    {
+      "name": "canvas links stay out of the tab order",
+      "ok": true,
+      "detail": "link=-1 later=-1 button=0"
+    },
+    {
+      "name": "canvas svg xlink does not navigate the editor",
+      "ok": true,
+      "detail": "prevented=true href=false any=true"
+    },
+    {
+      "name": "webview guard blocks browser save and view source",
+      "ok": true,
+      "detail": "save=true mac=true source=true open=true find=true typed=true alt=true"
+    },
+    {
+      "name": "canvas html cannot capture editor ids",
+      "ok": true,
+      "detail": "<div class=\"hero\">Panel</div><label>Open</label><button inert=\"\">Go</button><button inert=\"\">Pop</button><a href=\"/about\" inert=\"\">About</a><button inert=\"\">Hint</button>"
+    },
+    {
+      "name": "canvas html cannot become an editor field",
+      "ok": true,
+      "detail": "<div>Edit me</div>"
+    },
+    {
+      "name": "canvas html controls stay out of the editor",
+      "ok": true,
+      "detail": "<p>Body copy</p><input type=\"text\" value=\"Ada\" inert=\"\"><textarea inert=\"\">Note</textarea><select inert=\"\"><option>A</option></select><button type=\"button\" inert=\"\">Go</button><a href=\"/about\" inert=\"\">About</a><dialog open=\"\" inert=\"\">Notice</dialog>"
+    },
+    {
+      "name": "canvas html form keeps its contents",
+      "ok": true,
+      "detail": "<p>Join the list</p><label>Email <input type=\"email\" value=\"ada@example.com\" inert=\"\"></label><button type=\"submit\" inert=\"\">Join</button>"
+    },
+    {
+      "name": "canvas html cannot steal the tab order",
+      "ok": true,
+      "detail": "<button inert=\"\">First</button><a href=\"/about\" tabindex=\"0\" inert=\"\">Link</a><span tabindex=\"-1\">Skip</span>"
+    },
+    {
+      "name": "canvas html cannot mark the editor inert",
+      "ok": true,
+      "detail": "<div role=\"dialog\">Notice</div><button role=\"button\" inert=\"\">OK</button>"
+    },
+    {
+      "name": "canvas html style drops remote fetch",
+      "ok": true,
+      "detail": "<div style=\"color:#123456;background:;background:;background:\">Hi</div>"
+    },
+    {
+      "name": "canvas section paint drops remote background fetch",
+      "ok": true,
+      "detail": "section={\"text-align\":\"center\",\"color\":\"#123456\",\"padding\":\"12px 16px\",\"box-shadow\":\"var(--shadow-sm)\"} escaped={} set={} box={\"box-sizing\":\"border-box\",\"max-width\":\"min(800px, 100%)\"}"
+    },
+    {
+      "name": "canvas html does not beacon to loopback",
+      "ok": true,
+      "detail": "<img src=\"data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7\" alt=\"mark\" data-asset-src=\"/favicon.ico\"><a href=\"/about\" inert=\"\">About</a>"
+    },
+    {
+      "name": "canvas html media does not fetch the editor or the network",
+      "ok": true,
+      "detail": "<div class=\"canvas-empty\">Image loads in the site preview.</div><div class=\"canvas-empty\">Image loads in the site preview.</div><div class=\"canvas-empty\">Image loads in the site preview.</div><div class=\"canvas-empty\">Image loads in the site preview.</div><div class=\"canvas-empty\">Video plays in the site preview.</div><svg><image></image><use></use><use href=\"#icon\"></use><feImage></feImage></svg><img src=\"data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7\" alt=\"Local\" data-asset-src=\"/assets/images/local.png\">"
+    },
+    {
+      "name": "canvas svg paint urls stay inside the document",
+      "ok": true,
+      "detail": "<svg><rect fill=\"url(#shade)\" stroke=\"url( #shade )\" filter=\"url('#shade')\"></rect><rect fill=\"red\"></rect></svg>"
+    },
+    {
+      "name": "clipboard html stays outside the editor document",
+      "ok": true,
+      "detail": "parses=0 docs=1 inserted=[\"<img onerror=alert(1)>\",\"one\\ntwo\"]"
+    },
+    {
+      "name": "resize handles meet the 24px target size",
+      "ok": true,
+      "detail": "width=24 height=24"
+    },
+    {
+      "name": "checkboxes meet the 24px target size",
+      "ok": true,
+      "detail": "rules=4 sized=[{\"width\":24,\"height\":24,\"auto\":false},{\"width\":24,\"height\":24,\"auto\":false},{\"width\":24,\"height\":24,\"auto\":false},{\"width\":24,\"height\":24,\"auto\":false}]"
+    },
+    {
+      "name": "toolbar buttons meet the 24px target size",
+      "ok": true,
+      "detail": "undersized="
+    },
+    {
+      "name": "branch chip and property headers meet the 24px target size",
+      "ok": true,
+      "detail": "chip=24 header=24"
+    },
+    {
+      "name": "list rows use the whole row as the hit target",
+      "ok": true,
+      "detail": "layer=24 nav=40 insert=40 page=36"
+    },
+    {
+      "name": "canvas insert controls meet the 24px target size",
+      "ok": true,
+      "detail": "rail=24 button=24/24"
+    },
+    {
+      "name": "scrollable logs and license lists are keyboard reachable",
+      "ok": true,
+      "detail": "log=<pre id=\"dev-log\" class=\"dev-log\" tabindex=\"0\" aria-label=\"Dev server log\" >"
+    },
+    {
+      "name": "dev log stays put when the reader has scrolled up",
+      "ok": true,
+      "detail": "scroll=500 text=\"earlier\\nlatest\\n\""
+    },
+    {
+      "name": "wcag text token contrast",
+      "ok": true,
+      "detail": "min 5.24:1 (dark --accent-text on --chrome-3)"
+    },
+    {
+      "name": "primary button text meets 4.5:1",
+      "ok": true,
+      "detail": "logos=var(--accent-hover),var(--accent-hover)"
+    },
+    {
+      "name": "empty-state icons stay readable on both themes",
+      "ok": true,
+      "detail": "welcome and theme icons >= 4.5:1"
+    },
+    {
+      "name": "asset browser notifies when its icons can be drawn",
+      "ok": true,
+      "detail": "called=1 text=Drag and drop files here, or use Import belownotes.pdf12 Bhero.png40 B"
+    },
+    {
+      "name": "asset tiles name the file once",
+      "ok": true,
+      "detail": "alt= icon=true"
+    },
+    {
+      "name": "skip link follows the visible editor",
+      "ok": true,
+      "detail": "href=#code-editor text=Skip to code"
+    },
+    {
+      "name": "late draft write does not restore a discard",
+      "ok": true,
+      "detail": "[[\"/proj\",\"page\",\"index.astro\"]]"
+    },
+    {
+      "name": "save's newer-edit draft does not survive a discard",
+      "ok": true,
+      "detail": "[[\"/proj\",\"page\",\"index.astro\"]]"
+    },
+    {
+      "name": "rename recovery draft does not survive a discard",
+      "ok": true,
+      "detail": "{\"cleared\":[[\"/proj\",\"page\",\"team.astro\"]],\"settleCalls\":3}"
+    },
+    {
+      "name": "save reschedule keeps the site recovery draft",
+      "ok": true,
+      "detail": "[[\"/proj\",\"page\",\"index.astro\",\"<h1>v2</h1>\"],[\"/proj\",\"page\",\"index.astro\",\"<h1>v3</h1>\"],[\"/proj\",\"site\",\"site-shell\",\"{\\\"accent\\\":\\\"#123456\\\"}\"]]"
+    },
+    {
+      "name": "undo draft rewrite does not survive a discard",
+      "ok": true,
+      "detail": "[[\"/proj\",\"site\",\"site-shell\",false],[\"/proj\",\"page\",\"index.astro\",false],[\"/proj\",\"page\",\"index.astro\",true]]"
+    },
+    {
+      "name": "text fields keep editing keys while the editor is busy",
+      "ok": true,
+      "detail": "fieldFocused=true backspace=false undo=false copy=false save=true delete=true canvasUndo=true calls="
+    },
+    {
+      "name": "format toolbar keeps the selection when used from the keyboard",
+      "ok": true,
+      "detail": "command=bold sawSelection=true editing=true focus=true"
+    },
+    {
+      "name": "format toolbar moves with the arrow keys without formatting",
+      "ok": true,
+      "detail": "moved=true roving=true editing=true returned=true command=none tabs=0,-1,-1,-1,-1"
+    },
+    {
+      "name": "link address applies from the toolbar button",
+      "ok": true,
+      "detail": "type=button command=createLink value=https://example.com/docs status=Added link. sized=true"
+    },
+    {
+      "name": "hidden viewport blocks stay readable",
+      "ok": true,
+      "detail": "plain=60 slate=81 white=4.67 card=4.52"
+    },
+    {
+      "name": "locked canvas text stays readable",
+      "ok": true,
+      "detail": "block=80/81@4.67 section=82/85@4.74"
+    },
+    {
+      "name": "hidden page labels stay readable on the light rail",
+      "ok": true,
+      "detail": "light=#92400e system=#92400e rules=6"
+    },
+    {
+      "name": "canvas block labels stay readable on the page",
+      "ok": true,
+      "detail": "default=6.01 pink=5.32 amber=4.68"
+    },
+    {
+      "name": "empty canvas copy stays readable",
+      "ok": true,
+      "detail": "shell=1.10 muted=2.47 body=17.85 panel=7.52"
+    },
+    {
+      "name": "canvas button labels stay readable on the accent fill",
+      "ok": true,
+      "detail": "ink=#4f46e5@1.00 label=#ffffff@6.29"
+    },
+    {
+      "name": "canvas secondary buttons keep a visible outline",
+      "ok": true,
+      "detail": "site mix"
+    },
+    {
+      "name": "canvas pricing and accordion lines follow the site text",
+      "ok": true,
+      "detail": "accordion=true pricing=true"
+    },
+    {
+      "name": "canvas post titles match the published heading color",
+      "ok": true,
+      "detail": "titleAt=82855 hover=true"
+    },
+    {
+      "name": "canvas feature cards stay side by side",
+      "ok": true,
+      "detail": "slot wraps the card"
+    },
+    {
+      "name": "canvas drop line stays on the block slot",
+      "ok": true,
+      "detail": "line anchors to the slot"
+    },
+    {
+      "name": "canvas follows the selected block",
+      "ok": true,
+      "detail": "selection scrolls into the pane"
+    },
+    {
+      "name": "opening a page starts at the top",
+      "ok": true,
+      "detail": "page switch resets the pane"
+    },
+    {
+      "name": "inspector starts at the top for a new block",
+      "ok": true,
+      "detail": "new selection resets the inspector"
+    },
+    {
+      "name": "page structure list follows the selected block",
+      "ok": true,
+      "detail": "active row scrolls into the list"
+    },
+    {
+      "name": "page structure rows move with the arrow keys",
+      "ok": true,
+      "detail": "down=true up=true stay=true home=true end=true ignore=true prevented=true clicked=quo\"te focused=true scroll=40 boundary=true/0 nested=false tabs=2"
+    },
+    {
+      "name": "page list moves with the arrow keys without opening a page",
+      "ok": true,
+      "detail": "down=true skip=true right=true left=true home=true end=true focused=true oneStop=true scroll=292 opens=0 boundary=true nested=false handlers=3"
+    },
+    {
+      "name": "canvas toolbars move with the arrow keys without running an action",
+      "ok": true,
+      "detail": "right=true down=true left=true home=true end=true focused=true scroll=288 tabs=-1,-1,0 runs=0 boundary=true nested=false stops=2"
+    },
+    {
+      "name": "canvas keeps focus on the selection after a block is removed",
+      "ok": true,
+      "detail": "section=true sectionScroll=288 outer=5 block=true scrolled=true cleared=true"
+    },
+    {
+      "name": "a focused section moves into its blocks with the arrow keys",
+      "ok": true,
+      "detail": "down=block:0 empty=block:2 up=block:1 edge=null home=0 end=2"
+    },
+    {
+      "name": "navigation list moves with the arrow keys without opening a page",
+      "ok": true,
+      "detail": "down=true up=true edge=true end=true focused=true scroll=292 opens=0 boundary=true nested=false"
+    },
+    {
+      "name": "block palette moves with the arrow keys without inserting a block",
+      "ok": true,
+      "detail": "down=true focused=true oneStop=true endFocused=true endStop=true scroll=292 inserts=0 boundary=true nested=false"
+    },
+    {
+      "name": "saved sections move with the arrow keys without inserting or deleting",
+      "ok": true,
+      "detail": "down=true right=true deleteDown=true focused=true oneStop=true endFocused=true scroll=292 inserts=0 deletes=0 boundary=true nested=false"
+    },
+    {
+      "name": "inspector image preview does not fetch the editor",
+      "ok": true,
+      "detail": "project=true relative=false protocol=false remote=false parent=false encoded=false query=false data=true/true rejected=false/false/false"
+    },
+    {
+      "name": "recent projects move with the arrow keys without opening or removing",
+      "ok": true,
+      "detail": "down=true right=true focused=true oneStop=true endFocused=true scroll=292 opens=0 removes=0 boundary=true nested=false"
+    },
+    {
+      "name": "modal tab order skips controls that are not tab stops",
+      "ok": true,
+      "detail": "open=true hidden=false disabled=false concealed=false detached=false"
+    },
+    {
+      "name": "asset browser moves with the arrow keys without selecting or deleting",
+      "ok": true,
+      "detail": "down=true right=true left=true focused=true oneStop=true endFocused=true scroll=292 selects=0 deletes=0 boundary=true nested=false"
+    },
+    {
+      "name": "starter themes move with the arrow keys without previewing or selecting",
+      "ok": true,
+      "detail": "down=true right=true focused=true oneStop=true endFocused=true scroll=292 previews=0 selects=0 boundary=true nested=false"
+    },
+    {
+      "name": "selected starter theme stays visible on the start screen",
+      "ok": true,
+      "detail": "dark=true light=true system=true"
+    },
+    {
+      "name": "find options keep focus when the result list is cleared",
+      "ok": true,
+      "detail": "case=true whole=true active=find-replace-whole"
+    },
+    {
+      "name": "find reports a problem in the dialog",
+      "ok": true,
+      "detail": "empty=true failed=true alert=Search failed: disk active=text"
+    },
+    {
+      "name": "replace failure stays in the dialog",
+      "ok": true,
+      "detail": "shown=true cleared=true alert=Replace failed: disk active=text"
+    },
+    {
+      "name": "design accent warning stays in the dialog",
+      "ok": true,
+      "detail": "shown=true cleared=true alert=Accent color cannot reference itself (var(--accent)). Pick a concrete color. active=text color-text design-accent"
+    },
+    {
+      "name": "design background refuses a remote fetch",
+      "ok": true,
+      "detail": "shown=true cleared=true stored=#ffffff writes=0"
+    },
+    {
+      "name": "design font refuses a remote fetch",
+      "ok": true,
+      "detail": "shown=true cleared=true stored=system-ui, sans-serif writes=0"
+    },
+    {
+      "name": "site shell refuses a script call to action",
+      "ok": true,
+      "detail": "shown=true cleared=true alert=That link type is not allowed. stored="
+    },
+    {
+      "name": "site shell refuses a script favicon",
+      "ok": true,
+      "detail": "shown=true cleared=true alert=That link type is not allowed. stored="
+    },
+    {
+      "name": "link field refuses a script address",
+      "ok": true,
+      "detail": "blocked=true allowed=true committed=https://ok.example alert=That link type is not allowed."
+    },
+    {
+      "name": "embed address refuses a script url",
+      "ok": true,
+      "detail": "blocked=true allowed=true committed=https://videos.example/embed"
+    },
+    {
+      "name": "navigation save failure stays in the dialog",
+      "ok": true,
+      "detail": "shown=true text=Could not save navigation: locked wired=true"
+    },
+    {
+      "name": "find results take focus only when the search field was focused",
+      "ok": true,
+      "detail": "onResult=true leftOutside=true opens=0 active="
+    },
+    {
+      "name": "find results move with the arrow keys without opening a page",
+      "ok": true,
+      "detail": "down=true focused=true oneStop=true endFocused=true scroll=292 opens=0 boundary=true nested=false"
+    },
+    {
+      "name": "link type keeps focus and a typed address",
+      "ok": true,
+      "detail": "stayed=true kept=true kind=email raw=https://kept.example edited=true active="
+    },
+    {
+      "name": "choose link refuses a script address",
+      "ok": true,
+      "detail": "https=https://kept.example cleared= shown=true stays=true"
+    },
+    {
+      "name": "reorder grips stay out of the tab order",
+      "ok": true,
+      "detail": "section=true block=true"
+    },
+    {
+      "name": "rebuilt dialogs keep focus on the field that changed",
+      "ok": true,
+      "detail": "cta=true favicon=true url=true slug=true active="
+    },
+    {
+      "name": "a failed commit keeps the message",
+      "ok": true,
+      "detail": "git=true/true panel=true/true attempts=2 enabled=false"
+    },
+    {
+      "name": "settings rebuild keeps the button that was used",
+      "ok": true,
+      "detail": "auto=true browse=true update=true active=btn primary mini-btn settings-updater-action"
+    },
+    {
+      "name": "settings save failure stays in the dialog",
+      "ok": true,
+      "detail": "shown=true cleared=true alert=Settings could not be saved: disk active=set-theme-modal"
+    },
+    {
+      "name": "inspector rebuild keeps the control that changed",
+      "ok": true,
+      "detail": "columns=true image=true outside=true wired=true active="
+    },
+    {
+      "name": "gallery image keeps a control after it moves",
+      "ok": true,
+      "detail": "inherited=true moved=true removed=true add=true wired=true active=null"
+    },
+    {
+      "name": "page title keeps a mirrored nav label in view",
+      "ok": true,
+      "detail": "synced=true custom=true nav=Custom"
+    },
+    {
+      "name": "page settings failure stays in the dialog",
+      "ok": true,
+      "detail": "shown=true cleared=true alert=Metadata save failed: disk active=text page-title"
+    },
+    {
+      "name": "page canonical refuses a script address",
+      "ok": true,
+      "detail": "shown=true cleared=true writes=1 alert=That link type is not allowed."
+    },
+    {
+      "name": "new page explains an empty or unusable route",
+      "ok": true,
+      "detail": "empty=true cleared=true invalid=true typed=true created=true creates=1"
+    },
+    {
+      "name": "asset browser keeps a tile after rename or delete",
+      "ok": true,
+      "detail": "rename=true delete=true active=/assets/images/a.png"
+    },
+    {
+      "name": "asset rename failure stays in the dialog",
+      "ok": true,
+      "detail": "shown=true cleared=true alert=Rename failed: disk active=null"
+    },
+    {
+      "name": "image focus point shows its position and arrow keys",
+      "ok": true,
+      "detail": "label and arrows present"
+    },
+    {
+      "name": "minimal mutated build emits HTML",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "store mutated build emits HTML",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "theme preview read failure does not write headers twice",
+      "ok": true,
+      "detail": "status=200 traversal=404 late=true early=500"
+    },
+    {
+      "name": "backend invoke ignores preview pages and bare requests",
+      "ok": true,
+      "detail": "bare=404 preview=404/ editor=http://tauri.localhost dev=http://localhost:5173"
+    },
+    {
+      "name": "backend invoke rejects an oversized body",
+      "ok": true,
+      "detail": "limit=33554432 declared=413 length=400 chunked=413"
+    },
+    {
+      "name": "dropped invoke does not crash the backend",
+      "ok": true,
+      "detail": "alive=true probe=200 exit=null stderr=ZEPHUS_SLOW_STARTED\n"
+    }
+  ]
+}

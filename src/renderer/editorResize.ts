@@ -61,11 +61,17 @@ export function createResizeController(deps: ResizeDeps) {
   ): void {
     const handleWrap = document.createElement("div");
     handleWrap.className = "resize-handles";
+    const cornerLabel: Record<ResizeCorner, string> = {
+      nw: "Resize from the top left",
+      ne: "Resize from the top right",
+      sw: "Resize from the bottom left",
+      se: "Resize from the bottom right",
+    };
     for (const corner of ["nw", "ne", "sw", "se"] as ResizeCorner[]) {
       const handle = document.createElement("button");
       handle.type = "button";
       handle.className = `resize-handle ${corner}`;
-      handle.setAttribute("aria-label", `Resize ${corner}`);
+      handle.setAttribute("aria-label", cornerLabel[corner]);
       handle.addEventListener("pointerdown", (event) => {
         event.preventDefault();
         event.stopPropagation();

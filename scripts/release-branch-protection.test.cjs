@@ -43,7 +43,7 @@ test("stable release protection requires a strict source-bound ci-gate", () => {
     assertReleaseBranchProtection("main", { api, env: {} }),
   );
   assert.deepEqual(calls, [
-    ["GET", "/repos/BurntToasters/zephus/branches/main/protection"],
+    ["GET", "/repos/BurntToasters/Zephus/branches/main/protection"],
   ]);
 });
 
@@ -113,7 +113,7 @@ test("configure protects main without changing mutable beta", () => {
   assert.equal(writes.length, 1);
   assert.deepEqual(
     writes.map((entry) => entry[0]),
-    ["/repos/BurntToasters/zephus/branches/main/protection"],
+    ["/repos/BurntToasters/Zephus/branches/main/protection"],
   );
   assert.deepEqual(writes[0][1], desiredProtection());
 });

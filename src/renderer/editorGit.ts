@@ -118,12 +118,13 @@ export function createEditorGitActions(deps: EditorGitDeps) {
   async function commitGitChanges(
     message: string,
     paths?: string[],
-  ): Promise<void> {
+  ): Promise<boolean> {
     const projectPath = deps.getProjectPath();
     if (!projectPath) {
       deps.setStatus("No project open to commit.");
-      return;
+      return false;
     }
+    let committed = false;
     await runGitAction(
       projectPath,
       "Git commit failed",
@@ -146,6 +147,7 @@ export function createEditorGitActions(deps: EditorGitDeps) {
           );
           return;
         }
+        committed = true;
         publishIfCurrent(projectPath, () =>
           deps.setStatus(
             paths?.length
@@ -156,6 +158,7 @@ export function createEditorGitActions(deps: EditorGitDeps) {
         await refreshGitForProject(projectPath, { fetchRemote: true });
       },
     );
+    return committed;
   }
 
   async function pushGitChanges(): Promise<void> {

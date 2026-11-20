@@ -7,6 +7,12 @@ import {
   onCleanup,
 } from "solid-js";
 import { render } from "solid-js/web";
+import {
+  onThemeKeyDown,
+  themeStop,
+  themeTabStop,
+  type ThemeAction,
+} from "./themeKeyboard";
 
 interface ThemeHeaderDetails {
   gradient: string;
@@ -39,6 +45,10 @@ const [state, setState] = createSignal<ThemesTabState>({
   mode: "placeholder",
   themes: [],
 });
+const [tabStop, setTabStop] = createSignal<{
+  id: string;
+  kind: ThemeAction;
+} | null>(null);
 let handlers: ThemesTabHandlers | null = null;
 
 function runIconRefresh() {
@@ -52,6 +62,25 @@ function runIconRefresh() {
 function ThemeCard(props: { theme: ThemeCardEntry }) {
   let headerRef: HTMLDivElement | undefined;
   let frameRef: HTMLIFrameElement | undefined;
+  const stop = () => {
+    const active = tabStop();
+    return themeStop(
+      state().themes.map((theme) => ({ id: theme.id })),
+      active?.id ?? null,
+      active?.kind ?? null,
+    );
+  };
+  const rememberStop = (event: KeyboardEvent) => {
+    onThemeKeyDown(event);
+    const current = event.currentTarget;
+    if (!(current instanceof HTMLElement)) return;
+    const active = current.ownerDocument.activeElement;
+    if (!(active instanceof HTMLButtonElement)) return;
+    const id = active.dataset["themeId"];
+    const kind = active.dataset["themeAction"];
+    if (!id || (kind !== "preview" && kind !== "select")) return;
+    setTabStop({ id, kind });
+  };
 
   createEffect(() => {
     runIconRefresh();
@@ -101,7 +130,7 @@ function ThemeCard(props: { theme: ThemeCardEntry }) {
             src={props.theme.previewUrl}
           />
         ) : (
-          <div class="theme-card-icon-pill">
+          <div class="theme-card-icon-pill" aria-hidden="true">
             <i data-lucide={props.theme.header.icon}></i>
           </div>
         )}
@@ -114,21 +143,43 @@ function ThemeCard(props: { theme: ThemeCardEntry }) {
 
       <div class="theme-card-actions">
         <button
-          class="mini-btn"
+          type="button"
+          class="mini-btn theme-preview-btn"
           aria-label={`Preview ${props.theme.name} theme`}
+          data-theme-id={props.theme.id}
+          data-theme-action="preview"
+          tabIndex={themeTabStop(
+            props.theme.id,
+            "preview",
+            stop()?.id ?? null,
+            stop()?.kind ?? null,
+          )}
+          onKeyDown={rememberStop}
           onClick={(event) => {
             event.stopPropagation();
+            setTabStop({ id: props.theme.id, kind: "preview" });
             handlers?.onPreview(props.theme.id);
           }}
         >
           Preview
         </button>
         <button
+          type="button"
           class="mini-btn theme-select-btn"
           aria-label={`Select ${props.theme.name} theme`}
           aria-pressed={props.theme.selected ? "true" : "false"}
+          data-theme-id={props.theme.id}
+          data-theme-action="select"
+          tabIndex={themeTabStop(
+            props.theme.id,
+            "select",
+            stop()?.id ?? null,
+            stop()?.kind ?? null,
+          )}
+          onKeyDown={rememberStop}
           onClick={(event) => {
             event.stopPropagation();
+            setTabStop({ id: props.theme.id, kind: "select" });
             handlers?.onSelect(props.theme.id);
           }}
         >
@@ -163,6 +214,7 @@ export function ThemesTabPanel() {
           </div>
           <div class="theme-card-actions">
             <button
+              type="button"
               class="btn primary"
               onClick={() => handlers?.onLoadPreviews()}
             >

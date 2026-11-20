@@ -1,6 +1,12 @@
-import { For, Show } from "solid-js";
+import { For, Show, createSignal } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { render } from "solid-js/web";
+import {
+  onPageKeyDown as movePageFocus,
+  pageStop,
+  pageTabStop,
+  type PageAction,
+} from "./pageKeyboard";
 
 export interface PageListEntry {
   page: string;
@@ -21,6 +27,10 @@ export interface PageListActionHandlers {
 }
 
 const [entries, setEntries] = createStore<PageListEntry[]>([]);
+const [tabStop, setTabStop] = createSignal<{
+  page: string;
+  kind: PageAction;
+} | null>(null);
 let handlers: PageListActionHandlers | null = null;
 
 function runIconRefresh(): void {
@@ -30,6 +40,25 @@ function runIconRefresh(): void {
 }
 
 export function PageListPanel() {
+  const stop = () => {
+    const active = tabStop();
+    return pageStop(entries, active?.page ?? null, active?.kind ?? null);
+  };
+  const onPageKeyDown = (event: KeyboardEvent) => {
+    movePageFocus(event);
+    const current = event.currentTarget;
+    if (!(current instanceof HTMLElement)) return;
+    const active = current.ownerDocument.activeElement;
+    if (!(active instanceof HTMLButtonElement)) return;
+    const page =
+      active.closest("li.page-item")?.getAttribute("data-page") ?? "";
+    const kind = active.dataset["pageAction"];
+    if (kind !== "main" && kind !== "nav" && kind !== "manage") return;
+    if (!page) return;
+    setTabStop({ page, kind });
+  };
+  const tabIndexFor = (page: string, kind: PageAction) =>
+    pageTabStop(page, kind, stop()?.page ?? null, stop()?.kind ?? null);
   return (
     <Show
       when={entries.length > 0}
@@ -48,10 +77,17 @@ export function PageListPanel() {
             aria-busy={entry.loading ? "true" : undefined}
           >
             <button
+              type="button"
               class="page-main"
               aria-current={entry.active ? "page" : undefined}
+              data-page-action="main"
+              tabIndex={tabIndexFor(entry.page, "main")}
               disabled={entry.loading}
-              onClick={() => handlers?.onOpen(entry.page)}
+              onClick={() => {
+                setTabStop({ page: entry.page, kind: "main" });
+                handlers?.onOpen(entry.page);
+              }}
+              onKeyDown={onPageKeyDown}
             >
               <span
                 class="page-file-icon"
@@ -87,23 +123,32 @@ export function PageListPanel() {
               }
               aria-label={`Toggle ${entry.navLabel} in navigation`}
               aria-pressed={entry.navVisible ? "true" : "false"}
+              data-page-action="nav"
+              tabIndex={tabIndexFor(entry.page, "nav")}
               disabled={entry.loading || entry.interactionDisabled}
               onClick={(event) => {
                 event.stopPropagation();
+                setTabStop({ page: entry.page, kind: "nav" });
                 handlers?.onToggleNav(entry.page);
               }}
+              onKeyDown={onPageKeyDown}
             >
               <i data-lucide={entry.navVisible ? "eye" : "eye-off"}></i>
             </button>
             <button
+              type="button"
               class="mini-btn page-manage-button"
               title={`Manage ${entry.navLabel}`}
               aria-label={`Manage ${entry.navLabel} page`}
+              data-page-action="manage"
+              tabIndex={tabIndexFor(entry.page, "manage")}
               disabled={entry.loading || entry.interactionDisabled}
               onClick={(event) => {
                 event.stopPropagation();
+                setTabStop({ page: entry.page, kind: "manage" });
                 handlers?.onManage(entry.page);
               }}
+              onKeyDown={onPageKeyDown}
             >
               <i data-lucide="ellipsis"></i>
             </button>

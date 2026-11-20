@@ -39,6 +39,12 @@ windows-sys = { version = "0.61.2", features = [
 version = "2"
 default-features = false
 
+[features]
+default = []
+# Compiles the E2E window and updater hooks. Off for every release build.
+# Zephus has no wdio plugin, so the feature adds no dependencies.
+e2e = []
+
 # Patched: macOS transactional install, confined tar, Linux helper PATH, Windows ShellExecute.
 [patch.crates-io]
 tauri-plugin-updater = { path = "vendor/tauri-plugin-updater" }

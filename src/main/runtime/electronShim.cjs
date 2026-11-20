@@ -1,10 +1,14 @@
 const { EventEmitter } = require("node:events");
+const crypto = require("node:crypto");
 const http = require("node:http");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
 const isTauriHost = process.env.ZEPHUS_HOST === "tauri";
+// A page save is JSON, not a file upload. 32 MiB is far above a real page
+// and stops a loopback client from pinning the editor on one request.
+const MAX_INVOKE_BODY_BYTES = 33554432;
 const windows = [];
 let nextWebContentsId = 1;
 let primaryWebContentsId = null;
@@ -273,36 +277,138 @@ function createIpcEvent() {
   };
 }
 
-function allowLoopbackCors(req, res) {
-  const origin = req.headers.origin;
-  if (
-    typeof origin === "string" &&
-    /^http:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/.test(origin)
-  ) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+/**
+ * Origins that may read backend responses. The packaged editor is
+ * tauri.localhost (or tauri://localhost). The dev editor is Vite on port
+ * 5173. A site preview is also loopback, but on another port, and must not
+ * be able to read invoke results.
+ */
+function editorCorsOrigin(origin) {
+  if (typeof origin !== "string" || origin.length > 200) return "";
+  if (origin === "tauri://localhost") return origin;
+  let url;
+  try {
+    url = new URL(origin);
+  } catch {
+    return "";
   }
+  if (url.username || url.password) return "";
+  if (url.pathname !== "/" || url.search || url.hash) return "";
+  if (url.origin !== origin) return "";
+  const host = url.hostname;
+  if (
+    host === "tauri.localhost" &&
+    (url.protocol === "http:" || url.protocol === "https:")
+  ) {
+    return origin;
+  }
+  if (
+    (url.protocol === "http:" || url.protocol === "https:") &&
+    (host === "localhost" || host === "127.0.0.1" || host === "::1") &&
+    url.port === "5173"
+  ) {
+    return origin;
+  }
+  return "";
+}
+
+function contentLength(req) {
+  const raw = req.headers["content-length"];
+  if (raw === undefined) return null;
+  if (Array.isArray(raw) || !/^\d+$/.test(raw)) return Number.NaN;
+  const declared = Number(raw);
+  return Number.isSafeInteger(declared) ? declared : Number.NaN;
+}
+
+function sendJson(res, status, payload, extraHeaders) {
+  if (!res || res.writableEnded) return;
+  let body;
+  try {
+    body = JSON.stringify(payload);
+  } catch {
+    body = JSON.stringify({
+      ok: false,
+      error: "Backend response could not be encoded.",
+    });
+  }
+  try {
+    // The editor can close, or the webview can drop the request, while a
+    // save is still running. writeHead on that dead response throws and
+    // Node treats the rejection as fatal for this process.
+    if (res.destroyed || res.closed || res.socket?.destroyed) return;
+    if (!res.headersSent) {
+      res.writeHead(status, {
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(body),
+        ...extraHeaders,
+      });
+    }
+    res.end(body);
+  } catch {
+    try {
+      res.destroy();
+    } catch {
+      /* already closed */
+    }
+  }
+}
+
+function rejectInvoke(req, res, status, error) {
+  sendJson(res, status, { ok: false, error }, { Connection: "close" });
+  // Drop the rest of the upload without a reset, so the status body is delivered.
+  req.resume();
+}
+
+function allowEditorCors(req, res) {
+  const origin = editorCorsOrigin(req.headers.origin);
+  if (!origin) return;
+  res.setHeader("Access-Control-Allow-Origin", origin);
+  res.setHeader("Vary", "Origin");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 }
 
 function startBackendServer() {
   if (backendServerStarted) return;
   backendServerStarted = true;
-  const server = http.createServer(async (req, res) => {
-    allowLoopbackCors(req, res);
+  // The preview webview is a loopback origin and can reach 127.0.0.1. The
+  // secret path is known only to the editor, which receives the full URL
+  // from the shell. Requests without it never reach an IPC handler.
+  const backendToken = crypto.randomBytes(32).toString("hex");
+  const tokenBuf = Buffer.from(backendToken);
+  const routePath = (pathname) => {
+    const slash = pathname.indexOf("/", 1);
+    const presented =
+      slash === -1 ? pathname.slice(1) : pathname.slice(1, slash);
+    const presentedBuf = Buffer.from(presented);
+    if (presentedBuf.length !== tokenBuf.length) return null;
+    if (!crypto.timingSafeEqual(presentedBuf, tokenBuf)) return null;
+    if (slash === -1) return "/";
+    return pathname.slice(slash) || "/";
+  };
+  async function handleBackendRequest(req, res) {
+    const url = new URL(req.url || "/", "http://127.0.0.1");
+    const pathname = routePath(url.pathname);
+    if (!pathname) {
+      res.writeHead(404);
+      res.end();
+      // A wrong secret must not keep a multi-megabyte body buffered.
+      req.destroy();
+      return;
+    }
+    allowEditorCors(req, res);
     if (req.method === "OPTIONS") {
       res.writeHead(204);
       res.end();
       return;
     }
-    const url = new URL(req.url || "/", "http://127.0.0.1");
-    if (req.method === "GET" && url.pathname === "/smoke-project") {
+    if (req.method === "GET" && pathname === "/smoke-project") {
       const projectPath = global.__zephusSmokeProjectPath || null;
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ path: projectPath }));
       return;
     }
-    if (req.method === "GET" && url.pathname === "/events") {
+    if (req.method === "GET" && pathname === "/events") {
       res.writeHead(200, {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
@@ -313,9 +419,31 @@ function startBackendServer() {
       req.on("close", () => sseClients.delete(res));
       return;
     }
-    if (req.method === "POST" && url.pathname === "/invoke") {
-      let body = "";
-      for await (const chunk of req) body += chunk;
+    if (req.method === "POST" && pathname === "/invoke") {
+      const declared = contentLength(req);
+      if (Number.isNaN(declared)) {
+        rejectInvoke(req, res, 400, "Invalid Content-Length.");
+        return;
+      }
+      if (declared !== null && declared > MAX_INVOKE_BODY_BYTES) {
+        rejectInvoke(req, res, 413, "Request body is too large.");
+        return;
+      }
+      const chunks = [];
+      let received = 0;
+      try {
+        for await (const chunk of req) {
+          received += chunk.length;
+          if (received > MAX_INVOKE_BODY_BYTES) {
+            rejectInvoke(req, res, 413, "Request body is too large.");
+            return;
+          }
+          chunks.push(chunk);
+        }
+      } catch {
+        return;
+      }
+      const body = Buffer.concat(chunks).toString("utf8");
       let parsed;
       try {
         parsed = JSON.parse(body || "{}");
@@ -337,26 +465,30 @@ function startBackendServer() {
       try {
         const event = createIpcEvent();
         const result = await handler(event, ...args);
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: true, result }));
+        sendJson(res, 200, { ok: true, result });
       } catch (error) {
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(
-          JSON.stringify({
-            ok: false,
-            error: error instanceof Error ? error.message : String(error),
-          }),
-        );
+        sendJson(res, 200, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
       return;
     }
     res.writeHead(404);
     res.end();
+  }
+
+  const server = http.createServer((req, res) => {
+    handleBackendRequest(req, res).catch(() => {
+      sendJson(res, 500, { ok: false, error: "Backend request failed." });
+    });
   });
   server.listen(0, "127.0.0.1", () => {
     const addr = server.address();
     const port = typeof addr === "object" && addr ? addr.port : 0;
-    process.stdout.write(`ZEPHUS_BACKEND_URL=http://127.0.0.1:${port}\n`);
+    process.stdout.write(
+      `ZEPHUS_BACKEND_URL=http://127.0.0.1:${port}/${backendToken}\n`,
+    );
   });
 }
 

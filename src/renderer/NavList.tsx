@@ -1,5 +1,6 @@
 import { render } from "solid-js/web";
 import { For, Show, createEffect, createSignal } from "solid-js";
+import { onNavKeyDown } from "./navKeyboard";
 
 export interface NavListEntry {
   id: string;
@@ -89,6 +90,7 @@ export function NavListPanel() {
               onClick={() => {
                 if (entry.page) handlers?.onOpenPage(entry.page);
               }}
+              onKeyDown={onNavKeyDown}
             >
               <i data-lucide="link"></i>{" "}
               <span class="nav-entry-label">

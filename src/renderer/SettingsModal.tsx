@@ -27,6 +27,8 @@ export interface SettingsModalState {
   onAutoNodePath: () => void | Promise<void>;
   onOpenProductionLicenses: () => void;
   onOpenConfigFolder: () => void | Promise<void>;
+  /** Shown in the dialog. The status bar is covered while this dialog is open. */
+  formError?: string;
 }
 
 function buttonClass(tone: SettingsModalAction["tone"]): string {
@@ -45,6 +47,11 @@ export function renderSettingsModalBody(
   return render(
     () => (
       <div class="settings-form">
+        {state.formError ? (
+          <p class="form-error settings-error" role="alert">
+            {state.formError}
+          </p>
+        ) : null}
         <div class="settings-section">
           <h4 class="settings-section-title">Updates</h4>
 
@@ -85,11 +92,13 @@ export function renderSettingsModalBody(
 
           <div class="settings-row">
             <span>{state.updaterStatusText}</span>
-            <div class="settings-inline-actions">
+            <div class="settings-inline-actions settings-updater-actions">
               <For each={state.updaterActions}>
                 {(action) => (
                   <button
-                    class={buttonClass(action.tone)}
+                    type="button"
+                    class={`${buttonClass(action.tone)} settings-updater-action`}
+                    data-updater-action={action.id}
                     onClick={() => void state.onUpdaterAction(action.id)}
                   >
                     {action.label}
@@ -106,18 +115,20 @@ export function renderSettingsModalBody(
           <div class="settings-row">
             <div class="settings-inline-copy">
               <strong>Node.js (for build & preview)</strong>
-              <span>{state.nodeStatusText}</span>
+              <span class="settings-node-status">{state.nodeStatusText}</span>
             </div>
             <div class="settings-inline-actions">
               <button
-                class="btn secondary mini-btn"
+                type="button"
+                class="btn secondary mini-btn settings-node-browse"
                 disabled={state.nodeBrowseBusy}
                 onClick={() => void state.onPickNodePath()}
               >
                 Set Custom Location…
               </button>
               <button
-                class="btn ghost mini-btn"
+                type="button"
+                class="btn ghost mini-btn settings-node-auto"
                 disabled={state.nodeAutoDisabled || state.nodeAutoBusy}
                 onClick={() => void state.onAutoNodePath()}
               >

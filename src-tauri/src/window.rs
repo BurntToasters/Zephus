@@ -4,12 +4,14 @@
 
 use crate::app_state::{MAIN_WINDOW, PREVIEW_WINDOW, SPLASH_WINDOW};
 use crate::constants::{SETTINGS_FLUSH_TIMEOUT, SPLASH_FADE_DELAY};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU64, Ordering};
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
 pub static MAIN_READY: AtomicBool = AtomicBool::new(false);
+/// Port of the preview that was opened. Later navigations may not switch ports.
+static PREVIEW_PORT: AtomicU16 = AtomicU16::new(0);
 static CLOSE_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 static CLOSE_CONFIRMING: AtomicBool = AtomicBool::new(false);
 static CLOSE_ACKNOWLEDGED: AtomicBool = AtomicBool::new(false);
@@ -70,7 +72,12 @@ pub fn is_app_url(url: &tauri::Url) -> bool {
 }
 
 /// The preview webview may load only the local Astro dev server.
+/// Userinfo is rejected: `http://127.0.0.1:1@127.0.0.1:9222/` is still a
+/// loopback host, but the port that loads is 9222.
 pub fn is_loopback_preview_url(url: &tauri::Url) -> bool {
+    if !url.username().is_empty() || url.password().is_some() {
+        return false;
+    }
     matches!(url.scheme(), "http" | "https")
         && matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "::1"))
 }
@@ -93,7 +100,13 @@ fn open_preview_external(app: &AppHandle, url: &tauri::Url) {
 }
 
 fn allow_preview_navigation(url: &tauri::Url) -> bool {
-    url.as_str() == "about:blank" || is_loopback_preview_url(url)
+    if url.as_str() == "about:blank" {
+        return true;
+    }
+    let allowed = PREVIEW_PORT.load(Ordering::Relaxed);
+    is_loopback_preview_url(url)
+        && allowed != 0
+        && url.port_or_known_default() == Some(allowed)
 }
 
 /// Opens the Astro dev server in a window with no Zephus IPC.
@@ -104,8 +117,16 @@ pub fn open_preview_window(app: AppHandle, url: String) -> Result<(), String> {
     if !is_loopback_preview_url(&parsed) {
         return Err("Refused to open a non-local preview URL.".to_string());
     }
+    let port = parsed
+        .port_or_known_default()
+        .filter(|port| *port != 0)
+        .ok_or_else(|| "Refused to open a non-local preview URL.".to_string())?;
+    let previous = PREVIEW_PORT.swap(port, Ordering::Relaxed);
     if let Some(window) = app.get_webview_window(PREVIEW_WINDOW) {
-        window.navigate(parsed).map_err(|error| error.to_string())?;
+        if let Err(error) = window.navigate(parsed) {
+            PREVIEW_PORT.store(previous, Ordering::Relaxed);
+            return Err(error.to_string());
+        }
         let _ = window.show();
         let _ = window.set_focus();
         return Ok(());
@@ -128,7 +149,10 @@ pub fn open_preview_window(app: AppHandle, url: String) -> Result<(), String> {
             tauri::webview::NewWindowResponse::Deny
         })
         .build()
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| {
+            PREVIEW_PORT.store(previous, Ordering::Relaxed);
+            error.to_string()
+        })?;
     Ok(())
 }
 
@@ -141,6 +165,7 @@ pub fn close_preview_window(app: AppHandle) -> Result<(), String> {
 }
 
 pub fn on_preview_destroyed(app: &AppHandle) {
+    PREVIEW_PORT.store(0, Ordering::Relaxed);
     use tauri::Emitter;
     let _ = app.emit_to(MAIN_WINDOW, "preview-closed", true);
 }
@@ -169,9 +194,9 @@ fn open_blocked_url(app: &AppHandle, url: &tauri::Url) {
 
 /// Injected into every frame of the main window before page scripts run.
 /// WebView2 honours F5 / Ctrl+R / Ctrl+P and every engine offers Reload in its
-/// default context menu; a reload would drop in-memory download state while
-/// yt-dlp keeps running. Editable fields and text selections keep their
-/// native menu so right-click Paste and Copy still work.
+/// default context menu; a reload would drop unsaved editor state. Editable
+/// fields and text selections keep their native menu so right-click Paste and
+/// Copy still work.
 const WEBVIEW_GUARD_SCRIPT: &str = r#"
 (function () {
   if (window.__ZEPHUS_WEBVIEW_GUARD__) return;
@@ -191,7 +216,9 @@ const WEBVIEW_GUARD_SCRIPT: &str = r#"
   window.addEventListener("keydown", function (event) {
     var key = String(event.key || "").toLowerCase();
     var mod = event.ctrlKey || event.metaKey;
-    if (key === "f5" || (mod && !event.altKey && (key === "r" || key === "p"))) {
+    // Stop the webview Save, Open, and View Source commands. The editor still
+    // receives Ctrl/Cmd+S and saves the project. Ctrl/Cmd+F stays available.
+    if (key === "f5" || (mod && !event.altKey && (key === "r" || key === "p" || key === "s" || key === "o" || key === "u"))) {
       event.preventDefault();
     }
   }, true);
@@ -201,6 +228,45 @@ const WEBVIEW_GUARD_SCRIPT: &str = r#"
 /// Native title bar appearance for a saved theme preference. Dark and purple
 /// pin a dark bar so it matches the page even when the system appearance is
 /// light; the renderer keeps it in sync on later theme changes.
+fn apply_saved_theme(app: &AppHandle, theme: crate::types::Theme) {
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+        let _ = window.set_theme(window_theme(theme));
+    }
+}
+
+/// Mirrors the editor's theme and update channel into the shell settings.
+/// `recheck` runs the updater channel change only when the channel itself
+/// changed; opening the app must not start a check.
+#[tauri::command]
+pub async fn apply_editor_settings(
+    app: AppHandle,
+    theme: String,
+    update_channel: String,
+    recheck: bool,
+) {
+    use crate::types::{Theme, UpdateChannel};
+
+    let mut patch = serde_json::Map::new();
+    if Theme::parse(&theme).is_some() {
+        patch.insert("theme".into(), serde_json::json!(theme));
+    }
+    let channel = UpdateChannel::parse(&update_channel);
+    if channel.is_some() {
+        patch.insert("updateChannel".into(), serde_json::json!(update_channel));
+    }
+    if patch.is_empty() {
+        return;
+    }
+    if let Ok(saved) = crate::settings::save_patch(&patch) {
+        apply_saved_theme(&app, saved.theme);
+    }
+    if recheck {
+        if let Some(channel) = channel {
+            crate::updater::set_update_channel(crate::ipc::FalliblePayload::Typed(channel)).await;
+        }
+    }
+}
+
 fn window_theme(preference: crate::types::Theme) -> Option<tauri::Theme> {
     use crate::types::Theme;
     match preference {
@@ -241,6 +307,20 @@ fn build_main(app: &AppHandle) -> Result<WebviewWindow, String> {
     if boot_check {
         builder = builder.initialization_script("window.__ZEPHUS_BOOT_CHECK__ = true;");
     }
+    if let Some(saved) = read_saved_window() {
+        *PENDING_WINDOW
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(saved.clone());
+        builder = builder.inner_size(saved.width, saved.height);
+        if let (Some(x), Some(y)) = (saved.x, saved.y) {
+            if saved_position_visible(app, x, y, saved.width, saved.height) {
+                builder = builder.position(x, y);
+            }
+        }
+        if saved.maximized {
+            builder = builder.maximized(true);
+        }
+    }
     builder
         .on_navigation(move |url| {
             if is_app_url(url) {
@@ -260,8 +340,194 @@ fn build_main(app: &AppHandle) -> Result<WebviewWindow, String> {
             if e2e_background() {
                 e2e_occlusion::keep_rendering(window);
             }
+            if window.is_maximized().unwrap_or(false) {
+                return;
+            }
+            let saved = PENDING_WINDOW
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .clone();
             fit_to_work_area(window);
+            restore_saved_position(window, saved.as_ref());
         })
+}
+
+#[derive(Clone)]
+struct SavedWindow {
+    width: f64,
+    height: f64,
+    x: Option<f64>,
+    y: Option<f64>,
+    maximized: bool,
+}
+
+static PENDING_WINDOW: Mutex<Option<SavedWindow>> = Mutex::new(None);
+static WINDOW_PERSIST_GEN: AtomicU64 = AtomicU64::new(0);
+
+fn session_controls_window() -> bool {
+    std::env::var("ZEPHUS_SMOKE").ok().as_deref() == Some("1")
+        || std::env::var("ZEPHUS_BOOT_CHECK").ok().as_deref() == Some("1")
+}
+
+fn window_state_path() -> Option<std::path::PathBuf> {
+    Some(
+        crate::editor_user_data_dir()
+            .ok()?
+            .join("window-state.json"),
+    )
+}
+
+fn read_saved_window() -> Option<SavedWindow> {
+    if session_controls_window() {
+        return None;
+    }
+    let text = std::fs::read_to_string(window_state_path()?).ok()?;
+    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let width = value.get("width")?.as_f64()?;
+    let height = value.get("height")?.as_f64()?;
+    if !(width.is_finite()
+        && height.is_finite()
+        && (960.0..=16_000.0).contains(&width)
+        && (640.0..=16_000.0).contains(&height))
+    {
+        return None;
+    }
+    let coordinate = |name: &str| {
+        value
+            .get(name)
+            .and_then(serde_json::Value::as_f64)
+            .filter(|number| number.is_finite() && (-32_000.0..=32_000.0).contains(number))
+    };
+    Some(SavedWindow {
+        width,
+        height,
+        x: coordinate("x"),
+        y: coordinate("y"),
+        maximized: value
+            .get("maximized")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false),
+    })
+}
+
+fn saved_position_visible(app: &AppHandle, x: f64, y: f64, width: f64, height: f64) -> bool {
+    let Ok(monitors) = app.available_monitors() else {
+        return false;
+    };
+    monitors.iter().any(|monitor| {
+        let scale = monitor.scale_factor();
+        if scale <= 0.0 {
+            return false;
+        }
+        let origin = monitor.position();
+        let size = monitor.size();
+        let left = origin.x as f64 / scale;
+        let top = origin.y as f64 / scale;
+        let right = left + size.width as f64 / scale;
+        let bottom = top + size.height as f64 / scale;
+        x < right && x + width > left && y < bottom && y + height > top
+    })
+}
+
+fn capture_main_bounds(window: &WebviewWindow) {
+    let Ok(scale) = window.scale_factor() else {
+        return;
+    };
+    if scale <= 0.0 {
+        return;
+    }
+    let maximized = window.is_maximized().unwrap_or(false);
+    let mut slot = PENDING_WINDOW
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if maximized {
+        match slot.as_mut() {
+            Some(existing) => existing.maximized = true,
+            None => {
+                *slot = Some(SavedWindow {
+                    width: 1280.0,
+                    height: 820.0,
+                    x: None,
+                    y: None,
+                    maximized: true,
+                });
+            }
+        }
+        return;
+    }
+    let Ok(inner) = window.inner_size() else {
+        return;
+    };
+    let width = inner.width as f64 / scale;
+    let height = inner.height as f64 / scale;
+    if !(960.0..=16_000.0).contains(&width) || !(640.0..=16_000.0).contains(&height) {
+        return;
+    }
+    let pos = window.outer_position().ok();
+    *slot = Some(SavedWindow {
+        width,
+        height,
+        x: pos.map(|point| point.x as f64 / scale),
+        y: pos.map(|point| point.y as f64 / scale),
+        maximized: false,
+    });
+}
+
+fn write_saved_window() {
+    let snapshot = PENDING_WINDOW
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone();
+    let Some(state) = snapshot else {
+        return;
+    };
+    let Some(path) = window_state_path() else {
+        return;
+    };
+    let mut body = serde_json::json!({
+        "width": state.width.round(),
+        "height": state.height.round(),
+        "maximized": state.maximized,
+    });
+    if let Some(x) = state.x {
+        body["x"] = serde_json::json!(x.round());
+    }
+    if let Some(y) = state.y {
+        body["y"] = serde_json::json!(y.round());
+    }
+    if let Err(error) = crate::fs_util::write_json(&path, &body) {
+        crate::logging::warn(&format!("Could not save window placement: {error}"));
+    }
+}
+
+/// Remembers the main window after a move or resize. Smoke and boot-check
+/// must not overwrite the user's saved placement.
+pub fn note_main_window_bounds(app: &AppHandle) {
+    if session_controls_window() {
+        return;
+    }
+    let Some(window) = app.get_webview_window(MAIN_WINDOW) else {
+        return;
+    };
+    capture_main_bounds(&window);
+    let generation = WINDOW_PERSIST_GEN.fetch_add(1, Ordering::SeqCst) + 1;
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        if WINDOW_PERSIST_GEN.load(Ordering::SeqCst) != generation {
+            return;
+        }
+        write_saved_window();
+    });
+}
+
+fn flush_main_window_bounds(app: &AppHandle) {
+    if session_controls_window() {
+        return;
+    }
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+        capture_main_bounds(&window);
+    }
+    write_saved_window();
 }
 
 /// The configured 1200x900 (logical) window is taller than the work area of
@@ -292,6 +558,33 @@ fn fit_to_work_area(window: &WebviewWindow) {
     );
     let _ = window.set_size(size);
     let _ = window.center();
+}
+
+/// The config centers every new window. Put a saved placement back after that
+/// when the window still has the saved size. A window that had to shrink stays
+/// centered on the visible work area.
+fn restore_saved_position(window: &WebviewWindow, saved: Option<&SavedWindow>) {
+    let Some(saved) = saved else {
+        return;
+    };
+    let (Some(x), Some(y)) = (saved.x, saved.y) else {
+        return;
+    };
+    let Ok(scale) = window.scale_factor() else {
+        return;
+    };
+    if scale <= 0.0 {
+        return;
+    }
+    let Ok(inner) = window.inner_size() else {
+        return;
+    };
+    let width = inner.width as f64 / scale;
+    let height = inner.height as f64 / scale;
+    if (width - saved.width).abs() > 2.0 || (height - saved.height).abs() > 2.0 {
+        return;
+    }
+    let _ = window.set_position(tauri::LogicalPosition::new(x, y));
 }
 
 /// Background E2E runs on macOS and Windows: the app never takes focus and its
@@ -544,6 +837,7 @@ fn cancel_close() {
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     cancel_close_locked();
+    crate::logging::warn("Close cancelled because durable state could not be confirmed.");
 }
 
 fn cancel_close_locked() {
@@ -552,7 +846,16 @@ fn cancel_close_locked() {
     CLOSE_ACKNOWLEDGED.store(false, Ordering::SeqCst);
     CLOSE_GENERATION.fetch_add(1, Ordering::SeqCst);
     APP_QUITTING.store(false, Ordering::SeqCst);
-    crate::logging::warn("Close cancelled because durable state could not be confirmed.");
+}
+
+/// The editor kept the window open (unsaved work was cancelled).
+#[tauri::command]
+pub fn cancel_editor_close(generation: u64) -> Result<(), String> {
+    if cancel_close_generation(generation) {
+        crate::logging::info("Editor cancelled close.");
+        return Ok(());
+    }
+    Err("The close request is no longer current.".into())
 }
 
 fn cancel_close_generation(generation: u64) -> bool {
@@ -682,6 +985,7 @@ pub fn on_main_close_requested(app: &AppHandle, api: &tauri::CloseRequestApi) {
     {
         return;
     }
+    flush_main_window_bounds(app);
     api.prevent_close();
     if CLOSE_IN_PROGRESS.load(Ordering::SeqCst) || CLOSE_CONFIRMING.swap(true, Ordering::SeqCst) {
         return;
@@ -740,6 +1044,7 @@ pub async fn notify_settings_flushed(
 }
 
 pub fn on_main_destroyed(app: &AppHandle) {
+    flush_main_window_bounds(app);
     crate::logging::info("Main window closed.");
     MAIN_READY.store(false, Ordering::SeqCst);
     {

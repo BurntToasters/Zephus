@@ -1,10 +1,11 @@
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { open } from "@tauri-apps/plugin-dialog";
+import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { message, open } from "@tauri-apps/plugin-dialog";
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { IPC } from "../main/ipcChannels";
 import { createZephusApi } from "../main/zephusApi";
-import type { OperationResult } from "../main/types";
+import type { GlobalSettings, OperationResult } from "../main/types";
 import { runShellSmoke } from "./shellSmoke";
 
 type UpdaterPayload = {
@@ -16,6 +17,42 @@ type UpdaterPayload = {
 
 let lastUpdaterStatus: UpdaterPayload | null = null;
 let updateCandidateId: number | null = null;
+let lastShellChannel: string | null = null;
+let updaterEventsReady: Promise<void> | null = null;
+
+function ensureUpdaterEvents(): Promise<void> {
+  if (updaterEventsReady) return updaterEventsReady;
+  updaterEventsReady = (async () => {
+    await listen<Record<string, unknown>>("updater-status", (event) => {
+      const mapped = mapRustUpdaterStatus(event.payload);
+      if (mapped) emitUpdater(mapped);
+    });
+    await listen<{ percent?: number }>("updater-progress", (event) => {
+      emitUpdater({
+        status: "downloading",
+        percent: event.payload.percent ?? 0,
+      });
+    });
+  })();
+  return updaterEventsReady;
+}
+
+async function requestUpdateCheck(): Promise<UpdaterPayload> {
+  await ensureUpdaterEvents();
+  const refusal = await tauriInvoke<{
+    reason?: string;
+    message?: string;
+  } | null>("check_for_updates");
+  if (refusal?.message) {
+    const payload: UpdaterPayload = {
+      status: "error",
+      error: refusal.message,
+    };
+    emitUpdater(payload);
+    return payload;
+  }
+  return lastUpdaterStatus ?? { status: "checking" };
+}
 let backendBaseUrl: string | null = null;
 let eventSource: EventSource | null = null;
 const channelListeners = new Map<string, Set<(payload: unknown) => void>>();
@@ -66,7 +103,7 @@ function emitUpdater(payload: UpdaterPayload): void {
   for (const cb of listeners) cb(payload);
 }
 
-async function resolveBackendUrl(): Promise<string> {
+async function waitForBackendUrl(): Promise<string | null> {
   if (backendBaseUrl) return backendBaseUrl;
   for (let attempt = 0; attempt < 120; attempt += 1) {
     const url = await tauriInvoke<string | null>("backend_url");
@@ -74,9 +111,69 @@ async function resolveBackendUrl(): Promise<string> {
       backendBaseUrl = url.replace(/\/$/, "");
       return backendBaseUrl;
     }
-    await new Promise((r) => setTimeout(r, 100));
+    try {
+      if (await tauriInvoke<boolean>("backend_start_failed")) return null;
+    } catch {
+      // Keep polling when the shell has not advertised a start failure.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
   }
-  throw new Error("Node backend URL is not available.");
+  return null;
+}
+
+async function pickNodeExecutable(): Promise<string | null> {
+  const isWindows = /Windows/i.test(navigator.userAgent);
+  const picked = await open({
+    title: "Select the Node.js Executable",
+    directory: false,
+    multiple: false,
+    filters: isWindows
+      ? [{ name: "Executable", extensions: ["exe"] }]
+      : undefined,
+  });
+  return typeof picked === "string" ? picked : null;
+}
+
+async function promptForBackendNode(): Promise<string | null> {
+  const locateLabel = "Set Custom Location…";
+  for (;;) {
+    const choice = await message(
+      "Zephus could not start because Node.js was not found. Choose the node executable, or install Node.js from https://nodejs.org and reopen Zephus.",
+      {
+        title: "Node.js Not Found",
+        kind: "warning",
+        buttons: { ok: locateLabel, cancel: "OK" },
+      },
+    );
+    if (choice !== locateLabel) return null;
+    const picked = await pickNodeExecutable();
+    if (!picked) return null;
+    try {
+      await tauriInvoke("set_backend_node", { path: picked });
+    } catch (error) {
+      const text = error instanceof Error ? error.message : String(error);
+      await message(text, { title: "Invalid Node.js Location", kind: "error" });
+      continue;
+    }
+    backendBaseUrl = null;
+    const url = await waitForBackendUrl();
+    if (url) return url;
+    await message("That Node.js executable did not start the editor.", {
+      title: "Node.js Not Found",
+      kind: "error",
+    });
+  }
+}
+
+async function resolveBackendUrl(): Promise<string> {
+  const ready = await waitForBackendUrl();
+  if (ready) return ready;
+  const smoke = (window as Window & { __ZEPHUS_SMOKE__?: boolean })
+    .__ZEPHUS_SMOKE__;
+  if (smoke) throw new Error("Node backend URL is not available.");
+  const started = await promptForBackendNode();
+  if (!started) throw new Error("Node backend URL is not available.");
+  return started;
 }
 
 function ensureEventSource(base: string): void {
@@ -117,6 +214,245 @@ async function httpInvoke(
     throw new Error(body.error ?? `Invoke failed for ${channel}`);
   }
   return body.result;
+}
+
+function shellChannel(channel: unknown): "auto" | "stable" | "beta" | "" {
+  return channel === "auto" || channel === "stable" || channel === "beta"
+    ? channel
+    : "";
+}
+
+async function syncShellPreferences(
+  settings: { theme?: unknown; updateChannel?: unknown },
+  recheck: boolean,
+): Promise<void> {
+  const theme = typeof settings.theme === "string" ? settings.theme : "system";
+  try {
+    const native = theme === "light" || theme === "dark" ? theme : null;
+    await getCurrentWindow().setTheme(native);
+  } catch {
+    // The saved theme is applied again the next time the window is created.
+  }
+  const channel = shellChannel(settings.updateChannel);
+  const channelChanged = channel.length > 0 && channel !== lastShellChannel;
+  if (channel.length > 0) lastShellChannel = channel;
+  try {
+    await tauriInvoke("apply_editor_settings", {
+      theme,
+      updateChannel: channel,
+      recheck: recheck && channelChanged,
+    });
+  } catch {
+    // The shell keeps the last theme and channel it was able to store.
+  }
+}
+
+async function promptNodeIfNeeded(): Promise<void> {
+  let status: { status?: string; message?: string };
+  try {
+    status = (await httpInvoke(IPC.nodeStatus)) as typeof status;
+  } catch {
+    return;
+  }
+  if (!status || status.status === "ok") return;
+  const title =
+    status.status === "missing"
+      ? "Node.js Not Found"
+      : status.status === "outdated"
+        ? "Node.js Update Required"
+        : "Node.js Check";
+  const locateLabel = "Set Custom Location…";
+  const choice = await message(status.message || title, {
+    title,
+    kind: "warning",
+    buttons: { ok: locateLabel, cancel: "OK" },
+  });
+  if (choice !== locateLabel) return;
+  const picked = await pickNodeExecutable();
+  if (!picked) return;
+  const probed = (await httpInvoke(IPC.nodeSetPath, picked)) as {
+    status?: string;
+    message?: string;
+    version?: string | null;
+    binaryPath?: string | null;
+    usedCustomPath?: boolean;
+  };
+  const pickedNorm = picked.replace(/\\/g, "/").toLowerCase();
+  const probedNorm = (probed.binaryPath ?? "")
+    .replace(/\\/g, "/")
+    .toLowerCase();
+  if (
+    !probed.usedCustomPath ||
+    probedNorm !== pickedNorm ||
+    probed.status === "missing" ||
+    probed.status === "unknown"
+  ) {
+    await message(
+      probed.message || "That file is not a working Node.js executable.",
+      { title: "Invalid Node.js Location", kind: "error" },
+    );
+    return;
+  }
+  const settings = (await httpInvoke(IPC.settingsReadGlobal)) as GlobalSettings;
+  settings.customNodePath = probed.binaryPath ?? picked;
+  const saved = (await httpInvoke(
+    IPC.settingsWriteGlobal,
+    settings,
+  )) as OperationResult;
+  if (saved?.ok === false) {
+    await message(saved.error || "Could not save the Node.js location.", {
+      title: "Node.js Location",
+      kind: "error",
+    });
+    return;
+  }
+  await message(
+    probed.status === "ok"
+      ? `Using Node.js ${probed.version}.`
+      : "Saved, but this Node.js is still below the required version.",
+    {
+      title: "Node.js Location Saved",
+      kind: probed.status === "ok" ? "info" : "warning",
+    },
+  );
+}
+
+function installReloadShortcut(): void {
+  window.addEventListener(
+    "keydown",
+    (event) => {
+      if (event.repeat || event.altKey) return;
+      if (!(event.ctrlKey || event.metaKey)) return;
+      if (event.key.toLowerCase() !== "r") return;
+      event.preventDefault();
+      const set = channelListeners.get(IPC.reloadRequested);
+      if (!set) return;
+      for (const cb of set) cb(undefined);
+    },
+    true,
+  );
+}
+
+async function finishEditorClose(generation: number): Promise<void> {
+  const confirmer = (
+    window as Window & { zephusConfirmClose?: () => Promise<boolean> }
+  ).zephusConfirmClose;
+  let proceed = true;
+  if (typeof confirmer === "function") {
+    try {
+      proceed = await confirmer();
+    } catch {
+      proceed = false;
+    }
+  }
+  if (!proceed) {
+    await tauriInvoke("cancel_editor_close", { generation }).catch(
+      () => undefined,
+    );
+    return;
+  }
+  try {
+    await httpInvoke(IPC.previewStop);
+  } catch {
+    // The preview server may already be stopped.
+  }
+  await tauriInvoke("notify_settings_flushed", { generation }).catch(
+    () => undefined,
+  );
+}
+
+function installCloseHandler(): void {
+  void listen<number>("prepare-for-close", (event) => {
+    void finishEditorClose(event.payload);
+  });
+}
+
+const MAX_DROPPED_ASSET_BYTES = 16 * 1024 * 1024;
+
+type ImportedAsset = { webPath: string; category: string };
+
+type AssetImportResult = {
+  ok: boolean;
+  imported: ImportedAsset[];
+  errors: string[];
+};
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const chunk = 0x8000;
+  for (let index = 0; index < bytes.length; index += chunk) {
+    binary += String.fromCharCode(
+      ...bytes.subarray(index, Math.min(index + chunk, bytes.length)),
+    );
+  }
+  return btoa(binary);
+}
+
+function droppedFilePath(file: File): string {
+  const candidate = (file as File & { path?: unknown }).path;
+  return typeof candidate === "string" ? candidate : "";
+}
+
+/**
+ * The editor drop hands over browser File objects. Electron can ask the shell
+ * for a path; this webview cannot, so the bytes are written inside public/.
+ * An explicit path string still uses the path importer.
+ */
+async function importDroppedAssets(
+  projectPath: string,
+  publicDir: string,
+  files: Array<File | string>,
+): Promise<AssetImportResult> {
+  const list = Array.isArray(files) ? files : [];
+  const imported: ImportedAsset[] = [];
+  const errors: string[] = [];
+  const paths: string[] = [];
+  for (const item of list) {
+    if (typeof item === "string") {
+      if (item.length > 0) paths.push(item);
+      else errors.push("Dropped item is not a file.");
+      continue;
+    }
+    const fromPath = droppedFilePath(item);
+    if (fromPath) {
+      paths.push(fromPath);
+      continue;
+    }
+    if (
+      typeof item?.arrayBuffer !== "function" ||
+      typeof item.name !== "string"
+    ) {
+      errors.push("Dropped item is not a file.");
+      continue;
+    }
+    if (item.size > MAX_DROPPED_ASSET_BYTES) {
+      errors.push(
+        `${item.name || "file"}: file is too large to drop. Use Import Files.`,
+      );
+      continue;
+    }
+    const data = bytesToBase64(new Uint8Array(await item.arrayBuffer()));
+    const result = (await httpInvoke(
+      IPC.importAssetBytes,
+      projectPath,
+      publicDir,
+      item.name,
+      data,
+    )) as AssetImportResult;
+    imported.push(...(result.imported ?? []));
+    errors.push(...(result.errors ?? []));
+  }
+  if (paths.length > 0) {
+    const result = (await httpInvoke(
+      IPC.importAssetPaths,
+      projectPath,
+      publicDir,
+      paths,
+    )) as AssetImportResult;
+    imported.push(...(result.imported ?? []));
+    errors.push(...(result.errors ?? []));
+  }
+  return { ok: errors.length === 0, imported, errors };
 }
 
 function isTauriHost(): boolean {
@@ -221,6 +557,18 @@ async function bootstrapZephus(): Promise<void> {
 
   const api = {
     ...createZephusApi(invoke, subscribe),
+    writeGlobalSettings: async (
+      settings: GlobalSettings,
+    ): Promise<OperationResult> => {
+      const result = (await invoke(
+        IPC.settingsWriteGlobal,
+        settings,
+      )) as OperationResult;
+      if (result?.ok !== false) {
+        await syncShellPreferences(settings, true);
+      }
+      return result;
+    },
     importAssets: async (
       projectPath: string,
       publicDir: string,
@@ -252,6 +600,15 @@ async function bootstrapZephus(): Promise<void> {
         errors: string[];
       };
     },
+    importAssetPaths: async (
+      projectPath: string,
+      publicDir: string,
+      files: Array<File | string>,
+    ): Promise<{
+      ok: boolean;
+      imported: { webPath: string; category: string }[];
+      errors: string[];
+    }> => importDroppedAssets(projectPath, publicDir, files),
     pickNodePath: async (): Promise<unknown> => {
       const isWindows = /Windows/i.test(navigator.userAgent);
       const picked = await open({
@@ -321,21 +678,7 @@ async function bootstrapZephus(): Promise<void> {
         return { ...result, revealed: false };
       }
     },
-    checkForUpdates: async (): Promise<UpdaterPayload> => {
-      const refusal = await tauriInvoke<{
-        reason?: string;
-        message?: string;
-      } | null>("check_for_updates");
-      if (refusal?.message) {
-        const payload: UpdaterPayload = {
-          status: "error",
-          error: refusal.message,
-        };
-        emitUpdater(payload);
-        return payload;
-      }
-      return lastUpdaterStatus ?? { status: "checking" };
-    },
+    checkForUpdates: () => requestUpdateCheck(),
     downloadUpdate: async (): Promise<UpdaterPayload> => {
       if (updateCandidateId == null) {
         return {
@@ -378,28 +721,8 @@ async function bootstrapZephus(): Promise<void> {
     },
     getLastUpdaterStatus: async () => lastUpdaterStatus,
     onUpdaterStatus: (callback: (data: UpdaterPayload) => void) => {
-      const unsub = subscribe(IPC.updaterStatus, callback);
-      const unlistenPromise = listen<Record<string, unknown>>(
-        "updater-status",
-        (event) => {
-          const mapped = mapRustUpdaterStatus(event.payload);
-          if (mapped) emitUpdater(mapped);
-        },
-      );
-      const unlistenProgress = listen<{ percent?: number }>(
-        "updater-progress",
-        (event) => {
-          emitUpdater({
-            status: "downloading",
-            percent: event.payload.percent ?? 0,
-          });
-        },
-      );
-      return () => {
-        unsub();
-        void unlistenPromise.then((fn: UnlistenFn) => fn());
-        void unlistenProgress.then((fn: UnlistenFn) => fn());
-      };
+      void ensureUpdaterEvents();
+      return subscribe(IPC.updaterStatus, callback);
     },
     revealOutputFolder: async (
       projectPath: string,
@@ -442,10 +765,28 @@ async function bootstrapZephus(): Promise<void> {
   };
 
   (window as unknown as { zephus: typeof api }).zephus = api;
+  window.dispatchEvent(new Event("zephus-ready"));
+  await ensureUpdaterEvents();
+  try {
+    const settings = (await httpInvoke(IPC.settingsReadGlobal)) as {
+      theme?: unknown;
+      updateChannel?: unknown;
+      autoCheckUpdates?: boolean;
+    };
+    await syncShellPreferences(settings, false);
+    if (settings.autoCheckUpdates !== false) {
+      void requestUpdateCheck();
+    }
+  } catch {
+    // Defaults stay until the next settings save.
+  }
   void tauriInvoke("mark_main_window_ready").catch(() => undefined);
 
   const smokeWindow = window as Window & { __ZEPHUS_SMOKE__?: boolean };
-  if (!smokeWindow.__ZEPHUS_SMOKE__) return;
+  if (!smokeWindow.__ZEPHUS_SMOKE__) {
+    void promptNodeIfNeeded();
+    return;
+  }
 
   const runSmoke = async () => {
     try {
@@ -472,6 +813,8 @@ async function bootstrapZephus(): Promise<void> {
 }
 
 if (isTauriHost()) {
+  installReloadShortcut();
+  installCloseHandler();
   const bootWindow = window as Window & { __ZEPHUS_BOOT_CHECK__?: boolean };
   if (bootWindow.__ZEPHUS_BOOT_CHECK__) {
     void tauriInvoke("mark_main_window_ready").catch(() => undefined);

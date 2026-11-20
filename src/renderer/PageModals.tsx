@@ -4,6 +4,8 @@ import { render } from "solid-js/web";
 export interface NewPageModalState {
   value: string;
   onValueChange: (value: string) => void;
+  /** Shown in the dialog. The status bar is covered while this dialog is open. */
+  formError?: string;
 }
 
 export interface PageSettingsModalState {
@@ -21,6 +23,8 @@ export interface PageSettingsModalState {
   /** Absolute site URL, shown so the user can see the derived canonical URL. */
   siteUrl: string;
   route: string;
+  /** Shown in the dialog. The status bar is covered while this dialog is open. */
+  formError?: string;
   onTitleChange: (value: string) => void;
   onSlugChange: (value: string) => void;
   onNavLabelChange: (value: string) => void;
@@ -57,11 +61,16 @@ export interface NavigationPreviewRowState {
 export function renderNewPageModal(
   container: HTMLElement,
   state: NewPageModalState,
-): void {
+): () => void {
   container.innerHTML = "";
-  render(
+  return render(
     () => (
       <div class="meta-form">
+        {state.formError ? (
+          <p class="form-error new-page-error" role="alert">
+            {state.formError}
+          </p>
+        ) : null}
         <p class="muted">
           New pages inherit the project theme layout. Nested routes like
           `docs/getting-started` are supported.
@@ -69,7 +78,7 @@ export function renderNewPageModal(
         <label class="meta-field">
           <span>Page route</span>
           <input
-            class="text"
+            class="text page-route"
             placeholder="docs/getting-started"
             value={state.value}
             onInput={(event) => state.onValueChange(event.currentTarget.value)}
@@ -91,10 +100,15 @@ export function renderPageSettingsModal(
   return render(
     () => (
       <div class="meta-form">
+        {state.formError ? (
+          <p class="form-error page-settings-error" role="alert">
+            {state.formError}
+          </p>
+        ) : null}
         <label class="meta-field">
           <span>Page title</span>
           <input
-            class="text"
+            class="text page-title"
             value={state.title}
             onInput={(event) => state.onTitleChange(event.currentTarget.value)}
           />
@@ -102,7 +116,7 @@ export function renderPageSettingsModal(
         <label class="meta-field">
           <span>Slug</span>
           <input
-            class="text"
+            class="text page-slug"
             value={state.slug}
             disabled={state.slugDisabled}
             onInput={(event) => state.onSlugChange(event.currentTarget.value)}
@@ -111,7 +125,7 @@ export function renderPageSettingsModal(
         <label class="meta-field">
           <span>Nav label</span>
           <input
-            class="text"
+            class="text page-nav-label"
             value={state.navLabel}
             onInput={(event) =>
               state.onNavLabelChange(event.currentTarget.value)
@@ -180,7 +194,7 @@ export function renderPageSettingsModal(
           <span>Social share image</span>
           <div class="link-field">
             <input
-              class="text"
+              class="text page-social-image"
               placeholder="/assets/images/share.png"
               value={state.socialImage}
               onInput={(event) =>
@@ -202,7 +216,7 @@ export function renderPageSettingsModal(
         <label class="meta-field">
           <span>Canonical URL</span>
           <input
-            class="text"
+            class="text page-canonical"
             placeholder="Leave empty to use the page's own URL"
             value={state.canonicalUrl}
             onInput={(event) =>

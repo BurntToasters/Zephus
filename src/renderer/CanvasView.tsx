@@ -1,6 +1,9 @@
 import { For, Show, createEffect } from "solid-js";
 import { createStore, reconcile, unwrap } from "solid-js/store";
 import { render } from "solid-js/web";
+import { boxStyle, sectionVisualStyle } from "./canvasStyle";
+import { onToolbarKeyDown } from "./toolbarKeyboard";
+import { revealCanvasSelection } from "./revealSelection";
 
 type SectionAction =
   "add-block" | "up" | "down" | "duplicate" | "toggle-lock" | "delete";
@@ -47,6 +50,7 @@ export interface CanvasHandlers {
   onSectionAction: (section: SectionNode, action: SectionAction) => void;
   onBlockAction: (block: EditorBlock, action: BlockAction) => void;
   onSelectSection: (section: SectionNode) => void;
+  onSectionKeyDown: (event: KeyboardEvent, section: SectionNode) => void;
   onBlockKeyDown: (
     event: KeyboardEvent,
     section: SectionNode,
@@ -93,46 +97,6 @@ const [canvasState, setCanvasState] = createStore<CanvasState>({
 });
 let handlers: CanvasHandlers | null = null;
 
-function boxStyle(style?: BlockStyle): Record<string, string> {
-  // The wrapper must NOT duplicate the visual style declarations: the inner
-  // element (blockEntry.html) already carries padding/margin/background/
-  // color/radius/shadow via styleAttr. Applying them here too makes the
-  // canvas show ~2x padding/margins (and doubled shadows) — the build applies
-  // them once, so the canvas would not match the published site. Only the
-  // outer layout box (width/height/max-width) belongs on the wrapper.
-  const next: Record<string, string> = {
-    "box-sizing": "border-box",
-    "max-width": style?.maxWidth ? `min(${style.maxWidth}, 100%)` : "100%",
-  };
-  if (style?.width) next.width = style.width;
-  if (style?.height) next.height = style.height;
-  return next;
-}
-
-/** The section's VISUAL declarations for the canvas content area. The build
- *  puts these on the real <section> (styleAttr); the canvas section wrapper
- *  only carries the layout box, so without this the canvas never showed a
- *  section's background/padding/align/radius/shadow — the canvas was not
- *  WYSIWYG for every styled hero/band section. */
-function sectionVisualStyle(style?: BlockStyle): Record<string, string> {
-  const next: Record<string, string> = {};
-  if (["left", "center", "right"].includes(String(style?.align))) {
-    next["text-align"] = style!.align as string;
-  }
-  const set = (prop: string, value?: string): void => {
-    if (value) next[prop] = value;
-  };
-  set("background", style?.background);
-  set("color", style?.color);
-  set("padding", style?.padding);
-  set("margin", style?.margin);
-  set("border-radius", style?.radius);
-  if (style?.shadow === "sm") next["box-shadow"] = "var(--shadow-sm)";
-  if (style?.shadow === "md") next["box-shadow"] = "var(--shadow-md)";
-  if (style?.shadow === "lg") next["box-shadow"] = "var(--shadow-lg)";
-  return next;
-}
-
 function sectionNode(entry: CanvasSectionEntry): SectionNode {
   return unwrap(entry.section);
 }
@@ -157,6 +121,7 @@ function CanvasActionButton(props: {
   icon: string;
   danger?: boolean;
   disabled?: boolean;
+  tabStop?: boolean;
   onRun: () => void;
 }) {
   return (
@@ -169,6 +134,8 @@ function CanvasActionButton(props: {
       title={props.label}
       aria-label={props.label}
       disabled={props.disabled}
+      tabIndex={props.tabStop ? 0 : -1}
+      onKeyDown={onToolbarKeyDown}
       onClick={(event) => stopAndRun(event, props.onRun)}
     >
       <i data-lucide={props.icon}></i>
@@ -266,6 +233,7 @@ function SectionShell(props: { entry: CanvasSectionEntry; index: number }) {
         <button
           type="button"
           class="section-grip"
+          tabIndex={-1}
           title="Drag to reorder section"
           aria-label={`Reorder ${props.entry.section.label}`}
           disabled={!!props.entry.section.locked}
@@ -292,6 +260,7 @@ function SectionShell(props: { entry: CanvasSectionEntry; index: number }) {
             <CanvasActionButton
               label="Add block"
               icon="plus"
+              tabStop
               onRun={() =>
                 handlers?.onSectionAction(sectionNode(props.entry), "add-block")
               }
@@ -354,12 +323,9 @@ function SectionShell(props: { entry: CanvasSectionEntry; index: number }) {
               handlers?.onSelectSection(sectionNode(props.entry)),
             )
           }
-          onKeyDown={(event) => {
-            if (event.target !== event.currentTarget) return;
-            if (event.key !== "Enter" && event.key !== " ") return;
-            event.preventDefault();
-            handlers?.onSelectSection(sectionNode(props.entry));
-          }}
+          onKeyDown={(event) =>
+            handlers?.onSectionKeyDown(event, sectionNode(props.entry))
+          }
           onDragOver={(event) =>
             handlers?.onSectionBodyDragOver(event, props.entry.section.id)
           }
@@ -376,7 +342,7 @@ function SectionShell(props: { entry: CanvasSectionEntry; index: number }) {
           >
             <For each={props.entry.children}>
               {(blockEntry, blockIndex) => (
-                <>
+                <div class="canvas-block-slot">
                   <InsertBlockButton
                     index={blockIndex()}
                     sectionId={props.entry.section.id}
@@ -387,7 +353,7 @@ function SectionShell(props: { entry: CanvasSectionEntry; index: number }) {
                     section={props.entry.section}
                     sectionBody={() => bodyRef}
                   />
-                </>
+                </div>
               )}
             </For>
             <InsertBlockButton
@@ -484,6 +450,7 @@ function BlockShell(props: {
         <button
           type="button"
           class="block-grip"
+          tabIndex={-1}
           title="Drag to reorder block"
           aria-label={`Reorder ${props.blockEntry.label} block`}
           disabled={!!props.blockEntry.block.locked}
@@ -504,6 +471,7 @@ function BlockShell(props: {
           <CanvasActionButton
             label="Move block up"
             icon="arrow-up"
+            tabStop
             onRun={() =>
               handlers?.onBlockAction(blockNode(props.blockEntry), "up")
             }
@@ -672,4 +640,5 @@ export function updateCanvasSelection(
       { key: "id" },
     ),
   );
+  revealCanvasSelection();
 }

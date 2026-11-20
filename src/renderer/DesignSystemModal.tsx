@@ -77,6 +77,9 @@ function expandHex(value: string): string {
 function ColorField(props: {
   label: string;
   value: string;
+  textClass?: string;
+  error?: string;
+  errorClass?: string;
   onChange: (value: string) => void;
 }) {
   const [textValue, setTextValue] = createSignal(props.value);
@@ -102,7 +105,7 @@ function ColorField(props: {
         />
         <input
           type="text"
-          class="text color-text"
+          class={`text color-text${props.textClass ? ` ${props.textClass}` : ""}`}
           value={textValue()}
           placeholder="#3b82f6, rgb(), var(--accent)…"
           aria-label={props.label}
@@ -126,6 +129,14 @@ function ColorField(props: {
           X
         </button>
       </div>
+      {props.error ? (
+        <span
+          class={`form-error ${props.errorClass ?? "design-accent-error"}`}
+          role="alert"
+        >
+          {props.error}
+        </span>
+      ) : null}
     </label>
   );
 }
@@ -133,6 +144,9 @@ function ColorField(props: {
 function FontField(props: {
   label: string;
   value: string;
+  customClass: string;
+  error?: string;
+  errorClass?: string;
   onChange: (stack: string, google: string | null) => void;
 }) {
   const matchIndex = FONT_OPTIONS.findIndex(
@@ -177,7 +191,7 @@ function FontField(props: {
         </select>
         {selected() === "custom" ? (
           <input
-            class="text font-custom"
+            class={`text font-custom ${props.customClass}`}
             placeholder="'Brand Sans', system-ui, sans-serif"
             value={customValue()}
             onInput={(event) => {
@@ -192,6 +206,11 @@ function FontField(props: {
         >
           The quick brown fox jumps over the lazy dog
         </div>
+        {props.error ? (
+          <span class={`form-error ${props.errorClass ?? ""}`} role="alert">
+            {props.error}
+          </span>
+        ) : null}
       </div>
     </label>
   );
@@ -199,6 +218,7 @@ function FontField(props: {
 
 export interface DesignSystemModalState {
   accent: string;
+  accentError?: string;
   background: string;
   foreground: string;
   surface: string;
@@ -216,6 +236,8 @@ export interface DesignSystemModalState {
   onRadiusChange: (value: string) => void;
   onContainerWidthChange: (value: string) => void;
   onShadowChange: (value: DesignTokenSet["shadow"]) => void;
+  /** Set when a color, font, radius, or width would be rewritten at build time. */
+  stylesheetError?: { field: string; message: string } | null;
 }
 
 export function renderDesignSystemModalBody(
@@ -229,50 +251,97 @@ export function renderDesignSystemModalBody(
         <ColorField
           label="Accent color"
           value={state.accent}
+          textClass="design-accent"
+          error={state.accentError}
           onChange={state.onAccentChange}
         />
         <ColorField
           label="Background"
           value={state.background}
+          textClass="design-background"
+          error={
+            state.stylesheetError?.field === "background"
+              ? state.stylesheetError.message
+              : undefined
+          }
+          errorClass="design-background-error"
           onChange={state.onBackgroundChange}
         />
         <ColorField
           label="Foreground"
           value={state.foreground}
+          textClass="design-foreground"
+          error={
+            state.stylesheetError?.field === "foreground"
+              ? state.stylesheetError.message
+              : undefined
+          }
+          errorClass="design-foreground-error"
           onChange={state.onForegroundChange}
         />
         <ColorField
           label="Surface"
           value={state.surface}
+          textClass="design-surface"
+          error={
+            state.stylesheetError?.field === "surface"
+              ? state.stylesheetError.message
+              : undefined
+          }
+          errorClass="design-surface-error"
           onChange={state.onSurfaceChange}
         />
         <FontField
           label="Body font"
           value={state.bodyFont}
+          customClass="design-body-font"
+          error={
+            state.stylesheetError?.field === "bodyFont"
+              ? state.stylesheetError.message
+              : undefined
+          }
+          errorClass="design-body-font-error"
           onChange={state.onBodyFontChange}
         />
         <FontField
           label="Heading font"
           value={state.headingFont}
+          customClass="design-heading-font"
+          error={
+            state.stylesheetError?.field === "headingFont"
+              ? state.stylesheetError.message
+              : undefined
+          }
+          errorClass="design-heading-font-error"
           onChange={state.onHeadingFontChange}
         />
         <label class="meta-field">
           <span>Radius</span>
           <input
-            class="text"
+            class="text design-radius"
             value={state.radius}
             onInput={(event) => state.onRadiusChange(event.currentTarget.value)}
           />
+          {state.stylesheetError?.field === "radius" ? (
+            <span class="form-error design-radius-error" role="alert">
+              {state.stylesheetError.message}
+            </span>
+          ) : null}
         </label>
         <label class="meta-field">
           <span>Container width</span>
           <input
-            class="text"
+            class="text design-container"
             value={state.containerWidth}
             onInput={(event) =>
               state.onContainerWidthChange(event.currentTarget.value)
             }
           />
+          {state.stylesheetError?.field === "containerWidth" ? (
+            <span class="form-error design-container-error" role="alert">
+              {state.stylesheetError.message}
+            </span>
+          ) : null}
         </label>
         <label class="meta-field">
           <span>Shadow depth</span>

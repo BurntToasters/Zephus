@@ -1,6 +1,7 @@
 /** Page loading + external-change orchestration. */
 
 import type { EditorSessionState } from "./editorSession";
+import { resetPageSwitchScroll } from "./revealSelection";
 
 export interface PageLoadOptions {
   skipUnsavedGuard?: boolean;
@@ -348,6 +349,7 @@ export function createPageLoader(deps: PageLoaderDeps) {
     syncVisualModeState();
     setCode(state.rawCode);
     setMode(state.visualEditable ? "visual" : "code");
+    if (sourcePage !== page) resetPageSwitchScroll();
     renderDirtyIndicators();
 
     // Watch the open file for external changes. Serialized page loads guarantee

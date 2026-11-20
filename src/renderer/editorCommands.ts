@@ -31,17 +31,16 @@ export function handlePlainTextPaste(event: ClipboardEvent): void {
   // the native paste is already suppressed and the paste silently vanishes.
   const html = event.clipboardData?.getData("text/html") ?? "";
   if (html) {
-    // insertHTML would smuggle arbitrary markup into the contenteditable; only
-    // its text content is wanted here, matching the plain-text contract.
-    const container = document.createElement("div");
-    container.innerHTML = html;
-    document.execCommand(
-      "insertText",
-      false,
-      // Collapse br + block-boundary doubles ("one<br>two</p><p>three"
-      // produced "one\ntwo\n\nthree").
-      (htmlTextContent(container) ?? "").replace(/\n{2,}/g, "\n").trim(),
-    );
+    // insertHTML would smuggle arbitrary markup into the contenteditable.
+    // Parsing that markup with a detached element in the editor document still
+    // loads images, so an onerror handler on the clipboard would run here.
+    // An inert document has no browsing context and does not run those handlers.
+    const doc = document.implementation.createHTMLDocument("");
+    doc.body.innerHTML = html;
+    const visible = (htmlTextContent(doc.body) ?? "")
+      .replace(/\n{2,}/g, "\n")
+      .trim();
+    if (visible) document.execCommand("insertText", false, visible);
   }
 }
 
@@ -54,6 +53,9 @@ function htmlTextContent(root: Element): string {
     } else if (node.nodeType === Node.ELEMENT_NODE) {
       const el = node as HTMLElement;
       const tag = el.tagName;
+      // Style and script text is not page content. A Word paste is mostly CSS
+      // in a <style> element; inserting it would dump that CSS into the field.
+      if (/^(SCRIPT|STYLE|NOSCRIPT|TITLE|TEMPLATE)$/i.test(tag)) continue;
       const before =
         /^(BR|P|DIV|LI|H[1-6]|BLOCKQUOTE|PRE|UL|OL|TABLE|TR)$/i.test(tag)
           ? "\n"

@@ -96,7 +96,7 @@ export function ImageContentGroup(props: {
             onChange={(next) => props.state.onStyleChange("objectFit", next)}
           />
           <div class="meta-field">
-            <span>Focus point (drag)</span>
+            <span>Focus point</span>
             <div
               ref={(element) => {
                 focalBox = element;
@@ -108,7 +108,7 @@ export function ImageContentGroup(props: {
               aria-valuemin={0}
               aria-valuemax={100}
               aria-valuenow={position().x}
-              aria-valuetext={`${position().x}% horizontal, ${position().y}% vertical`}
+              aria-valuetext={`${position().x}% across, ${position().y}% down. Arrow keys move it.`}
               onKeyDown={(event) => {
                 const step = event.shiftKey ? 10 : 5;
                 let dx = 0;
@@ -170,6 +170,10 @@ export function ImageContentGroup(props: {
                 }}
               />
             </div>
+            <span class="meta-hint">
+              {position().x}% across, {position().y}% down. Drag the image or
+              use the arrow keys.
+            </span>
           </div>
         </>
       ) : null}

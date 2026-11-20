@@ -72,6 +72,7 @@ export async function openFindReplaceModal(
     totalMatches: 0,
     searchedQuery: "",
     skippedDetachedPages: 0,
+    findError: "",
   };
   let searchSeq = 0;
   let disposeFindBody: (() => void) | null = null;
@@ -86,8 +87,10 @@ export async function openFindReplaceModal(
       matches: formState.matches,
       totalMatches: formState.totalMatches,
       searchedQuery: formState.searchedQuery,
+      findError: formState.findError,
       onQueryChange: (value) => {
         formState.query = value;
+        formState.findError = "";
         // Editing the query invalidates any earlier results: Replace All must
         // never act on a match list that was searched with different text.
         // Bump searchSeq so a stale IN-FLIGHT response (old query) cannot
@@ -120,6 +123,7 @@ export async function openFindReplaceModal(
         formState.searchedQuery = "";
         formState.skippedDetachedPages = 0;
         mount();
+        wrap.querySelector<HTMLInputElement>(".find-replace-case")?.focus();
       },
       onWholeWordChange: (value) => {
         formState.wholeWord = value;
@@ -129,6 +133,7 @@ export async function openFindReplaceModal(
         formState.searchedQuery = "";
         formState.skippedDetachedPages = 0;
         mount();
+        wrap.querySelector<HTMLInputElement>(".find-replace-whole")?.focus();
       },
       onSearch: () => void runSearch(),
       onOpenPage: (page) => {
@@ -136,12 +141,23 @@ export async function openFindReplaceModal(
         void loadPage(page);
       },
     });
+    registerCleanup(disposeFindBody);
+  };
+
+  const focusFindInput = (): void => {
+    wrap.querySelector<HTMLInputElement>(".find-replace input")?.focus();
   };
 
   const runSearch = async (): Promise<boolean> => {
     const query = formState.query.trim();
     if (!query) {
-      setStatus("Enter text to find.");
+      formState.findError = "Enter text to find.";
+      setStatus(formState.findError);
+      formState.matches = null;
+      formState.totalMatches = 0;
+      formState.searchedQuery = "";
+      mount();
+      focusFindInput();
       return false;
     }
     const seq = ++searchSeq;
@@ -157,14 +173,28 @@ export async function openFindReplaceModal(
     // A newer search supersedes this one; ignore the stale response.
     if (seq !== searchSeq) return false;
     if (!result.ok) {
-      setStatus("Search failed: " + (result.error ?? "unknown"));
+      formState.findError = "Search failed: " + (result.error ?? "unknown");
+      setStatus(formState.findError);
+      formState.matches = null;
+      mount();
+      focusFindInput();
       return false;
     }
+    formState.findError = "";
     formState.matches = result.matches;
     formState.totalMatches = result.totalMatches;
     formState.skippedDetachedPages = result.skippedDetachedPages ?? 0;
     formState.searchedQuery = query;
+    const focusedInside =
+      document.activeElement instanceof HTMLElement &&
+      wrap.contains(document.activeElement);
     mount();
+    if (focusedInside) {
+      const next =
+        wrap.querySelector<HTMLButtonElement>(".find-replace-page") ??
+        wrap.querySelector<HTMLInputElement>(".find-replace input");
+      next?.focus();
+    }
     return result.matches.length > 0;
   };
 
@@ -182,20 +212,34 @@ export async function openFindReplaceModal(
           // Replacement rewrites saved page sidecars, so pending edits must be
           // settled or saving afterwards would undo the replacement.
           if (isGlobalDirty(state) && !(await maybeResolveUnsavedWork())) {
-            setStatus("Replace canceled: save or discard your changes first.");
+            formState.findError =
+              "Replace canceled: save or discard your changes first.";
+            setStatus(formState.findError);
+            mount();
+            focusFindInput();
             return;
           }
 
           // Search after the dirty-save gate so counts match on-disk content.
           if (!(await runSearch())) {
-            if (formState.matches && formState.matches.length === 0) {
-              setStatus("Nothing to replace.");
+            if (
+              !formState.findError &&
+              formState.matches &&
+              formState.matches.length === 0
+            ) {
+              formState.findError = "Nothing to replace.";
+              setStatus(formState.findError);
+              mount();
+              focusFindInput();
             }
             return;
           }
           const matches = formState.matches ?? [];
           if (matches.length === 0) {
-            setStatus("Nothing to replace.");
+            formState.findError = "Nothing to replace.";
+            setStatus(formState.findError);
+            mount();
+            focusFindInput();
             return;
           }
 
@@ -221,7 +265,11 @@ export async function openFindReplaceModal(
             matches.map((match) => match.page),
           );
           if (!result.ok) {
-            setStatus("Replace failed: " + (result.error ?? "unknown"));
+            formState.findError =
+              "Replace failed: " + (result.error ?? "unknown");
+            setStatus(formState.findError);
+            mount();
+            focusFindInput();
             return;
           }
           closeModal();
